@@ -1,0 +1,445 @@
+# UAT Test Tool — Cursor Rules
+
+> 本文件為專案的 AI 開發助手規範，Cursor / Codex 每次開啟專案時應自動載入。
+> 最後更新：2026-04-15
+
+---
+
+## 1. 專案概述
+
+這是 Galaxy 平台的 UAT 測試工具，用於：
+1. 透過對話式 AI（Claude）生成 test case
+2. 以 Playwright 自動執行 test case
+3. 記錄執行結果並同步到 Google Sheets
+4. 提供儀表板檢視測試進度
+
+目前處於 MVP 階段，使用者為 1 位 PM（Tommy）和 RD 團隊。
+
+---
+
+## 2. 技術堆疊
+
+| 層 | 技術 | 備註 |
+|---|------|------|
+| 前端 | React 18 + TypeScript + Vite | 單一 SPA |
+| 狀態管理 | Zustand | 輕量 |
+| UI | 自訂 CSS（App.css 設計系統） | 淺色主題，見下方配色規範 |
+| 後端 | Express + TypeScript | 不用 NestJS |
+| DB | SQLite (better-sqlite3) | 單檔案 `./data/uat.db` |
+| 佇列 | 記憶體佇列 | 不用 Redis |
+| 自動化 | Playwright (Node) | headless 可切換 |
+| AI | Claude API (Anthropic) | model: claude-sonnet-4-20250514 |
+| 整合 | Google Sheets API | 僅匯出，不讀取 |
+
+---
+
+## 3. 專案目錄結構
+
+```
+uat-tool/
+├── .cursorrules              ← 本文件
+├── .env                      ← 環境變數（不進 git）
+├── .env.example
+├── web/                      ← React 前端
+│   ├── src/
+│   │   ├── App.tsx
+│   │   ├── App.css           ← 設計系統（見§5）
+│   │   └── index.css
+│   └── vite.config.ts
+├── src/                      ← Express 後端
+│   ├── routes/
+│   ├── jobs/
+│   ├── integrations/
+│   └── db/
+├── storage/
+│   ├── uploads/
+│   └── artifacts/
+└── data/
+    └── uat.db
+```
+
+---
+
+## 4. 環境變數
+
+```env
+NODE_ENV=development
+PORT=3000
+DB_PATH=./data/uat.db
+
+ANTHROPIC_API_KEY=sk-ant-...
+CLAUDE_MODEL=claude-sonnet-4-20250514
+
+GOOGLE_CLIENT_ID=...
+GOOGLE_CLIENT_SECRET=...
+GOOGLE_REDIRECT_URI=http://localhost:3000/auth/google/callback
+GOOGLE_SHEET_ID=1tbavIz4GQ4tFKD6DT8fKGX4kCY-vdMzTtu4kheb9rXY
+
+PLAYWRIGHT_HEADLESS=false
+PLAYWRIGHT_TIMEOUT_MS=30000
+STORAGE_ROOT=./storage
+APP_BASE_URL=http://localhost:5173
+APPROVAL_TTL_MIN=30
+```
+
+---
+
+## 5. UI 設計規範
+
+### 5.1 配色 Token（定義在 App.css :root）
+
+```css
+--bg: #f5f6fa;          /* 頁面背景 */
+--card: #ffffff;        /* 卡片背景 */
+--border: #e2e5ee;      /* 邊框 */
+--text: #1a1f2e;        /* 主文字 */
+--text-2: #4a5068;      /* 次文字 */
+--text-3: #8890a4;      /* 輔助文字 */
+--accent: #2563eb;      /* 主強調色（藍） */
+--accent-2: #0ea572;    /* 次強調色（綠） */
+--pass: #0ea572;        /* PASS 綠 */
+--fail: #dc3545;        /* FAIL 紅 */
+--blocked: #e67e22;     /* BLOCKED 橘 */
+--partial: #3b82f6;     /* PARTIAL 藍 */
+--pending: #9ca3af;     /* PENDING 灰 */
+--running: #8b5cf6;     /* RUNNING 紫 */
+```
+
+### 5.2 字型
+
+- 標題 / 正文：`Noto Sans TC`
+- 數字 / 代碼 / Badge：`IBM Plex Mono`
+
+### 5.3 關鍵 CSS Class
+
+| Class | 用途 |
+|-------|------|
+| `.grid-sidebar` | 左 340px + 右 1fr 的雙欄佈局 |
+| `.grid-equal` | 1fr + 1fr 等分佈局 |
+| `.card` / `.card-header` | 白底圓角卡片 + 標題列 |
+| `.stat` / `.stat.pass` / `.stat.fail` | 統計數字卡片 |
+| `.progress-bar` / `.seg` | 彩色進度條 |
+| `.badge.{status}` | 狀態標籤（PASS/FAIL/BLOCKED/RUNNING...） |
+| `.btn` / `.btn.primary` / `.btn.success` / `.btn.danger` / `.btn.sm` | 按鈕系統 |
+| `.case-table` | 測試案例結果表格 |
+| `.chat-bubble.user` / `.chat-bubble.assistant` | 對話泡泡 |
+| `.approval-card` | 暫停等待卡片（橘色邊框） |
+| `.run-item` / `.conv-item` | 列表項目（左側選單） |
+| `.log-entry` / `.log-level.INFO` / `.WARN` / `.ERROR` | Log 時間軸 |
+| `.form-group` / `.form-row` | 表單佈局 |
+
+### 5.4 不要做的事
+
+- ❌ 不要用 `JSON.stringify()` 直接輸出 JSON 到畫面
+- ❌ 不要用 `<pre>` 顯示結構化資料，改用 `<table className="case-table">`
+- ❌ 不要用 `.grid.two`（舊版 class），改用 `.grid-sidebar` 或 `.grid-equal`
+- ❌ 不要用 `.list-item`（舊版 class），改用 `.run-item` 或 `.conv-item`
+- ❌ 不要用 `.msg`（舊版 class），改用 `.chat-bubble`
+
+---
+
+## 6. API 端點
+
+### 6.1 對話 (Tab A)
+```
+POST   /api/conversations                         → 建立對話
+GET    /api/conversations                         → 對話列表
+GET    /api/conversations/:id                     → 取得對話（含歷史訊息）
+POST   /api/conversations/:id/messages            → 發送訊息（呼叫 Claude）
+POST   /api/conversations/:id/export              → 匯出 testcase (JSON + MD)
+POST   /api/conversations/:id/push-to-run         → 推送到 Tab B
+DELETE /api/conversations/:id                     → 刪除對話
+```
+
+### 6.2 測試執行 (Tab B)
+```
+POST   /api/runs                                  → 建立 run
+GET    /api/runs/:id                              → run 詳情
+GET    /api/runs/:id/summary                      → run 摘要統計
+GET    /api/runs/:id/cases                        → case 結果列表
+GET    /api/runs/:id/steps                        → step 結果列表
+GET    /api/runs/:id/logs                         → 執行 log
+GET    /api/runs/:id/approvals                    → approval 列表
+POST   /api/runs/:id/start                        → 開始執行
+POST   /api/runs/:id/approve                      → 授權恢復
+POST   /api/runs/:id/skip-case                    → 跳過當前 case
+POST   /api/runs/:id/manual-fill                  → 手動回填結果
+POST   /api/runs/:id/cancel                       → 取消 run
+GET    /api/runs/:id/artifacts                    → 取得產出檔案
+```
+
+### 6.3 執行紀錄 (Tab B-1)
+```
+GET    /api/runs/history?page=1&pageSize=20&status=&roundId=  → 歷史列表
+```
+
+### 6.4 儀表板 (Tab C — 未來)
+```
+GET    /api/dashboard/index
+GET    /api/dashboard/cases?roundId=xxx
+GET    /api/dashboard/bugs?roundId=xxx
+GET    /api/dashboard/stats?roundId=xxx
+```
+
+### 6.5 整合
+```
+POST   /api/integrations/google-sheets/sync
+GET    /api/integrations/google-sheets/status
+```
+
+---
+
+## 7. 資料庫 Schema
+
+### runs
+| 欄位 | 型別 | 說明 |
+|------|------|------|
+| id | TEXT PK | UUID |
+| uid | TEXT UNIQUE | 顯示用 ID |
+| status | TEXT | DRAFT/VALIDATING/READY/RUNNING/WAITING_APPROVAL/SUCCEEDED/FAILED/CANCELLED |
+| round_id | TEXT | 如 RC-R001 |
+| location | TEXT | 如「數據中心」 |
+| feature_major | TEXT | 如「BI工具」 |
+| feature_minor | TEXT | 如「自訂報表 / 明細模式」 |
+| round_name | TEXT | 如「Round 1」 |
+| dev_urls | TEXT (JSON) | |
+| conversation_id | TEXT FK nullable | 來自 Tab A 推送 |
+| reference_data_path | TEXT nullable | 參考 CSV 路徑 |
+| headless | INTEGER (bool) | 預設 0 |
+| sync_to_google_sheet | INTEGER (bool) | |
+| google_sheet_url | TEXT nullable | |
+| started_at | TEXT nullable | |
+| finished_at | TEXT nullable | |
+| created_at | TEXT | |
+| updated_at | TEXT | |
+
+### run_cases
+| 欄位 | 型別 | 說明 |
+|------|------|------|
+| id | TEXT PK | |
+| run_id | TEXT FK | |
+| case_no | TEXT | 如 A-01 |
+| case_title | TEXT | |
+| group_name | TEXT | |
+| execution_type | TEXT | auto/semi/manual |
+| result_status | TEXT | PASS/FAIL/BLOCKED/SKIPPED/MANUAL_PENDING/MANUAL_PASS/MANUAL_FAIL/MANUAL_BLOCKED |
+| detail_json | TEXT | JSON string |
+| fail_category | TEXT nullable | ASSERTION_FAIL/ELEMENT_NOT_FOUND/TIMEOUT/ENV_BLOCKED/SYSTEM_ERROR/DATA_MISMATCH/BROWSER_CRASH |
+| actual_result | TEXT | |
+| error_reason | TEXT nullable | |
+| duration_ms | INTEGER | |
+| executed_at | TEXT | |
+| attempt_no | INTEGER default 1 | |
+| manual_filled_by | TEXT nullable | |
+| manual_filled_at | TEXT nullable | |
+
+### run_case_steps
+| 欄位 | 型別 |
+|------|------|
+| id | TEXT PK |
+| run_case_id | TEXT FK |
+| step_no | INTEGER |
+| action_type | TEXT |
+| target_type | TEXT |
+| target_value | TEXT |
+| expected | TEXT |
+| actual | TEXT |
+| result | TEXT (PASS/FAIL/BLOCKED) |
+| require_approval | INTEGER (bool) |
+| comparison_result | TEXT (JSON) nullable |
+| screenshot_path | TEXT nullable |
+| started_at | TEXT |
+| finished_at | TEXT |
+
+### approvals
+| 欄位 | 型別 |
+|------|------|
+| id | TEXT PK |
+| run_id | TEXT FK |
+| status | TEXT (PENDING/APPROVED/EXPIRED/REJECTED) |
+| reason | TEXT (LOGIN_REQUIRED/OTP_REQUIRED/PERMISSION_PROMPT/PAGE_LOAD_ERROR/API_ERROR/PAGE_FROZEN/MANUAL_CHECK) |
+| case_no | TEXT |
+| step_no | INTEGER |
+| browser_session_id | TEXT |
+| storage_state_path | TEXT |
+| screenshot_path | TEXT nullable |
+| expire_at | TEXT |
+| resolved_by | TEXT nullable |
+| resolved_at | TEXT nullable |
+| created_at | TEXT |
+
+### conversations
+| 欄位 | 型別 |
+|------|------|
+| id | TEXT PK |
+| title | TEXT |
+| feature_name | TEXT |
+| created_at | TEXT |
+| updated_at | TEXT |
+
+### conversation_messages
+| 欄位 | 型別 |
+|------|------|
+| id | TEXT PK |
+| conversation_id | TEXT FK |
+| role | TEXT (user/assistant) |
+| content | TEXT |
+| attachments | TEXT (JSON) nullable |
+| created_at | TEXT |
+
+### run_logs
+| 欄位 | 型別 |
+|------|------|
+| id | TEXT PK |
+| run_id | TEXT FK |
+| level | TEXT (INFO/WARN/ERROR) |
+| phase | TEXT (VALIDATING/RUNNING/APPROVAL/EXPORT/SYNC) |
+| message | TEXT |
+| context_json | TEXT (JSON) nullable |
+| created_at | TEXT |
+
+### artifacts
+| 欄位 | 型別 |
+|------|------|
+| id | TEXT PK |
+| owner_type | TEXT (GENERATION/RUN) |
+| owner_id | TEXT |
+| artifact_type | TEXT (TESTCASE_MD/TESTCASE_XLSX/RESULT_MD/RESULT_XLSX/TRACE/SCREENSHOT) |
+| storage_path | TEXT |
+| created_at | TEXT |
+
+### bugs
+| 欄位 | 型別 |
+|------|------|
+| id | TEXT PK |
+| run_id | TEXT FK |
+| round_id | TEXT |
+| severity | TEXT (HIGH/MEDIUM/LOW/INFO) |
+| related_case_no | TEXT |
+| description | TEXT |
+| suggestion | TEXT |
+| created_at | TEXT |
+
+---
+
+## 8. 狀態機
+
+### Run 層級
+```
+DRAFT → VALIDATING → READY → RUNNING → SUCCEEDED
+                                ↕              ↓
+                        WAITING_APPROVAL    FAILED
+                                ↓
+                             RUNNING
+                                ↓
+                            CANCELLED
+```
+
+- `RESUMING` 僅為執行器內部事件，不進 DB status
+
+### Case 層級 result_status
+```
+PASS | FAIL | BLOCKED | SKIPPED | MANUAL_PENDING | MANUAL_PASS | MANUAL_FAIL | MANUAL_BLOCKED
+```
+
+- `auto` case：由 Playwright 執行，結果為 PASS/FAIL/BLOCKED
+- `semi` case：Playwright 執行但可能觸發 approval
+- `manual` case：不啟動 browser，初始為 MANUAL_PENDING，人工回填
+
+---
+
+## 9. Google Sheets 同步規則
+
+- 僅在 `sync_to_google_sheet = true` 時執行
+- 同步失敗不影響 run 主狀態（記 WARN log）
+- upsert key = `run_id + round_id + case_no + attempt_no`
+- 同 run 內重試：覆蓋同 key
+- 跨 run：新增列（保留歷史）
+- Sheet 結構需與 `UAT_Dashboard_Template.xlsx` 一致（3 sheet：索引、測試案例、Bug）
+
+---
+
+## 10. Playwright 實務規則
+
+1. 用語意查找（`getByRole`, `getByText`）優先於 CSS selector 和座標
+2. 用 `page.evaluate()` 讀取表格數據，不用截圖 OCR
+3. 日期選擇器用 CSS selector + JS click（通常不在 accessibility tree）
+4. 搜尋框 + 下拉：先 `fill` → `waitForSelector` → `click` 目標
+5. 點擊「執行」後用 `page.waitForResponse(url => url.includes('/preview'))` 等 API 完成
+6. 失敗必截圖，存到 `storage/artifacts/{run_id}/`
+7. 環境異常偵測：
+   - 頁面載入失敗：DOM 含「無法載入」「載入失敗」「Error」
+   - API 錯誤：response status >= 500
+   - 頁面凍結：screenshot timeout > 10s
+
+---
+
+## 11. Browser Crash 偵測
+
+Worker 每 15 秒心跳檢查 Playwright browser process：
+
+```typescript
+const HEARTBEAT_INTERVAL = 15_000;
+// 如果 browser 無回應超過 30 秒 → 判定 crash
+// 當前 case 標記 BLOCKED，fail_category = BROWSER_CRASH
+// 嘗試重啟 browser，從下一個 case 繼續
+// 連續 3 個 crash → 整個 run 標記 FAILED
+```
+
+---
+
+## 12. 已知 Bug（來自拼貼模式 UAT）
+
+測試這些 Bug 在明細/指標趨勢模式是否也存在：
+
+| # | 嚴重度 | 編號 | 描述 | 狀態 |
+|---|--------|------|------|------|
+| 1 | High | B-08 | 半動態區間 request body 回落 d7~d0，不反映靜態 startDate | 🔴 未修復（R001/R002/R003 三輪重現） |
+| 2 | High | B-09 | 靜態區間預覽 startDate 偏移 -1 天（多出前一天） | 🔴 未修復 |
+| 3 | High | F-05 | 靜態區間儲存後 endDate 偏移 -1 天（少最後一天） | 🟢 R002/R003 新儲存未重現 |
+| 4 | Medium | A-06 | RD 補數後仍有 8 個全 0 欄位 | 🔴 未修復 |
+| 5 | Low | G-03 | 刪除報表無確認彈窗 | ⚪ 未重測 |
+| 6 | Info | E-03 | 除以 0 回傳 0 | ⚪ 未重測 |
+
+---
+
+## 13. 測試目標環境
+
+- URL: `https://galaxy.games.gamania.com/biapi-dev/testview/home?gameID=541`
+- 可用資料區間：`2026-03-01 ~ 2026-03-31`（RD 補充的測試資料）
+- 三個模式共用入口，在「建構方式」切換：拼貼 / 指標 / 明細
+
+---
+
+## 14. 開發 Phase
+
+| Phase | 內容 | 預估工時 |
+|-------|------|---------|
+| 1 | 核心執行（Express + React + SQLite + Tab B/B-1 + Playwright runner） | 5-7 天 |
+| 2 | Approval + 數據比對 + testcase parser | 4-6 天 |
+| 3 | 對話生成 Tab A（Claude 多輪對話 + JSON + MD 匯出） | 4-6 天 |
+| 4 | XLSX 匯出 + Google Sheets 同步 + 儀表板 Tab C | 4-6 天 |
+
+---
+
+## 15. 規格文件索引
+
+| 文件 | 說明 |
+|------|------|
+| `UAT_Test_Tool_Dev_Spec_v1_2_1.md` | 主規格文件（完整版） |
+| `UAT_Test_Tool_Dev_Spec_v1_2_2.md` | 補丁（Phase 3 MD 輸出 + browser crash 偵測） |
+| `UI_改版指南_給Codex.md` | 組件結構對照表（App.tsx 怎麼改） |
+| `uat_tool_ui_mockup.html` | 視覺參考（瀏覽器開即可看） |
+| `DEV_UAT_明細_指標趨勢_測試案例_v1_1.xlsx` | 91 個 test case（明細 47 + 指標趨勢 44） |
+
+---
+
+## 16. Coding Conventions
+
+- TypeScript strict mode
+- 檔名用 kebab-case（如 `run-execution.job.ts`）
+- API response 統一格式：`{ items: T[], total?: number }` 或 `{ id: string, ...fields }`
+- Error response：`{ error: string, message: string }`
+- 日期格式：ISO 8601（`2026-04-15T10:30:00Z`）
+- UUID 用 `crypto.randomUUID()`
+- Log 遮罩：token / cookie / password / authorization header 不可出現在 log

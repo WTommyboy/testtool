@@ -53,15 +53,6 @@ type RunCase = {
   fail_category?: string | null;
 };
 
-type RunStep = {
-  id: string;
-  case_no: string;
-  step_no: number;
-  action_type: string;
-  status: string;
-  error_message?: string | null;
-};
-
 type Approval = {
   id: string;
   case_no: string;
@@ -69,6 +60,8 @@ type Approval = {
   reason: string;
   status: string;
   resolved_by?: string | null;
+  created_at?: string;
+  snapshot_path?: string | null;
 };
 
 const api = async <T,>(url: string, init?: RequestInit): Promise<T> => {
@@ -80,8 +73,17 @@ const api = async <T,>(url: string, init?: RequestInit): Promise<T> => {
   return data;
 };
 
+const formatDate = (v?: string): string => {
+  if (!v) return "-";
+  const d = new Date(v);
+  if (Number.isNaN(d.getTime())) return v;
+  return d.toLocaleString("zh-TW", { hour12: false });
+};
+
+const numberOf = (obj: Record<string, number> | undefined, key: string): number => obj?.[key] ?? 0;
+
 function App() {
-  const [tab, setTab] = useState<"conversations" | "runs">("runs");
+  const [tab, setTab] = useState<"conversations" | "runs" | "history">("history");
 
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [selectedConversationId, setSelectedConversationId] = useState<string>("");
@@ -106,11 +108,25 @@ function App() {
   const [summary, setSummary] = useState<Summary | null>(null);
   const [runLogs, setRunLogs] = useState<RunLog[]>([]);
   const [runCases, setRunCases] = useState<RunCase[]>([]);
-  const [runSteps, setRunSteps] = useState<RunStep[]>([]);
   const [approvals, setApprovals] = useState<Approval[]>([]);
   const [runBusy, setRunBusy] = useState(false);
   const [runError, setRunError] = useState("");
   const [resolvedBy, setResolvedBy] = useState("tommy");
+
+  const selectedConversation = conversations.find((x) => x.id === selectedConversationId) ?? null;
+  const pendingApprovals = approvals.filter((x) => x.status === "PENDING");
+
+  const totalCases = runCases.length || Object.values(summary?.caseStats ?? {}).reduce((a, b) => a + b, 0);
+  const passCases = numberOf(summary?.caseStats, "PASS") + numberOf(summary?.caseStats, "MANUAL_PASS");
+  const failCases = numberOf(summary?.caseStats, "FAIL") + numberOf(summary?.caseStats, "MANUAL_FAIL");
+  const blockedCases = numberOf(summary?.caseStats, "BLOCKED") + numberOf(summary?.caseStats, "MANUAL_BLOCKED");
+  const pendingCases = numberOf(summary?.caseStats, "PENDING") + numberOf(summary?.caseStats, "MANUAL_PENDING");
+  const runningCases = totalCases > 0 ? Math.max(0, totalCases - passCases - failCases - blockedCases - pendingCases) : 0;
+
+  const passPct = totalCases > 0 ? (passCases / totalCases) * 100 : 0;
+  const failPct = totalCases > 0 ? (failCases / totalCases) * 100 : 0;
+  const blockedPct = totalCases > 0 ? (blockedCases / totalCases) * 100 : 0;
+  const pendingPct = totalCases > 0 ? (pendingCases / totalCases) * 100 : 0;
 
   const loadConversations = async () => {
     try {
@@ -160,17 +176,15 @@ function App() {
   const loadRunDetail = async (runId: string) => {
     if (!runId) return;
     try {
-      const [summaryData, logsData, casesData, stepsData, approvalsData] = await Promise.all([
+      const [summaryData, logsData, casesData, approvalsData] = await Promise.all([
         api<Summary>(`/api/runs/${runId}/summary`),
         api<{ items: RunLog[] }>(`/api/runs/${runId}/logs`),
         api<{ items: RunCase[] }>(`/api/runs/${runId}/cases`),
-        api<{ items: RunStep[] }>(`/api/runs/${runId}/steps`),
         api<{ items: Approval[] }>(`/api/runs/${runId}/approvals`),
       ]);
       setSummary(summaryData);
       setRunLogs(logsData.items);
       setRunCases(casesData.items);
-      setRunSteps(stepsData.items);
       setApprovals(approvalsData.items);
     } catch (error) {
       setRunError(error instanceof Error ? error.message : String(error));
@@ -324,198 +338,404 @@ function App() {
   return (
     <main className="app">
       <header className="topbar">
-        <h1>UAT Tool Console</h1>
+        <div className="topbar-left">
+          <h1>
+            🔬 <span>Galaxy</span> UAT Test Tool
+          </h1>
+          <span className="env-pill">DEV</span>
+        </div>
         <div className="tabs">
-          <button className={tab === "runs" ? "active" : ""} onClick={() => setTab("runs")}>
-            Tab B-1 執行紀錄
+          <button className={`tab-btn ${tab === "conversations" ? "active" : ""}`} onClick={() => setTab("conversations")}>
+            💬 對話生成
           </button>
-          <button className={tab === "conversations" ? "active" : ""} onClick={() => setTab("conversations")}>
-            Tab A 對話生成
+          <button className={`tab-btn ${tab === "runs" ? "active" : ""}`} onClick={() => setTab("runs")}>
+            ▶️ 測試執行
+          </button>
+          <button className={`tab-btn ${tab === "history" ? "active" : ""}`} onClick={() => setTab("history")}>
+            📋 執行紀錄
           </button>
         </div>
       </header>
 
+      {tab === "conversations" ? (
+        <section className="panel">
+          <div className="grid-sidebar">
+            <div>
+              <div className="card mb-16">
+                <div className="card-header">
+                  <h2>建立新對話</h2>
+                </div>
+                <form className="form-row" onSubmit={handleCreateConversation}>
+                  <div className="form-group">
+                    <label>對話名稱</label>
+                    <input value={newConversationTitle} onChange={(e) => setNewConversationTitle(e.target.value)} />
+                  </div>
+                  <div className="form-group">
+                    <label>功能模組</label>
+                    <input value={newConversationFeature} onChange={(e) => setNewConversationFeature(e.target.value)} />
+                  </div>
+                  <div style={{ gridColumn: "1 / -1" }}>
+                    <button className="btn primary" style={{ width: "100%" }} disabled={conversationBusy}>
+                      建立對話
+                    </button>
+                  </div>
+                </form>
+              </div>
+
+              <div className="card">
+                <div className="card-header">
+                  <h2>歷史對話</h2>
+                  <span className="count">{conversations.length}</span>
+                </div>
+                <div className="conv-list">
+                  {conversations.map((c) => (
+                    <button
+                      key={c.id}
+                      className={`conv-item ${selectedConversationId === c.id ? "selected" : ""}`}
+                      onClick={() => setSelectedConversationId(c.id)}
+                    >
+                      <div className="title">{c.title}</div>
+                      <div className="feature">
+                        {c.feature_name || "未分類"} · {formatDate(c.created_at)}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="card">
+              <div className="card-header">
+                <h2>{selectedConversation?.title || "請先建立或選擇對話"}</h2>
+                <div className="actions">
+                  <button className="btn sm" disabled>
+                    📎 上傳文件
+                  </button>
+                  <button className="btn sm" onClick={() => void handleExport()} disabled={!selectedConversationId || conversationBusy}>
+                    📄 匯出 MD
+                  </button>
+                  <button className="btn sm success" onClick={() => void handlePushToRun()} disabled={!selectedConversationId || conversationBusy}>
+                    🚀 推送到執行
+                  </button>
+                </div>
+              </div>
+
+              {conversationError ? <p className="error-msg">{conversationError}</p> : null}
+              {exportPaths ? <p className="muted">已匯出：{exportPaths.mdPath}</p> : null}
+
+              <div className="chat-container">
+                <div className="chat-messages">
+                  {messages.map((m) => (
+                    <div key={m.id} className={`chat-bubble ${m.role}`}>
+                      {m.content}
+                      <div className="time">{formatDate(m.created_at)}</div>
+                    </div>
+                  ))}
+                </div>
+                <form className="chat-input" onSubmit={handleSendMessage}>
+                  <textarea value={messageInput} onChange={(e) => setMessageInput(e.target.value)} placeholder="輸入訊息..." />
+                  <button className="btn primary" disabled={conversationBusy || !selectedConversationId}>
+                    送出
+                  </button>
+                </form>
+              </div>
+
+              <div className="form-group mt-8">
+                <label>Push To Run / 輪次 ID</label>
+                <input value={pushRoundId} onChange={(e) => setPushRoundId(e.target.value)} />
+              </div>
+              <div className="form-group">
+                <label>Push To Run / Cases JSON</label>
+                <textarea rows={4} value={pushCasesJson} onChange={(e) => setPushCasesJson(e.target.value)} />
+              </div>
+            </div>
+          </div>
+        </section>
+      ) : null}
+
       {tab === "runs" ? (
         <section className="panel">
-          <div className="toolbar">
-            <input
-              placeholder="roundId 篩選"
-              value={runRoundFilter}
-              onChange={(e) => setRunRoundFilter(e.target.value)}
-            />
-            <input
-              placeholder="status 篩選"
-              value={runStatusFilter}
-              onChange={(e) => setRunStatusFilter(e.target.value)}
-            />
-            <button onClick={() => void loadRuns()} disabled={runBusy}>
-              查詢
-            </button>
-            <button onClick={() => setRunPage((x) => Math.max(1, x - 1))}>上一頁</button>
-            <span>第 {runPage} 頁 / 總筆數 {runTotal}</span>
-            <button onClick={() => setRunPage((x) => x + 1)}>下一頁</button>
+          <div className="card mb-16">
+            <div className="card-header">
+              <h2>測試執行設定</h2>
+              <span className={`badge ${summary?.runStatus || "pending"}`}>{summary?.runStatus || "未選擇 Run"}</span>
+            </div>
+            <div className="form-row">
+              <div className="form-group">
+                <label>Testcase 來源</label>
+                <select defaultValue="conversations">
+                  <option value="conversations">從對話推送</option>
+                  <option value="upload">上傳 xlsx + md</option>
+                </select>
+              </div>
+              <div className="form-group">
+                <label>輪次 ID</label>
+                <input value={runRoundFilter} onChange={(e) => setRunRoundFilter(e.target.value)} placeholder="例如 R_CONV_001" />
+              </div>
+            </div>
+            <div className="flex flex-end mt-8 gap-8">
+              <button className="btn" onClick={() => void loadRuns()} disabled={runBusy}>
+                查詢
+              </button>
+              <button className="btn primary" onClick={() => selectedRunId && void handleRunAction("start", selectedRunId)} disabled={!selectedRunId || runBusy}>
+                ▶ 開始執行
+              </button>
+              <button className="btn danger" onClick={() => selectedRunId && void handleRunAction("cancel", selectedRunId)} disabled={!selectedRunId || runBusy}>
+                取消 Run
+              </button>
+            </div>
+            {runError ? <p className="error-msg">{runError}</p> : null}
           </div>
 
-          {runError ? <p className="error">{runError}</p> : null}
+          <div className="stats">
+            <div className="stat">
+              <div className="val">{totalCases}</div>
+              <div className="lbl">總案例</div>
+            </div>
+            <div className="stat pass">
+              <div className="val">{passCases}</div>
+              <div className="lbl">Pass</div>
+            </div>
+            <div className="stat fail">
+              <div className="val">{failCases}</div>
+              <div className="lbl">Fail</div>
+            </div>
+            <div className="stat blocked">
+              <div className="val">{blockedCases}</div>
+              <div className="lbl">Blocked</div>
+            </div>
+            <div className="stat running">
+              <div className="val">{runningCases}</div>
+              <div className="lbl">執行中</div>
+            </div>
+            <div className="stat pending">
+              <div className="val">{pendingCases}</div>
+              <div className="lbl">Pending</div>
+            </div>
+          </div>
 
-          <div className="grid two">
+          <div className="progress-bar">
+            <div className="seg pass" style={{ width: `${passPct}%` }} />
+            <div className="seg fail" style={{ width: `${failPct}%` }} />
+            <div className="seg blocked" style={{ width: `${blockedPct}%` }} />
+            <div className="seg pending" style={{ width: `${pendingPct}%` }} />
+          </div>
+
+          <div className="grid-equal">
             <div className="card">
-              <h2>Run History</h2>
-              <div className="list">
+              <div className="card-header">
+                <h2>⚠️ 等待人工處理</h2>
+                <span className="badge waiting">{pendingApprovals.length} PENDING</span>
+              </div>
+              <div className="form-group">
+                <label>Resolved By</label>
+                <input value={resolvedBy} onChange={(e) => setResolvedBy(e.target.value)} />
+              </div>
+              {pendingApprovals.length === 0 ? <p className="muted">目前沒有待處理 approval</p> : null}
+              {pendingApprovals.map((a) => (
+                <div key={a.id} className="approval-card">
+                  <div className="reason">{a.reason}</div>
+                  <div className="meta">
+                    Case {a.case_no} · Step {a.step_no} · 暫停時間 {formatDate(a.created_at)}
+                  </div>
+                  {a.snapshot_path ? <div className="screenshot">截圖：{a.snapshot_path}</div> : null}
+                  <div className="approval-actions">
+                    <button className="btn success sm" onClick={() => void handleResolveApproval(a, "continue")}>
+                      ✓ 已處理，繼續執行
+                    </button>
+                    <button className="btn sm" onClick={() => void handleResolveApproval(a, "skip")}>
+                      跳過此 Case
+                    </button>
+                    <button className="btn danger sm" onClick={() => selectedRunId && void handleRunAction("cancel", selectedRunId)}>
+                      取消整個 Run
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="card">
+              <div className="card-header">
+                <h2>測試案例</h2>
+                <span className="count">{runCases.length}</span>
+              </div>
+              <div className="scroll-y" style={{ maxHeight: 340 }}>
+                <table className="case-table">
+                  <thead>
+                    <tr>
+                      <th>編號</th>
+                      <th>測試項目</th>
+                      <th>類型</th>
+                      <th>結果</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {runCases.map((c) => (
+                      <tr key={c.id}>
+                        <td className="case-no">{c.case_no}</td>
+                        <td>{c.case_title}</td>
+                        <td className="exec-type">{c.execution_type}</td>
+                        <td>
+                          <span className={`badge ${c.result_status}`}>{c.result_status}</span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </section>
+      ) : null}
+
+      {tab === "history" ? (
+        <section className="panel">
+          <div className="card mb-16">
+            <div style={{ display: "flex", gap: 12, alignItems: "flex-end", flexWrap: "wrap" }}>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label>輪次 ID</label>
+                <input value={runRoundFilter} onChange={(e) => setRunRoundFilter(e.target.value)} />
+              </div>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label>狀態</label>
+                <select value={runStatusFilter} onChange={(e) => setRunStatusFilter(e.target.value)}>
+                  <option value="">全部</option>
+                  <option value="SUCCEEDED">SUCCEEDED</option>
+                  <option value="FAILED">FAILED</option>
+                  <option value="RUNNING">RUNNING</option>
+                  <option value="WAITING_APPROVAL">WAITING_APPROVAL</option>
+                  <option value="READY">READY</option>
+                </select>
+              </div>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label>分頁</label>
+                <div className="flex gap-8">
+                  <button className="btn" onClick={() => setRunPage((x) => Math.max(1, x - 1))}>
+                    上一頁
+                  </button>
+                  <button className="btn" onClick={() => setRunPage((x) => x + 1)}>
+                    下一頁
+                  </button>
+                </div>
+              </div>
+              <button className="btn primary" onClick={() => void loadRuns()} disabled={runBusy}>
+                查詢
+              </button>
+              <span className="muted">第 {runPage} 頁 / 共 {runTotal} 筆</span>
+            </div>
+          </div>
+
+          {runError ? <p className="error-msg">{runError}</p> : null}
+
+          <div className="grid-sidebar">
+            <div className="card">
+              <div className="card-header">
+                <h2>執行歷史</h2>
+                <span className="count">{runTotal} 筆</span>
+              </div>
+              <div className="run-list">
                 {history.map((item) => (
                   <button
                     key={item.id}
-                    className={`list-item ${selectedRunId === item.id ? "selected" : ""}`}
+                    className={`run-item ${selectedRunId === item.id ? "selected" : ""}`}
                     onClick={() => setSelectedRunId(item.id)}
                   >
-                    <div>{item.round_id} / {item.run_name}</div>
-                    <div className="muted">{item.status}</div>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="card">
-              <h2>Run Detail</h2>
-              {selectedRunId ? (
-                <>
-                  <div className="inline-actions">
-                    <button onClick={() => void handleRunAction("start", selectedRunId)}>Start</button>
-                    <button onClick={() => void handleRunAction("cancel", selectedRunId)}>Cancel</button>
-                    <button onClick={() => void loadRunDetail(selectedRunId)}>Refresh Detail</button>
-                  </div>
-                  <pre>{JSON.stringify(summary, null, 2)}</pre>
-                </>
-              ) : (
-                <p className="muted">請先選擇 run</p>
-              )}
-            </div>
-          </div>
-
-          <div className="grid two">
-            <div className="card">
-              <h2>Approvals</h2>
-              <label className="inline">
-                resolvedBy
-                <input value={resolvedBy} onChange={(e) => setResolvedBy(e.target.value)} />
-              </label>
-              <div className="list">
-                {approvals.map((a) => (
-                  <div key={a.id} className="approval">
-                    <div>
-                      {a.case_no} / step {a.step_no} / {a.status}
+                    <div className="run-info">
+                      <div className="run-id">{item.round_id}</div>
+                      <div className="run-name">{item.run_name}</div>
                     </div>
-                    <div className="muted">{a.reason}</div>
-                    {a.status === "PENDING" ? (
-                      <div className="inline-actions">
-                        <button onClick={() => void handleResolveApproval(a, "continue")}>Continue</button>
-                        <button onClick={() => void handleResolveApproval(a, "skip")}>Skip</button>
-                      </div>
-                    ) : null}
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div className="card">
-              <h2>Cases / Steps / Logs</h2>
-              <details>
-                <summary>Cases ({runCases.length})</summary>
-                <pre>{JSON.stringify(runCases, null, 2)}</pre>
-              </details>
-              <details>
-                <summary>Steps ({runSteps.length})</summary>
-                <pre>{JSON.stringify(runSteps, null, 2)}</pre>
-              </details>
-              <details>
-                <summary>Logs ({runLogs.length})</summary>
-                <pre>{JSON.stringify(runLogs, null, 2)}</pre>
-              </details>
-            </div>
-          </div>
-        </section>
-      ) : (
-        <section className="panel">
-          <div className="grid two">
-            <div className="card">
-              <h2>Create Conversation</h2>
-              <form onSubmit={handleCreateConversation} className="form">
-                <input
-                  value={newConversationTitle}
-                  onChange={(e) => setNewConversationTitle(e.target.value)}
-                  placeholder="title"
-                />
-                <input
-                  value={newConversationFeature}
-                  onChange={(e) => setNewConversationFeature(e.target.value)}
-                  placeholder="featureName"
-                />
-                <button disabled={conversationBusy}>Create</button>
-              </form>
-
-              <h3>Conversation List</h3>
-              <div className="list">
-                {conversations.map((c) => (
-                  <button
-                    key={c.id}
-                    className={`list-item ${selectedConversationId === c.id ? "selected" : ""}`}
-                    onClick={() => setSelectedConversationId(c.id)}
-                  >
-                    <div>{c.title}</div>
-                    <div className="muted">{c.feature_name || "-"}</div>
+                    <span className={`badge ${item.status}`}>{item.status}</span>
                   </button>
                 ))}
               </div>
             </div>
 
-            <div className="card">
-              <h2>Messages</h2>
-              {conversationError ? <p className="error">{conversationError}</p> : null}
-              <form onSubmit={handleSendMessage} className="form">
-                <textarea
-                  value={messageInput}
-                  onChange={(e) => setMessageInput(e.target.value)}
-                  rows={5}
-                  placeholder="輸入訊息給 Claude"
-                />
-                <button disabled={conversationBusy || !selectedConversationId}>Send</button>
-              </form>
-              <div className="inline-actions">
-                <button onClick={() => void handleExport()} disabled={!selectedConversationId || conversationBusy}>
-                  Export JSON + MD
-                </button>
+            <div>
+              <div className="card mb-16">
+                <div className="card-header">
+                  <h2>Run 摘要</h2>
+                  <div className="actions">
+                    <button className="btn sm">📄 下載 MD</button>
+                    <button className="btn sm">📊 下載 XLSX</button>
+                  </div>
+                </div>
+                <div className="run-meta">
+                  <span>Run ID: {summary?.runId || "-"}</span>
+                  <span>狀態: <span className={`badge ${summary?.runStatus || ""}`}>{summary?.runStatus || "-"}</span></span>
+                  <span>Pending approvals: {summary?.pendingApprovals ?? 0}</span>
+                </div>
+                <div className="stats mt-8">
+                  <div className="stat pass">
+                    <div className="val">{passCases}</div>
+                    <div className="lbl">Pass</div>
+                  </div>
+                  <div className="stat fail">
+                    <div className="val">{failCases}</div>
+                    <div className="lbl">Fail</div>
+                  </div>
+                  <div className="stat blocked">
+                    <div className="val">{blockedCases}</div>
+                    <div className="lbl">Blocked</div>
+                  </div>
+                  <div className="stat pending">
+                    <div className="val">{pendingCases}</div>
+                    <div className="lbl">Pending</div>
+                  </div>
+                </div>
               </div>
-              {exportPaths ? (
-                <pre>{JSON.stringify(exportPaths, null, 2)}</pre>
-              ) : null}
-              <div className="messages">
-                {messages.map((m) => (
-                  <article key={m.id} className={`msg ${m.role}`}>
-                    <header>{m.role.toUpperCase()} / {m.created_at}</header>
-                    <div>{m.content}</div>
-                  </article>
-                ))}
-              </div>
-            </div>
-          </div>
 
-          <div className="card">
-            <h2>Push To Run</h2>
-            <div className="form">
-              <input value={pushRoundId} onChange={(e) => setPushRoundId(e.target.value)} placeholder="roundId" />
-              <textarea
-                value={pushCasesJson}
-                onChange={(e) => setPushCasesJson(e.target.value)}
-                rows={5}
-                placeholder='[{"caseNo":"B-08","caseTitle":"...","executionType":"semi"}]'
-              />
-              <button onClick={() => void handlePushToRun()} disabled={!selectedConversationId || conversationBusy}>
-                Push to Run
-              </button>
+              <div className="card mb-16">
+                <div className="card-header">
+                  <h2>案例結果</h2>
+                  <span className="count">{runCases.length}</span>
+                </div>
+                <div className="scroll-y" style={{ maxHeight: 280 }}>
+                  <table className="case-table">
+                    <thead>
+                      <tr>
+                        <th>編號</th>
+                        <th>測試項目</th>
+                        <th>類型</th>
+                        <th>結果</th>
+                        <th>失敗分類</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {runCases.map((c) => (
+                        <tr key={c.id}>
+                          <td className="case-no">{c.case_no}</td>
+                          <td>{c.case_title}</td>
+                          <td className="exec-type">{c.execution_type}</td>
+                          <td>
+                            <span className={`badge ${c.result_status}`}>{c.result_status}</span>
+                          </td>
+                          <td>{c.fail_category || "-"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div className="card">
+                <div className="card-header">
+                  <h2>執行 Log</h2>
+                  <span className="count">最近 {runLogs.length} 筆</span>
+                </div>
+                <div className="scroll-y" style={{ maxHeight: 220 }}>
+                  {runLogs.map((log) => (
+                    <div className="log-entry" key={log.id}>
+                      <span className="log-time">{new Date(log.created_at).toLocaleTimeString("zh-TW", { hour12: false })}</span>
+                      <span className={`log-level ${log.level}`}>{log.level}</span>
+                      <span className="log-msg">{log.message}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
             </div>
           </div>
         </section>
-      )}
+      ) : null}
     </main>
   );
 }
