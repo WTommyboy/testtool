@@ -15,6 +15,7 @@ type CaseRow = {
   id: string;
   run_id: string;
   case_no: string;
+  case_title?: string;
   execution_type: string;
   result_status: string;
 };
@@ -43,6 +44,17 @@ type ActiveRun = {
   page?: Page;
 };
 
+type DetailCollector = Record<string, string | number | boolean | string[] | null>;
+
+class CaseExecutionError extends Error {
+  detailJson?: DetailCollector;
+  constructor(message: string, detailJson?: DetailCollector) {
+    super(message);
+    this.name = "CaseExecutionError";
+    this.detailJson = detailJson;
+  }
+}
+
 const activeRuns = new Map<string, ActiveRun>();
 
 const nowIso = (): string => new Date().toISOString();
@@ -67,6 +79,70 @@ const setRunStatus = (runId: string, status: string): void => {
   db.prepare("UPDATE runs SET status = ?, updated_at = ? WHERE id = ?").run(status, nowIso(), runId);
 };
 
+const normalizeDetailValue = (value: unknown): string | number | boolean | string[] | null => {
+  if (value === null || value === undefined) return null;
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") return value;
+  if (Array.isArray(value)) return value.map((x) => (typeof x === "string" ? x : JSON.stringify(x)));
+  return JSON.stringify(value);
+};
+
+const ensureCoreDetail = (
+  runId: string,
+  caseNo: string,
+  resultStatus: string,
+  detailJson?: unknown
+): DetailCollector => {
+  const row = db
+    .prepare(
+      `
+        SELECT rc.case_title, r.dev_url
+        FROM run_cases rc
+        JOIN runs r ON r.id = rc.run_id
+        WHERE rc.run_id = ? AND rc.case_no = ?
+        LIMIT 1
+      `
+    )
+    .get(runId, caseNo) as { case_title?: string; dev_url?: string } | undefined;
+
+  const base: DetailCollector = {};
+  if (detailJson && typeof detailJson === "object" && !Array.isArray(detailJson)) {
+    for (const [k, v] of Object.entries(detailJson as Record<string, unknown>)) {
+      base[k] = normalizeDetailValue(v);
+    }
+  } else if (typeof detailJson === "string") {
+    base.原始訊息 = detailJson;
+  }
+
+  const purpose = typeof base.測試目的 === "string" && base.測試目的.trim() ? base.測試目的 : row?.case_title || `執行 ${caseNo}`;
+  const condition =
+    typeof base.設定條件 === "string" && base.設定條件.trim()
+      ? base.設定條件
+      : `入口=${row?.dev_url || "N/A"}`;
+  const expected =
+    typeof base.預期行為 === "string" && base.預期行為.trim() ? base.預期行為 : "案例應依測試設計完成";
+  const actual =
+    typeof base.實際行為 === "string" && base.實際行為.trim()
+      ? base.實際行為
+      : resultStatus === "PASS"
+        ? "案例執行完成"
+        : "案例執行失敗或中斷";
+
+  base.測試目的 = String(purpose);
+  base.設定條件 = String(condition);
+  base.預期行為 = String(expected);
+  base.實際行為 = String(actual);
+
+  if ((resultStatus === "FAIL" || resultStatus === "BLOCKED") && !base.錯誤原因) {
+    if (typeof base.reason === "string" && base.reason.trim()) {
+      base.錯誤原因 = base.reason;
+    } else {
+      base.錯誤原因 = "未知錯誤";
+    }
+  }
+
+  return base;
+};
+
 const setCaseResult = (
   runId: string,
   caseNo: string,
@@ -74,13 +150,14 @@ const setCaseResult = (
   failCategory: string | null,
   detailJson?: unknown
 ): void => {
+  const normalizedDetail = ensureCoreDetail(runId, caseNo, resultStatus, detailJson);
   db.prepare(
     `
       UPDATE run_cases
       SET result_status = ?, fail_category = ?, detail_json = ?, updated_at = ?
       WHERE run_id = ? AND case_no = ?
     `
-  ).run(resultStatus, failCategory, detailJson ? JSON.stringify(detailJson) : null, nowIso(), runId, caseNo);
+  ).run(resultStatus, failCategory, JSON.stringify(normalizedDetail), nowIso(), runId, caseNo);
 };
 
 const setStepResult = (
@@ -254,15 +331,66 @@ const processCase = async (run: RunRow, item: CaseRow, state: ActiveRun, artifac
     )
     .all(run.id, item.case_no) as StepRow[];
 
+  const detail: DetailCollector = {
+    測試目的: item.case_title || `執行 ${item.case_no}`,
+    設定條件: `入口=${run.dev_url}`,
+    預期行為: "所有步驟應通過且符合預期",
+    實際行為: "開始執行"
+  };
+  const actionLogs: string[] = [];
+  const requestDates: Array<{ start?: string; end?: string }> = [];
+
+  const reqHandler = (req: import("playwright").Request): void => {
+    if (req.method() !== "POST") return;
+    const url = req.url();
+    if (!/(preview|query|report)/i.test(url)) return;
+    try {
+      const payload = JSON.parse(req.postData() || "{}") as Record<string, unknown>;
+      const dr = payload.dateRange as { start?: string; end?: string } | undefined;
+      if (dr) {
+        requestDates.push({ start: dr.start, end: dr.end });
+        if (dr.start) detail["requestBody.dateRange.start"] = dr.start;
+        if (dr.end) detail["requestBody.dateRange.end"] = dr.end;
+      }
+    } catch {
+      // ignore malformed body
+    }
+  };
+
+  const respHandler = async (resp: import("playwright").Response): Promise<void> => {
+    const url = resp.url();
+    if (!/(preview|query|report)/i.test(url)) return;
+    detail.responseStatus = resp.status();
+    try {
+      const body = (await resp.json()) as Record<string, unknown>;
+      const rows =
+        (Array.isArray(body.data) ? body.data.length : undefined) ??
+        (typeof body.total === "number" ? body.total : undefined) ??
+        (typeof body.rowCount === "number" ? body.rowCount : undefined);
+      if (rows !== undefined) {
+        detail.responseRowCount = rows;
+        detail.筆數 = rows;
+      }
+    } catch {
+      // ignore non-json response
+    }
+  };
+  page.on("request", reqHandler);
+  page.on("response", respHandler);
+
   if (steps.length === 0) {
     await state.page.goto(run.dev_url, { waitUntil: "domcontentloaded", timeout: config.playwrightTimeoutMs });
     const shotPath = path.join(artifactsDir, `${item.case_no}.png`);
     await state.page.screenshot({ path: shotPath, fullPage: true });
+    detail.實際行為 = "完成 smoke navigation 並截圖";
+    detail.截圖 = shotPath;
     setCaseResult(run.id, item.case_no, "PASS", null, {
+      ...detail,
       mode: "smoke-navigation",
-      url: run.dev_url,
-      screenshot: shotPath
+      url: run.dev_url
     });
+    page.off("request", reqHandler);
+    page.off("response", respHandler);
     return;
   }
 
@@ -284,11 +412,17 @@ const processCase = async (run: RunRow, item: CaseRow, state: ActiveRun, artifac
           "UPDATE run_case_steps SET status = 'WAITING_APPROVAL', actual_json = ?, updated_at = ? WHERE run_id = ? AND case_no = ? AND step_no = ?"
         ).run(JSON.stringify({ reason: "require_approval=true", screenshot: shotPath }), nowIso(), run.id, item.case_no, step.step_no);
         createApproval(run.id, item.case_no, step.step_no, "MANUAL_CHECK", shotPath);
+        detail.實際行為 = `步驟 ${step.step_no} 需要人工確認`;
+        detail.錯誤原因 = "require_approval=true";
+        detail.截圖 = shotPath;
         setCaseResult(run.id, item.case_no, "BLOCKED", "ENV_BLOCKED", {
+          ...detail,
           reason: "manual approval required",
           stepNo: step.step_no
         });
-        throw new Error(`MANUAL_CHECK_REQUIRED@${step.step_no}`);
+        page.off("request", reqHandler);
+        page.off("response", respHandler);
+        throw new CaseExecutionError(`MANUAL_CHECK_REQUIRED@${step.step_no}`, detail);
       }
 
       const tryCount = Math.max(0, step.retry) + 1;
@@ -430,6 +564,27 @@ const processCase = async (run: RunRow, item: CaseRow, state: ActiveRun, artifac
             exec(),
             new Promise((_, reject) => setTimeout(() => reject(new Error(`STEP_TIMEOUT_${timeoutMs}ms`)), timeoutMs))
           ]);
+          actionLogs.push(`step${step.step_no}:${action}:PASS`);
+          if (action === "asserttext" && typeof step.expected === "string") {
+            detail.預期行為 = `文字包含「${step.expected}」`;
+          }
+          if (action === "assertdata") {
+            const data = result as { rowCount?: number };
+            if (typeof data.rowCount === "number") {
+              detail.筆數 = data.rowCount;
+              detail.實際行為 = `資料筆數 ${data.rowCount}`;
+            }
+          }
+          if (action === "comparecsv") {
+            const data = result as { compared?: number; mismatches?: number };
+            detail.比對方式 = "預覽數據 vs CSV 逐筆比對";
+            detail.比對結果 = `${data.compared ?? 0} 筆比對`;
+            detail.差異筆數 = data.mismatches ?? 0;
+          }
+          if (action === "screenshot") {
+            const data = result as { screenshot?: string };
+            if (data.screenshot) detail.截圖 = data.screenshot;
+          }
           setStepResult(run.id, item.case_no, step.step_no, "PASS", {
             attempt,
             result
@@ -438,6 +593,7 @@ const processCase = async (run: RunRow, item: CaseRow, state: ActiveRun, artifac
           break;
         } catch (error) {
           lastError = error instanceof Error ? error.message : String(error);
+          actionLogs.push(`step${step.step_no}:${action}:FAIL(${lastError})`);
           insertRunLog(run.id, "WARN", "Step attempt failed", {
             caseNo: item.case_no,
             stepNo: step.step_no,
@@ -449,8 +605,20 @@ const processCase = async (run: RunRow, item: CaseRow, state: ActiveRun, artifac
       }
 
       if (!passed) {
+        let failShotPath = "";
+        try {
+          failShotPath = path.join(artifactsDir, `${item.case_no}_step${step.step_no}_fail.png`);
+          await page.screenshot({ path: failShotPath, fullPage: true });
+        } catch {
+          // ignore screenshot failure
+        }
+        detail.實際行為 = `步驟 ${step.step_no} 失敗`;
+        detail.錯誤原因 = lastError || `STEP_FAILED@${step.step_no}`;
+        if (failShotPath) detail.截圖 = failShotPath;
         setStepResult(run.id, item.case_no, step.step_no, "FAIL", undefined, lastError);
-        throw new Error(lastError || `STEP_FAILED@${step.step_no}`);
+        page.off("request", reqHandler);
+        page.off("response", respHandler);
+        throw new CaseExecutionError(lastError || `STEP_FAILED@${step.step_no}`, detail);
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -461,7 +629,19 @@ const processCase = async (run: RunRow, item: CaseRow, state: ActiveRun, artifac
     }
   }
 
+  if (requestDates.length > 0) {
+    const last = requestDates[requestDates.length - 1];
+    const dateRangeText = `${last.start ?? "-"} ~ ${last.end ?? "-"}`;
+    detail.日期範圍 = dateRangeText;
+  }
+  if (actionLogs.length > 0) {
+    detail.實際行為 = `步驟通過 ${actionLogs.length} 項`;
+    detail.步驟摘要 = actionLogs.slice(0, 20);
+  }
+  page.off("request", reqHandler);
+  page.off("response", respHandler);
   setCaseResult(run.id, item.case_no, "PASS", null, {
+    ...detail,
     mode: "step-execution",
     steps: steps.length
   });
@@ -482,7 +662,15 @@ const blockPendingAutoCases = (runId: string, failCategory: string, reason: stri
     `
   ).run(
     failCategory,
-    JSON.stringify({ reason, mode: "runner-fallback", timestamp: now }),
+    JSON.stringify({
+      測試目的: "Runner 進程中斷後保護性封鎖",
+      設定條件: `runId=${runId}`,
+      預期行為: "未執行案例應標記為 BLOCKED",
+      實際行為: `Runner fallback: ${reason}`,
+      錯誤原因: reason,
+      mode: "runner-fallback",
+      timestamp: now
+    }),
     now,
     runId
   );
@@ -498,7 +686,7 @@ const runJob = async (runId: string): Promise<void> => {
 
   const cases = db
     .prepare(
-      "SELECT id, run_id, case_no, execution_type, result_status FROM run_cases WHERE run_id = ? AND result_status IN ('PENDING','BLOCKED','FAIL','MANUAL_PENDING') ORDER BY created_at ASC"
+      "SELECT id, run_id, case_no, case_title, execution_type, result_status FROM run_cases WHERE run_id = ? AND result_status IN ('PENDING','BLOCKED','FAIL','MANUAL_PENDING') ORDER BY created_at ASC"
     )
     .all(runId) as CaseRow[];
   if (cases.length === 0) {
@@ -547,7 +735,14 @@ const runJob = async (runId: string): Promise<void> => {
         if (category === "BROWSER_CRASH") crashCount += 1;
 
         if (!message.startsWith("MANUAL_CHECK_REQUIRED@")) {
+          const detailFromError = error instanceof CaseExecutionError ? error.detailJson : undefined;
           setCaseResult(runId, item.case_no, "BLOCKED", category, {
+            測試目的: item.case_title || `執行 ${item.case_no}`,
+            設定條件: `入口=${run.dev_url}`,
+            預期行為: "案例應可執行完成",
+            實際行為: "案例中斷或失敗",
+            錯誤原因: message,
+            ...(detailFromError ?? {}),
             reason: message,
             mode: "step-or-smoke"
           });

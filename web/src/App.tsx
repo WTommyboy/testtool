@@ -48,9 +48,20 @@ type RunCase = {
   id: string;
   case_no: string;
   case_title: string;
+  group_name?: string | null;
   execution_type: string;
   result_status: string;
+  detail_json?: string | null;
   fail_category?: string | null;
+};
+
+type BugItem = {
+  id: string;
+  round_id: string;
+  severity: string;
+  related_case_no: string;
+  description: string;
+  suggestion: string;
 };
 
 type Approval = {
@@ -83,9 +94,14 @@ const formatDate = (v?: string): string => {
 };
 
 const numberOf = (obj: Record<string, number> | undefined, key: string): number => obj?.[key] ?? 0;
+const getCaseGroupName = (c: RunCase): string => {
+  if (c.group_name && c.group_name.trim()) return c.group_name.trim();
+  const m = c.case_no.match(/^[A-Za-z]+/);
+  return m ? m[0].toUpperCase() : "未分組";
+};
 
 function App() {
-  const [tab, setTab] = useState<"conversations" | "runs" | "history">("history");
+  const [tab, setTab] = useState<"conversations" | "execution" | "history">("history");
 
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [selectedConversationId, setSelectedConversationId] = useState<string>("");
@@ -96,20 +112,32 @@ function App() {
   const [conversationBusy, setConversationBusy] = useState(false);
   const [conversationError, setConversationError] = useState("");
   const [exportPaths, setExportPaths] = useState<{ jsonPath: string; mdPath: string } | null>(null);
-  const [pushRoundId, setPushRoundId] = useState("R_CONV_001");
-  const [pushCasesJson, setPushCasesJson] = useState(
-    '[{"caseNo":"B-08","caseTitle":"半動態區間","executionType":"semi"}]'
-  );
+  const pushRoundId = "R_CONV_001";
+  const pushCasesJson = '[{"caseNo":"B-08","caseTitle":"半動態區間","executionType":"semi"}]';
 
   const [history, setHistory] = useState<RunItem[]>([]);
   const [selectedRunId, setSelectedRunId] = useState<string>("");
   const [runStatusFilter, setRunStatusFilter] = useState("");
   const [runRoundFilter, setRunRoundFilter] = useState("");
+  const [sourceMode, setSourceMode] = useState<"upload" | "conversation">("upload");
+  const [uploadXlsx, setUploadXlsx] = useState<File | null>(null);
+  const [uploadMd, setUploadMd] = useState<File | null>(null);
+  const [uploadCsv, setUploadCsv] = useState<File | null>(null);
+  const [runRoundId, setRunRoundId] = useState("");
+  const [runLocation, setRunLocation] = useState("數據中心");
+  const [runFeatureMain, setRunFeatureMain] = useState("BI工具");
+  const [runFeatureSub, setRunFeatureSub] = useState("");
+  const [runName, setRunName] = useState("Round 1");
+  const [runDevUrl, setRunDevUrl] = useState("https://galaxy.games.gamania.com/biapi-dev/testview/home?gameID=541");
   const [runPage, setRunPage] = useState(1);
   const [runTotal, setRunTotal] = useState(0);
   const [summary, setSummary] = useState<Summary | null>(null);
   const [runLogs, setRunLogs] = useState<RunLog[]>([]);
   const [runCases, setRunCases] = useState<RunCase[]>([]);
+  const [runBugs, setRunBugs] = useState<BugItem[]>([]);
+  const [caseGroupFilter, setCaseGroupFilter] = useState("ALL");
+  const [caseStatusFilter, setCaseStatusFilter] = useState("ALL");
+  const [expandedCaseId, setExpandedCaseId] = useState<string | null>(null);
   const [approvals, setApprovals] = useState<Approval[]>([]);
   const [runBusy, setRunBusy] = useState(false);
   const [runError, setRunError] = useState("");
@@ -129,6 +157,176 @@ function App() {
   const failPct = totalCases > 0 ? (failCases / totalCases) * 100 : 0;
   const blockedPct = totalCases > 0 ? (blockedCases / totalCases) * 100 : 0;
   const pendingPct = totalCases > 0 ? (pendingCases / totalCases) * 100 : 0;
+
+  const getCaseGroups = (): string[] => [...new Set(runCases.map((c) => getCaseGroupName(c)))];
+  const getStatusCounts = (): Record<string, number> => {
+    const counts: Record<string, number> = {};
+    for (const c of runCases) {
+      const status = c.result_status || "PENDING";
+      counts[status] = (counts[status] ?? 0) + 1;
+    }
+    return counts;
+  };
+  const getGroupStats = (groupName: string): Record<string, number> => {
+    const items = runCases.filter((c) => getCaseGroupName(c) === groupName);
+    const stats: Record<string, number> = { total: items.length };
+    for (const c of items) {
+      const status = c.result_status || "PENDING";
+      stats[status] = (stats[status] ?? 0) + 1;
+    }
+    return stats;
+  };
+  const getFilteredRunCases = (): RunCase[] => {
+    let items = runCases;
+    if (caseGroupFilter !== "ALL") {
+      items = items.filter((c) => getCaseGroupName(c) === caseGroupFilter);
+    }
+    if (caseStatusFilter !== "ALL") {
+      items = items.filter((c) => c.result_status === caseStatusFilter);
+    }
+    return [...items].sort((a, b) => {
+      const ga = getCaseGroupName(a);
+      const gb = getCaseGroupName(b);
+      if (ga !== gb) return ga.localeCompare(gb, "zh-Hant");
+      return a.case_no.localeCompare(b.case_no, "en");
+    });
+  };
+
+  const renderCaseResultsCard = (maxHeight: number) => {
+    const filtered = getFilteredRunCases();
+    const statusCounts = getStatusCounts();
+    let lastGroup = "";
+
+    return (
+      <div className="card mb-16">
+        <div className="card-header">
+          <h2>案例結果</h2>
+          <span className="count">{runCases.length}</span>
+        </div>
+
+        {runCases.length > 0 ? (
+          <div className="case-filters">
+            <button className={`filter-pill ${caseGroupFilter === "ALL" ? "active" : ""}`} onClick={() => setCaseGroupFilter("ALL")}>
+              全部 <span className="filter-count">{runCases.length}</span>
+            </button>
+            {getCaseGroups().map((g) => {
+              const label = g.split("：")[0] || g;
+              const count = runCases.filter((c) => getCaseGroupName(c) === g).length;
+              return (
+                <button key={g} className={`filter-pill ${caseGroupFilter === g ? "active" : ""}`} onClick={() => setCaseGroupFilter(g)}>
+                  {label} <span className="filter-count">{count}</span>
+                </button>
+              );
+            })}
+            <div className="filter-sep" />
+            <button className={`filter-pill ${caseStatusFilter === "ALL" ? "active" : ""}`} onClick={() => setCaseStatusFilter("ALL")}>
+              所有狀態
+            </button>
+            {Object.entries(statusCounts).map(([status, count]) => (
+              <button
+                key={status}
+                className={`filter-pill ${caseStatusFilter === status ? `active-${status.toLowerCase()}` : ""}`}
+                onClick={() => setCaseStatusFilter(status)}
+              >
+                {status} <span className="filter-count">{count}</span>
+              </button>
+            ))}
+          </div>
+        ) : null}
+
+        <div className="scroll-y" style={{ maxHeight }}>
+          {filtered.length === 0 ? (
+            <p className="muted" style={{ padding: 24, textAlign: "center" }}>無符合條件的測試案例</p>
+          ) : (
+            filtered.map((c) => {
+              const groupName = getCaseGroupName(c);
+              const showGroupHeader = groupName !== lastGroup;
+              if (showGroupHeader) lastGroup = groupName;
+              const gs = showGroupHeader ? getGroupStats(groupName) : null;
+              const isOpen = expandedCaseId === c.id;
+              let detailRows: Array<[string, string]> = [];
+              if (isOpen && c.detail_json) {
+                try {
+                  const obj = JSON.parse(c.detail_json) as Record<string, unknown>;
+                  detailRows = Object.entries(obj).map(([k, v]) => [k, typeof v === "object" ? JSON.stringify(v) : String(v ?? "")]);
+                } catch {
+                  detailRows = [];
+                }
+              }
+
+              return (
+                <div key={c.id}>
+                  {showGroupHeader ? (
+                    <div className="group-header">
+                      <span className="group-name">{groupName}</span>
+                      <span className="group-stats">
+                        {gs?.PASS ? <span className="gs-pass">{gs.PASS} Pass</span> : null}
+                        {gs?.FAIL ? <span className="gs-fail">{gs.FAIL} Fail</span> : null}
+                        {gs?.BLOCKED ? <span className="gs-blocked">{gs.BLOCKED} Blocked</span> : null}
+                      </span>
+                    </div>
+                  ) : null}
+
+                  <div className={`case-row ${isOpen ? "open" : ""}`} onClick={() => setExpandedCaseId(isOpen ? null : c.id)}>
+                    <span className="case-expand">{isOpen ? "▼" : "▶"}</span>
+                    <span className="case-no">{c.case_no}</span>
+                    <span className="case-title">{c.case_title}</span>
+                    <span className="exec-type">{c.execution_type}</span>
+                    <span className={`badge ${c.result_status}`}>{c.result_status || "—"}</span>
+                    <span className="fail-cat">{c.fail_category || "—"}</span>
+                  </div>
+
+                  {isOpen ? (
+                    <div className="case-detail">
+                      <table className="detail-table">
+                        <tbody>
+                          {detailRows.length > 0 ? (
+                            detailRows.map(([k, v], i) => (
+                              <tr key={`${c.id}-${i}`}>
+                                <td className="dt-key">{k}</td>
+                                <td className="dt-val">{v}</td>
+                              </tr>
+                            ))
+                          ) : (
+                            <tr>
+                              <td className="dt-key">狀態</td>
+                              <td className="dt-val muted">尚未有詳細紀錄</td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : null}
+                </div>
+              );
+            })
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  const renderBugCard = () => (
+    <div className="card">
+      <div className="card-header">
+        <h2>🐛 已發現 Bug（{runBugs.length}）</h2>
+      </div>
+      {runBugs.length > 0 ? (
+        runBugs.map((b) => (
+          <div key={b.id} className="bug-card">
+            <div className="bug-header">
+              <span className={`sev-badge ${b.severity.toLowerCase()}`}>{b.severity}</span>
+              <span className="bug-id">{b.related_case_no}</span>
+            </div>
+            <div className="bug-desc">{b.description}</div>
+            <div className="bug-suggestion">💡 {b.suggestion}</div>
+          </div>
+        ))
+      ) : (
+        <p className="muted">目前沒有已記錄的 Bug</p>
+      )}
+    </div>
+  );
 
   const loadConversations = async () => {
     try {
@@ -188,6 +386,12 @@ function App() {
       setRunLogs(logsData.items);
       setRunCases(casesData.items);
       setApprovals(approvalsData.items);
+      try {
+        const bugsData = await api<{ items: BugItem[] }>(`/api/runs/${runId}/bugs`);
+        setRunBugs(bugsData.items);
+      } catch {
+        setRunBugs([]);
+      }
     } catch (error) {
       setRunError(error instanceof Error ? error.message : String(error));
     }
@@ -291,7 +495,7 @@ function App() {
           cases,
         }),
       });
-      setTab("runs");
+      setTab("execution");
       await loadRuns();
     } catch (error) {
       setConversationError(error instanceof Error ? error.message : String(error));
@@ -307,6 +511,60 @@ function App() {
       await api(`/api/runs/${runId}/${action}`, { method: "POST" });
       await loadRuns();
       await loadRunDetail(runId);
+    } catch (error) {
+      setRunError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setRunBusy(false);
+    }
+  };
+
+  const handleCreateRun = async () => {
+    setRunBusy(true);
+    setRunError("");
+    try {
+      if (!runRoundId.trim()) {
+        setRunError("請填寫輪次 ID");
+        return;
+      }
+      const formData = new FormData();
+      formData.append("sourceMode", sourceMode);
+      formData.append("roundId", runRoundId.trim());
+      formData.append("location", runLocation.trim() || "數據中心");
+      formData.append("featureMain", runFeatureMain.trim() || "BI工具");
+      formData.append("featureSub", runFeatureSub.trim() || "拼貼模式");
+      formData.append("runName", runName.trim() || `Run-${Date.now()}`);
+      formData.append("devUrl", runDevUrl.trim());
+
+      if (sourceMode === "upload") {
+        if (!uploadXlsx || !uploadMd) {
+          setRunError("請上傳 xlsx 和 md 檔案");
+          return;
+        }
+        formData.append("testcaseXlsx", uploadXlsx);
+        formData.append("testcaseMd", uploadMd);
+      } else {
+        if (!selectedConversationId) {
+          setRunError("請先選擇對話");
+          return;
+        }
+        formData.append("conversationId", selectedConversationId);
+      }
+
+      if (uploadCsv) {
+        formData.append("referenceCsv", uploadCsv);
+      }
+
+      const created = await api<{ id: string; status: string }>("/api/runs", {
+        method: "POST",
+        body: formData
+      });
+
+      setUploadXlsx(null);
+      setUploadMd(null);
+      setUploadCsv(null);
+      setSelectedRunId(created.id);
+      await loadRuns();
+      await loadRunDetail(created.id);
     } catch (error) {
       setRunError(error instanceof Error ? error.message : String(error));
     } finally {
@@ -350,7 +608,7 @@ function App() {
           <button className={`tab-btn ${tab === "conversations" ? "active" : ""}`} onClick={() => setTab("conversations")}>
             💬 對話生成
           </button>
-          <button className={`tab-btn ${tab === "runs" ? "active" : ""}`} onClick={() => setTab("runs")}>
+          <button className={`tab-btn ${tab === "execution" ? "active" : ""}`} onClick={() => setTab("execution")}>
             ▶️ 測試執行
           </button>
           <button className={`tab-btn ${tab === "history" ? "active" : ""}`} onClick={() => setTab("history")}>
@@ -442,51 +700,144 @@ function App() {
                 </form>
               </div>
 
-              <div className="form-group mt-8">
-                <label>Push To Run / 輪次 ID</label>
-                <input value={pushRoundId} onChange={(e) => setPushRoundId(e.target.value)} />
-              </div>
-              <div className="form-group">
-                <label>Push To Run / Cases JSON</label>
-                <textarea rows={4} value={pushCasesJson} onChange={(e) => setPushCasesJson(e.target.value)} />
-              </div>
             </div>
           </div>
         </section>
       ) : null}
 
-      {tab === "runs" ? (
+      {tab === "execution" ? (
         <section className="panel">
           <div className="card mb-16">
             <div className="card-header">
               <h2>測試執行設定</h2>
-              <span className={`badge ${summary?.runStatus || "pending"}`}>{summary?.runStatus || "未選擇 Run"}</span>
+              <span className={`badge ${summary?.runStatus || "DRAFT"}`}>{summary?.runStatus || "DRAFT"}</span>
             </div>
+
             <div className="form-row">
               <div className="form-group">
-                <label>Testcase 來源</label>
-                <select defaultValue="conversations">
-                  <option value="conversations">從對話推送</option>
+                <label>TESTCASE 來源</label>
+                <select value={sourceMode} onChange={(e) => setSourceMode(e.target.value as "upload" | "conversation")}>
                   <option value="upload">上傳 xlsx + md</option>
+                  <option value="conversation">從對話推送</option>
                 </select>
               </div>
               <div className="form-group">
                 <label>輪次 ID</label>
-                <input value={runRoundFilter} onChange={(e) => setRunRoundFilter(e.target.value)} placeholder="例如 R_CONV_001" />
+                <input value={runRoundId} onChange={(e) => setRunRoundId(e.target.value)} placeholder="例如 RC-R001" />
               </div>
             </div>
+
+            {sourceMode === "upload" ? (
+              <div className="upload-zone">
+                <div className="form-row">
+                  <div className="form-group">
+                    <label>
+                      Testcase XLSX <span className="required">*</span>
+                    </label>
+                    <div className="file-input-wrap">
+                      <input type="file" accept=".xlsx,.xls" onChange={(e) => setUploadXlsx(e.target.files?.[0] || null)} />
+                      {uploadXlsx ? (
+                        <span className="file-name">
+                          📊 {uploadXlsx.name}
+                          <button type="button" className="file-remove" onClick={() => setUploadXlsx(null)}>
+                            ✕
+                          </button>
+                        </span>
+                      ) : null}
+                    </div>
+                  </div>
+                  <div className="form-group">
+                    <label>
+                      Testcase MD <span className="required">*</span>
+                    </label>
+                    <div className="file-input-wrap">
+                      <input type="file" accept=".md" onChange={(e) => setUploadMd(e.target.files?.[0] || null)} />
+                      {uploadMd ? (
+                        <span className="file-name">
+                          📄 {uploadMd.name}
+                          <button type="button" className="file-remove" onClick={() => setUploadMd(null)}>
+                            ✕
+                          </button>
+                        </span>
+                      ) : null}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="form-group">
+                <label>選擇對話</label>
+                <select value={selectedConversationId} onChange={(e) => setSelectedConversationId(e.target.value)}>
+                  <option value="">請選擇對話...</option>
+                  {conversations.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.title} ({c.feature_name || "-"})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            <div className="form-row">
+              <div className="form-group">
+                <label>位置</label>
+                <input value={runLocation} onChange={(e) => setRunLocation(e.target.value)} />
+              </div>
+              <div className="form-group">
+                <label>功能主項</label>
+                <input value={runFeatureMain} onChange={(e) => setRunFeatureMain(e.target.value)} />
+              </div>
+            </div>
+
+            <div className="form-row">
+              <div className="form-group">
+                <label>功能細項</label>
+                <input
+                  value={runFeatureSub}
+                  onChange={(e) => setRunFeatureSub(e.target.value)}
+                  placeholder="例如 自訂報表 / 明細模式"
+                />
+              </div>
+              <div className="form-group">
+                <label>輪次名稱</label>
+                <input value={runName} onChange={(e) => setRunName(e.target.value)} />
+              </div>
+            </div>
+
+            <div className="form-row">
+              <div className="form-group">
+                <label>Dev URL</label>
+                <input value={runDevUrl} onChange={(e) => setRunDevUrl(e.target.value)} />
+              </div>
+              <div className="form-group">
+                <label>參考數據 CSV（選填）</label>
+                <div className="file-input-wrap">
+                  <input type="file" accept=".csv" onChange={(e) => setUploadCsv(e.target.files?.[0] || null)} />
+                  {uploadCsv ? (
+                    <span className="file-name">
+                      📋 {uploadCsv.name}
+                      <button type="button" className="file-remove" onClick={() => setUploadCsv(null)}>
+                        ✕
+                      </button>
+                    </span>
+                  ) : null}
+                </div>
+              </div>
+            </div>
+
+            {runError ? <p className="error-msg">{runError}</p> : null}
+
             <div className="flex flex-end mt-8 gap-8">
               <button className="btn" onClick={() => void loadRuns()} disabled={runBusy}>
                 查詢
               </button>
-              <button className="btn primary" onClick={() => selectedRunId && void handleRunAction("start", selectedRunId)} disabled={!selectedRunId || runBusy}>
+              <button className="btn primary" onClick={() => void handleCreateRun()} disabled={runBusy}>
                 ▶ 開始執行
               </button>
               <button className="btn danger" onClick={() => selectedRunId && void handleRunAction("cancel", selectedRunId)} disabled={!selectedRunId || runBusy}>
                 取消 Run
               </button>
             </div>
-            {runError ? <p className="error-msg">{runError}</p> : null}
           </div>
 
           <div className="stats">
@@ -556,37 +907,9 @@ function App() {
               ))}
             </div>
 
-            <div className="card">
-              <div className="card-header">
-                <h2>測試案例</h2>
-                <span className="count">{runCases.length}</span>
-              </div>
-              <div className="scroll-y" style={{ maxHeight: 340 }}>
-                <table className="case-table">
-                  <thead>
-                    <tr>
-                      <th>編號</th>
-                      <th>測試項目</th>
-                      <th>類型</th>
-                      <th>結果</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {runCases.map((c) => (
-                      <tr key={c.id}>
-                        <td className="case-no">{c.case_no}</td>
-                        <td>{c.case_title}</td>
-                        <td className="exec-type">{c.execution_type}</td>
-                        <td>
-                          <span className={`badge ${c.result_status}`}>{c.result_status}</span>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
+            {renderCaseResultsCard(340)}
           </div>
+          {renderBugCard()}
         </section>
       ) : null}
 
@@ -686,38 +1009,8 @@ function App() {
                 </div>
               </div>
 
-              <div className="card mb-16">
-                <div className="card-header">
-                  <h2>案例結果</h2>
-                  <span className="count">{runCases.length}</span>
-                </div>
-                <div className="scroll-y" style={{ maxHeight: 280 }}>
-                  <table className="case-table">
-                    <thead>
-                      <tr>
-                        <th>編號</th>
-                        <th>測試項目</th>
-                        <th>類型</th>
-                        <th>結果</th>
-                        <th>失敗分類</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {runCases.map((c) => (
-                        <tr key={c.id}>
-                          <td className="case-no">{c.case_no}</td>
-                          <td>{c.case_title}</td>
-                          <td className="exec-type">{c.execution_type}</td>
-                          <td>
-                            <span className={`badge ${c.result_status}`}>{c.result_status}</span>
-                          </td>
-                          <td>{c.fail_category || "-"}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
+              {renderCaseResultsCard(280)}
+              {renderBugCard()}
 
               <div className="card">
                 <div className="card-header">

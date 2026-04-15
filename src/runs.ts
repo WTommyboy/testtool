@@ -1,9 +1,13 @@
+import fs from "node:fs";
+import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { Router } from "express";
+import multer from "multer";
 import { z } from "zod";
+import { config } from "./config";
 import { db } from "./db";
 import { requestRunCancel, startRun } from "./runner";
-import { parseTestcaseXlsx } from "./xlsx-parser";
+import { parseTestcaseXlsx, type ParsedCase, type ParsedStep } from "./xlsx-parser";
 
 const router = Router();
 
@@ -168,6 +172,71 @@ const prepareUpsertStepStmt = () =>
     `
   );
 
+const uploadRoot = path.resolve(config.storageRoot, "uploads");
+fs.mkdirSync(uploadRoot, { recursive: true });
+
+const upload = multer({
+  storage: multer.diskStorage({
+    destination: (_req, _file, cb) => cb(null, uploadRoot),
+    filename: (_req, file, cb) => {
+      const ext = path.extname(file.originalname);
+      cb(null, `${Date.now()}-${randomUUID()}${ext}`);
+    }
+  })
+});
+
+const upsertImportedTestcase = (
+  runId: string,
+  imported: { cases: ParsedCase[]; steps: ParsedStep[] }
+): { manualCases: number } => {
+  const now = nowIso();
+  let manualCases = 0;
+  const upsertCaseStmt = prepareUpsertCaseStmt();
+  const upsertStepStmt = prepareUpsertStepStmt();
+
+  const tx = db.transaction(() => {
+    for (const item of imported.cases) {
+      const resultStatus = item.executionType === "manual" ? "MANUAL_PENDING" : "PENDING";
+      if (item.executionType === "manual") manualCases += 1;
+      upsertCaseStmt.run({
+        id: randomUUID(),
+        run_id: runId,
+        case_no: item.caseNo,
+        case_title: item.caseTitle,
+        execution_type: item.executionType,
+        result_status: resultStatus,
+        detail_json: item.detailJson ? JSON.stringify(item.detailJson) : null,
+        created_at: now,
+        updated_at: now
+      });
+    }
+
+    for (const step of imported.steps) {
+      upsertStepStmt.run({
+        id: randomUUID(),
+        run_id: runId,
+        case_no: step.caseNo,
+        step_no: step.stepNo,
+        action_type: step.actionType,
+        target_type: step.targetType ?? null,
+        target_value: step.targetValue ?? null,
+        input_value: step.inputValue ?? null,
+        expected: step.expected ?? null,
+        require_approval: step.requireApproval ? 1 : 0,
+        timeout_ms: step.timeoutMs,
+        retry: step.retry,
+        status: "PENDING",
+        created_at: now,
+        updated_at: now
+      });
+    }
+  });
+  tx();
+
+  db.prepare("UPDATE runs SET updated_at = ? WHERE id = ?").run(now, runId);
+  return { manualCases };
+};
+
 router.get("/", (req, res) => {
   const status = typeof req.query.status === "string" ? req.query.status : undefined;
   const roundId = typeof req.query.roundId === "string" ? req.query.roundId : undefined;
@@ -248,47 +317,109 @@ router.get("/history", (req, res) => {
   });
 });
 
-router.post("/", (req, res) => {
-  const parsed = createRunSchema.safeParse(req.body);
-  if (!parsed.success) {
-    return res.status(400).json({
-      error: "INVALID_PAYLOAD",
-      issues: parsed.error.issues
-    });
-  }
+router.post(
+  "/",
+  upload.fields([
+    { name: "testcaseXlsx", maxCount: 1 },
+    { name: "testcaseMd", maxCount: 1 },
+    { name: "referenceCsv", maxCount: 1 }
+  ]),
+  async (req, res) => {
+    const body = req.body as Record<string, string | undefined>;
+    const parsed = createRunSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({
+        error: "INVALID_PAYLOAD",
+        issues: parsed.error.issues
+      });
+    }
 
-  const now = nowIso();
-  const runId = randomUUID();
-  const payload = parsed.data;
+    const now = nowIso();
+    const runId = randomUUID();
+    const payload = parsed.data;
 
-  db.prepare(
-    `
+    db.prepare(
+      `
       INSERT INTO runs (
         id, round_id, location, feature_main, feature_sub, run_name, dev_url, status, created_at, updated_at
       ) VALUES (
         @id, @round_id, @location, @feature_main, @feature_sub, @run_name, @dev_url, @status, @created_at, @updated_at
       )
-    `
-  ).run({
-    id: runId,
-    round_id: payload.roundId,
-    location: payload.location,
-    feature_main: payload.featureMain,
-    feature_sub: payload.featureSub,
-    run_name: payload.runName,
-    dev_url: payload.devUrl,
-    status: "READY",
-    created_at: now,
-    updated_at: now
-  });
+      `
+    ).run({
+      id: runId,
+      round_id: payload.roundId,
+      location: payload.location,
+      feature_main: payload.featureMain,
+      feature_sub: payload.featureSub,
+      run_name: payload.runName,
+      dev_url: payload.devUrl,
+      status: "READY",
+      created_at: now,
+      updated_at: now
+    });
 
-  insertRunLog(runId, "INFO", "Run created", payload);
+    insertRunLog(runId, "INFO", "Run created", payload);
 
-  return res.status(201).json({
-    id: runId,
-    status: "READY"
-  });
-});
+    const files = req.files as
+      | {
+          testcaseXlsx?: Express.Multer.File[];
+          testcaseMd?: Express.Multer.File[];
+          referenceCsv?: Express.Multer.File[];
+        }
+      | undefined;
+    const hasUploadFiles = Boolean(files?.testcaseXlsx?.[0] || files?.testcaseMd?.[0]);
+    const sourceMode =
+      body.sourceMode === "upload" || body.sourceMode === "conversation"
+        ? body.sourceMode
+        : hasUploadFiles
+          ? "upload"
+          : "conversation";
+
+    if (sourceMode === "upload") {
+      const testcaseXlsx = files?.testcaseXlsx?.[0];
+      const testcaseMd = files?.testcaseMd?.[0];
+      const referenceCsv = files?.referenceCsv?.[0];
+
+      if (!testcaseXlsx || !testcaseMd) {
+        return res.status(400).json({
+          error: "UPLOAD_FILES_REQUIRED",
+          message: "請上傳 xlsx 和 md 檔案"
+        });
+      }
+
+      try {
+        const imported = await parseTestcaseXlsx(testcaseXlsx.path);
+        const { manualCases } = upsertImportedTestcase(runId, imported);
+        insertRunLog(runId, "INFO", "XLSX+MD uploaded and parsed", {
+          sourceMode,
+          testcaseXlsx: testcaseXlsx.path,
+          testcaseMd: testcaseMd.path,
+          referenceCsv: referenceCsv?.path ?? null,
+          importedCases: imported.cases.length,
+          importedSteps: imported.steps.length,
+          manualCases
+        });
+      } catch (error) {
+        db.prepare("DELETE FROM runs WHERE id = ?").run(runId);
+        return res.status(400).json({
+          error: "XLSX_IMPORT_FAILED",
+          message: error instanceof Error ? error.message : String(error)
+        });
+      }
+    } else {
+      insertRunLog(runId, "INFO", "Run created from conversation mode", {
+        sourceMode,
+        conversationId: body.conversationId ?? null
+      });
+    }
+
+    return res.status(201).json({
+      id: runId,
+      status: "READY"
+    });
+  }
+);
 
 router.post("/:id/cases", (req, res) => {
   const run = getRun(req.params.id);
@@ -404,49 +535,7 @@ router.post("/:id/import-xlsx", async (req, res) => {
 
   try {
     const imported = await parseTestcaseXlsx(parsed.data.filePath);
-    const now = nowIso();
-    let manualCases = 0;
-    const upsertCaseStmt = prepareUpsertCaseStmt();
-    const upsertStepStmt = prepareUpsertStepStmt();
-
-    const tx = db.transaction(() => {
-      for (const item of imported.cases) {
-        const resultStatus = item.executionType === "manual" ? "MANUAL_PENDING" : "PENDING";
-        if (item.executionType === "manual") manualCases += 1;
-        upsertCaseStmt.run({
-          id: randomUUID(),
-          run_id: req.params.id,
-          case_no: item.caseNo,
-          case_title: item.caseTitle,
-          execution_type: item.executionType,
-          result_status: resultStatus,
-          detail_json: item.detailJson ? JSON.stringify(item.detailJson) : null,
-          created_at: now,
-          updated_at: now
-        });
-      }
-
-      for (const step of imported.steps) {
-        upsertStepStmt.run({
-          id: randomUUID(),
-          run_id: req.params.id,
-          case_no: step.caseNo,
-          step_no: step.stepNo,
-          action_type: step.actionType,
-          target_type: step.targetType ?? null,
-          target_value: step.targetValue ?? null,
-          input_value: step.inputValue ?? null,
-          expected: step.expected ?? null,
-          require_approval: step.requireApproval ? 1 : 0,
-          timeout_ms: step.timeoutMs,
-          retry: step.retry,
-          status: "PENDING",
-          created_at: now,
-          updated_at: now
-        });
-      }
-    });
-    tx();
+    const { manualCases } = upsertImportedTestcase(req.params.id, imported);
 
     insertRunLog(req.params.id, "INFO", "XLSX imported", {
       filePath: parsed.data.filePath,
@@ -791,6 +880,85 @@ router.get("/:id/logs", (req, res) => {
     .prepare("SELECT * FROM run_logs WHERE run_id = ? ORDER BY created_at ASC LIMIT ?")
     .all(req.params.id, limit);
   return res.json({ items });
+});
+
+router.get("/:id/bugs", (req, res) => {
+  const run = getRun(req.params.id);
+  if (!run) {
+    return res.status(404).json({ error: "RUN_NOT_FOUND" });
+  }
+
+  const items = db
+    .prepare(
+      `
+        SELECT
+          id,
+          run_id,
+          round_id,
+          severity,
+          related_case_no,
+          description,
+          suggestion,
+          created_at
+        FROM bugs
+        WHERE run_id = ?
+        ORDER BY created_at DESC
+      `
+    )
+    .all(req.params.id);
+
+  return res.json({ items });
+});
+
+router.get("/:id/detail-health", (req, res) => {
+  const run = getRun(req.params.id);
+  if (!run) {
+    return res.status(404).json({ error: "RUN_NOT_FOUND" });
+  }
+
+  const items = db
+    .prepare(
+      `
+        SELECT case_no, case_title, detail_json
+        FROM run_cases
+        WHERE run_id = ?
+        ORDER BY case_no ASC
+      `
+    )
+    .all(req.params.id) as Array<{ case_no: string; case_title: string; detail_json: string | null }>;
+
+  const coreKeys = ["測試目的", "設定條件", "預期行為", "實際行為"];
+  const cases = items.map((item) => {
+    let parsed: Record<string, unknown> = {};
+    if (item.detail_json) {
+      try {
+        parsed = JSON.parse(item.detail_json) as Record<string, unknown>;
+      } catch {
+        parsed = {};
+      }
+    }
+
+    const missingKeys = coreKeys.filter((k) => {
+      const v = parsed[k];
+      return typeof v !== "string" || !v.trim();
+    });
+
+    return {
+      caseNo: item.case_no,
+      caseTitle: item.case_title,
+      healthy: missingKeys.length === 0,
+      missingKeys
+    };
+  });
+
+  const unhealthyCases = cases.filter((c) => !c.healthy).length;
+  return res.json({
+    runId: req.params.id,
+    totalCases: cases.length,
+    healthyCases: cases.length - unhealthyCases,
+    unhealthyCases,
+    cases
+  });
 });
 
 export default router;

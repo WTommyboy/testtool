@@ -92,6 +92,19 @@ export const migrate = (): void => {
       FOREIGN KEY (run_id) REFERENCES runs(id)
     );
 
+    CREATE TABLE IF NOT EXISTS bugs (
+      id TEXT PRIMARY KEY,
+      run_id TEXT NOT NULL,
+      round_id TEXT NOT NULL,
+      severity TEXT NOT NULL,
+      related_case_no TEXT NOT NULL,
+      description TEXT NOT NULL,
+      suggestion TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (run_id) REFERENCES runs(id)
+    );
+
     CREATE TABLE IF NOT EXISTS conversations (
       id TEXT PRIMARY KEY,
       title TEXT NOT NULL,
@@ -117,6 +130,8 @@ export const migrate = (): void => {
     CREATE UNIQUE INDEX IF NOT EXISTS idx_run_case_steps_unique ON run_case_steps(run_id, case_no, step_no);
     CREATE INDEX IF NOT EXISTS idx_approvals_run_id ON approvals(run_id);
     CREATE INDEX IF NOT EXISTS idx_approvals_status ON approvals(status);
+    CREATE INDEX IF NOT EXISTS idx_bugs_run_id ON bugs(run_id);
+    CREATE INDEX IF NOT EXISTS idx_bugs_round_id ON bugs(round_id);
     CREATE INDEX IF NOT EXISTS idx_conversation_messages_conversation_id ON conversation_messages(conversation_id);
   `);
 };
