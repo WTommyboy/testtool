@@ -549,6 +549,13 @@
   border-color: var(--accent);
 }
 
+.attached-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
 /* ─── Approval Card (Tab B) ─── */
 .approval-card {
   border: 1px solid var(--blocked);

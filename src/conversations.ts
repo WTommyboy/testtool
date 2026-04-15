@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { Router } from "express";
+import multer from "multer";
 import { z } from "zod";
 import { db } from "./db";
 import { askClaude } from "./claude";
@@ -9,14 +10,18 @@ import { config } from "./config";
 
 const router = Router();
 
+const conversationUploadRoot = path.resolve(config.storageRoot, "conversations_uploads");
+fs.mkdirSync(conversationUploadRoot, { recursive: true });
+const messageUpload = multer({
+  storage: multer.diskStorage({
+    destination: (_req, _file, cb) => cb(null, conversationUploadRoot),
+    filename: (_req, file, cb) => cb(null, `${Date.now()}-${randomUUID()}${path.extname(file.originalname)}`)
+  })
+});
+
 const createConversationSchema = z.object({
   title: z.string().min(1),
   featureName: z.string().optional()
-});
-
-const sendMessageSchema = z.object({
-  content: z.string().min(1),
-  attachments: z.array(z.string()).optional()
 });
 
 const pushToRunSchema = z.object({
@@ -74,16 +79,39 @@ router.get("/:id", (req, res) => {
   return res.json({ conversation, messages });
 });
 
-router.post("/:id/messages", async (req, res) => {
+router.post("/:id/messages", messageUpload.array("attachments", 10), async (req, res) => {
   const conversation = db.prepare("SELECT * FROM conversations WHERE id = ?").get(req.params.id);
   if (!conversation) {
     return res.status(404).json({ error: "CONVERSATION_NOT_FOUND" });
   }
 
-  const parsed = sendMessageSchema.safeParse(req.body);
-  if (!parsed.success) {
-    return res.status(400).json({ error: "INVALID_PAYLOAD", issues: parsed.error.issues });
+  const content = typeof req.body.content === "string" ? req.body.content.trim() : "";
+  const files = (req.files as Express.Multer.File[] | undefined) ?? [];
+  let attachmentsFromBody: string[] = [];
+  if (Array.isArray((req.body as { attachments?: unknown }).attachments)) {
+    attachmentsFromBody = ((req.body as { attachments?: unknown }).attachments as unknown[])
+      .filter((x): x is string => typeof x === "string" && x.trim().length > 0);
+  } else if (typeof (req.body as { attachments?: unknown }).attachments === "string") {
+    const raw = (req.body as { attachments?: string }).attachments ?? "";
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        attachmentsFromBody = parsed.filter((x): x is string => typeof x === "string" && x.trim().length > 0);
+      }
+    } catch {
+      attachmentsFromBody = raw.trim() ? [raw.trim()] : [];
+    }
   }
+  const attachmentsFromFiles = files.map((f) => {
+    const relPath = path.relative(process.cwd(), f.path);
+    return `${f.originalname} (${relPath})`;
+  });
+  const attachments = [...attachmentsFromBody, ...attachmentsFromFiles];
+
+  if (!content && attachments.length === 0) {
+    return res.status(400).json({ error: "INVALID_PAYLOAD", message: "content 或 attachments 至少要有一個" });
+  }
+  const userContent = content || `已上傳附件 ${attachments.length} 個`;
 
   const userMid = randomUUID();
   const now = nowIso();
@@ -92,7 +120,7 @@ router.post("/:id/messages", async (req, res) => {
       INSERT INTO conversation_messages (id, conversation_id, role, content, attachments_json, created_at)
       VALUES (?, ?, 'user', ?, ?, ?)
     `
-  ).run(userMid, req.params.id, parsed.data.content, JSON.stringify(parsed.data.attachments ?? []), now);
+  ).run(userMid, req.params.id, userContent, JSON.stringify(attachments), now);
 
   const history = db
     .prepare("SELECT role, content FROM conversation_messages WHERE conversation_id = ? ORDER BY created_at ASC")

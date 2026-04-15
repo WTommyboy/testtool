@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import "./App.css";
 
@@ -109,6 +109,7 @@ function App() {
   const [newConversationTitle, setNewConversationTitle] = useState("BI UAT 對話");
   const [newConversationFeature, setNewConversationFeature] = useState("拼貼模式");
   const [messageInput, setMessageInput] = useState("");
+  const [attachedFiles, setAttachedFiles] = useState<File[]>([]);
   const [conversationBusy, setConversationBusy] = useState(false);
   const [conversationError, setConversationError] = useState("");
   const [exportPaths, setExportPaths] = useState<{ jsonPath: string; mdPath: string } | null>(null);
@@ -142,6 +143,7 @@ function App() {
   const [runBusy, setRunBusy] = useState(false);
   const [runError, setRunError] = useState("");
   const [resolvedBy, setResolvedBy] = useState("tommy");
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const selectedConversation = conversations.find((x) => x.id === selectedConversationId) ?? null;
   const pendingApprovals = approvals.filter((x) => x.status === "PENDING");
@@ -442,16 +444,30 @@ function App() {
 
   const handleSendMessage = async (e: FormEvent) => {
     e.preventDefault();
-    if (!selectedConversationId || !messageInput.trim()) return;
+    if (!selectedConversationId || (!messageInput.trim() && attachedFiles.length === 0)) return;
     setConversationBusy(true);
     setConversationError("");
     try {
-      await api(`/api/conversations/${selectedConversationId}/messages`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content: messageInput }),
-      });
+      if (attachedFiles.length > 0) {
+        const formData = new FormData();
+        formData.append("content", messageInput.trim());
+        for (const file of attachedFiles) {
+          formData.append("attachments", file);
+        }
+        await api(`/api/conversations/${selectedConversationId}/messages`, {
+          method: "POST",
+          body: formData
+        });
+      } else {
+        await api(`/api/conversations/${selectedConversationId}/messages`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ content: messageInput })
+        });
+      }
       setMessageInput("");
+      setAttachedFiles([]);
+      if (fileInputRef.current) fileInputRef.current.value = "";
       await loadConversationDetail(selectedConversationId);
     } catch (error) {
       setConversationError(error instanceof Error ? error.message : String(error));
@@ -668,9 +684,22 @@ function App() {
               <div className="card-header">
                 <h2>{selectedConversation?.title || "請先建立或選擇對話"}</h2>
                 <div className="actions">
-                  <button className="btn sm" disabled>
+                  <button className="btn sm" onClick={() => fileInputRef.current?.click()} disabled={!selectedConversationId || conversationBusy}>
                     📎 上傳文件
                   </button>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept=".md,.pdf,.xlsx,.csv,.txt"
+                    multiple
+                    style={{ display: "none" }}
+                    onChange={(e) => {
+                      const files = Array.from(e.target.files ?? []);
+                      if (files.length > 0) {
+                        setAttachedFiles((prev) => [...prev, ...files]);
+                      }
+                    }}
+                  />
                   <button className="btn sm" onClick={() => void handleExport()} disabled={!selectedConversationId || conversationBusy}>
                     📄 匯出 MD
                   </button>
@@ -694,10 +723,26 @@ function App() {
                 </div>
                 <form className="chat-input" onSubmit={handleSendMessage}>
                   <textarea value={messageInput} onChange={(e) => setMessageInput(e.target.value)} placeholder="輸入訊息..." />
-                  <button className="btn primary" disabled={conversationBusy || !selectedConversationId}>
+                  <button className="btn primary" disabled={conversationBusy || !selectedConversationId || (!messageInput.trim() && attachedFiles.length === 0)}>
                     送出
                   </button>
                 </form>
+                {attachedFiles.length > 0 ? (
+                  <div className="attached-list">
+                    {attachedFiles.map((f, idx) => (
+                      <span key={`${f.name}-${idx}`} className="file-name">
+                        📎 {f.name}
+                        <button
+                          type="button"
+                          className="file-remove"
+                          onClick={() => setAttachedFiles((prev) => prev.filter((_, i) => i !== idx))}
+                        >
+                          ✕
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
               </div>
 
             </div>
