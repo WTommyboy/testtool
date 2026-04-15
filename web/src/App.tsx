@@ -65,7 +65,9 @@ type Approval = {
 };
 
 const api = async <T,>(url: string, init?: RequestInit): Promise<T> => {
-  const resp = await fetch(url, init);
+  const base = (import.meta.env.VITE_API_BASE_URL ?? "").replace(/\/+$/, "");
+  const requestUrl = base ? `${base}${url}` : url;
+  const resp = await fetch(requestUrl, init);
   const data = (await resp.json()) as T & { error?: string; message?: string };
   if (!resp.ok) {
     throw new Error(data.message || data.error || `HTTP_${resp.status}`);
