@@ -343,7 +343,7 @@ const closeBrowser = async (state: ActiveRun): Promise<void> => {
 };
 
 const launchBrowser = async (): Promise<{ browser: Browser; context: BrowserContext; page: Page }> => {
-  const browser = await chromium.launch({ headless: config.playwrightHeadless });
+  const browser = await chromium.launch({ headless: config.playwrightHeadless, slowMo: config.playwrightSlowMoMs });
   const context = await browser.newContext();
   const page = await context.newPage();
   return { browser, context, page };
@@ -423,69 +423,199 @@ const collectDropdownOptions = async (page: Page): Promise<string[]> =>
     return merged;
   });
 
+const splitNaturalSteps = (stepText: string): string[] =>
+  stepText
+    .split(/(?:→|->|➜|\n)+/)
+    .map((x) => x.trim())
+    .filter((x) => x.length > 0);
+
+const extractQuotedText = (text: string): string | null => {
+  const match = text.match(/[「『"“](.+?)[」』"”]/);
+  return match?.[1]?.trim() || null;
+};
+
+const normalizeNaturalTarget = (text: string): string =>
+  text
+    .replace(/^(點擊|點|按|click|切換|選擇|選|改成|切至)\s*/i, "")
+    .replace(/(按鈕|選項|模式|頁籤|tab)$/i, "")
+    .replace(/[「」『』"“”]/g, "")
+    .trim();
+
+const firstVisibleInput = (page: Page, selector: string): import("playwright").Locator =>
+  page.locator(selector).filter({ hasNot: page.locator("[disabled]") }).first();
+
+const tableRowCount = async (page: Page): Promise<number> =>
+  page.evaluate(() => {
+    const rows = Array.from(document.querySelectorAll("table tr"));
+    return rows.filter((tr) => tr.querySelectorAll("td").length > 0).length;
+  });
+
 const executeCustomNaturalStep = async (
   page: Page,
   step: StepRow,
   detail: DetailCollector,
   timeoutMs: number
 ): Promise<Record<string, unknown>> => {
-  const stepText = ensureString(step.input_value, ensureString(detail.執行步驟, ""));
+  const stepText = ensureString(step.input_value, ensureString(detail.執行步驟, "")).replace(/\s+/g, " ").trim();
   if (!stepText) {
     throw new Error("STEP_TRANSLATION_FAILED empty custom step text");
   }
 
-  if (/主欄位/.test(stepText) && /(選擇|下拉|選單)/.test(stepText)) {
-    const clickedText = await clickFirstVisibleText(page, ["+ 選擇主欄位", "+選擇主欄位", "選擇主欄位"], timeoutMs);
-    await page.waitForTimeout(350);
-    const options = await collectDropdownOptions(page);
-    if (options.length === 0) {
-      throw new Error("STEP_TRANSLATION_FAILED dropdown options not found");
+  const subSteps = splitNaturalSteps(stepText);
+  if (subSteps.length === 0) {
+    throw new Error("STEP_TRANSLATION_FAILED empty natural sub-step");
+  }
+
+  const logs: string[] = [];
+  const outputs: Record<string, unknown> = {};
+
+  for (const sub of subSteps) {
+    if (/主欄位/.test(sub) && /(選擇|下拉|選單)/.test(sub)) {
+      const clickedText = await clickFirstVisibleText(page, ["+ 選擇主欄位", "+選擇主欄位", "選擇主欄位"], timeoutMs);
+      await page.waitForTimeout(300);
+      const options = await collectDropdownOptions(page);
+      if (options.length === 0) throw new Error("STEP_TRANSLATION_FAILED dropdown options not found");
+      outputs.mainFieldOptions = options;
+      detail.抽樣數據 = options.slice(0, 10);
+      logs.push(`點擊「${clickedText}」，取得下拉 ${options.length} 項`);
+      continue;
     }
 
-    const expectedText = ensureString(step.expected, ensureString(detail.預期行為, ""));
-    const expectedOptions = parseExpectedOptionsFromText(expectedText);
+    if (/^(點擊|點|按|click)/i.test(sub) || /^(切換|選擇|選|改成|切至)/.test(sub)) {
+      const quoted = extractQuotedText(sub);
+      const normalized = normalizeNaturalTarget(sub);
+      const target = quoted || normalized;
+      if (!target) throw new Error(`STEP_TRANSLATION_FAILED empty target: ${sub}`);
+      await clickFirstVisibleText(page, [target, target.replace(/\s+/g, "")], timeoutMs);
+      await page.waitForTimeout(300);
+      logs.push(`點擊「${target}」成功`);
+      continue;
+    }
+
+    if (/(輸入|填入|填寫)/.test(sub)) {
+      const value = extractQuotedText(sub) ?? sub.replace(/^(輸入|填入|填寫)\s*/g, "").trim();
+      if (!value) throw new Error(`STEP_TRANSLATION_FAILED empty input value: ${sub}`);
+      const input = firstVisibleInput(page, "input, textarea");
+      await input.waitFor({ state: "visible", timeout: timeoutMs });
+      await input.fill(value, { timeout: timeoutMs });
+      logs.push(`輸入「${value}」成功`);
+      continue;
+    }
+
+    if (/(確認|確定|ok)/i.test(sub)) {
+      await clickFirstVisibleText(page, ["確認", "確定", "OK", "ok"], timeoutMs);
+      await page.waitForTimeout(250);
+      logs.push("已點擊確認");
+      continue;
+    }
+
+    if (/(執行|查詢|搜尋)/.test(sub)) {
+      const clickedText = await clickFirstVisibleText(page, ["執行", "查詢", "搜尋"], timeoutMs);
+      await page.waitForLoadState("networkidle", { timeout: timeoutMs }).catch(() => undefined);
+      const rows = await tableRowCount(page);
+      detail.筆數 = rows;
+      outputs.rowCount = rows;
+      logs.push(`點擊「${clickedText}」後資料 ${rows} 筆`);
+      continue;
+    }
+
+    if (/(記錄|提取|讀取|觀察).*(下拉|選項|選單)/.test(sub)) {
+      const options = await collectDropdownOptions(page);
+      if (options.length === 0) throw new Error("STEP_TRANSLATION_FAILED no dropdown options to record");
+      outputs.recordedOptions = options;
+      detail.抽樣數據 = options.slice(0, 10);
+      logs.push(`記錄下拉選項 ${options.length} 項`);
+      continue;
+    }
+
+    const fallbackTarget = extractQuotedText(sub);
+    if (fallbackTarget) {
+      await clickFirstVisibleText(page, [fallbackTarget], timeoutMs);
+      await page.waitForTimeout(250);
+      logs.push(`嘗試點擊「${fallbackTarget}」成功`);
+      continue;
+    }
+
+    throw new Error(`STEP_TRANSLATION_FAILED unsupported custom step: ${sub}`);
+  }
+
+  detail.實際行為 = logs.join("；");
+  return { stepText, logs, ...outputs };
+};
+
+const assertExpectedForCustom = async (page: Page, expectedTextRaw: string, detail: DetailCollector): Promise<void> => {
+  const expectedText = expectedTextRaw.trim();
+  if (!expectedText) throw new Error("EXPECTATION_NOT_ASSERTABLE empty expected text");
+
+  const highlightMatch = expectedText.match(/[「『"“](.+?)[」』"”].*(高亮|選中|active|藍色)/i);
+  if (highlightMatch) {
+    const targetText = highlightMatch[1];
+    const locator = page.getByText(targetText, { exact: false }).first();
+    const count = await locator.count();
+    if (count === 0) throw new Error(`ASSERT_HIGHLIGHT_FAILED target_not_found:${targetText}`);
+
+    const state = await locator.evaluate((el) => {
+      const classes = el.className || "";
+      const style = getComputedStyle(el);
+      return {
+        classes: String(classes),
+        backgroundColor: style.backgroundColor,
+        color: style.color
+      };
+    });
+    const isActive =
+      /active|selected|current|highlight|is-active/i.test(state.classes) ||
+      state.backgroundColor !== "rgba(0, 0, 0, 0)";
+    if (!isActive) {
+      throw new Error(`ASSERT_HIGHLIGHT_FAILED no_active_state:${targetText}`);
+    }
+    detail.判定 = `「${targetText}」高亮狀態符合預期`;
+    return;
+  }
+
+  if (/應.*出現/.test(expectedText) && /(個|key|選項|值)/i.test(expectedText)) {
+    const options = await collectDropdownOptions(page);
+    if (options.length === 0) throw new Error("ASSERT_OPTIONS_FAILED no_options_found");
     const expectedCountMatch = expectedText.match(/(\d+)\s*個/);
     const expectedCount = expectedCountMatch ? Number(expectedCountMatch[1]) : undefined;
+    const expectedOptions = parseExpectedOptionsFromText(expectedText);
     const missing = expectedOptions.filter((x) => !options.some((actual) => actual.includes(x)));
-
-    detail.實際行為 = `點擊「${clickedText}」後，下拉選單出現 ${options.length} 個選項：${options.join("、")}`;
+    if (expectedCount !== undefined && options.length !== expectedCount) {
+      throw new Error(`ASSERT_OPTIONS_FAILED expectedCount=${expectedCount} actualCount=${options.length}`);
+    }
+    if (missing.length > 0) {
+      throw new Error(`ASSERT_OPTIONS_FAILED missing=${missing.join(",")}`);
+    }
+    detail.判定 = `下拉選項比對通過（${options.length} 項）`;
     detail.抽樣數據 = options.slice(0, 10);
-    if (expectedOptions.length > 0 || expectedCount !== undefined) {
-      const countPass = expectedCount === undefined || options.length === expectedCount;
-      if (!countPass || missing.length > 0) {
-        throw new Error(
-          `ASSERT_OPTIONS_FAILED expectedCount=${expectedCount ?? "-"} actualCount=${options.length} missing=${missing.join(",") || "-"}`
-        );
-      }
-      detail.判定 = `選項比對通過（${options.length} 項）`;
-    }
-    return { clickedText, optionCount: options.length, options };
+    return;
   }
 
-  if (/(執行|查詢|搜尋)/.test(stepText)) {
-    const clickedText = await clickFirstVisibleText(page, ["執行", "查詢", "搜尋"], timeoutMs);
-    await page.waitForLoadState("networkidle", { timeout: timeoutMs }).catch(() => undefined);
-    const rowCount = await page.evaluate(() => {
-      const trs = Array.from(document.querySelectorAll("table tr"));
-      return trs.filter((tr) => tr.querySelectorAll("td").length > 0).length;
-    });
-    detail.實際行為 = `點擊「${clickedText}」後取得資料 ${rowCount} 筆`;
-    detail.筆數 = rowCount;
-
-    const expectedText = ensureString(step.expected, ensureString(detail.預期行為, ""));
-    const expectedRowsMatch = expectedText.match(/(?:回傳|應有|應為|共)\s*(\d+)\s*筆/);
-    if (expectedRowsMatch) {
-      const expectedRows = Number(expectedRowsMatch[1]);
-      if (rowCount !== expectedRows) {
-        throw new Error(`ASSERT_ROW_COUNT_FAILED expected=${expectedRows} actual=${rowCount}`);
-      }
-      detail.判定 = `筆數比對通過（${rowCount} 筆）`;
+  const rowsMatch = expectedText.match(/(?:回傳|應有|應為|共)\s*(\d+)\s*筆/);
+  if (rowsMatch) {
+    const expectedRows = Number(rowsMatch[1]);
+    const actualRows = await tableRowCount(page);
+    detail.筆數 = actualRows;
+    if (actualRows !== expectedRows) {
+      throw new Error(`ASSERT_ROW_COUNT_FAILED expected=${expectedRows} actual=${actualRows}`);
     }
-
-    return { clickedText, rowCount };
+    detail.判定 = `筆數比對通過（${actualRows} 筆）`;
+    return;
   }
 
-  throw new Error(`STEP_TRANSLATION_FAILED unsupported custom step: ${stepText.slice(0, 120)}`);
+  const textPresenceMatch = expectedText.match(/(?:應出現|顯示)[「『"“](.+?)[」』"”]/);
+  if (textPresenceMatch) {
+    const targetText = textPresenceMatch[1];
+    const locator = page.getByText(targetText, { exact: false }).first();
+    const visible = await locator.isVisible().catch(() => false);
+    if (!visible) {
+      throw new Error(`ASSERT_TEXT_PRESENCE_FAILED expectedText=${targetText}`);
+    }
+    detail.判定 = `文字「${targetText}」已出現`;
+    return;
+  }
+
+  throw new Error(`EXPECTATION_NOT_ASSERTABLE: ${expectedText.slice(0, 120)}`);
 };
 
 const processCase = async (run: RunRow, item: CaseRow, state: ActiveRun, artifactsDir: string): Promise<void> => {
@@ -518,6 +648,9 @@ const processCase = async (run: RunRow, item: CaseRow, state: ActiveRun, artifac
   const actionLogs: string[] = [];
   const observationLogs: string[] = [];
   const requestDates: Array<{ start?: string; end?: string }> = [];
+  const caseExpectedText = ensureString(baseDetail.預期行為, "").trim();
+  let customStepExecuted = false;
+  let hasAssertionResult = false;
 
   const reqHandler = (req: import("playwright").Request): void => {
     if (req.method() !== "POST") return;
@@ -568,6 +701,27 @@ const processCase = async (run: RunRow, item: CaseRow, state: ActiveRun, artifac
     page.off("request", reqHandler);
     page.off("response", respHandler);
     throw new CaseExecutionError("STEP_NOT_FOUND", detail);
+  }
+
+  try {
+    await page.goto(run.dev_url, { waitUntil: "domcontentloaded", timeout: config.playwrightTimeoutMs });
+    actionLogs.push("setup:goto:PASS");
+    observationLogs.push("已開啟測試頁面");
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    let failShotPath = "";
+    try {
+      failShotPath = path.join(artifactsDir, `${item.case_no}_setup_goto_fail.png`);
+      await page.screenshot({ path: failShotPath, fullPage: true });
+    } catch {
+      // ignore screenshot failure
+    }
+    detail.實際行為 = "開啟測試頁面失敗";
+    detail.錯誤原因 = message;
+    if (failShotPath) detail.截圖路徑 = failShotPath;
+    page.off("request", reqHandler);
+    page.off("response", respHandler);
+    throw new CaseExecutionError(`SETUP_GOTO_FAILED ${message}`, detail);
   }
 
   for (const step of steps) {
@@ -662,7 +816,15 @@ const processCase = async (run: RunRow, item: CaseRow, state: ActiveRun, artifac
             }
 
             if (action === "custom") {
-              return executeCustomNaturalStep(page, step, detail, timeoutMs);
+              customStepExecuted = true;
+              const result = await executeCustomNaturalStep(page, step, detail, timeoutMs);
+              const expectedForStep = (step.expected ?? "").trim();
+              if (expectedForStep) {
+                await assertExpectedForCustom(page, expectedForStep, detail);
+                hasAssertionResult = true;
+                return { ...result, asserted: expectedForStep };
+              }
+              return result;
             }
 
             if (action === "screenshot") {
@@ -746,23 +908,29 @@ const processCase = async (run: RunRow, item: CaseRow, state: ActiveRun, artifac
           ]);
           actionLogs.push(`step${step.step_no}:${action}:PASS`);
           observationLogs.push(`步驟 ${step.step_no} ${action} 執行成功`);
-          if (action === "asserttext" && typeof step.expected === "string") {
-            detail.文字比對 = `預期包含「${step.expected}」`;
-          }
-          if (action === "assertdata") {
-            const data = result as { rowCount?: number };
-            if (typeof data.rowCount === "number") {
-              detail.筆數 = data.rowCount;
-              observationLogs.push(`資料筆數 ${data.rowCount}`);
+            if (action === "asserttext" && typeof step.expected === "string") {
+              detail.文字比對 = `預期包含「${step.expected}」`;
+              hasAssertionResult = true;
             }
-          }
-          if (action === "comparecsv") {
-            const data = result as { compared?: number; mismatches?: number };
-            detail.比對方式 = "預覽數據 vs CSV 逐筆比對";
-            detail.比對結果 = `${data.compared ?? 0} 筆比對`;
-            detail.差異筆數 = data.mismatches ?? 0;
-            observationLogs.push(`CSV 比對 ${data.compared ?? 0} 筆，差異 ${data.mismatches ?? 0} 筆`);
-          }
+            if (action === "assertdata") {
+              const data = result as { rowCount?: number };
+              if (typeof data.rowCount === "number") {
+                detail.筆數 = data.rowCount;
+                observationLogs.push(`資料筆數 ${data.rowCount}`);
+              }
+              hasAssertionResult = true;
+            }
+            if (action === "comparecsv") {
+              const data = result as { compared?: number; mismatches?: number };
+              detail.比對方式 = "預覽數據 vs CSV 逐筆比對";
+              detail.比對結果 = `${data.compared ?? 0} 筆比對`;
+              detail.差異筆數 = data.mismatches ?? 0;
+              observationLogs.push(`CSV 比對 ${data.compared ?? 0} 筆，差異 ${data.mismatches ?? 0} 筆`);
+              hasAssertionResult = true;
+            }
+            if (action === "custom" && typeof (result as { asserted?: string }).asserted === "string") {
+              observationLogs.push("中文預期結果驗證通過");
+            }
           if (action === "screenshot") {
             const data = result as { screenshot?: string };
             if (data.screenshot) detail.截圖路徑 = data.screenshot;
@@ -808,6 +976,47 @@ const processCase = async (run: RunRow, item: CaseRow, state: ActiveRun, artifac
         setStepResult(run.id, item.case_no, step.step_no, "FAIL", undefined, message);
       }
       throw error;
+    }
+  }
+
+  if (customStepExecuted && !hasAssertionResult) {
+    const fallbackExpected = caseExpectedText;
+    if (!fallbackExpected) {
+      const message = "EXPECTATION_NOT_ASSERTABLE empty expected text";
+      let failShotPath = "";
+      try {
+        failShotPath = path.join(artifactsDir, `${item.case_no}_expected_missing.png`);
+        await page.screenshot({ path: failShotPath, fullPage: true });
+      } catch {
+        // ignore screenshot failure
+      }
+      detail.實際行為 = "案例步驟執行完成，但未提供可驗證預期";
+      detail.錯誤原因 = message;
+      if (failShotPath) detail.截圖路徑 = failShotPath;
+      page.off("request", reqHandler);
+      page.off("response", respHandler);
+      throw new CaseExecutionError(message, detail);
+    }
+
+    try {
+      await assertExpectedForCustom(page, fallbackExpected, detail);
+      hasAssertionResult = true;
+      observationLogs.push("依案例預期結果完成驗證");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      let failShotPath = "";
+      try {
+        failShotPath = path.join(artifactsDir, `${item.case_no}_expected_assert_fail.png`);
+        await page.screenshot({ path: failShotPath, fullPage: true });
+      } catch {
+        // ignore screenshot failure
+      }
+      detail.實際行為 = "案例步驟執行完成，但預期驗證失敗";
+      detail.錯誤原因 = message;
+      if (failShotPath) detail.截圖路徑 = failShotPath;
+      page.off("request", reqHandler);
+      page.off("response", respHandler);
+      throw new CaseExecutionError(message, detail);
     }
   }
 

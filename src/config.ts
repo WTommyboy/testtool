@@ -22,7 +22,11 @@ export const config = {
   anthropicApiKey: process.env.ANTHROPIC_API_KEY ?? "",
   claudeModel: process.env.CLAUDE_MODEL ?? "claude-sonnet-4-20250514",
   enableGoogleSheetsSync: parseBoolean(process.env.ENABLE_GOOGLE_SHEETS_SYNC, false),
-  playwrightHeadless: parseBoolean(process.env.PLAYWRIGHT_HEADLESS, true),
+  playwrightHeadless: parseBoolean(process.env.PLAYWRIGHT_HEADLESS, (process.env.NODE_ENV ?? "development") === "production"),
+  playwrightSlowMoMs: parseNumber(
+    process.env.PLAYWRIGHT_SLOWMO_MS,
+    (process.env.NODE_ENV ?? "development") === "production" ? 0 : 300
+  ),
   playwrightTimeoutMs: parseNumber(process.env.PLAYWRIGHT_TIMEOUT_MS, 30000),
   playwrightHeartbeatIntervalMs: parseNumber(process.env.PLAYWRIGHT_HEARTBEAT_INTERVAL_MS, 15000),
   playwrightHealthcheckTimeoutMs: parseNumber(process.env.PLAYWRIGHT_HEALTHCHECK_TIMEOUT_MS, 5000),
