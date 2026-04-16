@@ -23,6 +23,7 @@ export const migrate = (): void => {
       feature_sub TEXT NOT NULL,
       run_name TEXT NOT NULL,
       dev_url TEXT NOT NULL,
+      execution_mode TEXT NOT NULL DEFAULT 'offline',
       status TEXT NOT NULL DEFAULT 'DRAFT',
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
@@ -149,6 +150,9 @@ export const migrate = (): void => {
   }
   if (!hasColumn("runs", "finished_at")) {
     db.exec("ALTER TABLE runs ADD COLUMN finished_at TEXT");
+  }
+  if (!hasColumn("runs", "execution_mode")) {
+    db.exec("ALTER TABLE runs ADD COLUMN execution_mode TEXT NOT NULL DEFAULT 'offline'");
   }
   if (!hasColumn("run_cases", "group_name")) {
     db.exec("ALTER TABLE run_cases ADD COLUMN group_name TEXT");

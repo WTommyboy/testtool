@@ -9,6 +9,7 @@ type RunRow = {
   id: string;
   dev_url: string;
   status: string;
+  execution_mode?: string | null;
 };
 
 type CaseRow = {
@@ -342,8 +343,11 @@ const closeBrowser = async (state: ActiveRun): Promise<void> => {
   }
 };
 
-const launchBrowser = async (): Promise<{ browser: Browser; context: BrowserContext; page: Page }> => {
-  const browser = await chromium.launch({ headless: config.playwrightHeadless, slowMo: config.playwrightSlowMoMs });
+const launchBrowser = async (interactiveMode: boolean): Promise<{ browser: Browser; context: BrowserContext; page: Page }> => {
+  const browser = await chromium.launch({
+    headless: interactiveMode ? false : config.playwrightHeadless,
+    slowMo: interactiveMode ? Math.max(config.playwrightSlowMoMs, 200) : config.playwrightSlowMoMs
+  });
   const context = await browser.newContext();
   const page = await context.newPage();
   return { browser, context, page };
@@ -387,6 +391,44 @@ const startHeartbeat = (runId: string, state: ActiveRun): (() => void) => {
   }, config.playwrightHeartbeatIntervalMs);
 
   return () => clearInterval(timer);
+};
+
+const tryClickVisibleText = async (page: Page, candidates: string[], timeoutMs: number): Promise<boolean> => {
+  try {
+    await clickFirstVisibleText(page, candidates, timeoutMs);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+const ensureInteractiveEntry = async (runId: string, run: RunRow, page: Page): Promise<void> => {
+  await page.goto(run.dev_url, { waitUntil: "domcontentloaded", timeout: config.playwrightTimeoutMs });
+  await page.waitForTimeout(600);
+
+  if (/\/edit\b/i.test(page.url())) {
+    insertRunLog(runId, "INFO", "Interactive entry ready", { url: page.url(), source: "dev_url" });
+    return;
+  }
+
+  const hasHomeHint = (await page.getByText("請從左側選擇專案查看報表", { exact: false }).count().catch(() => 0)) > 0;
+  if (!hasHomeHint && !/\/home\b/i.test(page.url())) {
+    insertRunLog(runId, "INFO", "Interactive entry skipped bootstrap", { url: page.url() });
+    return;
+  }
+
+  const projectCandidates = ["UAT_G01測試專案", "拼貼test_001"];
+  for (const candidate of projectCandidates) {
+    const clicked = await tryClickVisibleText(page, [candidate], 2500);
+    if (clicked) {
+      await page.waitForTimeout(500);
+      break;
+    }
+  }
+
+  await tryClickVisibleText(page, ["新增報表", "+新增報表"], 2500);
+  await page.waitForTimeout(900);
+  insertRunLog(runId, "INFO", "Interactive bootstrap attempted", { url: page.url() });
 };
 
 const clickFirstVisibleText = async (page: Page, candidates: string[], timeoutMs: number): Promise<string> => {
@@ -470,6 +512,48 @@ const executeCustomNaturalStep = async (
   const outputs: Record<string, unknown> = {};
 
   for (const sub of subSteps) {
+    if (/^篩選[:：]/.test(sub)) {
+      const expr = sub.replace(/^篩選[:：]\s*/i, "").trim();
+      const parts = expr.split(/\s+/).filter((x) => x.length > 0);
+      const field = parts[0] ?? "";
+      const operators = ["等於", "包含", "大於", "小於", "區間", "位於區間", "早於", "晚於", "有值"];
+      const operator = parts.find((x) => operators.includes(x)) ?? "";
+      const value = parts.slice(field && operator ? parts.indexOf(operator) + 1 : 1).join(" ").trim();
+
+      await tryClickVisibleText(page, ["新增篩選", "+新增篩選", "篩選"], timeoutMs);
+      if (field) await tryClickVisibleText(page, [field], timeoutMs);
+      if (operator) await tryClickVisibleText(page, [operator], timeoutMs);
+      if (value) {
+        try {
+          const input = firstVisibleInput(page, "input, textarea");
+          await input.waitFor({ state: "visible", timeout: Math.min(timeoutMs, 1800) });
+          await input.fill(value, { timeout: timeoutMs });
+        } catch {
+          // keep going in interactive-style fallback
+        }
+      }
+      logs.push(`嘗試執行篩選語句：${expr}`);
+      continue;
+    }
+
+    if (/^逐一計算/.test(sub)) {
+      const options = await collectDropdownOptions(page).catch(() => []);
+      detail.抽樣數據 = options.slice(0, 10);
+      logs.push(`逐一計算步驟以抽樣方式記錄，選項 ${options.length} 項`);
+      continue;
+    }
+
+    const enterMatch = sub.match(/^(.+?)進入$/);
+    if (enterMatch) {
+      const target = enterMatch[1].trim();
+      if (target) {
+        await clickFirstVisibleText(page, [target], timeoutMs);
+        await page.waitForTimeout(300);
+        logs.push(`點擊進入「${target}」成功`);
+        continue;
+      }
+    }
+
     if (/主欄位/.test(sub) && /(選擇|下拉|選單)/.test(sub)) {
       const clickedText = await clickFirstVisibleText(page, ["+ 選擇主欄位", "+選擇主欄位", "選擇主欄位"], timeoutMs);
       await page.waitForTimeout(300);
@@ -618,7 +702,17 @@ const assertExpectedForCustom = async (page: Page, expectedTextRaw: string, deta
   throw new Error(`EXPECTATION_NOT_ASSERTABLE: ${expectedText.slice(0, 120)}`);
 };
 
-const processCase = async (run: RunRow, item: CaseRow, state: ActiveRun, artifactsDir: string): Promise<void> => {
+type ProcessCaseOptions = {
+  interactiveMode: boolean;
+};
+
+const processCase = async (
+  run: RunRow,
+  item: CaseRow,
+  state: ActiveRun,
+  artifactsDir: string,
+  options: ProcessCaseOptions
+): Promise<void> => {
   if (item.execution_type === "manual") {
     return;
   }
@@ -692,7 +786,9 @@ const processCase = async (run: RunRow, item: CaseRow, state: ActiveRun, artifac
 
   if (steps.length === 0) {
     const shotPath = path.join(artifactsDir, `${item.case_no}_blocked_no_steps.png`);
-    await page.goto(run.dev_url, { waitUntil: "domcontentloaded", timeout: config.playwrightTimeoutMs });
+    if (!options.interactiveMode) {
+      await page.goto(run.dev_url, { waitUntil: "domcontentloaded", timeout: config.playwrightTimeoutMs });
+    }
     await page.screenshot({ path: shotPath, fullPage: true });
     detail.實際行為 = "找不到可執行步驟，未執行測試";
     detail.BLOCKED原因 = "STEP_NOT_FOUND";
@@ -703,25 +799,30 @@ const processCase = async (run: RunRow, item: CaseRow, state: ActiveRun, artifac
     throw new CaseExecutionError("STEP_NOT_FOUND", detail);
   }
 
-  try {
-    await page.goto(run.dev_url, { waitUntil: "domcontentloaded", timeout: config.playwrightTimeoutMs });
-    actionLogs.push("setup:goto:PASS");
-    observationLogs.push("已開啟測試頁面");
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    let failShotPath = "";
+  if (!options.interactiveMode) {
     try {
-      failShotPath = path.join(artifactsDir, `${item.case_no}_setup_goto_fail.png`);
-      await page.screenshot({ path: failShotPath, fullPage: true });
-    } catch {
-      // ignore screenshot failure
+      await page.goto(run.dev_url, { waitUntil: "domcontentloaded", timeout: config.playwrightTimeoutMs });
+      actionLogs.push("setup:goto:PASS");
+      observationLogs.push("已開啟測試頁面");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      let failShotPath = "";
+      try {
+        failShotPath = path.join(artifactsDir, `${item.case_no}_setup_goto_fail.png`);
+        await page.screenshot({ path: failShotPath, fullPage: true });
+      } catch {
+        // ignore screenshot failure
+      }
+      detail.實際行為 = "開啟測試頁面失敗";
+      detail.錯誤原因 = message;
+      if (failShotPath) detail.截圖路徑 = failShotPath;
+      page.off("request", reqHandler);
+      page.off("response", respHandler);
+      throw new CaseExecutionError(`SETUP_GOTO_FAILED ${message}`, detail);
     }
-    detail.實際行為 = "開啟測試頁面失敗";
-    detail.錯誤原因 = message;
-    if (failShotPath) detail.截圖路徑 = failShotPath;
-    page.off("request", reqHandler);
-    page.off("response", respHandler);
-    throw new CaseExecutionError(`SETUP_GOTO_FAILED ${message}`, detail);
+  } else {
+    actionLogs.push("setup:interactive:PASS");
+    observationLogs.push("互動模式沿用當前頁面狀態");
   }
 
   for (const step of steps) {
@@ -1071,12 +1172,16 @@ const blockPendingAutoCases = (runId: string, failCategory: string, reason: stri
 };
 
 const runJob = async (runId: string): Promise<void> => {
-  const run = db.prepare("SELECT id, dev_url, status FROM runs WHERE id = ?").get(runId) as RunRow | undefined;
+  const run = db
+    .prepare("SELECT id, dev_url, status, execution_mode FROM runs WHERE id = ?")
+    .get(runId) as RunRow | undefined;
   if (!run) return;
   if (run.status !== "READY") {
     insertRunLog(runId, "WARN", "Run start ignored: status is not READY", { status: run.status });
     return;
   }
+
+  const interactiveMode = (run.execution_mode ?? "offline") === "interactive";
 
   const cases = db
     .prepare(
@@ -1092,17 +1197,20 @@ const runJob = async (runId: string): Promise<void> => {
   const state: ActiveRun = { startedAt: Date.now(), cancelRequested: false };
   activeRuns.set(runId, state);
   setRunStatus(runId, "RUNNING");
-  insertRunLog(runId, "INFO", "Run started", { totalCases: cases.length });
+  insertRunLog(runId, "INFO", "Run started", { totalCases: cases.length, executionMode: run.execution_mode ?? "offline" });
 
   const artifactsDir = ensureArtifactsDir(runId);
   const stopHeartbeat = startHeartbeat(runId, state);
   let crashCount = 0;
 
   try {
-    const launched = await launchBrowser();
+    const launched = await launchBrowser(interactiveMode);
     state.browser = launched.browser;
     state.context = launched.context;
     state.page = launched.page;
+    if (interactiveMode) {
+      await ensureInteractiveEntry(runId, run, state.page);
+    }
 
     for (const item of cases) {
       if (state.cancelRequested || isRunCancelled(runId)) {
@@ -1117,7 +1225,7 @@ const runJob = async (runId: string): Promise<void> => {
       }
 
       try {
-        await processCase(run, item, state, artifactsDir);
+        await processCase(run, item, state, artifactsDir, { interactiveMode });
         insertRunLog(runId, "INFO", "Case executed", { caseNo: item.case_no, result: "PASS" });
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
@@ -1168,10 +1276,13 @@ const runJob = async (runId: string): Promise<void> => {
 
         if (category === "BROWSER_CRASH") {
           await closeBrowser(state);
-          const relaunched = await launchBrowser();
+          const relaunched = await launchBrowser(interactiveMode);
           state.browser = relaunched.browser;
           state.context = relaunched.context;
           state.page = relaunched.page;
+          if (interactiveMode) {
+            await ensureInteractiveEntry(runId, run, state.page);
+          }
           continue;
         }
       }

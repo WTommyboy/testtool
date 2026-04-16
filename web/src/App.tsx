@@ -20,6 +20,7 @@ type ConversationMessage = {
 type RunItem = {
   id: string;
   round_id: string;
+  execution_mode?: "offline" | "interactive" | string;
   location: string;
   feature_main: string;
   feature_sub: string;
@@ -133,6 +134,10 @@ function App() {
   const [runStatusFilter, setRunStatusFilter] = useState("");
   const [runRoundFilter, setRunRoundFilter] = useState("");
   const [sourceMode, setSourceMode] = useState<"upload" | "conversation">("upload");
+  const [runExecutionMode, setRunExecutionMode] = useState<"interactive" | "offline">(() => {
+    const host = window.location.hostname;
+    return host === "localhost" || host === "127.0.0.1" ? "interactive" : "offline";
+  });
   const [uploadXlsx, setUploadXlsx] = useState<File | null>(null);
   const [uploadMd, setUploadMd] = useState<File | null>(null);
   const [uploadCsv, setUploadCsv] = useState<File | null>(null);
@@ -464,6 +469,15 @@ function App() {
   }, [selectedRunId]);
 
   useEffect(() => {
+    if (!selectedRunId) return;
+    if (!(summary?.runStatus === "RUNNING" || summary?.runStatus === "WAITING_APPROVAL")) return;
+    const timer = setInterval(() => {
+      void loadRunDetail(selectedRunId);
+    }, 2500);
+    return () => clearInterval(timer);
+  }, [selectedRunId, summary?.runStatus]);
+
+  useEffect(() => {
     let cancelled = false;
     const poll = async () => {
       const health = await checkPlaywrightHealth();
@@ -618,8 +632,8 @@ function App() {
       const health = await checkPlaywrightHealth();
       setPlaywrightStatus(health.status);
       if (health.status === "unavailable") {
-        setStartError(health.message || "Playwright 未連線，無法開始執行");
-        return;
+        // Keep creation flow moving; backend /start has the final authoritative health gate.
+        setStartError(`預檢查：${health.message || "Playwright 未連線"}，將交由啟動時再次確認。`);
       }
 
       if (!runRoundId.trim()) {
@@ -634,6 +648,7 @@ function App() {
       formData.append("featureSub", runFeatureSub.trim() || "拼貼模式");
       formData.append("runName", runName.trim() || `Run-${Date.now()}`);
       formData.append("devUrl", runDevUrl.trim());
+      formData.append("executionMode", runExecutionMode);
 
       if (sourceMode === "upload") {
         if (!uploadXlsx || !uploadMd) {
@@ -899,6 +914,13 @@ function App() {
                 <select value={sourceMode} onChange={(e) => setSourceMode(e.target.value as "upload" | "conversation")}>
                   <option value="upload">上傳 xlsx + md</option>
                   <option value="conversation">從對話推送</option>
+                </select>
+              </div>
+              <div className="form-group">
+                <label>執行模式</label>
+                <select value={runExecutionMode} onChange={(e) => setRunExecutionMode(e.target.value as "interactive" | "offline")}>
+                  <option value="interactive">本機互動代理（推薦）</option>
+                  <option value="offline">離線 Runner（批次）</option>
                 </select>
               </div>
               <div className="form-group">

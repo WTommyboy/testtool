@@ -24,6 +24,7 @@ const RUN_STATUS = [
 ] as const;
 
 const CASE_EXECUTION_TYPE = ["auto", "semi", "manual"] as const;
+const RUN_EXECUTION_MODE = ["offline", "interactive"] as const;
 const CASE_RESULT_STATUS = [
   "PENDING",
   "PASS",
@@ -53,7 +54,8 @@ const createRunSchema = z.object({
   featureMain: z.string().min(1),
   featureSub: z.string().min(1),
   runName: z.string().min(1),
-  devUrl: z.string().url()
+  devUrl: z.string().url(),
+  executionMode: z.enum(RUN_EXECUTION_MODE).optional()
 });
 
 const createCasesSchema = z.object({
@@ -566,9 +568,9 @@ router.post(
     db.prepare(
       `
       INSERT INTO runs (
-        id, round_id, location, feature_main, feature_sub, run_name, dev_url, status, created_at, updated_at
+        id, round_id, location, feature_main, feature_sub, run_name, dev_url, execution_mode, status, created_at, updated_at
       ) VALUES (
-        @id, @round_id, @location, @feature_main, @feature_sub, @run_name, @dev_url, @status, @created_at, @updated_at
+        @id, @round_id, @location, @feature_main, @feature_sub, @run_name, @dev_url, @execution_mode, @status, @created_at, @updated_at
       )
       `
     ).run({
@@ -579,6 +581,7 @@ router.post(
       feature_sub: payload.featureSub,
       run_name: payload.runName,
       dev_url: payload.devUrl,
+      execution_mode: payload.executionMode ?? (config.nodeEnv === "production" ? "offline" : "interactive"),
       status: "READY",
       created_at: now,
       updated_at: now
@@ -829,7 +832,7 @@ router.post("/:id/status", (req, res) => {
 });
 
 router.post("/:id/start", async (req, res) => {
-  const health = await checkPlaywrightHealth(3000);
+  const health = await checkPlaywrightHealth(config.playwrightHealthcheckTimeoutMs);
   if (health.status === "unavailable") {
     return res.status(503).json({
       error: "PLAYWRIGHT_UNAVAILABLE",
