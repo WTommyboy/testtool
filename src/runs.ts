@@ -113,6 +113,194 @@ const manualFillSchema = z.object({
 
 const nowIso = (): string => new Date().toISOString();
 
+type MdRun = {
+  id: string;
+  round_id: string;
+  location: string | null;
+  feature_main: string | null;
+  feature_sub: string | null;
+  run_name: string | null;
+  dev_url: string | null;
+  status: string;
+  created_at: string | null;
+  updated_at: string | null;
+};
+
+type MdCase = {
+  case_no: string;
+  case_title: string;
+  group_name: string | null;
+  execution_type: string | null;
+  result_status: string | null;
+  detail_json: string | null;
+  fail_category: string | null;
+  manual_filled_by: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+};
+
+type MdBug = {
+  severity: string | null;
+  related_case_no: string | null;
+  description: string | null;
+  suggestion: string | null;
+};
+
+const mdEscape = (input: unknown): string => {
+  const text = String(input ?? "—");
+  return text.replace(/\|/g, "\\|").replace(/\n/g, "<br>");
+};
+
+const extractSummary = (c: MdCase): string => {
+  if (!c.detail_json) return "—";
+  try {
+    const d = JSON.parse(c.detail_json) as Record<string, unknown>;
+    const summaryKeys = ["問題", "錯誤原因", "BLOCKED原因", "實際行為", "實際", "比對結果", "結論", "備註"];
+    for (const key of summaryKeys) {
+      const value = d[key];
+      if (typeof value === "string" && value.trim()) return value.trim().slice(0, 120);
+    }
+    const first = Object.values(d)[0];
+    if (typeof first === "string" && first.trim()) return first.trim().slice(0, 120);
+    if (typeof first === "number" || typeof first === "boolean") return String(first);
+    return "—";
+  } catch {
+    return "—";
+  }
+};
+
+const generateMd = (
+  run: MdRun,
+  cases: MdCase[],
+  bugs: MdBug[],
+  counts: Record<string, number>,
+  total: number
+): string => {
+  const now = new Date();
+  const nowText = now.toISOString().replace("T", " ").slice(0, 19);
+  const reportDate = now.toISOString().slice(0, 10);
+  const pct = (n: number): string => (total > 0 ? ((n / total) * 100).toFixed(1) : "0.0");
+  const statusOrder = [
+    "PASS",
+    "FAIL",
+    "BLOCKED",
+    "PARTIAL",
+    "SKIPPED",
+    "MANUAL_PASS",
+    "MANUAL_FAIL",
+    "MANUAL_BLOCKED",
+    "PENDING",
+    "MANUAL_PENDING"
+  ];
+  const statusEmoji: Record<string, string> = {
+    PASS: "✅",
+    FAIL: "❌",
+    BLOCKED: "🚫",
+    PARTIAL: "⚠️",
+    SKIPPED: "⏭️",
+    MANUAL_PASS: "📝✅",
+    MANUAL_FAIL: "📝❌",
+    MANUAL_BLOCKED: "📝🚫",
+    PENDING: "⏳",
+    MANUAL_PENDING: "📝⏳"
+  };
+
+  const manualFillers = [
+    ...new Set(cases.map((c) => c.manual_filled_by?.trim()).filter((x): x is string => Boolean(x)))
+  ].join(", ");
+
+  const startedAt = cases[0]?.created_at ?? run.created_at ?? "—";
+  const finishedAt = cases[cases.length - 1]?.updated_at ?? run.updated_at ?? "—";
+
+  let md = "";
+  md += "# Galaxy UAT 測試報告\n\n";
+  md += "| 項目 | 內容 |\n";
+  md += "|------|------|\n";
+  md += `| 輪次ID | ${mdEscape(run.round_id)} |\n`;
+  md += `| 位置 | ${mdEscape(run.location ?? "—")} |\n`;
+  md += `| 功能 | ${mdEscape(run.feature_main ?? "—")} / ${mdEscape(run.feature_sub ?? "—")} |\n`;
+  md += `| 輪次名稱 | ${mdEscape(run.run_name ?? "—")} |\n`;
+  md += `| 測試環境 | ${mdEscape(run.dev_url ?? "—")} |\n`;
+  md += `| 執行時間 | ${mdEscape(startedAt)} ~ ${mdEscape(finishedAt)} |\n`;
+  md += `| 測試者 | Playwright Runner${manualFillers ? ` + ${mdEscape(manualFillers)}` : ""} |\n`;
+  md += `| 狀態 | ${mdEscape(run.status)} |\n\n`;
+  md += "---\n\n";
+
+  md += "## 測試結果摘要\n\n";
+  md += "| 結果 | 數量 | 佔比 |\n";
+  md += "|------|------|------|\n";
+  for (const status of statusOrder) {
+    const count = counts[status] ?? 0;
+    if (count > 0) {
+      md += `| ${statusEmoji[status] ?? ""} ${status} | ${count} | ${pct(count)}% |\n`;
+    }
+  }
+  md += `| **總計** | **${total}** | **100%** |\n\n`;
+  md += "---\n\n";
+
+  md += "## 已完成的 Test Case（摘要表）\n\n";
+  md += "| 編號 | 測試項目 | 結果 | 備註 |\n";
+  md += "|------|---------|------|------|\n";
+  for (const c of cases) {
+    md += `| ${mdEscape(c.case_no)} | ${mdEscape(c.case_title)} | **${mdEscape(c.result_status ?? "—")}** | ${mdEscape(extractSummary(c))} |\n`;
+  }
+  md += "\n---\n\n";
+
+  if (bugs.length > 0) {
+    md += "## 已發現 Bug 摘要\n\n";
+    md += "| # | 嚴重度 | 編號 | 描述 | 建議確認方式 |\n";
+    md += "|---|--------|------|------|------------|\n";
+    bugs.forEach((b, i) => {
+      md += `| ${i + 1} | **${mdEscape(b.severity ?? "—")}** | ${mdEscape(b.related_case_no ?? "—")} | ${mdEscape(b.description ?? "—")} | ${mdEscape(b.suggestion ?? "—")} |\n`;
+    });
+    md += "\n---\n\n";
+  }
+
+  md += "## 詳細執行紀錄\n\n";
+  let lastGroup = "";
+  for (const c of cases) {
+    const groupName = c.group_name?.trim() || "未分組";
+    if (groupName !== lastGroup) {
+      lastGroup = groupName;
+      md += `### ${mdEscape(groupName)}\n\n`;
+    }
+
+    md += `#### ${mdEscape(c.case_no)}｜${mdEscape(c.case_title)}\n\n`;
+    md += "| 項目 | 內容 |\n";
+    md += "|------|------|\n";
+    md += `| **測試日** | ${mdEscape(c.updated_at ?? c.created_at ?? "—")} |\n`;
+    md += `| **執行方式** | ${mdEscape(c.execution_type ?? "—")} |\n`;
+    md += `| **結果** | **${mdEscape(c.result_status ?? "—")}** |\n`;
+    if (c.fail_category) {
+      md += `| **失敗分類** | ${mdEscape(c.fail_category)} |\n`;
+    }
+    if (c.detail_json) {
+      try {
+        const detail = JSON.parse(c.detail_json) as Record<string, unknown>;
+        for (const [k, v] of Object.entries(detail)) {
+          const detailValue = typeof v === "object" ? JSON.stringify(v) : String(v ?? "");
+          md += `| **${mdEscape(k)}** | ${mdEscape(detailValue)} |\n`;
+        }
+      } catch {
+        md += "| **狀態** | detail_json 格式異常 |\n";
+      }
+    } else {
+      md += "| **狀態** | 尚未有詳細紀錄 |\n";
+    }
+    md += "\n---\n\n";
+  }
+
+  md += "## 測試環境資訊\n\n";
+  md += "| 項目 | 內容 |\n";
+  md += "|------|------|\n";
+  md += `| Dev URL | ${mdEscape(run.dev_url ?? "—")} |\n`;
+  md += "| 測試工具 | UAT Test Tool (Playwright) |\n";
+  md += `| 報告生成時間 | ${mdEscape(nowText)} |\n`;
+  md += `| 報告日期 | ${mdEscape(reportDate)} |\n`;
+
+  return md;
+};
+
 const getRun = (runId: string): Record<string, unknown> | undefined =>
   db.prepare("SELECT * FROM runs WHERE id = ?").get(runId) as Record<string, unknown> | undefined;
 
@@ -880,6 +1068,59 @@ router.get("/:id/logs", (req, res) => {
     .prepare("SELECT * FROM run_logs WHERE run_id = ? ORDER BY created_at ASC LIMIT ?")
     .all(req.params.id, limit);
   return res.json({ items });
+});
+
+router.post("/:id/export-md", (req, res) => {
+  const run = db.prepare("SELECT * FROM runs WHERE id = ?").get(req.params.id) as MdRun | undefined;
+  if (!run) {
+    return res.status(404).json({ error: "RUN_NOT_FOUND" });
+  }
+
+  const cases = db
+    .prepare(
+      `
+        SELECT *
+        FROM run_cases
+        WHERE run_id = ?
+        ORDER BY COALESCE(group_name, ''), case_no
+      `
+    )
+    .all(req.params.id) as MdCase[];
+
+  const bugs = db
+    .prepare(
+      `
+        SELECT severity, related_case_no, description, suggestion
+        FROM bugs
+        WHERE run_id = ?
+        ORDER BY
+          CASE severity
+            WHEN 'HIGH' THEN 3
+            WHEN 'MEDIUM' THEN 2
+            WHEN 'LOW' THEN 1
+            ELSE 0
+          END DESC,
+          created_at DESC
+      `
+    )
+    .all(req.params.id) as MdBug[];
+
+  const counts: Record<string, number> = {};
+  for (const c of cases) {
+    const status = c.result_status || "PENDING";
+    counts[status] = (counts[status] ?? 0) + 1;
+  }
+  const total = cases.length;
+  const content = generateMd(run, cases, bugs, counts, total);
+
+  const safe = (v: string | null | undefined): string =>
+    (v ?? "NA").trim().replace(/[\/\s]+/g, "_").replace(/[^a-zA-Z0-9_\-\u4e00-\u9fff]/g, "");
+  const filename = `UAT_${safe(run.round_id)}_${safe(run.feature_sub)}_${safe(run.run_name)}_${new Date().toISOString().slice(0, 10)}.md`;
+
+  insertRunLog(req.params.id, "INFO", "Markdown report exported", { filename, totalCases: total, totalBugs: bugs.length });
+  res.setHeader("Content-Type", "text/markdown; charset=utf-8");
+  res.setHeader("Content-Disposition", `attachment; filename="${encodeURIComponent(filename)}"`);
+  return res.send(content);
 });
 
 router.get("/:id/bugs", (req, res) => {

@@ -611,6 +611,37 @@ function App() {
     }
   };
 
+  const handleDownloadMd = async () => {
+    if (!selectedRunId) return;
+    setRunError("");
+    try {
+      const base = (import.meta.env.VITE_API_BASE_URL ?? "").replace(/\/+$/, "");
+      const requestUrl = base ? `${base}/api/runs/${selectedRunId}/export-md` : `/api/runs/${selectedRunId}/export-md`;
+      const resp = await fetch(requestUrl, { method: "POST" });
+      if (!resp.ok) {
+        const msg = await resp.text().catch(() => "");
+        throw new Error(msg || "Export failed");
+      }
+
+      const blob = await resp.blob();
+      const disposition = resp.headers.get("Content-Disposition") ?? "";
+      const match = disposition.match(/filename="?([^"]+)"?/);
+      const rawName = match?.[1] ? decodeURIComponent(match[1]) : `UAT_report_${selectedRunId}.md`;
+      const downloadName = rawName.replace(/[\/\\]/g, "_");
+
+      const objectUrl = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = objectUrl;
+      a.download = downloadName;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(objectUrl);
+    } catch (error) {
+      setRunError(error instanceof Error ? error.message : String(error));
+    }
+  };
+
   return (
     <main className="app">
       <header className="topbar">
@@ -1025,7 +1056,9 @@ function App() {
                 <div className="card-header">
                   <h2>Run 摘要</h2>
                   <div className="actions">
-                    <button className="btn sm">📄 下載 MD</button>
+                    <button className="btn sm" onClick={() => void handleDownloadMd()} disabled={!selectedRunId || runBusy}>
+                      📄 下載 MD
+                    </button>
                     <button className="btn sm">📊 下載 XLSX</button>
                   </div>
                 </div>
