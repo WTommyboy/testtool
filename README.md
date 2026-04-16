@@ -11,6 +11,13 @@ npm run dev
 
 API will start at `http://localhost:3000`.
 
+## Railway Deployment Note (Playwright)
+
+- `postinstall` 會自動執行 `playwright install chromium`
+- 建議在 Railway 設定環境變數：`PLAYWRIGHT_BROWSERS_PATH=0`
+
+若仍出現 browser executable 不存在，請在 Railway 重新部署一次（Clear build cache 後再 Deploy）。
+
 ## XLSX Import
 
 Current import endpoint accepts local absolute path:
