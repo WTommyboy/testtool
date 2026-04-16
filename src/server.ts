@@ -6,6 +6,7 @@ import { config } from "./config";
 import { migrate } from "./db";
 import runsRouter from "./runs";
 import conversationsRouter from "./conversations";
+import playwrightRouter from "./playwright";
 
 const ensureDirectory = (dirPath: string): void => {
   fs.mkdirSync(path.resolve(dirPath), { recursive: true });
@@ -31,6 +32,7 @@ app.get("/health", (_req, res) => {
 
 app.use("/api/runs", runsRouter);
 app.use("/api/conversations", conversationsRouter);
+app.use("/api/playwright", playwrightRouter);
 
 app.use((req, res) => {
   res.status(404).json({

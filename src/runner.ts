@@ -859,3 +859,12 @@ export const requestRunCancel = (runId: string): void => {
   const active = activeRuns.get(runId);
   if (active) active.cancelRequested = true;
 };
+
+export const hasConnectedPlaywrightBrowser = (): boolean => {
+  for (const state of activeRuns.values()) {
+    if (state.browser?.isConnected()) {
+      return true;
+    }
+  }
+  return false;
+};

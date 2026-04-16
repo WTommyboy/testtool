@@ -69,6 +69,13 @@ type BugItem = {
   suggestion: string;
 };
 
+type PlaywrightHealthStatus = "checking" | "connected" | "available" | "unavailable";
+
+type PlaywrightHealthResponse = {
+  status?: string;
+  message?: string;
+};
+
 type Approval = {
   id: string;
   case_no: string;
@@ -146,7 +153,10 @@ function App() {
   const [expandedCaseId, setExpandedCaseId] = useState<string | null>(null);
   const [approvals, setApprovals] = useState<Approval[]>([]);
   const [runBusy, setRunBusy] = useState(false);
+  const [isStarting, setIsStarting] = useState(false);
   const [runError, setRunError] = useState("");
+  const [startError, setStartError] = useState<string | null>(null);
+  const [playwrightStatus, setPlaywrightStatus] = useState<PlaywrightHealthStatus>("checking");
   const [resolvedBy, setResolvedBy] = useState("tommy");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -164,6 +174,34 @@ function App() {
   const failPct = totalCases > 0 ? (failCases / totalCases) * 100 : 0;
   const blockedPct = totalCases > 0 ? (blockedCases / totalCases) * 100 : 0;
   const pendingPct = totalCases > 0 ? (pendingCases / totalCases) * 100 : 0;
+
+  const buildApiUrl = (url: string): string => {
+    const base = (import.meta.env.VITE_API_BASE_URL ?? "").replace(/\/+$/, "");
+    return base ? `${base}${url}` : url;
+  };
+
+  const checkPlaywrightHealth = async (): Promise<{ status: PlaywrightHealthStatus; message: string }> => {
+    try {
+      const resp = await fetch(buildApiUrl("/api/playwright/health"));
+      const data = (await resp.json().catch(() => ({}))) as PlaywrightHealthResponse;
+      if (!resp.ok) {
+        return {
+          status: "unavailable",
+          message: data.message || "Playwright 未連線"
+        };
+      }
+      const status = data.status === "connected" || data.status === "available" ? data.status : "available";
+      return {
+        status,
+        message: data.message || "Playwright 可用"
+      };
+    } catch {
+      return {
+        status: "unavailable",
+        message: "無法連線到 Playwright 服務，請確認服務已啟動。"
+      };
+    }
+  };
 
   const getCaseGroups = (): string[] => [...new Set(runCases.map((c) => getCaseGroupName(c)))];
   const getStatusCounts = (): Record<string, number> => {
@@ -425,6 +463,24 @@ function App() {
     }
   }, [selectedRunId]);
 
+  useEffect(() => {
+    let cancelled = false;
+    const poll = async () => {
+      const health = await checkPlaywrightHealth();
+      if (!cancelled) {
+        setPlaywrightStatus(health.status);
+      }
+    };
+    void poll();
+    const timer = setInterval(() => {
+      void poll();
+    }, 30000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, []);
+
   const handleCreateConversation = async (e: FormEvent) => {
     e.preventDefault();
     setConversationBusy(true);
@@ -526,23 +582,46 @@ function App() {
   };
 
   const handleRunAction = async (action: "start" | "cancel", runId: string) => {
-    setRunBusy(true);
-    setRunError("");
+    if (action === "start") {
+      setIsStarting(true);
+      setStartError(null);
+    } else {
+      setRunBusy(true);
+      setRunError("");
+    }
     try {
       await api(`/api/runs/${runId}/${action}`, { method: "POST" });
       await loadRuns();
       await loadRunDetail(runId);
     } catch (error) {
-      setRunError(error instanceof Error ? error.message : String(error));
+      const message = error instanceof Error ? error.message : String(error);
+      if (action === "start") {
+        setStartError(message);
+      } else {
+        setRunError(message);
+      }
     } finally {
-      setRunBusy(false);
+      if (action === "start") {
+        setIsStarting(false);
+      } else {
+        setRunBusy(false);
+      }
     }
   };
 
   const handleCreateRun = async () => {
     setRunBusy(true);
+    setIsStarting(true);
     setRunError("");
+    setStartError(null);
     try {
+      const health = await checkPlaywrightHealth();
+      setPlaywrightStatus(health.status);
+      if (health.status === "unavailable") {
+        setStartError(health.message || "Playwright 未連線，無法開始執行");
+        return;
+      }
+
       if (!runRoundId.trim()) {
         setRunError("請填寫輪次 ID");
         return;
@@ -586,10 +665,19 @@ function App() {
       setSelectedRunId(created.id);
       await loadRuns();
       await loadRunDetail(created.id);
+
+      try {
+        await api(`/api/runs/${created.id}/start`, { method: "POST" });
+        await loadRuns();
+        await loadRunDetail(created.id);
+      } catch (error) {
+        setStartError(error instanceof Error ? error.message : String(error));
+      }
     } catch (error) {
       setRunError(error instanceof Error ? error.message : String(error));
     } finally {
       setRunBusy(false);
+      setIsStarting(false);
     }
   };
 
@@ -620,8 +708,7 @@ function App() {
     if (!selectedRunId) return;
     setRunError("");
     try {
-      const base = (import.meta.env.VITE_API_BASE_URL ?? "").replace(/\/+$/, "");
-      const requestUrl = base ? `${base}/api/runs/${selectedRunId}/export-md` : `/api/runs/${selectedRunId}/export-md`;
+      const requestUrl = buildApiUrl(`/api/runs/${selectedRunId}/export-md`);
       const resp = await fetch(requestUrl, { method: "POST" });
       if (!resp.ok) {
         const msg = await resp.text().catch(() => "");
@@ -790,7 +877,19 @@ function App() {
         <section className="panel">
           <div className="card mb-16">
             <div className="card-header">
-              <h2>測試執行設定</h2>
+              <div className="card-title-with-status">
+                <h2>測試執行設定</h2>
+                <span className={`pw-status ${playwrightStatus === "unavailable" ? "is-unavailable" : ""}`}>
+                  <span className="pw-dot">●</span>{" "}
+                  {playwrightStatus === "checking"
+                    ? "檢查中..."
+                    : playwrightStatus === "connected"
+                      ? "Playwright 已連線"
+                      : playwrightStatus === "available"
+                        ? "Playwright 可用"
+                        : "Playwright 未連線"}
+                </span>
+              </div>
               <span className={`badge ${summary?.runStatus || "DRAFT"}`}>{summary?.runStatus || "DRAFT"}</span>
             </div>
 
@@ -909,16 +1008,38 @@ function App() {
             {runError ? <p className="error-msg">{runError}</p> : null}
 
             <div className="flex flex-end mt-8 gap-8">
-              <button className="btn" onClick={() => void loadRuns()} disabled={runBusy}>
+              <button className="btn" onClick={() => void loadRuns()} disabled={runBusy || isStarting}>
                 查詢
               </button>
-              <button className="btn primary" onClick={() => void handleCreateRun()} disabled={runBusy}>
-                ▶ 開始執行
+              <button className="btn primary" onClick={() => void handleCreateRun()} disabled={runBusy || isStarting}>
+                {isStarting ? (
+                  <>
+                    <span className="spinner-sm" /> 檢查 Playwright...
+                  </>
+                ) : (
+                  <>▶ 開始執行</>
+                )}
               </button>
-              <button className="btn danger" onClick={() => selectedRunId && void handleRunAction("cancel", selectedRunId)} disabled={!selectedRunId || runBusy}>
+              <button
+                className="btn danger"
+                onClick={() => selectedRunId && void handleRunAction("cancel", selectedRunId)}
+                disabled={!selectedRunId || runBusy || isStarting}
+              >
                 取消 Run
               </button>
             </div>
+            {startError ? (
+              <div className="error-banner">
+                <span className="error-icon">⚠️</span>
+                <div className="error-body">
+                  <strong>無法啟動測試</strong>
+                  <p>{startError}</p>
+                </div>
+                <button className="btn sm" onClick={() => setStartError(null)}>
+                  ✕
+                </button>
+              </div>
+            ) : null}
           </div>
 
           <div className="stats">

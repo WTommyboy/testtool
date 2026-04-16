@@ -7,6 +7,7 @@ import { z } from "zod";
 import { config } from "./config";
 import { db } from "./db";
 import { requestRunCancel, startRun } from "./runner";
+import { checkPlaywrightHealth } from "./playwright-health";
 import { parseTestcaseXlsx, type ParsedCase, type ParsedStep } from "./xlsx-parser";
 
 const router = Router();
@@ -823,7 +824,17 @@ router.post("/:id/status", (req, res) => {
   });
 });
 
-router.post("/:id/start", (req, res) => {
+router.post("/:id/start", async (req, res) => {
+  const health = await checkPlaywrightHealth(3000);
+  if (health.status === "unavailable") {
+    return res.status(503).json({
+      error: "PLAYWRIGHT_UNAVAILABLE",
+      message:
+        "Playwright 未連線，請確認 runner 已啟動。若是首次執行請先執行 `npx playwright install` 安裝瀏覽器。",
+      detail: health.message
+    });
+  }
+
   const run = getRun(req.params.id);
   if (!run) {
     return res.status(404).json({ error: "RUN_NOT_FOUND" });
