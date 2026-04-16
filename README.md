@@ -14,7 +14,8 @@ API will start at `http://localhost:3000`.
 ## Railway Deployment Note (Playwright)
 
 - `postinstall` 會自動執行 `playwright install chromium`
-- 建議在 Railway 設定環境變數：`PLAYWRIGHT_BROWSERS_PATH=0`
+- Docker 部署時請勿設定 `PLAYWRIGHT_BROWSERS_PATH=0`（會改走 `node_modules/.local-browsers`）
+- 建議設定 `PLAYWRIGHT_BROWSERS_PATH=/ms-playwright` 或直接留空（Dockerfile 已內建）
 - 專案已提供 `nixpacks.toml`，會安裝 Playwright Chromium 需要的 Linux 套件（含 `libglib2.0-0`）
 - 若 Railway 仍報 `libglib-2.0.so.0` 缺失，請改用專案內 `Dockerfile` 部署（基底為官方 Playwright image）
 
