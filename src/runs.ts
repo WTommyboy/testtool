@@ -61,6 +61,7 @@ const createCasesSchema = z.object({
     .array(
       z.object({
         caseNo: z.string().min(1),
+        groupName: z.string().optional(),
         caseTitle: z.string().min(1),
         executionType: z.enum(CASE_EXECUTION_TYPE),
         detailJson: z.unknown().optional()
@@ -358,11 +359,12 @@ const prepareUpsertCaseStmt = () =>
   db.prepare(
     `
       INSERT INTO run_cases (
-        id, run_id, case_no, case_title, execution_type, result_status, detail_json, created_at, updated_at
+        id, run_id, case_no, group_name, case_title, execution_type, result_status, detail_json, created_at, updated_at
       ) VALUES (
-        @id, @run_id, @case_no, @case_title, @execution_type, @result_status, @detail_json, @created_at, @updated_at
+        @id, @run_id, @case_no, @group_name, @case_title, @execution_type, @result_status, @detail_json, @created_at, @updated_at
       )
       ON CONFLICT(run_id, case_no) DO UPDATE SET
+        group_name = excluded.group_name,
         case_title = excluded.case_title,
         execution_type = excluded.execution_type,
         result_status = excluded.result_status,
@@ -424,6 +426,7 @@ const upsertImportedTestcase = (
         id: randomUUID(),
         run_id: runId,
         case_no: item.caseNo,
+        group_name: item.groupName ?? null,
         case_title: item.caseTitle,
         execution_type: item.executionType,
         result_status: resultStatus,
@@ -670,6 +673,7 @@ router.post("/:id/cases", (req, res) => {
         id: randomUUID(),
         run_id: req.params.id,
         case_no: item.caseNo,
+        group_name: item.groupName ?? null,
         case_title: item.caseTitle,
         execution_type: item.executionType,
         result_status: resultStatus,

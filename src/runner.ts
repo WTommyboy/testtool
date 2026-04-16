@@ -15,9 +15,11 @@ type CaseRow = {
   id: string;
   run_id: string;
   case_no: string;
+  group_name?: string | null;
   case_title?: string;
   execution_type: string;
   result_status: string;
+  detail_json?: string | null;
 };
 
 type StepRow = {
@@ -117,6 +119,38 @@ const normalizeDetailValue = (value: unknown): string | number | boolean | strin
   return JSON.stringify(value);
 };
 
+const parseCaseDetailJson = (value: string | null | undefined): DetailCollector => {
+  if (!value) return {};
+  try {
+    const parsed = JSON.parse(value) as Record<string, unknown>;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    const out: DetailCollector = {};
+    for (const [k, v] of Object.entries(parsed)) {
+      out[k] = normalizeDetailValue(v);
+    }
+    return out;
+  } catch {
+    return {};
+  }
+};
+
+const ensureString = (value: string | number | boolean | string[] | null | undefined, fallback: string): string => {
+  if (value === null || value === undefined) return fallback;
+  if (Array.isArray(value)) return value.length > 0 ? value.join("、") : fallback;
+  const text = String(value).trim();
+  return text || fallback;
+};
+
+const parseExpectedOptionsFromText = (expectedText: string): string[] => {
+  const fromColon = expectedText.match(/[：:]\s*(.+)$/);
+  const source = fromColon?.[1] ?? expectedText;
+  return source
+    .split(/[、，,]/)
+    .map((x) => x.trim().replace(/^「|」$/g, "").replace(/^"|"$|^'|'$/g, ""))
+    .filter((x) => x.length > 0)
+    .filter((x) => !/^(應|出現|個|key|值|應該)$/i.test(x));
+};
+
 const ensureCoreDetail = (
   runId: string,
   caseNo: string,
@@ -148,7 +182,11 @@ const ensureCoreDetail = (
   const condition =
     typeof base.設定條件 === "string" && base.設定條件.trim()
       ? base.設定條件
-      : `入口=${row?.dev_url || "N/A"}`;
+      : "未提供前置條件";
+  const testType =
+    typeof base.測試類型 === "string" && base.測試類型.trim() ? base.測試類型 : "未分類";
+  const stepText =
+    typeof base.執行步驟 === "string" && base.執行步驟.trim() ? base.執行步驟 : "未提供執行步驟";
   const expected =
     typeof base.預期行為 === "string" && base.預期行為.trim() ? base.預期行為 : "案例應依測試設計完成";
   const actual =
@@ -158,10 +196,15 @@ const ensureCoreDetail = (
         ? "案例執行完成"
         : "案例執行失敗或中斷";
 
+  base.測試類型 = String(testType);
   base.測試目的 = String(purpose);
   base.設定條件 = String(condition);
+  base.執行步驟 = String(stepText);
   base.預期行為 = String(expected);
   base.實際行為 = String(actual);
+  if (!base.執行方式) {
+    base.執行方式 = String(row?.dev_url ? "Playwright Runner" : "未指定");
+  }
 
   if ((resultStatus === "FAIL" || resultStatus === "BLOCKED") && !base.錯誤原因) {
     if (typeof base.reason === "string" && base.reason.trim()) {
@@ -346,6 +389,105 @@ const startHeartbeat = (runId: string, state: ActiveRun): (() => void) => {
   return () => clearInterval(timer);
 };
 
+const clickFirstVisibleText = async (page: Page, candidates: string[], timeoutMs: number): Promise<string> => {
+  for (const text of candidates) {
+    const locator = page.getByText(text, { exact: false }).first();
+    try {
+      await locator.waitFor({ state: "visible", timeout: Math.min(timeoutMs, 1800) });
+      await locator.click({ timeout: timeoutMs });
+      return text;
+    } catch {
+      // try next candidate
+    }
+  }
+  throw new Error(`STEP_TRANSLATION_FAILED cannot find text candidates: ${candidates.join(" | ")}`);
+};
+
+const collectDropdownOptions = async (page: Page): Promise<string[]> =>
+  page.evaluate(() => {
+    const selectors = [
+      "[role='option']",
+      ".dropdown-option",
+      ".el-select-dropdown__item",
+      ".el-option",
+      ".ant-select-item-option-content"
+    ];
+    const merged: string[] = [];
+    for (const selector of selectors) {
+      const nodes = Array.from(document.querySelectorAll(selector));
+      for (const node of nodes) {
+        const text = (node.textContent || "").trim();
+        if (text && !merged.includes(text)) merged.push(text);
+      }
+    }
+    return merged;
+  });
+
+const executeCustomNaturalStep = async (
+  page: Page,
+  step: StepRow,
+  detail: DetailCollector,
+  timeoutMs: number
+): Promise<Record<string, unknown>> => {
+  const stepText = ensureString(step.input_value, ensureString(detail.執行步驟, ""));
+  if (!stepText) {
+    throw new Error("STEP_TRANSLATION_FAILED empty custom step text");
+  }
+
+  if (/主欄位/.test(stepText) && /(選擇|下拉|選單)/.test(stepText)) {
+    const clickedText = await clickFirstVisibleText(page, ["+ 選擇主欄位", "+選擇主欄位", "選擇主欄位"], timeoutMs);
+    await page.waitForTimeout(350);
+    const options = await collectDropdownOptions(page);
+    if (options.length === 0) {
+      throw new Error("STEP_TRANSLATION_FAILED dropdown options not found");
+    }
+
+    const expectedText = ensureString(step.expected, ensureString(detail.預期行為, ""));
+    const expectedOptions = parseExpectedOptionsFromText(expectedText);
+    const expectedCountMatch = expectedText.match(/(\d+)\s*個/);
+    const expectedCount = expectedCountMatch ? Number(expectedCountMatch[1]) : undefined;
+    const missing = expectedOptions.filter((x) => !options.some((actual) => actual.includes(x)));
+
+    detail.實際行為 = `點擊「${clickedText}」後，下拉選單出現 ${options.length} 個選項：${options.join("、")}`;
+    detail.抽樣數據 = options.slice(0, 10);
+    if (expectedOptions.length > 0 || expectedCount !== undefined) {
+      const countPass = expectedCount === undefined || options.length === expectedCount;
+      if (!countPass || missing.length > 0) {
+        throw new Error(
+          `ASSERT_OPTIONS_FAILED expectedCount=${expectedCount ?? "-"} actualCount=${options.length} missing=${missing.join(",") || "-"}`
+        );
+      }
+      detail.判定 = `選項比對通過（${options.length} 項）`;
+    }
+    return { clickedText, optionCount: options.length, options };
+  }
+
+  if (/(執行|查詢|搜尋)/.test(stepText)) {
+    const clickedText = await clickFirstVisibleText(page, ["執行", "查詢", "搜尋"], timeoutMs);
+    await page.waitForLoadState("networkidle", { timeout: timeoutMs }).catch(() => undefined);
+    const rowCount = await page.evaluate(() => {
+      const trs = Array.from(document.querySelectorAll("table tr"));
+      return trs.filter((tr) => tr.querySelectorAll("td").length > 0).length;
+    });
+    detail.實際行為 = `點擊「${clickedText}」後取得資料 ${rowCount} 筆`;
+    detail.筆數 = rowCount;
+
+    const expectedText = ensureString(step.expected, ensureString(detail.預期行為, ""));
+    const expectedRowsMatch = expectedText.match(/(?:回傳|應有|應為|共)\s*(\d+)\s*筆/);
+    if (expectedRowsMatch) {
+      const expectedRows = Number(expectedRowsMatch[1]);
+      if (rowCount !== expectedRows) {
+        throw new Error(`ASSERT_ROW_COUNT_FAILED expected=${expectedRows} actual=${rowCount}`);
+      }
+      detail.判定 = `筆數比對通過（${rowCount} 筆）`;
+    }
+
+    return { clickedText, rowCount };
+  }
+
+  throw new Error(`STEP_TRANSLATION_FAILED unsupported custom step: ${stepText.slice(0, 120)}`);
+};
+
 const processCase = async (run: RunRow, item: CaseRow, state: ActiveRun, artifactsDir: string): Promise<void> => {
   if (item.execution_type === "manual") {
     return;
@@ -362,13 +504,19 @@ const processCase = async (run: RunRow, item: CaseRow, state: ActiveRun, artifac
     )
     .all(run.id, item.case_no) as StepRow[];
 
+  const baseDetail = parseCaseDetailJson(item.detail_json);
   const detail: DetailCollector = {
-    測試目的: item.case_title || `執行 ${item.case_no}`,
-    設定條件: `入口=${run.dev_url}`,
-    預期行為: "所有步驟應通過且符合預期",
+    ...baseDetail,
+    測試類型: ensureString(baseDetail.測試類型, "未分類"),
+    測試目的: ensureString(baseDetail.測試目的, item.case_title || `執行 ${item.case_no}`),
+    設定條件: ensureString(baseDetail.設定條件, "未提供前置條件"),
+    執行步驟: ensureString(baseDetail.執行步驟, "未提供執行步驟"),
+    預期行為: ensureString(baseDetail.預期行為, "未提供預期結果"),
+    執行方式: ensureString(baseDetail.執行方式, item.execution_type),
     實際行為: "開始執行"
   };
   const actionLogs: string[] = [];
+  const observationLogs: string[] = [];
   const requestDates: Array<{ start?: string; end?: string }> = [];
 
   const reqHandler = (req: import("playwright").Request): void => {
@@ -410,19 +558,16 @@ const processCase = async (run: RunRow, item: CaseRow, state: ActiveRun, artifac
   page.on("response", respHandler);
 
   if (steps.length === 0) {
-    await state.page.goto(run.dev_url, { waitUntil: "domcontentloaded", timeout: config.playwrightTimeoutMs });
-    const shotPath = path.join(artifactsDir, `${item.case_no}.png`);
-    await state.page.screenshot({ path: shotPath, fullPage: true });
-    detail.實際行為 = "完成 smoke navigation 並截圖";
-    detail.截圖 = shotPath;
-    setCaseResult(run.id, item.case_no, "PASS", null, {
-      ...detail,
-      mode: "smoke-navigation",
-      url: run.dev_url
-    });
+    const shotPath = path.join(artifactsDir, `${item.case_no}_blocked_no_steps.png`);
+    await page.goto(run.dev_url, { waitUntil: "domcontentloaded", timeout: config.playwrightTimeoutMs });
+    await page.screenshot({ path: shotPath, fullPage: true });
+    detail.實際行為 = "找不到可執行步驟，未執行測試";
+    detail.BLOCKED原因 = "STEP_NOT_FOUND";
+    detail.截圖路徑 = shotPath;
+    setCaseResult(run.id, item.case_no, "BLOCKED", "ENV_BLOCKED", detail);
     page.off("request", reqHandler);
     page.off("response", respHandler);
-    return;
+    throw new CaseExecutionError("STEP_NOT_FOUND", detail);
   }
 
   for (const step of steps) {
@@ -516,6 +661,10 @@ const processCase = async (run: RunRow, item: CaseRow, state: ActiveRun, artifac
               return { actual, expected: step.expected };
             }
 
+            if (action === "custom") {
+              return executeCustomNaturalStep(page, step, detail, timeoutMs);
+            }
+
             if (action === "screenshot") {
               const shotPath = path.join(artifactsDir, `${item.case_no}_step${step.step_no}.png`);
               await page.screenshot({ path: shotPath, fullPage: true });
@@ -588,7 +737,7 @@ const processCase = async (run: RunRow, item: CaseRow, state: ActiveRun, artifac
               return { compared, mismatches };
             }
 
-            return { skipped: true, reason: "ACTION_NOT_IMPLEMENTED", action };
+            throw new Error(`ACTION_NOT_IMPLEMENTED:${action}`);
           };
 
           const result = await Promise.race([
@@ -596,14 +745,15 @@ const processCase = async (run: RunRow, item: CaseRow, state: ActiveRun, artifac
             new Promise((_, reject) => setTimeout(() => reject(new Error(`STEP_TIMEOUT_${timeoutMs}ms`)), timeoutMs))
           ]);
           actionLogs.push(`step${step.step_no}:${action}:PASS`);
+          observationLogs.push(`步驟 ${step.step_no} ${action} 執行成功`);
           if (action === "asserttext" && typeof step.expected === "string") {
-            detail.預期行為 = `文字包含「${step.expected}」`;
+            detail.文字比對 = `預期包含「${step.expected}」`;
           }
           if (action === "assertdata") {
             const data = result as { rowCount?: number };
             if (typeof data.rowCount === "number") {
               detail.筆數 = data.rowCount;
-              detail.實際行為 = `資料筆數 ${data.rowCount}`;
+              observationLogs.push(`資料筆數 ${data.rowCount}`);
             }
           }
           if (action === "comparecsv") {
@@ -611,10 +761,11 @@ const processCase = async (run: RunRow, item: CaseRow, state: ActiveRun, artifac
             detail.比對方式 = "預覽數據 vs CSV 逐筆比對";
             detail.比對結果 = `${data.compared ?? 0} 筆比對`;
             detail.差異筆數 = data.mismatches ?? 0;
+            observationLogs.push(`CSV 比對 ${data.compared ?? 0} 筆，差異 ${data.mismatches ?? 0} 筆`);
           }
           if (action === "screenshot") {
             const data = result as { screenshot?: string };
-            if (data.screenshot) detail.截圖 = data.screenshot;
+            if (data.screenshot) detail.截圖路徑 = data.screenshot;
           }
           setStepResult(run.id, item.case_no, step.step_no, "PASS", {
             attempt,
@@ -645,7 +796,7 @@ const processCase = async (run: RunRow, item: CaseRow, state: ActiveRun, artifac
         }
         detail.實際行為 = `步驟 ${step.step_no} 失敗`;
         detail.錯誤原因 = lastError || `STEP_FAILED@${step.step_no}`;
-        if (failShotPath) detail.截圖 = failShotPath;
+        if (failShotPath) detail.截圖路徑 = failShotPath;
         setStepResult(run.id, item.case_no, step.step_no, "FAIL", undefined, lastError);
         page.off("request", reqHandler);
         page.off("response", respHandler);
@@ -666,7 +817,10 @@ const processCase = async (run: RunRow, item: CaseRow, state: ActiveRun, artifac
     detail.日期範圍 = dateRangeText;
   }
   if (actionLogs.length > 0) {
-    detail.實際行為 = `步驟通過 ${actionLogs.length} 項`;
+    detail.實際行為 =
+      observationLogs.length > 0
+        ? observationLogs.slice(0, 6).join("；")
+        : `完成 ${actionLogs.length} 個步驟`;
     detail.步驟摘要 = actionLogs.slice(0, 20);
   }
   page.off("request", reqHandler);
@@ -717,7 +871,7 @@ const runJob = async (runId: string): Promise<void> => {
 
   const cases = db
     .prepare(
-      "SELECT id, run_id, case_no, case_title, execution_type, result_status FROM run_cases WHERE run_id = ? AND result_status IN ('PENDING','BLOCKED','FAIL','MANUAL_PENDING') ORDER BY created_at ASC"
+      "SELECT id, run_id, case_no, group_name, case_title, execution_type, result_status, detail_json FROM run_cases WHERE run_id = ? AND result_status IN ('PENDING','BLOCKED','FAIL','MANUAL_PENDING') ORDER BY created_at ASC"
     )
     .all(runId) as CaseRow[];
   if (cases.length === 0) {
@@ -760,19 +914,32 @@ const runJob = async (runId: string): Promise<void> => {
         const message = error instanceof Error ? error.message : String(error);
         const category = message.startsWith("MANUAL_CHECK_REQUIRED@")
           ? "ENV_BLOCKED"
+          : message.includes("STEP_NOT_FOUND")
+            ? "ENV_BLOCKED"
+          : message.includes("STEP_TRANSLATION_FAILED") || message.includes("EXPECTATION_NOT_ASSERTABLE")
+            ? "ENV_BLOCKED"
+            : message.includes("ACTION_NOT_IMPLEMENTED")
+              ? "ENV_BLOCKED"
+          : message.startsWith("ASSERT_")
+            ? "ASSERTION_FAILED"
           : message.includes("Target page, context or browser has been closed")
             ? "BROWSER_CRASH"
             : "SYSTEM_ERROR";
+        const resultStatus = category === "ENV_BLOCKED" || category === "BROWSER_CRASH" ? "BLOCKED" : "FAIL";
         if (category === "BROWSER_CRASH") crashCount += 1;
 
         if (!message.startsWith("MANUAL_CHECK_REQUIRED@")) {
           const detailFromError = error instanceof CaseExecutionError ? error.detailJson : undefined;
-          setCaseResult(runId, item.case_no, "BLOCKED", category, {
-            測試目的: item.case_title || `執行 ${item.case_no}`,
-            設定條件: `入口=${run.dev_url}`,
-            預期行為: "案例應可執行完成",
-            實際行為: "案例中斷或失敗",
-            錯誤原因: message,
+          const baseDetail = parseCaseDetailJson(item.detail_json);
+          setCaseResult(runId, item.case_no, resultStatus, category, {
+            ...baseDetail,
+            測試目的: ensureString(baseDetail.測試目的, item.case_title || `執行 ${item.case_no}`),
+            設定條件: ensureString(baseDetail.設定條件, "未提供前置條件"),
+            執行步驟: ensureString(baseDetail.執行步驟, "未提供執行步驟"),
+            預期行為: ensureString(baseDetail.預期行為, "未提供預期結果"),
+            實際行為: resultStatus === "FAIL" ? "案例執行結果與預期不符" : "案例中斷或無法執行",
+            ...(resultStatus === "BLOCKED" ? { BLOCKED原因: message } : {}),
+            ...(resultStatus === "FAIL" ? { 錯誤原因: message } : {}),
             ...(detailFromError ?? {}),
             reason: message,
             mode: "step-or-smoke"

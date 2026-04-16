@@ -32,6 +32,7 @@ export const migrate = (): void => {
       id TEXT PRIMARY KEY,
       run_id TEXT NOT NULL,
       case_no TEXT NOT NULL,
+      group_name TEXT,
       case_title TEXT NOT NULL,
       execution_type TEXT NOT NULL,
       result_status TEXT NOT NULL DEFAULT 'PENDING',
@@ -148,5 +149,8 @@ export const migrate = (): void => {
   }
   if (!hasColumn("runs", "finished_at")) {
     db.exec("ALTER TABLE runs ADD COLUMN finished_at TEXT");
+  }
+  if (!hasColumn("run_cases", "group_name")) {
+    db.exec("ALTER TABLE run_cases ADD COLUMN group_name TEXT");
   }
 };

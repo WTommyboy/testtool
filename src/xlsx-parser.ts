@@ -3,7 +3,13 @@ import ExcelJS from "exceljs";
 
 export type ParsedCase = {
   caseNo: string;
+  groupName?: string;
   caseTitle: string;
+  testType?: string;
+  precondition?: string;
+  stepText?: string;
+  expectedResult?: string;
+  executionMethodRaw?: string;
   executionType: "auto" | "semi" | "manual";
   detailJson?: unknown;
 };
@@ -20,6 +26,17 @@ export type ParsedStep = {
   timeoutMs: number;
   retry: number;
 };
+
+const CASE_FALLBACK_COL = {
+  groupName: 2,
+  caseNo: 3,
+  testType: 4,
+  caseTitle: 5,
+  precondition: 6,
+  stepText: 7,
+  expectedResult: 8,
+  executionType: 10
+} as const;
 
 const extractText = (value: unknown): string => {
   if (value === null || value === undefined) return "";
@@ -73,35 +90,85 @@ export const parseTestcaseXlsx = async (
   caseHeaderRow.eachCell((cell, col) => caseHeaderMap.set(normalizeHeader(cell.value), col));
 
   const caseNoIdx = headerIndex(caseHeaderMap, "caseno", "case_no", "測試案例", "案例編號", "編號", "case");
+  const groupNameIdx = headerIndex(caseHeaderMap, "group", "group_name", "群組", "分類");
+  const testTypeIdx = headerIndex(caseHeaderMap, "testtype", "test_type", "測試類型", "類型");
   const caseTitleIdx = headerIndex(caseHeaderMap, "casetitle", "case_title", "測試項目", "測試案例名稱", "title");
+  const preconditionIdx = headerIndex(caseHeaderMap, "precondition", "condition", "前置條件", "設定條件");
   const executionTypeIdx = headerIndex(caseHeaderMap, "executiontype", "execution_type", "執行方式");
+  const expectedResultIdx = headerIndex(caseHeaderMap, "expectedresult", "expected_result", "預期結果");
   const detailJsonIdx = headerIndex(caseHeaderMap, "detailjson", "detail_json", "詳細紀錄json");
   const stepsTextIdx = headerIndex(caseHeaderMap, "steps", "步驟", "測試步驟");
 
-  if (!caseNoIdx || !caseTitleIdx || !executionTypeIdx) {
+  const resolvedCaseNoIdx = caseNoIdx ?? CASE_FALLBACK_COL.caseNo;
+  const resolvedGroupNameIdx = groupNameIdx ?? CASE_FALLBACK_COL.groupName;
+  const resolvedTestTypeIdx = testTypeIdx ?? CASE_FALLBACK_COL.testType;
+  const resolvedCaseTitleIdx = caseTitleIdx ?? CASE_FALLBACK_COL.caseTitle;
+  const resolvedPreconditionIdx = preconditionIdx ?? CASE_FALLBACK_COL.precondition;
+  const resolvedStepsTextIdx = stepsTextIdx ?? CASE_FALLBACK_COL.stepText;
+  const resolvedExpectedResultIdx = expectedResultIdx ?? CASE_FALLBACK_COL.expectedResult;
+  const resolvedExecutionTypeIdx = executionTypeIdx ?? CASE_FALLBACK_COL.executionType;
+
+  if (!resolvedCaseNoIdx || !resolvedCaseTitleIdx || !resolvedExecutionTypeIdx) {
     throw new Error("CASE_SHEET_HEADER_INVALID");
   }
 
   const cases: ParsedCase[] = [];
   for (let i = 2; i <= caseSheet.rowCount; i += 1) {
     const row = caseSheet.getRow(i);
-    const caseNo = getCellValue(row, caseNoIdx);
+    const caseNo = getCellValue(row, resolvedCaseNoIdx);
     if (!caseNo) continue;
 
+    const groupName = getCellValue(row, resolvedGroupNameIdx);
+    const testType = getCellValue(row, resolvedTestTypeIdx);
+    const caseTitle = getCellValue(row, resolvedCaseTitleIdx);
+    const precondition = getCellValue(row, resolvedPreconditionIdx);
+    const stepText = getCellValue(row, resolvedStepsTextIdx);
+    const expectedResult = getCellValue(row, resolvedExpectedResultIdx);
+    const executionMethodRaw = getCellValue(row, resolvedExecutionTypeIdx);
+
+    const baseDetail = {
+      測試類型: testType || "未分類",
+      測試目的: caseTitle || caseNo,
+      設定條件: precondition || "未提供前置條件",
+      執行步驟: stepText || "未提供執行步驟",
+      預期行為: expectedResult || "未提供預期結果",
+      執行方式: executionMethodRaw || "未指定"
+    } as Record<string, unknown>;
+
     const detailRaw = detailJsonIdx ? getCellValue(row, detailJsonIdx) : "";
-    let detailJson: unknown = undefined;
+    let detailJson: unknown = baseDetail;
     if (detailRaw) {
       try {
-        detailJson = JSON.parse(detailRaw);
+        const parsed = JSON.parse(detailRaw) as unknown;
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+          detailJson = {
+            ...(parsed as Record<string, unknown>),
+            ...baseDetail
+          };
+        } else {
+          detailJson = {
+            ...baseDetail,
+            原始詳細紀錄: detailRaw
+          };
+        }
       } catch {
-        detailJson = { raw: detailRaw };
+        detailJson = {
+          ...baseDetail,
+          原始詳細紀錄: detailRaw
+        };
       }
     }
 
     cases.push({
       caseNo,
-      caseTitle: getCellValue(row, caseTitleIdx),
-      executionType: normalizeExecutionType(getCellValue(row, executionTypeIdx)),
+      groupName: groupName || undefined,
+      caseTitle,
+      testType: testType || undefined,
+      precondition: precondition || undefined,
+      stepText: stepText || undefined,
+      expectedResult: expectedResult || undefined,
+      executionMethodRaw: executionMethodRaw || undefined,
+      executionType: normalizeExecutionType(executionMethodRaw),
       detailJson
     });
   }
@@ -146,19 +213,22 @@ export const parseTestcaseXlsx = async (
     }
   }
 
-  if (!stepSheet && stepsTextIdx) {
+  const caseIndex = new Map(cases.map((c) => [c.caseNo, c] as const));
+  if (!stepSheet && resolvedStepsTextIdx) {
     for (const c of cases) {
       const row = caseSheet
         .getRows(2, Math.max(caseSheet.rowCount - 1, 0))
-        ?.find((r) => getCellValue(r, caseNoIdx) === c.caseNo);
+        ?.find((r) => getCellValue(r, resolvedCaseNoIdx) === c.caseNo);
       if (!row) continue;
-      const rawStep = getCellValue(row, stepsTextIdx);
+      const rawStep = getCellValue(row, resolvedStepsTextIdx);
       if (!rawStep) continue;
+      const matched = caseIndex.get(c.caseNo);
       steps.push({
         caseNo: c.caseNo,
         stepNo: 1,
         actionType: "custom",
         inputValue: rawStep,
+        expected: matched?.expectedResult,
         requireApproval: false,
         timeoutMs: 10000,
         retry: 0
