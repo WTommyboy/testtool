@@ -908,29 +908,29 @@ const processCase = async (run: RunRow, item: CaseRow, state: ActiveRun, artifac
           ]);
           actionLogs.push(`step${step.step_no}:${action}:PASS`);
           observationLogs.push(`步驟 ${step.step_no} ${action} 執行成功`);
-            if (action === "asserttext" && typeof step.expected === "string") {
-              detail.文字比對 = `預期包含「${step.expected}」`;
-              hasAssertionResult = true;
+          if (action === "asserttext" && typeof step.expected === "string") {
+            detail.文字比對 = `預期包含「${step.expected}」`;
+            hasAssertionResult = true;
+          }
+          if (action === "assertdata") {
+            const data = result as { rowCount?: number };
+            if (typeof data.rowCount === "number") {
+              detail.筆數 = data.rowCount;
+              observationLogs.push(`資料筆數 ${data.rowCount}`);
             }
-            if (action === "assertdata") {
-              const data = result as { rowCount?: number };
-              if (typeof data.rowCount === "number") {
-                detail.筆數 = data.rowCount;
-                observationLogs.push(`資料筆數 ${data.rowCount}`);
-              }
-              hasAssertionResult = true;
-            }
-            if (action === "comparecsv") {
-              const data = result as { compared?: number; mismatches?: number };
-              detail.比對方式 = "預覽數據 vs CSV 逐筆比對";
-              detail.比對結果 = `${data.compared ?? 0} 筆比對`;
-              detail.差異筆數 = data.mismatches ?? 0;
-              observationLogs.push(`CSV 比對 ${data.compared ?? 0} 筆，差異 ${data.mismatches ?? 0} 筆`);
-              hasAssertionResult = true;
-            }
-            if (action === "custom" && typeof (result as { asserted?: string }).asserted === "string") {
-              observationLogs.push("中文預期結果驗證通過");
-            }
+            hasAssertionResult = true;
+          }
+          if (action === "comparecsv") {
+            const data = result as { compared?: number; mismatches?: number };
+            detail.比對方式 = "預覽數據 vs CSV 逐筆比對";
+            detail.比對結果 = `${data.compared ?? 0} 筆比對`;
+            detail.差異筆數 = data.mismatches ?? 0;
+            observationLogs.push(`CSV 比對 ${data.compared ?? 0} 筆，差異 ${data.mismatches ?? 0} 筆`);
+            hasAssertionResult = true;
+          }
+          if (action === "custom" && typeof (result as { asserted?: string }).asserted === "string") {
+            observationLogs.push("中文預期結果驗證通過");
+          }
           if (action === "screenshot") {
             const data = result as { screenshot?: string };
             if (data.screenshot) detail.截圖路徑 = data.screenshot;
