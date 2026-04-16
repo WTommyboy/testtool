@@ -31,6 +31,11 @@ type RunItem = {
 type Summary = {
   runId: string;
   runStatus: string;
+  date?: string | null;
+  tester?: string | null;
+  location?: string | null;
+  featureMain?: string | null;
+  featureSub?: string | null;
   caseStats: Record<string, number>;
   stepStats: Record<string, number>;
   pendingApprovals: number;
@@ -1065,6 +1070,10 @@ function App() {
                 <div className="run-meta">
                   <span>Run ID: {summary?.runId || "-"}</span>
                   <span>狀態: <span className={`badge ${summary?.runStatus || ""}`}>{summary?.runStatus || "-"}</span></span>
+                  <span>執行日期: {summary?.date || "—"}</span>
+                  <span>測試者: {summary?.tester || "—"}</span>
+                  <span>位置: {summary?.location || "—"}</span>
+                  <span>功能: {summary?.featureMain || "—"} / {summary?.featureSub || "—"}</span>
                   <span>Pending approvals: {summary?.pendingApprovals ?? 0}</span>
                 </div>
                 <div className="stats mt-8">

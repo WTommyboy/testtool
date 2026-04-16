@@ -112,6 +112,7 @@ const manualFillSchema = z.object({
 });
 
 const nowIso = (): string => new Date().toISOString();
+const TERMINAL_STATUSES = new Set(["SUCCEEDED", "FAILED", "CANCELLED"]);
 
 type MdRun = {
   id: string;
@@ -303,6 +304,38 @@ const generateMd = (
 
 const getRun = (runId: string): Record<string, unknown> | undefined =>
   db.prepare("SELECT * FROM runs WHERE id = ?").get(runId) as Record<string, unknown> | undefined;
+
+const setRunStatusWithMeta = (runId: string, status: string): void => {
+  const now = nowIso();
+  db.prepare("UPDATE runs SET status = ?, updated_at = ? WHERE id = ?").run(status, now, runId);
+
+  if (!TERMINAL_STATUSES.has(status)) return;
+
+  const run = getRun(runId) as { created_at?: string } | undefined;
+  const startDate = run?.created_at ? new Date(String(run.created_at)).toISOString().slice(0, 10) : "";
+  const endDate = now.slice(0, 10);
+  const dateStr = startDate ? (startDate === endDate ? startDate : `${startDate} ~ ${endDate}`) : endDate;
+
+  const fillers = db
+    .prepare(
+      `
+        SELECT DISTINCT manual_filled_by
+        FROM run_cases
+        WHERE run_id = ? AND manual_filled_by IS NOT NULL AND TRIM(manual_filled_by) <> ''
+      `
+    )
+    .all(runId) as Array<{ manual_filled_by: string }>;
+  const manualFillers = fillers.map((x) => x.manual_filled_by);
+  const tester = `Playwright Runner${manualFillers.length > 0 ? ` + ${manualFillers.join(", ")}` : ""}`;
+
+  db.prepare("UPDATE runs SET date = ?, tester = ?, finished_at = ?, updated_at = ? WHERE id = ?").run(
+    dateStr,
+    tester,
+    now,
+    now,
+    runId
+  );
+};
 
 const insertRunLog = (runId: string, level: "INFO" | "WARN" | "ERROR", message: string, context?: unknown): void => {
   db.prepare(
@@ -776,8 +809,7 @@ router.post("/:id/status", (req, res) => {
     });
   }
 
-  const now = nowIso();
-  db.prepare("UPDATE runs SET status = ?, updated_at = ? WHERE id = ?").run(targetStatus, now, req.params.id);
+  setRunStatusWithMeta(req.params.id, targetStatus);
   insertRunLog(req.params.id, "INFO", "Run status changed", {
     from: currentStatus,
     to: targetStatus,
@@ -824,7 +856,7 @@ router.post("/:id/cancel", (req, res) => {
   }
 
   requestRunCancel(req.params.id);
-  db.prepare("UPDATE runs SET status = ?, updated_at = ? WHERE id = ?").run("CANCELLED", nowIso(), req.params.id);
+  setRunStatusWithMeta(req.params.id, "CANCELLED");
   insertRunLog(req.params.id, "WARN", "Run cancel requested");
 
   return res.json({
@@ -1051,6 +1083,11 @@ router.get("/:id/summary", (req, res) => {
   return res.json({
     runId: req.params.id,
     runStatus: run.status,
+    date: run.date ?? null,
+    tester: run.tester ?? null,
+    location: run.location ?? null,
+    featureMain: run.feature_main ?? null,
+    featureSub: run.feature_sub ?? null,
     caseStats,
     stepStats,
     pendingApprovals: pendingApprovals.count

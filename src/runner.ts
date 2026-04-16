@@ -58,6 +58,7 @@ class CaseExecutionError extends Error {
 const activeRuns = new Map<string, ActiveRun>();
 
 const nowIso = (): string => new Date().toISOString();
+const TERMINAL_STATUSES = new Set(["SUCCEEDED", "FAILED", "CANCELLED"]);
 
 const insertRunLog = (runId: string, level: "INFO" | "WARN" | "ERROR", message: string, context?: unknown): void => {
   db.prepare(
@@ -76,7 +77,37 @@ const insertRunLog = (runId: string, level: "INFO" | "WARN" | "ERROR", message: 
 };
 
 const setRunStatus = (runId: string, status: string): void => {
-  db.prepare("UPDATE runs SET status = ?, updated_at = ? WHERE id = ?").run(status, nowIso(), runId);
+  const now = nowIso();
+  db.prepare("UPDATE runs SET status = ?, updated_at = ? WHERE id = ?").run(status, now, runId);
+
+  if (!TERMINAL_STATUSES.has(status)) {
+    return;
+  }
+
+  const run = db.prepare("SELECT created_at FROM runs WHERE id = ?").get(runId) as { created_at?: string } | undefined;
+  const startDate = run?.created_at ? new Date(run.created_at).toISOString().slice(0, 10) : "";
+  const endDate = now.slice(0, 10);
+  const dateStr = startDate ? (startDate === endDate ? startDate : `${startDate} ~ ${endDate}`) : endDate;
+
+  const fillers = db
+    .prepare(
+      `
+        SELECT DISTINCT manual_filled_by
+        FROM run_cases
+        WHERE run_id = ? AND manual_filled_by IS NOT NULL AND TRIM(manual_filled_by) <> ''
+      `
+    )
+    .all(runId) as Array<{ manual_filled_by: string }>;
+  const manualFillers = fillers.map((x) => x.manual_filled_by);
+  const tester = `Playwright Runner${manualFillers.length > 0 ? ` + ${manualFillers.join(", ")}` : ""}`;
+
+  db.prepare("UPDATE runs SET date = ?, tester = ?, finished_at = ?, updated_at = ? WHERE id = ?").run(
+    dateStr,
+    tester,
+    now,
+    now,
+    runId
+  );
 };
 
 const normalizeDetailValue = (value: unknown): string | number | boolean | string[] | null => {

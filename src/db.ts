@@ -134,4 +134,19 @@ export const migrate = (): void => {
     CREATE INDEX IF NOT EXISTS idx_bugs_round_id ON bugs(round_id);
     CREATE INDEX IF NOT EXISTS idx_conversation_messages_conversation_id ON conversation_messages(conversation_id);
   `);
+
+  const hasColumn = (table: string, column: string): boolean => {
+    const rows = db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
+    return rows.some((r) => r.name === column);
+  };
+
+  if (!hasColumn("runs", "date")) {
+    db.exec("ALTER TABLE runs ADD COLUMN date TEXT");
+  }
+  if (!hasColumn("runs", "tester")) {
+    db.exec("ALTER TABLE runs ADD COLUMN tester TEXT");
+  }
+  if (!hasColumn("runs", "finished_at")) {
+    db.exec("ALTER TABLE runs ADD COLUMN finished_at TEXT");
+  }
 };
