@@ -15,8 +15,10 @@ API will start at `http://localhost:3000`.
 
 - `postinstall` 會自動執行 `playwright install chromium`
 - 建議在 Railway 設定環境變數：`PLAYWRIGHT_BROWSERS_PATH=0`
+- 專案已提供 `nixpacks.toml`，會安裝 Playwright Chromium 需要的 Linux 套件（含 `libglib2.0-0`）
 
 若仍出現 browser executable 不存在，請在 Railway 重新部署一次（Clear build cache 後再 Deploy）。
+若錯誤包含 `error while loading shared libraries`，請確認 Railway 已使用新的 `nixpacks.toml` 重新建置（建議重新部署並清除快取）。
 
 ## XLSX Import
 
