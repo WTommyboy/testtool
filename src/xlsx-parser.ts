@@ -56,9 +56,10 @@ const normalizeHeader = (value: unknown): string => extractText(value).toLowerCa
 
 const normalizeExecutionType = (value: unknown): "auto" | "semi" | "manual" => {
   const raw = extractText(value).toLowerCase();
+  if (["manual", "手動", "人工"].includes(raw)) return "manual";
   if (["auto", "playwright mcp", "playwright", "自動"].includes(raw)) return "auto";
   if (["semi", "半自動", "claude in chrome"].includes(raw)) return "semi";
-  return "manual";
+  return "auto";
 };
 
 const getCellValue = (row: ExcelJS.Row, index: number): string => extractText(row.getCell(index).value);
