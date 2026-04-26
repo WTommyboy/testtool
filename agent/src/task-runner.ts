@@ -3,6 +3,7 @@ import path from "node:path";
 import { CodexRunner } from "./codex-runner";
 import type { AgentConfig, AgentMessage } from "./types";
 import type { AgentConnection } from "./connection";
+import { readFirstInputCase, writeAgentResultXlsx } from "./result-writer";
 
 const getRunId = (message: AgentMessage): string => {
   const runId = message.payload.run_id;
@@ -50,6 +51,18 @@ const getInputUrls = (message: AgentMessage): Record<string, string> => {
   return urls;
 };
 
+const getOutputUrls = (message: AgentMessage): Record<string, string> => {
+  const value = message.payload.output_urls;
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  const urls: Record<string, string> = {};
+  for (const [key, url] of Object.entries(value as Record<string, unknown>)) {
+    if (typeof url === "string" && /^https?:\/\//i.test(url)) {
+      urls[key] = url;
+    }
+  }
+  return urls;
+};
+
 const downloadFile = async (url: string, filePath: string, token: string): Promise<void> => {
   const response = await fetch(url, {
     headers: token ? { Authorization: `Bearer ${token}` } : undefined
@@ -60,6 +73,29 @@ const downloadFile = async (url: string, filePath: string, token: string): Promi
 
   const bytes = Buffer.from(await response.arrayBuffer());
   fs.writeFileSync(filePath, bytes);
+};
+
+const uploadResultXlsx = async (url: string, filePath: string, token: string): Promise<unknown> => {
+  const form = new FormData();
+  const bytes = fs.readFileSync(filePath);
+  form.append("resultXlsx", new Blob([new Uint8Array(bytes)]), "result.xlsx");
+
+  const response = await fetch(url, {
+    method: "POST",
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+    body: form
+  });
+  const text = await response.text();
+  let body: unknown = text;
+  try {
+    body = text ? JSON.parse(text) : null;
+  } catch {
+    // Keep raw text for diagnostics.
+  }
+  if (!response.ok) {
+    throw new Error(`RESULT_UPLOAD_FAILED ${response.status} ${typeof body === "string" ? body : JSON.stringify(body)}`);
+  }
+  return body;
 };
 
 const downloadInputs = async (config: AgentConfig, message: AgentMessage, runDir: string): Promise<DownloadedInputs> => {
@@ -120,6 +156,39 @@ const buildPrompt = (runId: string, message: AgentMessage, runDir: string, input
     instruction
   ].join("\n");
 };
+
+const buildResultDetail = (
+  runId: string,
+  message: AgentMessage,
+  runDir: string,
+  inputs: DownloadedInputs,
+  result: {
+    threadId: string | null;
+    assistantText: string;
+    exitCode: number | null;
+    signal: string | null;
+    parseErrors: string[];
+    events: unknown[];
+    stderr: string;
+  }
+): Record<string, unknown> => ({
+  測試目的: "驗證 Mac Agent 可接收雲端派工、下載測試輸入、啟動 Codex CLI 並回傳結果 xlsx。",
+  設定條件: {
+    runId,
+    roundId: getStringPayload(message, "round_id") ?? runId,
+    workdir: runDir,
+    downloadedInputs: inputs
+  },
+  預期行為: "Agent 應成功完成 Codex CLI 任務，並上傳可被 API parser 入庫的 result.xlsx。",
+  實際行為: result.exitCode === 0 ? "Codex CLI exited with code 0 and produced assistant output." : `Codex CLI failed with exit=${result.exitCode} signal=${result.signal ?? "none"}.`,
+  codexThreadId: result.threadId,
+  codexExitCode: result.exitCode,
+  codexSignal: result.signal,
+  codexParseErrorCount: result.parseErrors.length,
+  codexEventCount: result.events.length,
+  assistantTextExcerpt: result.assistantText.slice(0, 2000),
+  stderrExcerpt: result.stderr.slice(0, 2000)
+});
 
 const summarizeStderr = (stderr: string): string => {
   const pluginWarningIndex = stderr.indexOf("failed to warm featured plugin ids cache");
@@ -224,6 +293,58 @@ export const handleTaskDispatch = async (
       );
     }
 
+    const outputUrls = getOutputUrls(message);
+    const sourceCase = await readFirstInputCase(downloadedInputs.xlsx);
+    const resultXlsxPath = await writeAgentResultXlsx({
+      runId,
+      roundId: getStringPayload(message, "round_id") ?? runId,
+      outputDir: path.join(runDir, "output"),
+      sourceCase,
+      status: result.exitCode === 0 ? "PASS" : "FAIL",
+      failCategory: result.exitCode === 0 ? null : "CODEX_RUN_FAILED",
+      detailJson: buildResultDetail(runId, message, runDir, downloadedInputs, result)
+    });
+
+    writeJson(path.join(runDir, "output", "result-xlsx.json"), {
+      path: resultXlsxPath,
+      uploaded: false,
+      output_url_keys: Object.keys(outputUrls)
+    });
+
+    if (outputUrls.result_xlsx) {
+      connection.send(
+        "run.uploading_result",
+        {
+          run_id: runId,
+          result_xlsx_path: resultXlsxPath
+        },
+        true
+      );
+      const uploadResponse = await uploadResultXlsx(outputUrls.result_xlsx, resultXlsxPath, config.token);
+      writeJson(path.join(runDir, "output", "result-xlsx.json"), {
+        path: resultXlsxPath,
+        uploaded: true,
+        upload_response: uploadResponse
+      });
+      connection.send(
+        "run.stdout",
+        {
+          run_id: runId,
+          text: "uat-agent uploaded result.xlsx"
+        },
+        false
+      );
+    } else {
+      connection.send(
+        "run.stderr",
+        {
+          run_id: runId,
+          text: "No output_urls.result_xlsx provided; result.xlsx was written locally only."
+        },
+        false
+      );
+    }
+
     if (result.exitCode !== 0) {
       throw new Error(`CODEX_RUN_FAILED exit=${result.exitCode} signal=${result.signal ?? "none"}`);
     }
@@ -243,7 +364,9 @@ export const handleTaskDispatch = async (
         result: "codex_completed",
         thread_id: result.threadId,
         workdir: runDir,
-        inputs: Object.keys(downloadedInputs)
+        inputs: Object.keys(downloadedInputs),
+        result_xlsx_path: resultXlsxPath,
+        result_xlsx_uploaded: Boolean(outputUrls.result_xlsx)
       },
       true
     );

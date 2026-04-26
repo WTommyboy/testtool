@@ -11,6 +11,12 @@ import { db } from "./db";
 import { requestRunCancel, startRun } from "./runner";
 import { checkPlaywrightHealth } from "./playwright-health";
 import { parseTestcaseXlsx, type ParsedCase, type ParsedStep } from "./xlsx-parser";
+import {
+  parseResultXlsx,
+  RESULT_XLSX_PARSER_VERSION,
+  type ParsedBug,
+  type ParsedResultCase
+} from "./result-parser/result-xlsx-parser";
 
 const router = Router();
 
@@ -32,6 +38,7 @@ const CASE_RESULT_STATUS = [
   "PASS",
   "FAIL",
   "BLOCKED",
+  "PARTIAL",
   "SKIPPED",
   "MANUAL_PENDING",
   "MANUAL_PASS",
@@ -128,6 +135,10 @@ type RunInputPaths = {
   testcase_xlsx_path?: string | null;
   testcase_md_path?: string | null;
   reference_csv_path?: string | null;
+};
+
+type RunOutputPaths = {
+  result_xlsx_path?: string | null;
 };
 
 type MdRun = {
@@ -345,6 +356,13 @@ const getRunInputUrls = (req: Request, runId: string, paths: RunInputPaths): Rec
   return urls;
 };
 
+const getRunOutputUrls = (req: Request, runId: string): Record<string, string> => {
+  const base = getRequestBaseUrl(req);
+  return {
+    result_xlsx: `${base}/api/runs/${runId}/output/result-xlsx`
+  };
+};
+
 const safeSendRunInputFile = (res: Response, filePath: unknown, downloadName: string): Response | void => {
   if (typeof filePath !== "string" || !filePath.trim()) {
     return res.status(404).json({ error: "RUN_INPUT_NOT_FOUND" });
@@ -362,7 +380,24 @@ const safeSendRunInputFile = (res: Response, filePath: unknown, downloadName: st
   return res.download(resolved, downloadName);
 };
 
-const setRunStatusWithMeta = (runId: string, status: string): void => {
+const safeSendRunOutputFile = (res: Response, filePath: unknown, downloadName: string): Response | void => {
+  if (typeof filePath !== "string" || !filePath.trim()) {
+    return res.status(404).json({ error: "RUN_OUTPUT_NOT_FOUND" });
+  }
+
+  const resolved = path.resolve(filePath);
+  const storageRoot = path.resolve(config.storageRoot);
+  if (!resolved.startsWith(storageRoot + path.sep) && resolved !== storageRoot) {
+    return res.status(403).json({ error: "RUN_OUTPUT_OUTSIDE_STORAGE" });
+  }
+  if (!fs.existsSync(resolved)) {
+    return res.status(404).json({ error: "RUN_OUTPUT_FILE_MISSING" });
+  }
+
+  return res.download(resolved, downloadName);
+};
+
+const setRunStatusWithMeta = (runId: string, status: string, testerPrefix = "Playwright Runner"): void => {
   const now = nowIso();
   db.prepare("UPDATE runs SET status = ?, updated_at = ? WHERE id = ?").run(status, now, runId);
 
@@ -383,7 +418,7 @@ const setRunStatusWithMeta = (runId: string, status: string): void => {
     )
     .all(runId) as Array<{ manual_filled_by: string }>;
   const manualFillers = fillers.map((x) => x.manual_filled_by);
-  const tester = `Playwright Runner${manualFillers.length > 0 ? ` + ${manualFillers.join(", ")}` : ""}`;
+  const tester = `${testerPrefix}${manualFillers.length > 0 ? ` + ${manualFillers.join(", ")}` : ""}`;
 
   db.prepare("UPDATE runs SET date = ?, tester = ?, finished_at = ?, updated_at = ? WHERE id = ?").run(
     dateStr,
@@ -453,12 +488,24 @@ const prepareUpsertStepStmt = () =>
 
 const uploadRoot = path.resolve(config.storageRoot, "uploads");
 fs.mkdirSync(uploadRoot, { recursive: true });
+const outputRoot = path.resolve(config.storageRoot, "outputs");
+fs.mkdirSync(outputRoot, { recursive: true });
 
 const upload = multer({
   storage: multer.diskStorage({
     destination: (_req, _file, cb) => cb(null, uploadRoot),
     filename: (_req, file, cb) => {
       const ext = path.extname(file.originalname);
+      cb(null, `${Date.now()}-${randomUUID()}${ext}`);
+    }
+  })
+});
+
+const resultUpload = multer({
+  storage: multer.diskStorage({
+    destination: (_req, _file, cb) => cb(null, outputRoot),
+    filename: (_req, file, cb) => {
+      const ext = path.extname(file.originalname) || ".xlsx";
       cb(null, `${Date.now()}-${randomUUID()}${ext}`);
     }
   })
@@ -515,6 +562,149 @@ const upsertImportedTestcase = (
 
   db.prepare("UPDATE runs SET updated_at = ? WHERE id = ?").run(now, runId);
   return { manualCases };
+};
+
+const normalizeParsedResultStatus = (status: string): string => {
+  const normalized = status.trim().toUpperCase().replace(/\s+/g, "_");
+  if ((CASE_RESULT_STATUS as readonly string[]).includes(normalized)) return normalized;
+  return normalized || "PENDING";
+};
+
+const buildDetailJsonForParsedCase = (item: ParsedResultCase): string | null => {
+  if (item.detailJson) return JSON.stringify(item.detailJson);
+  if (!item.detailJsonRaw && !item.detailParseError) return null;
+  return JSON.stringify({
+    詳細紀錄JSON解析狀態: "INVALID_JSON",
+    錯誤原因: item.detailParseError ?? "unknown",
+    原始內容: item.detailJsonRaw ?? ""
+  });
+};
+
+const resultHasFailedOutcome = (cases: ParsedResultCase[]): boolean => {
+  const passLike = new Set(["PASS", "MANUAL_PASS", "SKIPPED"]);
+  if (cases.length === 0) return true;
+  return cases.some((item) => !passLike.has(normalizeParsedResultStatus(item.status)));
+};
+
+const stepStatusForCaseResult = (status: string): "PASS" | "FAIL" | "SKIPPED" => {
+  if (status === "PASS" || status === "MANUAL_PASS") return "PASS";
+  if (status === "SKIPPED") return "SKIPPED";
+  return "FAIL";
+};
+
+const formatParsedBugDescription = (bug: ParsedBug): string => {
+  const parts = [`${bug.bugId} ${bug.title}`.trim()];
+  if (bug.description) parts.push(bug.description);
+  if (bug.status) parts.push(`狀態: ${bug.status}`);
+  return parts.filter(Boolean).join("\n");
+};
+
+const ingestResultXlsx = async (
+  runId: string,
+  filePath: string
+): Promise<{ cases: number; bugs: number; parserVersion: string; runStatus: string }> => {
+  const parsed = await parseResultXlsx(filePath);
+  const now = nowIso();
+  const terminalStatus = resultHasFailedOutcome(parsed.cases) ? "FAILED" : "SUCCEEDED";
+
+  const upsertCaseStmt = db.prepare(
+    `
+      INSERT INTO run_cases (
+        id, run_id, case_no, group_name, case_title, execution_type, result_status, fail_category,
+        detail_json, created_at, updated_at
+      ) VALUES (
+        @id, @run_id, @case_no, @group_name, @case_title, @execution_type, @result_status, @fail_category,
+        @detail_json, @created_at, @updated_at
+      )
+      ON CONFLICT(run_id, case_no) DO UPDATE SET
+        group_name = excluded.group_name,
+        case_title = excluded.case_title,
+        execution_type = excluded.execution_type,
+        result_status = excluded.result_status,
+        fail_category = excluded.fail_category,
+        detail_json = excluded.detail_json,
+        updated_at = excluded.updated_at
+    `
+  );
+
+  const insertBugStmt = db.prepare(
+    `
+      INSERT INTO bugs (
+        id, run_id, round_id, severity, related_case_no, description, suggestion, created_at, updated_at
+      ) VALUES (
+        @id, @run_id, @round_id, @severity, @related_case_no, @description, @suggestion, @created_at, @updated_at
+      )
+    `
+  );
+
+  const run = getRun(runId);
+  if (!run) throw new Error("RUN_NOT_FOUND");
+
+  const tx = db.transaction(() => {
+    for (const item of parsed.cases) {
+      const resultStatus = normalizeParsedResultStatus(item.status);
+      upsertCaseStmt.run({
+        id: randomUUID(),
+        run_id: runId,
+        case_no: item.caseNo,
+        group_name: item.groupName,
+        case_title: item.caseTitle ?? item.caseNo,
+        execution_type: item.executionMethod ?? "agent",
+        result_status: resultStatus,
+        fail_category: item.verdictReason,
+        detail_json: buildDetailJsonForParsedCase(item),
+        created_at: now,
+        updated_at: now
+      });
+      db.prepare(
+        `
+          UPDATE run_case_steps
+          SET status = ?, actual_json = ?, finished_at = ?, updated_at = ?
+          WHERE run_id = ? AND case_no = ?
+        `
+      ).run(
+        stepStatusForCaseResult(resultStatus),
+        JSON.stringify({ source: "result_xlsx_ingest", caseStatus: resultStatus }),
+        now,
+        now,
+        runId,
+        item.caseNo
+      );
+    }
+
+    db.prepare("DELETE FROM bugs WHERE run_id = ?").run(runId);
+    for (const bug of parsed.bugs) {
+      insertBugStmt.run({
+        id: randomUUID(),
+        run_id: runId,
+        round_id: String(run.round_id ?? ""),
+        severity: bug.severity || "INFO",
+        related_case_no: bug.relatedCaseNo ?? "-",
+        description: formatParsedBugDescription(bug),
+        suggestion: bug.suggestion,
+        created_at: now,
+        updated_at: now
+      });
+    }
+
+    db.prepare(
+      `
+        UPDATE runs
+        SET result_xlsx_path = ?, result_ingested_at = ?, result_xlsx_parser_version = ?, updated_at = ?
+        WHERE id = ?
+      `
+    ).run(filePath, now, parsed.parserVersion, now, runId);
+  });
+  tx();
+
+  setRunStatusWithMeta(runId, terminalStatus, "Mac Agent");
+
+  return {
+    cases: parsed.cases.length,
+    bugs: parsed.bugs.length,
+    parserVersion: parsed.parserVersion,
+    runStatus: terminalStatus
+  };
 };
 
 router.get("/", (req, res) => {
@@ -963,6 +1153,7 @@ router.post("/:id/dispatch-agent", (req, res) => {
 
   try {
     const inputUrls = getRunInputUrls(req, req.params.id, run as RunInputPaths);
+    const outputUrls = getRunOutputUrls(req, req.params.id);
     const message = agentRegistry.dispatchTask(parsed.data.agentId, {
       run_id: req.params.id,
       domain: "BI",
@@ -972,6 +1163,7 @@ router.post("/:id/dispatch-agent", (req, res) => {
       feature_main: String(run.feature_main ?? ""),
       feature_sub: String(run.feature_sub ?? ""),
       input_urls: inputUrls,
+      output_urls: outputUrls,
       startup_instruction:
         inputUrls.xlsx && inputUrls.startup_instruction
           ? "Download the provided input files, inspect the testcase workbook and markdown instructions, then report the first executable case you would run next. Do not execute Galaxy UI yet in this M1 input-package smoke."
@@ -983,7 +1175,8 @@ router.post("/:id/dispatch-agent", (req, res) => {
       agentId: parsed.data.agentId,
       deviceName: agent.deviceName,
       messageId: message.id,
-      inputUrls: Object.keys(inputUrls)
+      inputUrls: Object.keys(inputUrls),
+      outputUrls: Object.keys(outputUrls)
     });
 
     return res.status(202).json({
@@ -1195,6 +1388,90 @@ router.get("/:id/input/baseline", (req, res) => {
     return res.status(404).json({ error: "RUN_NOT_FOUND" });
   }
   return safeSendRunInputFile(res, run.reference_csv_path, `${String(run.round_id ?? req.params.id)}_baseline.csv`);
+});
+
+router.post("/:id/output/result-xlsx", resultUpload.single("resultXlsx"), async (req, res) => {
+  const runId = String(req.params.id);
+  const run = getRun(runId);
+  if (!run) {
+    return res.status(404).json({ error: "RUN_NOT_FOUND" });
+  }
+
+  if (!req.file) {
+    return res.status(400).json({
+      error: "RESULT_XLSX_REQUIRED",
+      message: "請使用 multipart 欄位 resultXlsx 上傳結果 xlsx"
+    });
+  }
+
+  insertRunLog(runId, "INFO", "Agent result xlsx uploaded", {
+    filePath: req.file.path,
+    originalName: req.file.originalname,
+    parserVersion: RESULT_XLSX_PARSER_VERSION
+  });
+
+  try {
+    const result = await ingestResultXlsx(runId, req.file.path);
+    insertRunLog(runId, "INFO", "Agent result xlsx ingested", result);
+    return res.status(201).json({
+      runId,
+      resultXlsxPath: req.file.path,
+      ...result
+    });
+  } catch (error) {
+    setRunStatusWithMeta(runId, "FAILED");
+    insertRunLog(runId, "ERROR", "Agent result xlsx ingest failed", {
+      filePath: req.file.path,
+      error: error instanceof Error ? error.message : String(error)
+    });
+    return res.status(400).json({
+      error: "RESULT_XLSX_INGEST_FAILED",
+      message: error instanceof Error ? error.message : String(error)
+    });
+  }
+});
+
+router.post("/:id/ingest-result", async (req, res) => {
+  const runId = String(req.params.id);
+  const run = getRun(runId) as (Record<string, unknown> & RunOutputPaths) | undefined;
+  if (!run) {
+    return res.status(404).json({ error: "RUN_NOT_FOUND" });
+  }
+
+  if (!run.result_xlsx_path) {
+    return res.status(404).json({ error: "RESULT_XLSX_NOT_FOUND" });
+  }
+
+  try {
+    const result = await ingestResultXlsx(runId, run.result_xlsx_path);
+    insertRunLog(runId, "INFO", "Result xlsx manually re-ingested", result);
+    return res.json({
+      runId,
+      resultXlsxPath: run.result_xlsx_path,
+      ...result
+    });
+  } catch (error) {
+    insertRunLog(runId, "ERROR", "Result xlsx manual ingest failed", {
+      filePath: run.result_xlsx_path,
+      error: error instanceof Error ? error.message : String(error)
+    });
+    return res.status(400).json({
+      error: "RESULT_XLSX_INGEST_FAILED",
+      message: error instanceof Error ? error.message : String(error)
+    });
+  }
+});
+
+router.get("/:id/output/result-xlsx", (req, res) => {
+  const run = getRun(req.params.id);
+  if (!run) {
+    return res.status(404).json({ error: "RUN_NOT_FOUND" });
+  }
+  return safeSendRunOutputFile(
+    res,
+    run.result_xlsx_path,
+    `${String(run.round_id ?? req.params.id)}_result.xlsx`
+  );
 });
 
 router.get("/:id/cases", (req, res) => {

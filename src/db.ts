@@ -27,6 +27,9 @@ export const migrate = (): void => {
       testcase_xlsx_path TEXT,
       testcase_md_path TEXT,
       reference_csv_path TEXT,
+      result_xlsx_path TEXT,
+      result_ingested_at TEXT,
+      result_xlsx_parser_version TEXT,
       status TEXT NOT NULL DEFAULT 'DRAFT',
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
@@ -165,6 +168,15 @@ export const migrate = (): void => {
   }
   if (!hasColumn("runs", "reference_csv_path")) {
     db.exec("ALTER TABLE runs ADD COLUMN reference_csv_path TEXT");
+  }
+  if (!hasColumn("runs", "result_xlsx_path")) {
+    db.exec("ALTER TABLE runs ADD COLUMN result_xlsx_path TEXT");
+  }
+  if (!hasColumn("runs", "result_ingested_at")) {
+    db.exec("ALTER TABLE runs ADD COLUMN result_ingested_at TEXT");
+  }
+  if (!hasColumn("runs", "result_xlsx_parser_version")) {
+    db.exec("ALTER TABLE runs ADD COLUMN result_xlsx_parser_version TEXT");
   }
   if (!hasColumn("run_cases", "group_name")) {
     db.exec("ALTER TABLE run_cases ADD COLUMN group_name TEXT");
