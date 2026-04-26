@@ -9,6 +9,18 @@
 
 **範圍**:本文只規範 M1,也就是「後端基礎 + 真 Mac Agent + 前端可用版」。M0 spike 結果若推翻某項技術路線,本文需出 v1.1 修訂。
 
+## M0 Spike Addendum
+
+M0 已完成,本 spec 在實作時必須套用以下決議:
+
+1. `CodexRunner` 採 **turn-based** 控制:`codex exec --json` + `codex exec resume --json <thread_id>`。不可再以長駐 interactive TUI subprocess + stdin injection 作為 M1 方案。
+2. Tool Bridge parser 已驗證 20/20 可解析;M1.2 要先做 standalone parser module,再接 WebSocket / Agent。
+3. WebSocket fake agent 流程可行;server 端應使用 HTTP upgrade 驗 `Authorization: Bearer <agent token>`。
+4. `result.xlsx` parser 可行;invalid `detail_json` 是 row-level parse error,不可讓整份 workbook ingestion fail。
+5. Server 應擁有最終 `COMPLETED` 狀態轉移。Agent 的 `run.completed` 只代表 Agent 端完成;server 必須在 result ingestion 成功後才把 run 標成 `COMPLETED`。
+6. M0-4 真 Railway/Postgres migration 尚未跑;M1.1 DB 完成前必須補跑 `M0_DATABASE_URL=<railway-dev-db> node spikes/m0/postgres-drizzle/run-spike.mjs`。
+7. M0-5 SSO 只驗證 persistent profile 機制;Galaxy SSO 24h persistence 需 Tommy 實際登入後再驗。
+
 ---
 
 ## 0. M1 定義
@@ -1122,4 +1134,3 @@ M1 的核心交付不是「重寫工具」,而是讓工具第一次真正具備�
 `Web UI 建 run → Railway 派工 → Mac Agent 起 Codex → Codex 跑測 → result.xlsx 回流 → DB 入庫 → Web UI 查結果`
 
 所有 M1 實作都應服務這條閉環,非必要功能延後到 M2。
-
