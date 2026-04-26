@@ -139,6 +139,7 @@ type RunInputPaths = {
 
 type RunOutputPaths = {
   result_xlsx_path?: string | null;
+  log_path?: string | null;
 };
 
 type MdRun = {
@@ -359,7 +360,8 @@ const getRunInputUrls = (req: Request, runId: string, paths: RunInputPaths): Rec
 const getRunOutputUrls = (req: Request, runId: string): Record<string, string> => {
   const base = getRequestBaseUrl(req);
   return {
-    result_xlsx: `${base}/api/runs/${runId}/output/result-xlsx`
+    result_xlsx: `${base}/api/runs/${runId}/output/result-xlsx`,
+    log: `${base}/api/runs/${runId}/output/log`
   };
 };
 
@@ -505,7 +507,7 @@ const resultUpload = multer({
   storage: multer.diskStorage({
     destination: (_req, _file, cb) => cb(null, outputRoot),
     filename: (_req, file, cb) => {
-      const ext = path.extname(file.originalname) || ".xlsx";
+      const ext = path.extname(file.originalname) || (file.fieldname === "log" ? ".log" : ".xlsx");
       cb(null, `${Date.now()}-${randomUUID()}${ext}`);
     }
   })
@@ -1474,6 +1476,48 @@ router.get("/:id/output/result-xlsx", (req, res) => {
   );
 });
 
+router.post("/:id/output/log", resultUpload.single("log"), (req, res) => {
+  const runId = String(req.params.id);
+  const run = getRun(runId);
+  if (!run) {
+    return res.status(404).json({ error: "RUN_NOT_FOUND" });
+  }
+
+  if (!req.file) {
+    return res.status(400).json({
+      error: "LOG_FILE_REQUIRED",
+      message: "請使用 multipart 欄位 log 上傳執行 log"
+    });
+  }
+
+  const now = nowIso();
+  db.prepare("UPDATE runs SET log_path = ?, log_uploaded_at = ?, updated_at = ? WHERE id = ?").run(
+    req.file.path,
+    now,
+    now,
+    runId
+  );
+  insertRunLog(runId, "INFO", "Agent execution log uploaded", {
+    filePath: req.file.path,
+    originalName: req.file.originalname,
+    size: req.file.size
+  });
+
+  return res.status(201).json({
+    runId,
+    logPath: req.file.path,
+    uploadedAt: now
+  });
+});
+
+router.get("/:id/output/log", (req, res) => {
+  const run = getRun(req.params.id);
+  if (!run) {
+    return res.status(404).json({ error: "RUN_NOT_FOUND" });
+  }
+  return safeSendRunOutputFile(res, run.log_path, `${String(run.round_id ?? req.params.id)}_agent.log`);
+});
+
 router.get("/:id/cases", (req, res) => {
   const run = getRun(req.params.id);
   if (!run) {
@@ -1554,6 +1598,8 @@ router.get("/:id/summary", (req, res) => {
     resultXlsxAvailable: typeof run.result_xlsx_path === "string" && run.result_xlsx_path.trim().length > 0,
     resultIngestedAt: run.result_ingested_at ?? null,
     resultParserVersion: run.result_xlsx_parser_version ?? null,
+    logAvailable: typeof run.log_path === "string" && run.log_path.trim().length > 0,
+    logUploadedAt: run.log_uploaded_at ?? null,
     caseStats,
     stepStats,
     pendingApprovals: pendingApprovals.count

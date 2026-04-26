@@ -98,6 +98,29 @@ const uploadResultXlsx = async (url: string, filePath: string, token: string): P
   return body;
 };
 
+const uploadLogFile = async (url: string, filePath: string, token: string): Promise<unknown> => {
+  const form = new FormData();
+  const bytes = fs.readFileSync(filePath);
+  form.append("log", new Blob([new Uint8Array(bytes)], { type: "text/plain" }), "agent.log");
+
+  const response = await fetch(url, {
+    method: "POST",
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+    body: form
+  });
+  const text = await response.text();
+  let body: unknown = text;
+  try {
+    body = text ? JSON.parse(text) : null;
+  } catch {
+    // Keep raw text for diagnostics.
+  }
+  if (!response.ok) {
+    throw new Error(`LOG_UPLOAD_FAILED ${response.status} ${typeof body === "string" ? body : JSON.stringify(body)}`);
+  }
+  return body;
+};
+
 const downloadInputs = async (config: AgentConfig, message: AgentMessage, runDir: string): Promise<DownloadedInputs> => {
   const inputDir = path.join(runDir, "input");
   const urls = getInputUrls(message);
@@ -189,6 +212,40 @@ const buildResultDetail = (
   assistantTextExcerpt: result.assistantText.slice(0, 2000),
   stderrExcerpt: result.stderr.slice(0, 2000)
 });
+
+const writeCombinedLog = (
+  runDir: string,
+  result: {
+    threadId: string | null;
+    assistantText: string;
+    exitCode: number | null;
+    signal: string | null;
+    parseErrors: string[];
+    rawStdout: string;
+    stderr: string;
+  }
+): string => {
+  const filePath = path.join(runDir, "output", "agent.log");
+  const content = [
+    `# uat-agent log`,
+    `generated_at=${new Date().toISOString()}`,
+    `thread_id=${result.threadId ?? ""}`,
+    `exit_code=${result.exitCode ?? ""}`,
+    `signal=${result.signal ?? ""}`,
+    `parse_errors=${result.parseErrors.length}`,
+    "",
+    "## assistant_text",
+    result.assistantText,
+    "",
+    "## raw_stdout",
+    result.rawStdout,
+    "",
+    "## stderr",
+    result.stderr
+  ].join("\n");
+  fs.writeFileSync(filePath, content);
+  return filePath;
+};
 
 const summarizeStderr = (stderr: string): string => {
   const pluginWarningIndex = stderr.indexOf("failed to warm featured plugin ids cache");
@@ -294,6 +351,32 @@ export const handleTaskDispatch = async (
     }
 
     const outputUrls = getOutputUrls(message);
+    const combinedLogPath = writeCombinedLog(runDir, result);
+    if (outputUrls.log) {
+      try {
+        const logUploadResponse = await uploadLogFile(outputUrls.log, combinedLogPath, config.token);
+        writeJson(path.join(runDir, "output", "log-upload.json"), {
+          path: combinedLogPath,
+          uploaded: true,
+          upload_response: logUploadResponse
+        });
+      } catch (error) {
+        writeJson(path.join(runDir, "output", "log-upload.json"), {
+          path: combinedLogPath,
+          uploaded: false,
+          error: error instanceof Error ? error.message : String(error)
+        });
+        connection.send(
+          "run.stderr",
+          {
+            run_id: runId,
+            text: `uat-agent log upload failed: ${error instanceof Error ? error.message : String(error)}`
+          },
+          false
+        );
+      }
+    }
+
     const sourceCase = await readFirstInputCase(downloadedInputs.xlsx);
     const resultXlsxPath = await writeAgentResultXlsx({
       runId,
@@ -366,6 +449,7 @@ export const handleTaskDispatch = async (
         workdir: runDir,
         inputs: Object.keys(downloadedInputs),
         result_xlsx_path: resultXlsxPath,
+        log_path: combinedLogPath,
         result_xlsx_uploaded: Boolean(outputUrls.result_xlsx)
       },
       true

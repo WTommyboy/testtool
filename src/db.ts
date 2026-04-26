@@ -30,6 +30,8 @@ export const migrate = (): void => {
       result_xlsx_path TEXT,
       result_ingested_at TEXT,
       result_xlsx_parser_version TEXT,
+      log_path TEXT,
+      log_uploaded_at TEXT,
       status TEXT NOT NULL DEFAULT 'DRAFT',
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
@@ -177,6 +179,12 @@ export const migrate = (): void => {
   }
   if (!hasColumn("runs", "result_xlsx_parser_version")) {
     db.exec("ALTER TABLE runs ADD COLUMN result_xlsx_parser_version TEXT");
+  }
+  if (!hasColumn("runs", "log_path")) {
+    db.exec("ALTER TABLE runs ADD COLUMN log_path TEXT");
+  }
+  if (!hasColumn("runs", "log_uploaded_at")) {
+    db.exec("ALTER TABLE runs ADD COLUMN log_uploaded_at TEXT");
   }
   if (!hasColumn("run_cases", "group_name")) {
     db.exec("ALTER TABLE run_cases ADD COLUMN group_name TEXT");
