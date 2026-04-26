@@ -1,7 +1,10 @@
 import fs from "node:fs";
+import http from "node:http";
 import path from "node:path";
 import cors from "cors";
 import express from "express";
+import { attachAgentWebSocketServer } from "./agent/agent-ws";
+import agentsRouter from "./agent/agents.routes";
 import { config } from "./config";
 import { migrate } from "./db";
 import runsRouter from "./runs";
@@ -33,6 +36,7 @@ app.get("/health", (_req, res) => {
 app.use("/api/runs", runsRouter);
 app.use("/api/conversations", conversationsRouter);
 app.use("/api/playwright", playwrightRouter);
+app.use("/api/agents", agentsRouter);
 
 app.use((req, res) => {
   res.status(404).json({
@@ -41,7 +45,10 @@ app.use((req, res) => {
   });
 });
 
-app.listen(config.port, () => {
+const server = http.createServer(app);
+attachAgentWebSocketServer(server);
+
+server.listen(config.port, () => {
   // Keep startup log concise for local dev.
   console.log(`[uat-tool] api listening on :${config.port}`);
 });
