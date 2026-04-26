@@ -24,6 +24,9 @@ export const migrate = (): void => {
       run_name TEXT NOT NULL,
       dev_url TEXT NOT NULL,
       execution_mode TEXT NOT NULL DEFAULT 'offline',
+      testcase_xlsx_path TEXT,
+      testcase_md_path TEXT,
+      reference_csv_path TEXT,
       status TEXT NOT NULL DEFAULT 'DRAFT',
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
@@ -153,6 +156,15 @@ export const migrate = (): void => {
   }
   if (!hasColumn("runs", "execution_mode")) {
     db.exec("ALTER TABLE runs ADD COLUMN execution_mode TEXT NOT NULL DEFAULT 'offline'");
+  }
+  if (!hasColumn("runs", "testcase_xlsx_path")) {
+    db.exec("ALTER TABLE runs ADD COLUMN testcase_xlsx_path TEXT");
+  }
+  if (!hasColumn("runs", "testcase_md_path")) {
+    db.exec("ALTER TABLE runs ADD COLUMN testcase_md_path TEXT");
+  }
+  if (!hasColumn("runs", "reference_csv_path")) {
+    db.exec("ALTER TABLE runs ADD COLUMN reference_csv_path TEXT");
   }
   if (!hasColumn("run_cases", "group_name")) {
     db.exec("ALTER TABLE run_cases ADD COLUMN group_name TEXT");

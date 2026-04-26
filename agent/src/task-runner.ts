@@ -29,10 +29,72 @@ const writeJson = (filePath: string, value: unknown): void => {
   fs.writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`);
 };
 
-const buildPrompt = (runId: string, message: AgentMessage, runDir: string): string => {
+type DownloadedInputs = Record<string, string>;
+
+const inputFileNameByKey: Record<string, string> = {
+  xlsx: "testcase.xlsx",
+  md: "testcase.md",
+  startup_instruction: "startup_instruction.md",
+  baseline: "baseline.csv"
+};
+
+const getInputUrls = (message: AgentMessage): Record<string, string> => {
+  const value = message.payload.input_urls;
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  const urls: Record<string, string> = {};
+  for (const [key, url] of Object.entries(value as Record<string, unknown>)) {
+    if (typeof url === "string" && /^https?:\/\//i.test(url)) {
+      urls[key] = url;
+    }
+  }
+  return urls;
+};
+
+const downloadFile = async (url: string, filePath: string, token: string): Promise<void> => {
+  const response = await fetch(url, {
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined
+  });
+  if (!response.ok) {
+    throw new Error(`INPUT_DOWNLOAD_FAILED ${response.status} ${url}`);
+  }
+
+  const bytes = Buffer.from(await response.arrayBuffer());
+  fs.writeFileSync(filePath, bytes);
+};
+
+const downloadInputs = async (config: AgentConfig, message: AgentMessage, runDir: string): Promise<DownloadedInputs> => {
+  const inputDir = path.join(runDir, "input");
+  const urls = getInputUrls(message);
+  const downloaded: DownloadedInputs = {};
+  const seenUrls = new Map<string, string>();
+
+  for (const [key, url] of Object.entries(urls)) {
+    if (seenUrls.has(url)) {
+      downloaded[key] = seenUrls.get(url) as string;
+      continue;
+    }
+
+    const fileName = inputFileNameByKey[key] ?? `${key.replace(/[^a-zA-Z0-9_-]/g, "_")}.dat`;
+    const filePath = path.join(inputDir, fileName);
+    await downloadFile(url, filePath, config.token);
+    downloaded[key] = filePath;
+    seenUrls.set(url, filePath);
+  }
+
+  return downloaded;
+};
+
+const readTextSample = (filePath: string | undefined, maxChars: number): string => {
+  if (!filePath || !fs.existsSync(filePath)) return "";
+  return fs.readFileSync(filePath, "utf8").slice(0, maxChars);
+};
+
+const buildPrompt = (runId: string, message: AgentMessage, runDir: string, inputs: DownloadedInputs): string => {
   const instruction = getStringPayload(message, "startup_instruction") ?? "Acknowledge this UAT run assignment and finish.";
   const domain = getStringPayload(message, "domain") ?? "BI";
   const roundId = getStringPayload(message, "round_id") ?? runId;
+  const inputLines = Object.entries(inputs).map(([key, filePath]) => `- ${key}: ${filePath}`);
+  const startupText = readTextSample(inputs.startup_instruction ?? inputs.md, 8000);
 
   return [
     "You are running inside the Galaxy UAT Tool Mac Agent.",
@@ -48,6 +110,12 @@ const buildPrompt = (runId: string, message: AgentMessage, runDir: string): stri
     `Round ID: ${roundId}`,
     `Agent workdir: ${runDir}`,
     "",
+    "Downloaded input files:",
+    inputLines.length > 0 ? inputLines.join("\n") : "- none",
+    "",
+    "Startup instruction file excerpt:",
+    startupText || "(no startup instruction file downloaded)",
+    "",
     "Startup instruction:",
     instruction
   ].join("\n");
@@ -60,6 +128,8 @@ const summarizeStderr = (stderr: string): string => {
     .split(/\r?\n/)
     .map((line) => line.trim())
     .filter(Boolean)
+    .filter((line) => !line.includes("Reading additional input from stdin"))
+    .filter((line) => !line.includes("codex_core::plugins::manager"))
     .join("\n");
   return cleaned.slice(0, 1200);
 };
@@ -80,6 +150,8 @@ export const handleTaskDispatch = async (
       status: "started",
       started_at: new Date().toISOString()
     });
+    const downloadedInputs = await downloadInputs(config, message, runDir);
+    writeJson(path.join(runDir, "input", "downloaded-inputs.json"), downloadedInputs);
 
     connection.send(
       "run.started",
@@ -87,7 +159,8 @@ export const handleTaskDispatch = async (
         run_id: runId,
         started_at: new Date().toISOString(),
         device_name: config.device_name,
-        workdir: runDir
+        workdir: runDir,
+        inputs: Object.keys(downloadedInputs)
       },
       true
     );
@@ -104,7 +177,7 @@ export const handleTaskDispatch = async (
       codexBin: config.codex_bin,
       cwd: runDir
     });
-    const result = await runner.start(buildPrompt(runId, message, runDir));
+    const result = await runner.start(buildPrompt(runId, message, runDir, downloadedInputs));
     fs.writeFileSync(path.join(runDir, "codex.log"), result.rawStdout);
     fs.writeFileSync(path.join(runDir, "codex.stderr.log"), result.stderr);
     writeJson(path.join(runDir, "output", "codex-result.json"), {
@@ -169,7 +242,8 @@ export const handleTaskDispatch = async (
         completed_at: new Date().toISOString(),
         result: "codex_completed",
         thread_id: result.threadId,
-        workdir: runDir
+        workdir: runDir,
+        inputs: Object.keys(downloadedInputs)
       },
       true
     );

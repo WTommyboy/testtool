@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
+import type { Request, Response } from "express";
 import { Router } from "express";
 import multer from "multer";
 import { z } from "zod";
@@ -122,6 +123,12 @@ const dispatchAgentSchema = z.object({
 
 const nowIso = (): string => new Date().toISOString();
 const TERMINAL_STATUSES = new Set(["SUCCEEDED", "FAILED", "CANCELLED"]);
+
+type RunInputPaths = {
+  testcase_xlsx_path?: string | null;
+  testcase_md_path?: string | null;
+  reference_csv_path?: string | null;
+};
 
 type MdRun = {
   id: string;
@@ -313,6 +320,47 @@ const generateMd = (
 
 const getRun = (runId: string): Record<string, unknown> | undefined =>
   db.prepare("SELECT * FROM runs WHERE id = ?").get(runId) as Record<string, unknown> | undefined;
+
+const getRequestBaseUrl = (req: Request): string => {
+  const forwardedProto = String(req.headers["x-forwarded-proto"] ?? "").split(",")[0]?.trim();
+  const proto = forwardedProto || req.protocol;
+  const forwardedHost = String(req.headers["x-forwarded-host"] ?? "").split(",")[0]?.trim();
+  const host = forwardedHost || req.get("host") || "localhost";
+  return `${proto}://${host}`;
+};
+
+const getRunInputUrls = (req: Request, runId: string, paths: RunInputPaths): Record<string, string> => {
+  const base = getRequestBaseUrl(req);
+  const urls: Record<string, string> = {};
+  if (paths.testcase_xlsx_path) {
+    urls.xlsx = `${base}/api/runs/${runId}/input/xlsx`;
+  }
+  if (paths.testcase_md_path) {
+    urls.md = `${base}/api/runs/${runId}/input/md`;
+    urls.startup_instruction = `${base}/api/runs/${runId}/input/startup`;
+  }
+  if (paths.reference_csv_path) {
+    urls.baseline = `${base}/api/runs/${runId}/input/baseline`;
+  }
+  return urls;
+};
+
+const safeSendRunInputFile = (res: Response, filePath: unknown, downloadName: string): Response | void => {
+  if (typeof filePath !== "string" || !filePath.trim()) {
+    return res.status(404).json({ error: "RUN_INPUT_NOT_FOUND" });
+  }
+
+  const resolved = path.resolve(filePath);
+  const storageRoot = path.resolve(config.storageRoot);
+  if (!resolved.startsWith(storageRoot + path.sep) && resolved !== storageRoot) {
+    return res.status(403).json({ error: "RUN_INPUT_OUTSIDE_STORAGE" });
+  }
+  if (!fs.existsSync(resolved)) {
+    return res.status(404).json({ error: "RUN_INPUT_FILE_MISSING" });
+  }
+
+  return res.download(resolved, downloadName);
+};
 
 const setRunStatusWithMeta = (runId: string, status: string): void => {
   const now = nowIso();
@@ -615,6 +663,7 @@ router.post(
       const referenceCsv = files?.referenceCsv?.[0];
 
       if (!testcaseXlsx || !testcaseMd) {
+        db.prepare("DELETE FROM runs WHERE id = ?").run(runId);
         return res.status(400).json({
           error: "UPLOAD_FILES_REQUIRED",
           message: "請上傳 xlsx 和 md 檔案"
@@ -624,6 +673,13 @@ router.post(
       try {
         const imported = await parseTestcaseXlsx(testcaseXlsx.path);
         const { manualCases } = upsertImportedTestcase(runId, imported);
+        db.prepare(
+          `
+            UPDATE runs
+            SET testcase_xlsx_path = ?, testcase_md_path = ?, reference_csv_path = ?, updated_at = ?
+            WHERE id = ?
+          `
+        ).run(testcaseXlsx.path, testcaseMd.path, referenceCsv?.path ?? null, nowIso(), runId);
         insertRunLog(runId, "INFO", "XLSX+MD uploaded and parsed", {
           sourceMode,
           testcaseXlsx: testcaseXlsx.path,
@@ -906,6 +962,7 @@ router.post("/:id/dispatch-agent", (req, res) => {
   }
 
   try {
+    const inputUrls = getRunInputUrls(req, req.params.id, run as RunInputPaths);
     const message = agentRegistry.dispatchTask(parsed.data.agentId, {
       run_id: req.params.id,
       domain: "BI",
@@ -914,16 +971,19 @@ router.post("/:id/dispatch-agent", (req, res) => {
       dev_url: String(run.dev_url ?? ""),
       feature_main: String(run.feature_main ?? ""),
       feature_sub: String(run.feature_sub ?? ""),
-      input_urls: {},
+      input_urls: inputUrls,
       startup_instruction:
-        "You are assigned a Galaxy BI UAT run. For this M1 dispatch smoke, acknowledge the run and report completion."
+        inputUrls.xlsx && inputUrls.startup_instruction
+          ? "Download the provided input files, inspect the testcase workbook and markdown instructions, then report the first executable case you would run next. Do not execute Galaxy UI yet in this M1 input-package smoke."
+          : "You are assigned a Galaxy BI UAT run, but no uploaded testcase package is available. Report missing inputs and exit cleanly."
     });
 
     setRunStatusWithMeta(req.params.id, "RUNNING");
     insertRunLog(req.params.id, "INFO", "Run dispatched to Mac Agent", {
       agentId: parsed.data.agentId,
       deviceName: agent.deviceName,
-      messageId: message.id
+      messageId: message.id,
+      inputUrls: Object.keys(inputUrls)
     });
 
     return res.status(202).json({
@@ -1103,6 +1163,38 @@ router.get("/:id", (req, res) => {
   }
 
   return res.json(run);
+});
+
+router.get("/:id/input/xlsx", (req, res) => {
+  const run = getRun(req.params.id);
+  if (!run) {
+    return res.status(404).json({ error: "RUN_NOT_FOUND" });
+  }
+  return safeSendRunInputFile(res, run.testcase_xlsx_path, `${String(run.round_id ?? req.params.id)}_testcase.xlsx`);
+});
+
+router.get("/:id/input/md", (req, res) => {
+  const run = getRun(req.params.id);
+  if (!run) {
+    return res.status(404).json({ error: "RUN_NOT_FOUND" });
+  }
+  return safeSendRunInputFile(res, run.testcase_md_path, `${String(run.round_id ?? req.params.id)}_instructions.md`);
+});
+
+router.get("/:id/input/startup", (req, res) => {
+  const run = getRun(req.params.id);
+  if (!run) {
+    return res.status(404).json({ error: "RUN_NOT_FOUND" });
+  }
+  return safeSendRunInputFile(res, run.testcase_md_path, `${String(run.round_id ?? req.params.id)}_startup.md`);
+});
+
+router.get("/:id/input/baseline", (req, res) => {
+  const run = getRun(req.params.id);
+  if (!run) {
+    return res.status(404).json({ error: "RUN_NOT_FOUND" });
+  }
+  return safeSendRunInputFile(res, run.reference_csv_path, `${String(run.round_id ?? req.params.id)}_baseline.csv`);
 });
 
 router.get("/:id/cases", (req, res) => {
