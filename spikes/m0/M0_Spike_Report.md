@@ -179,7 +179,74 @@ If production Codex output later becomes inconsistent:
 
 ## M0-3 WebSocket Fake Agent
 
-Pending.
+### Goal
+
+Verify the cloud server ↔ Mac Agent WebSocket control loop:
+
+1. Agent token validation.
+2. `agent.online`, heartbeat, dispatch, ack, stdout, completed.
+3. Sequence/id based dedupe for duplicate messages.
+4. Reasonable status handling when an agent disconnects mid-run and reconnects.
+
+### Validation Script
+
+```bash
+node spikes/m0/websocket-fake-agent/run-spike.mjs
+```
+
+The script starts an in-process fake Railway WebSocket server and a fake Mac Agent client using the same `ws` package planned for M1.
+
+### Result Summary
+
+Run directory:
+
+```text
+spikes/m0/websocket-fake-agent/output/2026-04-26T16-45-43-778Z/
+```
+
+Summary:
+
+| Check | Result | Evidence |
+|---|---|---|
+| Agent token rejection | PASS | Bad token connection rejected with 401 |
+| Agent connect / online | PASS | Server received `agent.online` with capability payload |
+| Heartbeat | PASS | Server received `agent.heartbeat` |
+| Dispatch + ack | PASS | `task.dispatch` acked and pending ack queue drained |
+| Run event flow | PASS | `run.started` → `run.stdout` → `run.completed` completed for `run_m0_1` |
+| Duplicate dispatch dedupe | PASS | Duplicate dispatch was acked but processed once; `run.started` count remained 1 |
+| Agent disconnect handling | PASS | Disconnect during `run_m0_2` moved run state to `AGENT_LOST` |
+| Reconnect + retry | PASS | Reconnected agent accepted redispatch and completed `run_m0_2` |
+
+### Adopted Approach
+
+M1.2 should use `ws` for both server and agent:
+
+- Server: `WebSocketServer({ noServer: true })` behind Express/HTTP upgrade so the upgrade path can validate `Authorization: Bearer <token>`.
+- Agent: `new WebSocket(url, { headers })` because browser-style global `WebSocket` cannot set the Authorization header.
+- Every message should use an envelope with `id`, `seq`, `type`, `timestamp`, `ack_required`, and `payload`.
+- Dedupe should be based on message `id`; task-level idempotency should also check `payload.run_id`.
+- Acks should be tracked with a pending-ack map and retried in production.
+
+### Impact on M1 Spec
+
+M1.2 can proceed with the documented WebSocket protocol. Add/keep these production implementation details:
+
+1. Use explicit HTTP upgrade handling for token rejection, not a normal CORS check.
+2. Treat disconnect during `AGENT_RUNNING` as `AGENT_LOST`.
+3. Redispatch after reconnect must be idempotent; a duplicate dispatch should not create duplicate run execution.
+4. Keep ack tracking in memory for M1; persist/replay can be deferred to M2 unless M0-7 exposes a gap.
+
+### Impact on Planning Document
+
+No direction change. The fake agent validates the planned Mac Agent protocol shape.
+
+### Fallback
+
+If Railway production WebSocket behavior differs from local Node:
+
+1. Add a Railway-deployed M0-3b check before M1.2.
+2. If upgrade headers are stripped or unreliable, move agent token into a signed query param only for Agent WebSocket, with short expiry.
+3. If long-lived WebSocket is unstable, keep Agent polling `/api/agent/tasks/next` as a fallback transport while preserving the same message envelope.
 
 ---
 
