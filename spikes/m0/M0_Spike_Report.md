@@ -1,7 +1,22 @@
 # M0 Spike Report
 
-**Status**:in progress  
+**Status**:completed with open gates  
 **Scope**:M0-1 to M0-7 feasibility validation before M1 implementation.
+
+## Executive Summary
+
+M0 proves the proposed architecture is technically viable:
+
+- Codex control should use `codex exec --json` + `codex exec resume --json <thread_id>`.
+- Tool Bridge marker output is stable enough for M1.
+- WebSocket fake agent flow is viable.
+- Result xlsx ingestion is viable.
+- Full fake E2E flow reaches `COMPLETED`.
+
+Open gates before full M1.1/M1.2 completion:
+
+1. M0-4 real Railway/Postgres migration is still **SKIPPED** because no `M0_DATABASE_URL` / `DATABASE_URL` was available.
+2. M0-5 real Galaxy SSO 24h persistence is still **SKIPPED** because M0 cannot automate company login; it must be verified manually with the persistent Chrome profile.
 
 This report is intentionally structured. Each spike must record:
 
@@ -510,4 +525,95 @@ If real BI result xlsx files differ from this fixture:
 
 ## M0-7 End-to-End Fake Codex
 
-Pending.
+### Goal
+
+Run the smallest full-system loop:
+
+1. Fake Web UI creates a run.
+2. Fake Railway API writes a DB run record.
+3. Fake Railway WebSocket dispatches a task to fake Mac Agent.
+4. Fake Agent simulates fake Codex stdout and Tool Bridge request.
+5. Fake Web UI posts Tool Response.
+6. Fake Agent creates and uploads a fake `result.xlsx`.
+7. Fake Railway parses result xlsx into DB.
+8. Fake Web UI queries summary and sees case result.
+
+### Validation Script
+
+```bash
+node spikes/m0/e2e-fake/run-spike.mjs
+```
+
+### Result Summary
+
+Run directory:
+
+```text
+spikes/m0/e2e-fake/output/2026-04-26T16-57-36-286Z/
+```
+
+Summary:
+
+| Check | Result | Evidence |
+|---|---|---|
+| Run created | PASS | Fake HTTP API returned `ASSIGNED` run |
+| Final status | PASS | Final DB status `COMPLETED` |
+| Case visible | PASS | `GET /api/runs/:id/summary` returned case `A-01` status `PASS` |
+| Tool request event | PASS | `run.tool_request` event stored |
+| Tool response event | PASS | `tool_response.sent` event stored |
+| Result ingestion event | PASS | `result.ingested` event stored |
+| Completed event | PASS | `run.completed` event stored |
+
+### Adopted Approach
+
+M1 can be implemented as the same conceptual flow, with fake pieces replaced by real modules:
+
+| M0 fake piece | M1 real module |
+|---|---|
+| Fake HTTP API | Express routes |
+| PGlite DB | Railway Postgres + Drizzle |
+| Fake WebSocket server | `/agent-ws` server |
+| Fake Agent | `/agent` package |
+| Fake Codex | `CodexRunner` using `codex exec --json` / `resume` |
+| Fake result parser | `result-xlsx-parser` |
+| Fake Web UI query | React run detail/history page |
+
+### Impact on M1 Spec
+
+M1.1/M1.2/M1.3 split remains correct.
+
+One sequencing detail is now clear: result ingestion should be triggered by `result.uploaded`, but final `COMPLETED` status should only be trusted after ingestion succeeds. In M0 fake flow the Agent sends `run.completed` immediately after upload; production should treat that as "agent done", not "server ingestion done".
+
+Recommended M1 status order:
+
+1. `AGENT_RUNNING`
+2. `UPLOADING_RESULT`
+3. `INGESTING_RESULT`
+4. `COMPLETED`
+
+### Impact on Planning Document
+
+No architecture change. M0-7 confirms the cloud hub + Mac Agent architecture is workable.
+
+### Fallback
+
+If real M1 E2E has race conditions:
+
+1. Make `run.completed` from Agent an event only.
+2. Let server own final status transition to `COMPLETED` after result parser succeeds.
+3. If result upload finishes but parser fails, status should become `FAILED` or stay `INGESTING_RESULT` with an explicit parser error depending on recoverability.
+
+---
+
+## M0 Final Decision
+
+Proceed to M1 implementation, but keep two explicit gates:
+
+1. Before marking M1.1 DB complete, run M0-4 against a real Railway/Postgres dev DB.
+2. Before claiming interactive runs are production-ready, run M0-5 SSO longevity test with Tommy logging into Galaxy through `~/.uat-agent/chrome-profile` and reopening the page later.
+
+M1 spec adjustment required from M0:
+
+- `CodexRunner` must be turn-based (`exec --json` + `resume`), not a long-running TUI process.
+- Tool Bridge parser should be implemented as a standalone tested module.
+- Server should own final `COMPLETED` transition after result ingestion.
