@@ -341,7 +341,81 @@ If Railway Postgres migration fails later:
 
 ## M0-5 SSO / Chrome Profile / Agent Doctor
 
-Pending.
+### Goal
+
+Validate the local Mac Agent doctor checks needed before interactive UAT execution:
+
+- Node 20+.
+- Codex CLI exists and can run `codex exec --json`.
+- Agent workdir is writable.
+- Chrome persistent profile directory is writable.
+- Playwright can launch a persistent profile and preserve browser state across restarts.
+- Identify what cannot be verified until M1.1/M1.2.
+
+### Validation Script
+
+```bash
+node spikes/m0/agent-doctor/run-spike.mjs
+```
+
+### Result Summary
+
+Run directory:
+
+```text
+spikes/m0/agent-doctor/output/2026-04-26T16-52-30-470Z/
+```
+
+Summary:
+
+| Check | Result | Evidence |
+|---|---|---|
+| Node version | PASS | `v24.14.1` |
+| Agent config | SKIPPED | `~/.uat-agent/config.json` does not exist yet; M1 `uat-agent login` should create it |
+| Workdir writable | PASS | `~/.uat-agent/runs` writable |
+| Chrome profile writable | PASS | `~/.uat-agent/chrome-profile` writable |
+| Codex CLI | PASS | `codex-cli 0.124.0`; `codex exec --json` returned expected sentinel |
+| Persistent browser profile | PASS | localStorage and persistent cookie survived Playwright persistent-context restart |
+| Playwright MCP availability | SKIPPED | Plain Node spike cannot verify Codex tool runtime MCP wiring |
+| Galaxy SSO session | SKIPPED | M0 does not automate company SSO; only validates persistence mechanism |
+| Railway Agent token | SKIPPED | Agent endpoint/token does not exist before M1.1/M1.2 |
+
+### Verdict
+
+**PARTIAL**.
+
+The local execution machine is suitable for M1 Agent work, but true SSO validity and live Railway token checks require the M1 Agent and a real Galaxy login session.
+
+### Adopted Approach
+
+M1.2 should implement `uat-agent doctor` with these categories:
+
+1. Hard checks: Node, Codex binary, Codex login/exec, workdir writable, Chrome profile writable, Playwright persistent launch.
+2. Live checks: server reachable, Agent token valid, WebSocket upgrade works.
+3. Session hints: Galaxy SSO page opens without `載入失敗` / dashboard redirect, but never automate SSO credentials.
+
+The profile persistence test should use a persistent cookie, not only localStorage. Session cookies may not survive shutdown depending on Chrome settings.
+
+### Impact on M1 Spec
+
+Keep M1 doctor as required before starting a run. Add one implementation detail:
+
+```text
+Doctor should test persistent cookie restoration, not just profile directory writability.
+```
+
+### Impact on Planning Document
+
+M0-5 is partially open because SSO itself cannot be certified without Tommy logging in through the persistent profile and re-testing after time passes. This does not block M0-6/M0-7, but M1 should not promise "24h SSO OK" until a real session longevity test is performed.
+
+### Fallback
+
+If real Galaxy SSO still expires frequently:
+
+1. Surface `WAITING_USER` with a login-required message.
+2. Keep the persistent browser open during run pauses.
+3. Add a doctor command that opens the target Galaxy URL and asks Tommy to confirm login status manually.
+4. Avoid automating SSO credentials or OTP.
 
 ---
 
