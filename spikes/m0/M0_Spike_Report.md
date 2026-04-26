@@ -252,7 +252,90 @@ If Railway production WebSocket behavior differs from local Node:
 
 ## M0-4 Postgres + Drizzle Schema
 
-Pending.
+### Goal
+
+Validate that the planned Postgres schema can support v2.4.1:
+
+- `runs`
+- `run_events`
+- `run_case_results`
+- `bugs`
+- `agent_tokens`
+- `user_sessions`
+
+Also validate JSONB, GIN index, seed/query round-trip, and uniqueness constraints.
+
+### Validation Script
+
+```bash
+node spikes/m0/postgres-drizzle/run-spike.mjs
+```
+
+The script uses PGlite for local Postgres-compatible execution and optionally runs the same migration against a real Postgres DB if `M0_DATABASE_URL` or `DATABASE_URL` is set.
+
+### Result Summary
+
+Run directory:
+
+```text
+spikes/m0/postgres-drizzle/output/2026-04-26T16-49-31-774Z/
+```
+
+Summary:
+
+| Check | Result | Evidence |
+|---|---|---|
+| Local migration | PASS | PGlite executed all table/index DDL |
+| JSONB | PASS | Inserted/query `baseline_data`, `payload`, and `detail_json` |
+| GIN index | PASS | `run_events_payload_gin_idx` and `run_case_results_detail_gin_idx` created |
+| Seed round-trip | PASS | Seeded one run + case result + event + bug + token + user session and queried joined row |
+| Unique constraint | PASS | Duplicate `(run_id, case_no)` insert failed as expected |
+| Real Postgres / Railway dev DB | SKIPPED | No `M0_DATABASE_URL` or `DATABASE_URL` available in local env |
+
+### Verdict
+
+**PARTIAL**.
+
+The schema shape is viable locally, but M0-4 is not fully closed until the same migration is run against a real Railway/Postgres dev database.
+
+### Adopted Approach
+
+M1.1 should proceed with Drizzle + Postgres, but keep DB migration as an early M1.1 task and require a real `DATABASE_URL` before marking DB foundation complete.
+
+Use these production decisions:
+
+- `execution_mode` must be `interactive`.
+- `runs.status` should use canonical v2.4.1 status values.
+- `run_events.payload` and `run_case_results.detail_json` should be `jsonb`.
+- Create GIN indexes on high-query JSONB fields.
+- Use `(run_id, case_no)` unique index to prevent duplicated case rows.
+
+### Impact on M1 Spec
+
+No schema direction change, but M1.1 should add one concrete gate:
+
+```text
+Do not consider M1.1 DB complete until migration succeeds against Railway/Postgres, not only local PGlite.
+```
+
+The current spike script can be reused with:
+
+```bash
+M0_DATABASE_URL="<railway-dev-postgres-url>" node spikes/m0/postgres-drizzle/run-spike.mjs
+```
+
+### Impact on Planning Document
+
+M0-4 remains partially open. This does not block continuing other M0 spikes, but it should block entering full M1.1 implementation unless Tommy provides/creates a Railway Postgres dev DB URL.
+
+### Fallback
+
+If Railway Postgres migration fails later:
+
+1. Compare failing DDL against the `migration.sql` artifact from this spike.
+2. Remove or adjust any PGlite-compatible-but-Postgres-incompatible syntax.
+3. If GIN index creation is the only failure, create tables first and add GIN indexes in a second migration.
+4. Do not fall back to SQLite for the refactor; SQLite was explicitly retired for this architecture.
 
 ---
 
