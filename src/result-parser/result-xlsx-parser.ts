@@ -1,0 +1,154 @@
+import fs from "node:fs";
+import ExcelJS from "exceljs";
+import { parseDetailJson } from "./detail-json";
+
+export const RESULT_XLSX_PARSER_VERSION = "result-xlsx-parser-v1";
+
+export type ParsedResultCase = {
+  groupName: string | null;
+  caseNo: string;
+  caseTitle: string | null;
+  testType: string | null;
+  executionMethod: string | null;
+  status: string;
+  verdictReason: string | null;
+  detailJson: Record<string, unknown> | null;
+  detailJsonRaw: string | null;
+  detailParseError: string | null;
+};
+
+export type ParsedBug = {
+  severity: string;
+  bugId: string;
+  relatedCaseNo: string | null;
+  title: string;
+  description: string | null;
+  suggestion: string | null;
+  status: string;
+};
+
+export type ParsedResultXlsx = {
+  parserVersion: string;
+  schemaVersion: string | null;
+  cases: ParsedResultCase[];
+  bugs: ParsedBug[];
+};
+
+const text = (value: unknown): string => {
+  if (value === null || value === undefined) return "";
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+    return String(value).trim();
+  }
+  if (typeof value === "object") {
+    const rich = value as { richText?: Array<{ text?: string }> };
+    if (Array.isArray(rich.richText)) {
+      return rich.richText.map((item) => item.text ?? "").join("").trim();
+    }
+  }
+  return String(value).trim();
+};
+
+const normalize = (value: unknown): string => {
+  return text(value).toLowerCase().replace(/\s+/g, "");
+};
+
+const findHeader = (row: ExcelJS.Row, names: string[]): number | undefined => {
+  const expected = new Set(names.map((name) => name.toLowerCase().replace(/\s+/g, "")));
+  let found: number | undefined;
+  row.eachCell((cell, col) => {
+    if (expected.has(normalize(cell.value))) found = col;
+  });
+  return found;
+};
+
+const requireHeader = (row: ExcelJS.Row, key: string, names: string[]): number => {
+  const index = findHeader(row, names);
+  if (!index) throw new Error(`RESULT_XLSX_HEADER_MISSING:${key}`);
+  return index;
+};
+
+const nullable = (value: string): string | null => {
+  return value ? value : null;
+};
+
+export const parseResultXlsx = async (filePath: string): Promise<ParsedResultXlsx> => {
+  if (!fs.existsSync(filePath)) {
+    throw new Error(`RESULT_XLSX_NOT_FOUND:${filePath}`);
+  }
+
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.readFile(filePath);
+
+  const indexSheet = workbook.getWorksheet("索引");
+  const schemaVersion = indexSheet ? nullable(text(indexSheet.getCell("B1").value)) : null;
+
+  const caseSheet = workbook.getWorksheet("測試案例");
+  if (!caseSheet) throw new Error("RESULT_CASE_SHEET_NOT_FOUND");
+  const caseHeader = caseSheet.getRow(1);
+  const c = {
+    groupName: requireHeader(caseHeader, "groupName", ["群組", "group", "group_name"]),
+    caseNo: requireHeader(caseHeader, "caseNo", ["編號", "case_no", "caseno", "案例編號"]),
+    caseTitle: requireHeader(caseHeader, "caseTitle", ["測試項目", "case_title", "title"]),
+    testType: requireHeader(caseHeader, "testType", ["測試類型", "test_type"]),
+    executionMethod: requireHeader(caseHeader, "executionMethod", ["執行方式", "execution_method"]),
+    status: requireHeader(caseHeader, "status", ["結果", "status", "result_status"]),
+    verdictReason: requireHeader(caseHeader, "verdictReason", ["失敗分類", "fail_category", "verdict_reason"]),
+    detailJson: requireHeader(caseHeader, "detailJson", ["詳細紀錄json", "detail_json", "detailjson"])
+  };
+
+  const cases: ParsedResultCase[] = [];
+  for (let rowNo = 2; rowNo <= caseSheet.rowCount; rowNo += 1) {
+    const row = caseSheet.getRow(rowNo);
+    const caseNo = text(row.getCell(c.caseNo).value);
+    if (!caseNo) continue;
+    const detail = parseDetailJson(text(row.getCell(c.detailJson).value));
+    cases.push({
+      groupName: nullable(text(row.getCell(c.groupName).value)),
+      caseNo,
+      caseTitle: nullable(text(row.getCell(c.caseTitle).value)),
+      testType: nullable(text(row.getCell(c.testType).value)),
+      executionMethod: nullable(text(row.getCell(c.executionMethod).value)),
+      status: text(row.getCell(c.status).value).toUpperCase(),
+      verdictReason: nullable(text(row.getCell(c.verdictReason).value)),
+      detailJson: detail.detailJson,
+      detailJsonRaw: detail.detailJsonRaw,
+      detailParseError: detail.detailParseError
+    });
+  }
+
+  const bugs: ParsedBug[] = [];
+  const bugSheet = workbook.getWorksheet("Bug");
+  if (bugSheet) {
+    const bugHeader = bugSheet.getRow(1);
+    const b = {
+      severity: requireHeader(bugHeader, "severity", ["嚴重度", "severity"]),
+      bugId: requireHeader(bugHeader, "bugId", ["bugid", "bug_id", "bug id"]),
+      relatedCaseNo: requireHeader(bugHeader, "relatedCaseNo", ["關聯編號", "related_case_no"]),
+      title: requireHeader(bugHeader, "title", ["標題", "title"]),
+      description: requireHeader(bugHeader, "description", ["描述", "description"]),
+      suggestion: requireHeader(bugHeader, "suggestion", ["建議", "suggestion"]),
+      status: requireHeader(bugHeader, "status", ["狀態", "status"])
+    };
+    for (let rowNo = 2; rowNo <= bugSheet.rowCount; rowNo += 1) {
+      const row = bugSheet.getRow(rowNo);
+      const bugId = text(row.getCell(b.bugId).value);
+      if (!bugId) continue;
+      bugs.push({
+        severity: text(row.getCell(b.severity).value),
+        bugId,
+        relatedCaseNo: nullable(text(row.getCell(b.relatedCaseNo).value)),
+        title: text(row.getCell(b.title).value),
+        description: nullable(text(row.getCell(b.description).value)),
+        suggestion: nullable(text(row.getCell(b.suggestion).value)),
+        status: text(row.getCell(b.status).value) || "OPEN"
+      });
+    }
+  }
+
+  return {
+    parserVersion: RESULT_XLSX_PARSER_VERSION,
+    schemaVersion,
+    cases,
+    bugs
+  };
+};
