@@ -6,6 +6,8 @@ export type CodexTurnResult = {
   threadId: string | null;
   assistantText: string;
   events: CodexJsonEvent[];
+  rawStdout: string;
+  parseErrors: string[];
   exitCode: number | null;
   signal: NodeJS.Signals | null;
   stderr: string;
@@ -17,11 +19,17 @@ export type CodexRunnerOptions = {
   timeoutMs?: number;
 };
 
-const parseJsonl = (stdout: string): CodexJsonEvent[] => {
-  return stdout
-    .split(/\r?\n/)
-    .filter(Boolean)
-    .map((line) => JSON.parse(line) as CodexJsonEvent);
+const parseJsonl = (stdout: string): { events: CodexJsonEvent[]; parseErrors: string[] } => {
+  const events: CodexJsonEvent[] = [];
+  const parseErrors: string[] = [];
+  for (const line of stdout.split(/\r?\n/).filter(Boolean)) {
+    try {
+      events.push(JSON.parse(line) as CodexJsonEvent);
+    } catch (error) {
+      parseErrors.push(error instanceof Error ? `${error.message}: ${line.slice(0, 200)}` : line.slice(0, 200));
+    }
+  }
+  return { events, parseErrors };
 };
 
 const extractThreadId = (events: CodexJsonEvent[]): string | null => {
@@ -70,11 +78,13 @@ const runCodex = (
     });
     child.on("close", (exitCode, signal) => {
       clearTimeout(timer);
-      const events = parseJsonl(stdout);
+      const { events, parseErrors } = parseJsonl(stdout);
       resolve({
         threadId: extractThreadId(events),
         assistantText: extractAssistantText(events),
         events,
+        rawStdout: stdout,
+        parseErrors,
         exitCode,
         signal,
         stderr
