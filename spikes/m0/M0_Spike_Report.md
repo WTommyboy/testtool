@@ -421,7 +421,90 @@ If real Galaxy SSO still expires frequently:
 
 ## M0-6 Result XLSX Upload + Parse Round-trip
 
-Pending.
+### Goal
+
+Verify that an Agent-produced `result.xlsx` can be parsed and ingested into DB-shaped rows:
+
+- `run_case_results`
+- `bugs`
+
+Also verify `detail_json` handling rules:
+
+1. Empty cell → `detail_json=null`, `detail_json_raw=null`.
+2. Valid JSON object → parsed JSON.
+3. Valid JSON but not object → raw preserved, `detail_parse_error=NOT_OBJECT`.
+4. Invalid JSON → raw preserved, parse error preserved.
+
+### Validation Script
+
+```bash
+node spikes/m0/result-xlsx/run-spike.mjs
+```
+
+The script creates a fixture workbook with exactly three sheets:
+
+- `索引`
+- `測試案例`
+- `Bug`
+
+Then it parses the workbook and inserts rows into a local PGlite DB.
+
+### Result Summary
+
+Run directory:
+
+```text
+spikes/m0/result-xlsx/output/2026-04-26T16-55-04-182Z/
+```
+
+Summary:
+
+| Check | Result | Evidence |
+|---|---|---|
+| Schema version detected | PASS | `bi-result-v1` read from `索引` |
+| Parser version present | PASS | `m0-result-parser-v1` emitted |
+| PASS / FAIL / BLOCKED / PARTIAL parsed | PASS | 7 cases parsed across all result statuses |
+| Valid detail_json parsed | PASS | 4 valid object rows parsed as JSON |
+| Invalid detail_json preserved | PASS | Invalid JSON row kept `detail_json_raw` and parse error |
+| Not-object detail_json preserved | PASS | JSON array row marked `NOT_OBJECT` |
+| Blank detail_json handled | PASS | Blank row kept JSON/raw as null |
+| Bug sheet parsed | PASS | 3 bugs parsed: High / Medium / Low |
+| DB write round-trip | PASS | 7 case rows + 3 bug rows inserted into PGlite |
+
+### Adopted Approach
+
+M1.1 should implement result parsing as a dedicated module, separate from the existing testcase parser:
+
+```text
+src/result-parser/
+  result-xlsx-parser.ts
+  detail-json.ts
+  adapters/
+```
+
+Do not reuse the current `src/xlsx-parser.ts` directly for result ingestion. That parser is testcase-input oriented and merges base test metadata into `detailJson`, which is not correct for result ingestion because invalid result detail must be preserved as raw/error.
+
+### Impact on M1 Spec
+
+M1.1 can proceed with the documented result parser. Keep these concrete rules:
+
+- The result parser must return both parsed case rows and bug rows.
+- The parser must expose a parser version.
+- Invalid `detail_json` is not fatal for the workbook; it is a row-level parse error.
+- Result ingestion should upsert case rows by `(run_id, case_no)`.
+
+### Impact on Planning Document
+
+No direction change.
+
+### Fallback
+
+If real BI result xlsx files differ from this fixture:
+
+1. Use Domain Pack `result_parser_adapter.json` to map headers.
+2. If required headers cannot be mapped, reject ingestion with a clear parser error.
+3. Keep original uploaded xlsx available for manual recovery.
+4. Add a legacy adapter only after a real incompatible file is observed.
 
 ---
 
