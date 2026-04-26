@@ -37,6 +37,9 @@ type Summary = {
   location?: string | null;
   featureMain?: string | null;
   featureSub?: string | null;
+  resultXlsxAvailable?: boolean;
+  resultIngestedAt?: string | null;
+  resultParserVersion?: string | null;
   caseStats: Record<string, number>;
   stepStats: Record<string, number>;
   pendingApprovals: number;
@@ -793,6 +796,36 @@ function App() {
     }
   };
 
+  const handleDownloadXlsx = async () => {
+    if (!selectedRunId) return;
+    setRunError("");
+    try {
+      const requestUrl = buildApiUrl(`/api/runs/${selectedRunId}/output/result-xlsx`);
+      const resp = await fetch(requestUrl);
+      if (!resp.ok) {
+        const msg = await resp.text().catch(() => "");
+        throw new Error(msg || "尚無可下載的 result.xlsx");
+      }
+
+      const blob = await resp.blob();
+      const disposition = resp.headers.get("Content-Disposition") ?? "";
+      const match = disposition.match(/filename="?([^"]+)"?/);
+      const rawName = match?.[1] ? decodeURIComponent(match[1]) : `UAT_result_${selectedRunId}.xlsx`;
+      const downloadName = rawName.replace(/[\/\\]/g, "_");
+
+      const objectUrl = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = objectUrl;
+      a.download = downloadName;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(objectUrl);
+    } catch (error) {
+      setRunError(error instanceof Error ? error.message : String(error));
+    }
+  };
+
   return (
     <main className="app">
       <header className="topbar">
@@ -1279,7 +1312,13 @@ function App() {
                     <button className="btn sm" onClick={() => void handleDownloadMd()} disabled={!selectedRunId || runBusy}>
                       📄 下載 MD
                     </button>
-                    <button className="btn sm">📊 下載 XLSX</button>
+                    <button
+                      className="btn sm"
+                      onClick={() => void handleDownloadXlsx()}
+                      disabled={!selectedRunId || runBusy || !summary?.resultXlsxAvailable}
+                    >
+                      📊 下載 XLSX
+                    </button>
                   </div>
                 </div>
                 <div className="run-meta">
@@ -1289,6 +1328,7 @@ function App() {
                   <span>測試者: {summary?.tester || "—"}</span>
                   <span>位置: {summary?.location || "—"}</span>
                   <span>功能: {summary?.featureMain || "—"} / {summary?.featureSub || "—"}</span>
+                  <span>Result XLSX: {summary?.resultXlsxAvailable ? "可下載" : "—"}</span>
                   <span>Pending approvals: {summary?.pendingApprovals ?? 0}</span>
                 </div>
                 <div className="stats mt-8">

@@ -1551,6 +1551,9 @@ router.get("/:id/summary", (req, res) => {
     location: run.location ?? null,
     featureMain: run.feature_main ?? null,
     featureSub: run.feature_sub ?? null,
+    resultXlsxAvailable: typeof run.result_xlsx_path === "string" && run.result_xlsx_path.trim().length > 0,
+    resultIngestedAt: run.result_ingested_at ?? null,
+    resultParserVersion: run.result_xlsx_parser_version ?? null,
     caseStats,
     stepStats,
     pendingApprovals: pendingApprovals.count
