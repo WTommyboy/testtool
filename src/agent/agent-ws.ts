@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import type http from "node:http";
 import { WebSocketServer } from "ws";
-import { createAckMessage, type AgentMessage } from "../agent-protocol/messages";
+import type { AgentMessage } from "../agent-protocol/messages";
 import { agentRegistry } from "./agent-registry";
 
 const getAllowedToken = (): string | undefined => {
@@ -49,14 +49,14 @@ export const attachAgentWebSocketServer = (server: http.Server): WebSocketServer
       lastSeenAt: now,
       status: "unknown",
       currentRunId: null,
-      socket
+      socket,
+      serverSeq: 1
     });
 
-    let seq = 1;
     socket.on("message", (data) => {
       const message = JSON.parse(data.toString("utf8")) as AgentMessage;
       if (message.ack_required) {
-        socket.send(JSON.stringify(createAckMessage(message.id, seq++)));
+        agentRegistry.send(agentId, "ack", { in_reply_to: message.id }, false);
       }
       agentRegistry.handleMessage(agentId, message);
     });

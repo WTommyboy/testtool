@@ -3,6 +3,7 @@ import http from "node:http";
 import path from "node:path";
 import cors from "cors";
 import express from "express";
+import { registerAgentRunEventHandlers } from "./agent/agent-run-events";
 import { attachAgentWebSocketServer } from "./agent/agent-ws";
 import agentsRouter from "./agent/agents.routes";
 import { config } from "./config";
@@ -17,6 +18,7 @@ const ensureDirectory = (dirPath: string): void => {
 
 ensureDirectory(config.storageRoot);
 migrate();
+registerAgentRunEventHandlers();
 
 const app = express();
 

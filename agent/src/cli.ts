@@ -2,6 +2,7 @@
 import { AgentConnection } from "./connection";
 import { defaultAgentConfig, defaultConfigPath, ensureAgentDirectories, readConfig, writeConfig } from "./config";
 import { runDoctor } from "./doctor";
+import { handleTaskDispatch } from "./task-runner";
 
 const args = process.argv.slice(2);
 
@@ -69,6 +70,16 @@ const main = async (): Promise<void> => {
       },
       onMessage: (message) => {
         printJson({ event: "message", type: message.type, id: message.id });
+        if (message.type === "task.dispatch") {
+          void handleTaskDispatch(connection, config, message).catch((error) => {
+            printJson({
+              event: "task_error",
+              type: message.type,
+              id: message.id,
+              error: error instanceof Error ? error.message : String(error)
+            });
+          });
+        }
       }
     });
     await connection.connect();

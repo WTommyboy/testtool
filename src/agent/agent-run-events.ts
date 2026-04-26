@@ -1,0 +1,115 @@
+import { randomUUID } from "node:crypto";
+import { db } from "../db";
+import type { AgentMessage } from "../agent-protocol/messages";
+import { agentRegistry } from "./agent-registry";
+
+let registered = false;
+
+const nowIso = (): string => new Date().toISOString();
+
+const getRunId = (message: AgentMessage): string | null => {
+  const runId = message.payload.run_id;
+  return typeof runId === "string" && runId.trim() ? runId : null;
+};
+
+const runExists = (runId: string): boolean => {
+  const row = db.prepare("SELECT id FROM runs WHERE id = ?").get(runId) as { id: string } | undefined;
+  return Boolean(row);
+};
+
+const insertRunLog = (
+  runId: string,
+  level: "INFO" | "WARN" | "ERROR",
+  message: string,
+  context?: Record<string, unknown>
+): void => {
+  db.prepare(
+    `
+      INSERT INTO run_logs (id, run_id, level, message, context_json, created_at)
+      VALUES (@id, @run_id, @level, @message, @context_json, @created_at)
+    `
+  ).run({
+    id: randomUUID(),
+    run_id: runId,
+    level,
+    message,
+    context_json: context ? JSON.stringify(context) : null,
+    created_at: nowIso()
+  });
+};
+
+const setRunStatus = (runId: string, status: string): void => {
+  const now = nowIso();
+  db.prepare("UPDATE runs SET status = ?, updated_at = ? WHERE id = ?").run(status, now, runId);
+  if (["SUCCEEDED", "FAILED", "CANCELLED"].includes(status)) {
+    db.prepare("UPDATE runs SET finished_at = ?, updated_at = ? WHERE id = ?").run(now, now, runId);
+  }
+};
+
+const textFromPayload = (message: AgentMessage): string => {
+  const text = message.payload.text ?? message.payload.line ?? message.payload.message;
+  return typeof text === "string" ? text : JSON.stringify(message.payload);
+};
+
+const handleAgentRunMessage = (agentId: string, message: AgentMessage): void => {
+  const runId = getRunId(message);
+  if (!runId || !runExists(runId)) return;
+
+  if (message.type === "run.started") {
+    setRunStatus(runId, "RUNNING");
+    insertRunLog(runId, "INFO", "Agent run started", { agentId, payload: message.payload });
+    return;
+  }
+
+  if (message.type === "run.stdout") {
+    insertRunLog(runId, "INFO", textFromPayload(message), { agentId, type: message.type });
+    return;
+  }
+
+  if (message.type === "run.stderr") {
+    insertRunLog(runId, "WARN", textFromPayload(message), { agentId, type: message.type });
+    return;
+  }
+
+  if (message.type === "run.tool_request") {
+    setRunStatus(runId, "WAITING_APPROVAL");
+    insertRunLog(runId, "WARN", "Agent requested PM action", { agentId, payload: message.payload });
+    return;
+  }
+
+  if (message.type === "run.uploading_result") {
+    insertRunLog(runId, "INFO", "Agent uploading result", { agentId, payload: message.payload });
+    return;
+  }
+
+  if (message.type === "run.completed") {
+    setRunStatus(runId, "SUCCEEDED");
+    insertRunLog(runId, "INFO", "Agent run completed", { agentId, payload: message.payload });
+    return;
+  }
+
+  if (message.type === "run.failed" || message.type === "run.rejected") {
+    setRunStatus(runId, "FAILED");
+    insertRunLog(runId, "ERROR", "Agent run failed", { agentId, type: message.type, payload: message.payload });
+  }
+};
+
+export const registerAgentRunEventHandlers = (): void => {
+  if (registered) return;
+  registered = true;
+  agentRegistry.onMessage(({ agentId, message }) => {
+    try {
+      handleAgentRunMessage(agentId, message);
+    } catch (error) {
+      // Agent events must not crash the WebSocket server.
+      const runId = getRunId(message);
+      if (runId && runExists(runId)) {
+        insertRunLog(runId, "ERROR", "Agent event handling failed", {
+          agentId,
+          type: message.type,
+          error: error instanceof Error ? error.message : String(error)
+        });
+      }
+    }
+  });
+};

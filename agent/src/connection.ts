@@ -13,6 +13,8 @@ export class AgentConnection {
   private ws: WebSocket | null = null;
   private seq = 1;
   private heartbeatTimer: NodeJS.Timeout | null = null;
+  private status: "idle" | "busy" = "idle";
+  private currentRunId: string | null = null;
 
   constructor(private readonly options: AgentConnectionOptions) {}
 
@@ -38,10 +40,10 @@ export class AgentConnection {
           tool_bridge_versions: ["spike-v1"],
           playwright_mcp_available: false,
           chrome_profile_ready: true,
-          current_run_id: null
+          current_run_id: this.currentRunId
         }, true);
         this.heartbeatTimer = setInterval(() => {
-          this.send("agent.heartbeat", { status: "idle", current_run_id: null }, false);
+          this.send("agent.heartbeat", { status: this.status, current_run_id: this.currentRunId }, false);
         }, 30_000);
         resolve();
       });
@@ -60,6 +62,11 @@ export class AgentConnection {
   close(): void {
     if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
     this.ws?.close();
+  }
+
+  setRunState(status: "idle" | "busy", runId: string | null): void {
+    this.status = status;
+    this.currentRunId = runId;
   }
 
   send(type: string, payload: Record<string, unknown>, ackRequired: boolean): AgentMessage {

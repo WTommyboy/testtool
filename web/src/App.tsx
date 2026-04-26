@@ -77,6 +77,16 @@ type PlaywrightHealthResponse = {
   message?: string;
 };
 
+type AgentItem = {
+  id: string;
+  deviceName: string;
+  agentVersion: string | null;
+  connectedAt: string;
+  lastSeenAt: string;
+  status: "idle" | "busy" | "unknown";
+  currentRunId: string | null;
+};
+
 type Approval = {
   id: string;
   case_no: string;
@@ -134,10 +144,9 @@ function App() {
   const [runStatusFilter, setRunStatusFilter] = useState("");
   const [runRoundFilter, setRunRoundFilter] = useState("");
   const [sourceMode, setSourceMode] = useState<"upload" | "conversation">("upload");
-  const [runExecutionMode, setRunExecutionMode] = useState<"interactive" | "offline">(() => {
-    const host = window.location.hostname;
-    return host === "localhost" || host === "127.0.0.1" ? "interactive" : "offline";
-  });
+  const [runExecutionMode, setRunExecutionMode] = useState<"interactive" | "offline">("interactive");
+  const [agents, setAgents] = useState<AgentItem[]>([]);
+  const [selectedAgentId, setSelectedAgentId] = useState("");
   const [uploadXlsx, setUploadXlsx] = useState<File | null>(null);
   const [uploadMd, setUploadMd] = useState<File | null>(null);
   const [uploadCsv, setUploadCsv] = useState<File | null>(null);
@@ -423,6 +432,19 @@ function App() {
     }
   };
 
+  const loadAgents = async () => {
+    try {
+      const data = await api<{ items: AgentItem[] }>("/api/agents");
+      setAgents(data.items);
+      setSelectedAgentId((current) => {
+        if (current && data.items.some((agent) => agent.id === current)) return current;
+        return data.items.find((agent) => agent.status === "idle")?.id ?? data.items[0]?.id ?? "";
+      });
+    } catch (error) {
+      setRunError(error instanceof Error ? error.message : String(error));
+    }
+  };
+
   const loadRunDetail = async (runId: string) => {
     if (!runId) return;
     try {
@@ -450,6 +472,7 @@ function App() {
   useEffect(() => {
     void loadConversations();
     void loadRuns();
+    void loadAgents();
   }, []);
 
   useEffect(() => {
@@ -476,6 +499,14 @@ function App() {
     }, 2500);
     return () => clearInterval(timer);
   }, [selectedRunId, summary?.runStatus]);
+
+  useEffect(() => {
+    if (runExecutionMode !== "interactive") return;
+    const timer = setInterval(() => {
+      void loadAgents();
+    }, 10000);
+    return () => clearInterval(timer);
+  }, [runExecutionMode]);
 
   useEffect(() => {
     let cancelled = false;
@@ -629,11 +660,16 @@ function App() {
     setRunError("");
     setStartError(null);
     try {
-      const health = await checkPlaywrightHealth();
-      setPlaywrightStatus(health.status);
-      if (health.status === "unavailable") {
-        // Keep creation flow moving; backend /start has the final authoritative health gate.
-        setStartError(`預檢查：${health.message || "Playwright 未連線"}，將交由啟動時再次確認。`);
+      if (runExecutionMode === "offline") {
+        const health = await checkPlaywrightHealth();
+        setPlaywrightStatus(health.status);
+        if (health.status === "unavailable") {
+          // Keep creation flow moving; backend /start has the final authoritative health gate.
+          setStartError(`預檢查：${health.message || "Playwright 未連線"}，將交由啟動時再次確認。`);
+        }
+      } else if (!selectedAgentId) {
+        setRunError("請先選擇一台在線 Agent");
+        return;
       }
 
       if (!runRoundId.trim()) {
@@ -682,7 +718,15 @@ function App() {
       await loadRunDetail(created.id);
 
       try {
-        await api(`/api/runs/${created.id}/start`, { method: "POST" });
+        if (runExecutionMode === "interactive") {
+          await api(`/api/runs/${created.id}/dispatch-agent`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ agentId: selectedAgentId }),
+          });
+        } else {
+          await api(`/api/runs/${created.id}/start`, { method: "POST" });
+        }
         await loadRuns();
         await loadRunDetail(created.id);
       } catch (error) {
@@ -919,7 +963,7 @@ function App() {
               <div className="form-group">
                 <label>執行模式</label>
                 <select value={runExecutionMode} onChange={(e) => setRunExecutionMode(e.target.value as "interactive" | "offline")}>
-                  <option value="interactive">本機互動代理（推薦）</option>
+                  <option value="interactive">Agent 互動執行（推薦）</option>
                   <option value="offline">離線 Runner（批次）</option>
                 </select>
               </div>
@@ -928,6 +972,34 @@ function App() {
                 <input value={runRoundId} onChange={(e) => setRunRoundId(e.target.value)} placeholder="例如 RC-R001" />
               </div>
             </div>
+
+            {runExecutionMode === "interactive" ? (
+              <div className="form-row">
+                <div className="form-group">
+                  <label>執行 Agent</label>
+                  <select value={selectedAgentId} onChange={(e) => setSelectedAgentId(e.target.value)}>
+                    <option value="">尚未偵測到在線 Agent</option>
+                    {agents.map((agent) => (
+                      <option key={agent.id} value={agent.id} disabled={agent.status === "busy"}>
+                        {agent.deviceName}｜{agent.status}
+                        {agent.currentRunId ? `｜${agent.currentRunId}` : ""}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="form-group">
+                  <label>Agent 狀態</label>
+                  <div className="inline-actions">
+                    <span className="muted">
+                      {agents.length > 0 ? `${agents.filter((agent) => agent.status === "idle").length} 台可用 / ${agents.length} 台在線` : "沒有在線 Agent"}
+                    </span>
+                    <button type="button" className="btn sm" onClick={() => void loadAgents()} disabled={runBusy || isStarting}>
+                      重新整理
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ) : null}
 
             {sourceMode === "upload" ? (
               <div className="upload-zone">

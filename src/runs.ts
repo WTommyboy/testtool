@@ -5,6 +5,7 @@ import { Router } from "express";
 import multer from "multer";
 import { z } from "zod";
 import { config } from "./config";
+import { agentRegistry } from "./agent/agent-registry";
 import { db } from "./db";
 import { requestRunCancel, startRun } from "./runner";
 import { checkPlaywrightHealth } from "./playwright-health";
@@ -113,6 +114,10 @@ const manualFillSchema = z.object({
   resultStatus: z.enum(["MANUAL_PASS", "MANUAL_FAIL", "MANUAL_BLOCKED"]),
   detailJson: z.unknown().optional(),
   manualFilledBy: z.string().min(1)
+});
+
+const dispatchAgentSchema = z.object({
+  agentId: z.string().min(1)
 });
 
 const nowIso = (): string => new Date().toISOString();
@@ -865,6 +870,77 @@ router.post("/:id/start", async (req, res) => {
     id: req.params.id,
     status: "RUNNING"
   });
+});
+
+router.post("/:id/dispatch-agent", (req, res) => {
+  const run = getRun(req.params.id);
+  if (!run) {
+    return res.status(404).json({ error: "RUN_NOT_FOUND" });
+  }
+
+  const parsed = dispatchAgentSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({
+      error: "INVALID_PAYLOAD",
+      issues: parsed.error.issues
+    });
+  }
+
+  const currentStatus = String(run.status);
+  if (TERMINAL_STATUSES.has(currentStatus)) {
+    return res.status(409).json({
+      error: "RUN_ALREADY_TERMINAL",
+      status: currentStatus
+    });
+  }
+
+  const agent = agentRegistry.get(parsed.data.agentId);
+  if (!agent) {
+    return res.status(404).json({ error: "AGENT_NOT_FOUND" });
+  }
+  if (agent.status === "busy") {
+    return res.status(409).json({
+      error: "AGENT_BUSY",
+      currentRunId: agent.currentRunId
+    });
+  }
+
+  try {
+    const message = agentRegistry.dispatchTask(parsed.data.agentId, {
+      run_id: req.params.id,
+      domain: "BI",
+      round_id: String(run.round_id ?? ""),
+      execution_mode: String(run.execution_mode ?? "interactive"),
+      dev_url: String(run.dev_url ?? ""),
+      feature_main: String(run.feature_main ?? ""),
+      feature_sub: String(run.feature_sub ?? ""),
+      input_urls: {},
+      startup_instruction:
+        "You are assigned a Galaxy BI UAT run. For this M1 dispatch smoke, acknowledge the run and report completion."
+    });
+
+    setRunStatusWithMeta(req.params.id, "RUNNING");
+    insertRunLog(req.params.id, "INFO", "Run dispatched to Mac Agent", {
+      agentId: parsed.data.agentId,
+      deviceName: agent.deviceName,
+      messageId: message.id
+    });
+
+    return res.status(202).json({
+      id: req.params.id,
+      status: "RUNNING",
+      agentId: parsed.data.agentId,
+      messageId: message.id
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    insertRunLog(req.params.id, "ERROR", "Run dispatch to Mac Agent failed", {
+      agentId: parsed.data.agentId,
+      error: message
+    });
+    const status = message === "AGENT_BUSY" ? 409 : 503;
+    return res.status(status).json({ error: message });
+  }
 });
 
 router.post("/:id/cancel", (req, res) => {
