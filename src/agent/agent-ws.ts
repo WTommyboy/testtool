@@ -19,7 +19,10 @@ export const attachAgentWebSocketServer = (server: http.Server): WebSocketServer
 
   server.on("upgrade", (request, socket, head) => {
     const url = new URL(request.url ?? "", "http://localhost");
-    if (url.pathname !== "/agent-ws") return;
+    if (url.pathname !== "/agent-ws") {
+      socket.destroy();
+      return;
+    }
 
     if (!isAuthorized(request.headers.authorization)) {
       socket.write("HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n");
