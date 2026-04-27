@@ -255,6 +255,9 @@
 .badge.partial, .badge.PARTIAL { background: var(--partial-bg); color: var(--partial); }
 .badge.pending, .badge.PENDING, .badge.MANUAL_PENDING { background: var(--pending-bg); color: var(--pending); }
 .badge.running, .badge.RUNNING, .badge.VALIDATING { background: var(--running-bg); color: var(--running); }
+.badge.idle { background: var(--pass-bg); color: var(--pass); }
+.badge.busy { background: var(--running-bg); color: var(--running); }
+.badge.unknown { background: var(--pending-bg); color: var(--text-3); }
 .badge.waiting, .badge.WAITING_APPROVAL { background: var(--blocked-bg); color: var(--blocked); }
 .badge.MANUAL_PASS { background: var(--pass-bg); color: var(--pass); }
 .badge.MANUAL_FAIL { background: var(--fail-bg); color: var(--fail); }
@@ -368,6 +371,49 @@
   border-radius: var(--r-sm);
   padding: 6px 8px 6px 12px;
   background: var(--card);
+}
+
+.agent-status-panel {
+  display: grid;
+  gap: 8px;
+}
+
+.agent-capability {
+  border: 1px solid var(--border-light);
+  border-radius: var(--r-sm);
+  background: var(--card-hover);
+  padding: 10px 12px;
+  display: grid;
+  gap: 8px;
+}
+
+.agent-capability > div:first-child {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.agent-capability-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px 12px;
+  color: var(--text-2);
+  font-size: 12px;
+}
+
+.agent-check-failures {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.agent-check-failures .error-msg {
+  margin: 0;
+  font-size: 12px;
+  background: var(--fail-bg);
+  border: 1px solid #fecaca;
+  border-radius: 999px;
+  padding: 2px 8px;
 }
 
 /* ─── Run List (Tab B-1 left) ─── */

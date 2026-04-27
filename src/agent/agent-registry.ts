@@ -1,10 +1,26 @@
 import type WebSocket from "ws";
 import { createAgentMessage, type AgentMessage } from "../agent-protocol/messages";
 
+export type AgentDoctorCheck = {
+  name: string;
+  verdict: "PASS" | "FAIL" | "SKIPPED";
+  details?: Record<string, unknown>;
+};
+
 export type ConnectedAgent = {
   id: string;
   deviceName: string;
   agentVersion: string | null;
+  platform: string | null;
+  codexVersion: string | null;
+  nodeVersion: string | null;
+  supportedTaskTypes: string[];
+  supportedExecutionModes: string[];
+  toolBridgeVersions: string[];
+  playwrightMcpAvailable: boolean | null;
+  chromeProfileReady: boolean | null;
+  doctorOk: boolean | null;
+  doctorChecks: AgentDoctorCheck[];
   connectedAt: string;
   lastSeenAt: string;
   status: "idle" | "busy" | "unknown";
@@ -22,6 +38,32 @@ export type AgentMessageEvent = {
 
 type AgentMessageListener = (event: AgentMessageEvent) => void;
 
+const isStatus = (value: unknown): value is "idle" | "busy" => value === "idle" || value === "busy";
+
+const asString = (value: unknown): string | null => (typeof value === "string" && value.trim() ? value.trim() : null);
+
+const asStringArray = (value: unknown): string[] => {
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is string => typeof item === "string");
+};
+
+const asBooleanOrNull = (value: unknown): boolean | null => (typeof value === "boolean" ? value : null);
+
+const asDoctorChecks = (value: unknown): AgentDoctorCheck[] => {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    if (!item || typeof item !== "object") return [];
+    const candidate = item as Record<string, unknown>;
+    const name = asString(candidate.name);
+    const verdict = candidate.verdict;
+    if (!name || (verdict !== "PASS" && verdict !== "FAIL" && verdict !== "SKIPPED")) return [];
+    const details = candidate.details && typeof candidate.details === "object" && !Array.isArray(candidate.details)
+      ? candidate.details as Record<string, unknown>
+      : undefined;
+    return [{ name, verdict, details }];
+  });
+};
+
 class AgentRegistry {
   private readonly agents = new Map<string, ConnectedAgent>();
   private readonly listeners = new Set<AgentMessageListener>();
@@ -38,7 +80,27 @@ class AgentRegistry {
     const agent = this.agents.get(agentId);
     if (!agent) return;
     agent.lastSeenAt = new Date().toISOString();
-    agent.status = payload.status === "idle" || payload.status === "busy" ? payload.status : agent.status;
+    agent.status = isStatus(payload.status) ? payload.status : agent.status;
+    agent.currentRunId = typeof payload.current_run_id === "string" ? payload.current_run_id : null;
+  }
+
+  updateOnline(agentId: string, payload: Record<string, unknown>): void {
+    const agent = this.agents.get(agentId);
+    if (!agent) return;
+    agent.lastSeenAt = new Date().toISOString();
+    agent.deviceName = asString(payload.device_name) ?? agent.deviceName;
+    agent.agentVersion = asString(payload.agent_version) ?? agent.agentVersion;
+    agent.platform = asString(payload.platform);
+    agent.codexVersion = asString(payload.codex_version);
+    agent.nodeVersion = asString(payload.node_version);
+    agent.supportedTaskTypes = asStringArray(payload.supported_task_types);
+    agent.supportedExecutionModes = asStringArray(payload.supported_execution_modes);
+    agent.toolBridgeVersions = asStringArray(payload.tool_bridge_versions);
+    agent.playwrightMcpAvailable = asBooleanOrNull(payload.playwright_mcp_available);
+    agent.chromeProfileReady = asBooleanOrNull(payload.chrome_profile_ready);
+    agent.doctorOk = asBooleanOrNull(payload.doctor_ok);
+    agent.doctorChecks = asDoctorChecks(payload.doctor_checks);
+    agent.status = isStatus(payload.status) ? payload.status : "idle";
     agent.currentRunId = typeof payload.current_run_id === "string" ? payload.current_run_id : null;
   }
 
@@ -99,6 +161,9 @@ class AgentRegistry {
   }
 
   handleMessage(agentId: string, message: AgentMessage): void {
+    if (message.type === "agent.online") {
+      this.updateOnline(agentId, message.payload);
+    }
     if (message.type === "agent.heartbeat") {
       this.updateHeartbeat(agentId, message.payload);
     }

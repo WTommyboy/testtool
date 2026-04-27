@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import fs from "node:fs";
-import type { AgentConfig, DoctorCheck } from "./types";
+import os from "node:os";
+import type { AgentCapability, AgentConfig, DoctorCheck } from "./types";
 
 const check = (name: string, condition: boolean, details?: Record<string, unknown>): DoctorCheck => ({
   name,
@@ -72,4 +73,31 @@ export const runDoctor = async (config: AgentConfig): Promise<DoctorCheck[]> => 
     })
   ];
   return checks;
+};
+
+const getCheck = (checks: DoctorCheck[], name: string): DoctorCheck | undefined => checks.find((item) => item.name === name);
+
+const getStringDetail = (checkResult: DoctorCheck | undefined, key: string): string | null => {
+  const value = checkResult?.details?.[key];
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+};
+
+export const buildAgentCapability = async (config: AgentConfig): Promise<AgentCapability> => {
+  const doctorChecks = await runDoctor(config);
+  const hasFailedCheck = doctorChecks.some((item) => item.verdict === "FAIL");
+  const chromeProfile = getCheck(doctorChecks, "chrome-profile-writable");
+  const playwrightMcp = getCheck(doctorChecks, "playwright-mcp-availability");
+
+  return {
+    platform: `${os.platform()}-${os.arch()}`,
+    codex_version: getStringDetail(getCheck(doctorChecks, "codex-version"), "version"),
+    node_version: process.version,
+    supported_task_types: ["uat_run"],
+    supported_execution_modes: ["interactive"],
+    tool_bridge_versions: ["spike-v1"],
+    playwright_mcp_available: playwrightMcp?.verdict === "PASS",
+    chrome_profile_ready: chromeProfile?.verdict === "PASS",
+    doctor_ok: !hasFailedCheck,
+    doctor_checks: doctorChecks
+  };
 };

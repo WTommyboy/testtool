@@ -82,10 +82,26 @@ type PlaywrightHealthResponse = {
   message?: string;
 };
 
+type AgentDoctorCheck = {
+  name: string;
+  verdict: "PASS" | "FAIL" | "SKIPPED";
+  details?: Record<string, unknown>;
+};
+
 type AgentItem = {
   id: string;
   deviceName: string;
   agentVersion: string | null;
+  platform: string | null;
+  codexVersion: string | null;
+  nodeVersion: string | null;
+  supportedTaskTypes: string[];
+  supportedExecutionModes: string[];
+  toolBridgeVersions: string[];
+  playwrightMcpAvailable: boolean | null;
+  chromeProfileReady: boolean | null;
+  doctorOk: boolean | null;
+  doctorChecks: AgentDoctorCheck[];
   connectedAt: string;
   lastSeenAt: string;
   status: "idle" | "busy" | "unknown";
@@ -180,6 +196,15 @@ function App() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const selectedConversation = conversations.find((x) => x.id === selectedConversationId) ?? null;
+  const selectedAgent = agents.find((agent) => agent.id === selectedAgentId) ?? null;
+  const selectedAgentDoctorStats = selectedAgent?.doctorChecks.reduce(
+    (acc, check) => {
+      acc[check.verdict] += 1;
+      return acc;
+    },
+    { PASS: 0, FAIL: 0, SKIPPED: 0 } as Record<AgentDoctorCheck["verdict"], number>
+  ) ?? { PASS: 0, FAIL: 0, SKIPPED: 0 };
+  const selectedAgentFailedChecks = selectedAgent?.doctorChecks.filter((check) => check.verdict === "FAIL") ?? [];
   const pendingApprovals = approvals.filter((x) => x.status === "PENDING");
 
   const totalCases = runCases.length || Object.values(summary?.caseStats ?? {}).reduce((a, b) => a + b, 0);
@@ -1054,13 +1079,40 @@ function App() {
                 </div>
                 <div className="form-group">
                   <label>Agent 狀態</label>
-                  <div className="inline-actions">
-                    <span className="muted">
-                      {agents.length > 0 ? `${agents.filter((agent) => agent.status === "idle").length} 台可用 / ${agents.length} 台在線` : "沒有在線 Agent"}
-                    </span>
-                    <button type="button" className="btn sm" onClick={() => void loadAgents()} disabled={runBusy || isStarting}>
-                      重新整理
-                    </button>
+                  <div className="agent-status-panel">
+                    <div className="inline-actions">
+                      <span className="muted">
+                        {agents.length > 0 ? `${agents.filter((agent) => agent.status === "idle").length} 台可用 / ${agents.length} 台在線` : "沒有在線 Agent"}
+                      </span>
+                      <button type="button" className="btn sm" onClick={() => void loadAgents()} disabled={runBusy || isStarting}>
+                        重新整理
+                      </button>
+                    </div>
+                    {selectedAgent ? (
+                      <div className="agent-capability">
+                        <div>
+                          <span className={`badge ${selectedAgent.doctorOk === false ? "FAIL" : selectedAgent.status.toUpperCase()}`}>
+                            {selectedAgent.doctorOk === false ? "DOCTOR FAIL" : selectedAgent.status}
+                          </span>
+                          <span className="muted">最後心跳 {formatDate(selectedAgent.lastSeenAt)}</span>
+                        </div>
+                        <div className="agent-capability-grid">
+                          <span>Codex: {selectedAgent.codexVersion || "unknown"}</span>
+                          <span>Node: {selectedAgent.nodeVersion || "unknown"}</span>
+                          <span>Platform: {selectedAgent.platform || "unknown"}</span>
+                          <span>Doctor: PASS {selectedAgentDoctorStats.PASS} / FAIL {selectedAgentDoctorStats.FAIL} / SKIP {selectedAgentDoctorStats.SKIPPED}</span>
+                        </div>
+                        {selectedAgentFailedChecks.length > 0 ? (
+                          <div className="agent-check-failures">
+                            {selectedAgentFailedChecks.map((check) => (
+                              <span key={check.name} className="error-msg">
+                                {check.name}
+                              </span>
+                            ))}
+                          </div>
+                        ) : null}
+                      </div>
+                    ) : null}
                   </div>
                 </div>
               </div>

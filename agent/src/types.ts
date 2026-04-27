@@ -23,3 +23,16 @@ export type DoctorCheck = {
   verdict: "PASS" | "FAIL" | "SKIPPED";
   details?: Record<string, unknown>;
 };
+
+export type AgentCapability = {
+  platform: string;
+  codex_version: string | null;
+  node_version: string;
+  supported_task_types: string[];
+  supported_execution_modes: string[];
+  tool_bridge_versions: string[];
+  playwright_mcp_available: boolean;
+  chrome_profile_ready: boolean;
+  doctor_ok: boolean;
+  doctor_checks: DoctorCheck[];
+};

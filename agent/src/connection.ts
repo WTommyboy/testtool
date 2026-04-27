@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
-import os from "node:os";
 import WebSocket from "ws";
+import { buildAgentCapability } from "./doctor";
 import type { AgentConfig, AgentMessage } from "./types";
 
 export type AgentConnectionOptions = {
@@ -29,23 +29,23 @@ export class AgentConnection {
       });
       this.ws.once("open", () => {
         this.options.onStatus?.("open");
-        this.send("agent.online", {
-          device_name: this.options.config.device_name,
-          agent_version: "0.1.0",
-          platform: `${os.platform()}-${os.arch()}`,
-          codex_version: "unknown",
-          node_version: process.version,
-          supported_task_types: ["uat_run"],
-          supported_execution_modes: ["interactive"],
-          tool_bridge_versions: ["spike-v1"],
-          playwright_mcp_available: false,
-          chrome_profile_ready: true,
-          current_run_id: this.currentRunId
-        }, true);
-        this.heartbeatTimer = setInterval(() => {
-          this.send("agent.heartbeat", { status: this.status, current_run_id: this.currentRunId }, false);
-        }, 30_000);
-        resolve();
+        void (async () => {
+          const capability = await buildAgentCapability(this.options.config);
+          this.send("agent.online", {
+            device_name: this.options.config.device_name,
+            agent_version: "0.1.0",
+            ...capability,
+            status: this.status,
+            current_run_id: this.currentRunId
+          }, true);
+          this.heartbeatTimer = setInterval(() => {
+            this.send("agent.heartbeat", { status: this.status, current_run_id: this.currentRunId }, false);
+          }, 30_000);
+          resolve();
+        })().catch((error) => {
+          reject(error);
+          this.options.onStatus?.("error", error);
+        });
       });
       this.ws.on("message", (data) => this.handleMessage(data.toString("utf8")));
       this.ws.on("close", () => {
