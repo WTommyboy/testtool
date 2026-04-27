@@ -2,6 +2,8 @@
 
 This runbook lists the repeatable checks for the Mac Agent / Domain Pack path.
 
+For daily operation, see `docs/refactor/M1_Mac_Agent_MVP_Runbook.md`.
+
 ## Tool Bridge Parser
 
 Run after changing:

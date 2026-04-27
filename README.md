@@ -1,5 +1,18 @@
 # UAT Tool (MVP Bootstrap)
 
+## Current M1 Path
+
+The preferred M1 execution path is:
+
+```text
+Vercel Web UI → Railway API/WebSocket → local uat-agent on Tommy Mac → Codex CLI + Playwright MCP
+```
+
+Operational runbook:
+
+- `docs/refactor/M1_Mac_Agent_MVP_Runbook.md`
+- `docs/refactor/M1_Verification_Runbook.md`
+
 ## Quick Start
 
 ```bash
