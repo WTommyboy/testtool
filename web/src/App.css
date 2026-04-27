@@ -281,6 +281,7 @@
 .badge.busy { background: var(--running-bg); color: var(--running); }
 .badge.unknown { background: var(--pending-bg); color: var(--text-3); }
 .badge.waiting, .badge.WAITING_APPROVAL { background: var(--blocked-bg); color: var(--blocked); }
+.badge.CANCELLED, .badge.CANCELED { background: var(--pending-bg); color: var(--text-3); }
 .badge.MANUAL_PASS { background: var(--pass-bg); color: var(--pass); }
 .badge.MANUAL_FAIL { background: var(--fail-bg); color: var(--fail); }
 .badge.MANUAL_BLOCKED { background: var(--blocked-bg); color: var(--blocked); }
@@ -795,6 +796,36 @@
 .error-banner p {
   margin: 0;
   color: #b91c1c;
+}
+
+.run-selection-notice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-radius: var(--r-sm);
+  padding: 10px 12px;
+  margin-bottom: 14px;
+  color: #1e3a8a;
+  font-size: 13px;
+}
+
+.run-selection-notice.is-terminal {
+  background: #f8fafc;
+  border-color: var(--border);
+  color: var(--text);
+}
+
+.run-selection-notice strong {
+  display: block;
+  margin-bottom: 2px;
+}
+
+.run-selection-notice p {
+  margin: 0;
+  color: var(--text-3);
 }
 
 .spinner-sm {

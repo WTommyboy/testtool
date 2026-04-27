@@ -142,6 +142,17 @@ type AuthMeResponse = {
   loginUrl?: string;
 };
 
+const terminalRunStatuses = new Set(["SUCCEEDED", "FAILED", "CANCELLED", "CANCELED"]);
+const cancellableRunStatuses = new Set(["READY", "RUNNING", "WAITING_APPROVAL", "VALIDATING"]);
+
+const isTerminalRunStatus = (status?: string | null): boolean => {
+  return Boolean(status && terminalRunStatuses.has(status));
+};
+
+const isCancellableRunStatus = (status?: string | null): boolean => {
+  return Boolean(status && cancellableRunStatuses.has(status));
+};
+
 const buildApiUrl = (url: string): string => {
   const base = (import.meta.env.VITE_API_BASE_URL ?? "").replace(/\/+$/, "");
   return base ? `${base}${url}` : url;
@@ -264,6 +275,10 @@ function App() {
   const blockedCases = numberOf(summary?.caseStats, "BLOCKED") + numberOf(summary?.caseStats, "MANUAL_BLOCKED");
   const pendingCases = numberOf(summary?.caseStats, "PENDING") + numberOf(summary?.caseStats, "MANUAL_PENDING");
   const runningCases = totalCases > 0 ? Math.max(0, totalCases - passCases - failCases - blockedCases - pendingCases) : 0;
+  const hasSelectedRunDetail = Boolean(selectedRunId && summary);
+  const selectedRunIsTerminal = isTerminalRunStatus(summary?.runStatus);
+  const selectedRunCanCancel = isCancellableRunStatus(summary?.runStatus);
+  const selectedRunLabel = selectedRun?.round_id || summary?.runId || selectedRunId;
 
   const passPct = totalCases > 0 ? (passCases / totalCases) * 100 : 0;
   const failPct = totalCases > 0 ? (failCases / totalCases) * 100 : 0;
@@ -628,6 +643,18 @@ function App() {
     } catch (error) {
       setRunError(error instanceof Error ? error.message : String(error));
     }
+  };
+
+  const clearSelectedRunDetail = () => {
+    setSelectedRunId("");
+    setSummary(null);
+    setRunEvents([]);
+    setRunLogs([]);
+    setRunCases([]);
+    setRunBugs([]);
+    setApprovals([]);
+    setExpandedCaseId(null);
+    setStartError(null);
   };
 
   useEffect(() => {
@@ -1249,6 +1276,25 @@ function App() {
               <span className={`badge ${summary?.runStatus || "DRAFT"}`}>{summary?.runStatus || "DRAFT"}</span>
             </div>
 
+            {hasSelectedRunDetail ? (
+              <div className={`run-selection-notice ${selectedRunIsTerminal ? "is-terminal" : ""}`}>
+                <div>
+                  <strong>
+                    目前下方顯示的是已選取 Run：{selectedRunLabel}
+                    {summary?.runStatus ? ` / ${summary.runStatus}` : ""}
+                  </strong>
+                  <p>
+                    {selectedRunIsTerminal
+                      ? "這是歷史結果，不會被再次執行。填寫上方欄位後按「開始執行」會建立新的 Run。"
+                      : "這是目前追蹤中的 Run。若要建立全新的測試，請先清空結果面板。"}
+                  </p>
+                </div>
+                <button type="button" className="btn sm" onClick={clearSelectedRunDetail} disabled={runBusy || isStarting}>
+                  清空為新測試草稿
+                </button>
+              </div>
+            ) : null}
+
             <div className="form-row">
               <div className="form-group">
                 <label>TESTCASE 來源</label>
@@ -1475,7 +1521,8 @@ function App() {
               <button
                 className="btn danger"
                 onClick={() => selectedRunId && void handleRunAction("cancel", selectedRunId)}
-                disabled={!selectedRunId || runBusy || isStarting}
+                disabled={!selectedRunId || !selectedRunCanCancel || runBusy || isStarting}
+                title={selectedRunId && !selectedRunCanCancel ? "此 Run 已結束，不能再取消" : undefined}
               >
                 取消 Run
               </button>
@@ -1556,7 +1603,12 @@ function App() {
                     <button className="btn sm" onClick={() => void handleResolveApproval(a, "skip")}>
                       跳過此 Case
                     </button>
-                    <button className="btn danger sm" onClick={() => selectedRunId && void handleRunAction("cancel", selectedRunId)}>
+                    <button
+                      className="btn danger sm"
+                      onClick={() => selectedRunId && void handleRunAction("cancel", selectedRunId)}
+                      disabled={!selectedRunCanCancel || runBusy || isStarting}
+                      title={!selectedRunCanCancel ? "此 Run 已結束，不能再取消" : undefined}
+                    >
                       取消整個 Run
                     </button>
                   </div>
