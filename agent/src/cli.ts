@@ -3,6 +3,7 @@ import fs from "node:fs";
 import { AgentConnection } from "./connection";
 import { defaultAgentConfig, defaultConfigPath, ensureAgentDirectories, readConfig, writeConfig } from "./config";
 import { runDoctor } from "./doctor";
+import { installLaunchd, uninstallLaunchd } from "./launchd";
 import { handleTaskDispatch, handleToolResponse } from "./task-runner";
 
 const args = process.argv.slice(2);
@@ -35,6 +36,8 @@ const usage = (): void => {
   doctor
   status
   start
+  install-launchd [--no-load]
+  uninstall-launchd
 `);
 };
 
@@ -223,6 +226,18 @@ const main = async (): Promise<void> => {
       }
     }
     printJson({ event: "stopped" });
+    return;
+  }
+
+  if (command === "install-launchd") {
+    const config = readConfig();
+    ensureAgentDirectories(config);
+    printJson(installLaunchd(config, !args.includes("--no-load")));
+    return;
+  }
+
+  if (command === "uninstall-launchd") {
+    printJson(uninstallLaunchd());
     return;
   }
 
