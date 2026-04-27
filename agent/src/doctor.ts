@@ -50,6 +50,14 @@ const ensureWritableDir = (dir: string): boolean => {
   return ok;
 };
 
+const isDirectory = (dir: string): boolean => {
+  try {
+    return fs.statSync(dir).isDirectory();
+  } catch {
+    return false;
+  }
+};
+
 export const runDoctor = async (config: AgentConfig): Promise<DoctorCheck[]> => {
   const nodeMajor = Number(process.versions.node.split(".")[0]);
   const codexVersion = await run(config.codex_bin, ["--version"]);
@@ -57,6 +65,10 @@ export const runDoctor = async (config: AgentConfig): Promise<DoctorCheck[]> => 
     check("node-version", nodeMajor >= 20, { version: process.version }),
     check("agent-token-present", Boolean(config.token), { hasToken: Boolean(config.token) }),
     check("server-config-present", Boolean(config.server), { server: config.server }),
+    check("codex-workspace-root", isDirectory(config.codex_workspace_root), { dir: config.codex_workspace_root }),
+    check("codex-workspace-agents", fs.existsSync(`${config.codex_workspace_root}/AGENTS.md`), {
+      path: `${config.codex_workspace_root}/AGENTS.md`
+    }),
     check("workdir-writable", ensureWritableDir(config.workdir_root), { dir: config.workdir_root }),
     check("chrome-profile-writable", ensureWritableDir(config.chrome_profile_dir), { dir: config.chrome_profile_dir }),
     check("codex-version", codexVersion.exitCode === 0, {

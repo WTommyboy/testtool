@@ -5,12 +5,26 @@ import type { AgentConfig } from "./types";
 
 export const defaultConfigPath = path.join(os.homedir(), ".uat-agent", "config.json");
 
+const hasAgentsFile = (dir: string): boolean => fs.existsSync(path.join(dir, "AGENTS.md"));
+
+const detectWorkspaceRoot = (): string => {
+  const envRoot = process.env.UAT_AGENT_CODEX_WORKSPACE_ROOT?.trim();
+  const candidates = [
+    envRoot ? path.resolve(envRoot) : "",
+    path.resolve(__dirname, "../../.."),
+    path.resolve(process.cwd(), ".."),
+    process.cwd()
+  ].filter(Boolean);
+  return candidates.find(hasAgentsFile) ?? process.cwd();
+};
+
 export const defaultAgentConfig = (overrides: Partial<AgentConfig> = {}): AgentConfig => ({
   version: 1,
   server: "wss://testtool-production.up.railway.app/agent-ws",
   token: "",
   device_name: os.hostname(),
   codex_bin: "codex",
+  codex_workspace_root: detectWorkspaceRoot(),
   workdir_root: path.join(os.homedir(), ".uat-agent", "runs"),
   chrome_profile_dir: path.join(os.homedir(), ".uat-agent", "chrome-profile"),
   log_level: "info",
@@ -21,7 +35,8 @@ export const readConfig = (configPath = defaultConfigPath): AgentConfig => {
   if (!fs.existsSync(configPath)) {
     throw new Error(`AGENT_CONFIG_NOT_FOUND:${configPath}`);
   }
-  return JSON.parse(fs.readFileSync(configPath, "utf8")) as AgentConfig;
+  const parsed = JSON.parse(fs.readFileSync(configPath, "utf8")) as Partial<AgentConfig>;
+  return defaultAgentConfig(parsed);
 };
 
 export const writeConfig = (config: AgentConfig, configPath = defaultConfigPath): void => {

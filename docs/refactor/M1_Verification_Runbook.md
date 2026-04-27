@@ -115,6 +115,7 @@ curl -s https://testtool-production.up.railway.app/api/agents | jq
 Expected:
 - `api/domains` includes `BI` with `valid: true`.
 - `api/agents` includes `Tommy Mac` with `status: idle`.
+- Agent doctor includes `codex-workspace-root: PASS` and `codex-workspace-agents: PASS`.
 
 Verified smoke runs on 2026-04-27:
 
@@ -127,6 +128,7 @@ Important notes:
 - The smoke instruction intentionally says not to operate Galaxy BI. This verifies the cloud-to-Mac closed loop, not real BI UI automation.
 - In-app Browser currently does not support file uploads, so UI file picker verification must be manual or done through another browser automation surface.
 - `POST /api/agents/:id/dispatch-smoke` requires `AGENT_BOOTSTRAP_SECRET`; do not expose this endpoint publicly without the secret.
+- New real UAT dispatches should no longer use the smoke-only startup instruction. The agent now lets spawned Codex create `output/result.xlsx`; if absent, it falls back to a one-row summary result.
 
 ## Production Auth Smoke
 

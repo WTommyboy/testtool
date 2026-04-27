@@ -4,6 +4,7 @@ export type AgentConfig = {
   token: string;
   device_name: string;
   codex_bin: string;
+  codex_workspace_root: string;
   workdir_root: string;
   chrome_profile_dir: string;
   log_level: "debug" | "info" | "warn" | "error";

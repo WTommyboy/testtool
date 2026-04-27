@@ -33,6 +33,7 @@ const getPayloadRunId = (message: { payload: Record<string, unknown> }): string 
 const usage = (): void => {
   process.stdout.write(`uat-agent commands:
   login --server <wss-url> --token <agent-token> [--device-name <name>]
+        [--workspace-root <codex-galaxy-root>]
   doctor
   status
   start
@@ -52,13 +53,15 @@ const main = async (): Promise<void> => {
     const server = getFlag("--server");
     const token = getFlag("--token");
     const deviceName = getFlag("--device-name");
+    const workspaceRoot = getFlag("--workspace-root");
     if (!server || !token) {
       throw new Error("LOGIN_REQUIRES_SERVER_AND_TOKEN");
     }
     const config = defaultAgentConfig({
       server,
       token,
-      device_name: deviceName ?? defaultAgentConfig().device_name
+      device_name: deviceName ?? defaultAgentConfig().device_name,
+      codex_workspace_root: workspaceRoot ? fs.realpathSync(workspaceRoot) : defaultAgentConfig().codex_workspace_root
     });
     ensureAgentDirectories(config);
     writeConfig(config);
@@ -98,6 +101,8 @@ const main = async (): Promise<void> => {
       device_name: config.device_name,
       token: maskToken(config.token),
       codex_bin: config.codex_bin,
+      codex_workspace_root: config.codex_workspace_root,
+      codex_workspace_agents_exists: fs.existsSync(`${config.codex_workspace_root}/AGENTS.md`),
       workdir_root: config.workdir_root,
       chrome_profile_dir: config.chrome_profile_dir,
       workdir_exists: fs.existsSync(config.workdir_root),

@@ -61,7 +61,8 @@ Copy the returned `token`, then login locally:
 node agent/dist/cli.js login \
   --server wss://testtool-production.up.railway.app/agent-ws \
   --token "<TOKEN_FROM_API>" \
-  --device-name "Tommy Mac"
+  --device-name "Tommy Mac" \
+  --workspace-root /Users/tommy/Downloads/codex_galaxy
 ```
 
 Check local prerequisites:
@@ -95,6 +96,12 @@ curl -s https://testtool-production.up.railway.app/api/agents | jq
 ```
 
 You should see `"deviceName": "Tommy Mac"` and `"status": "idle"` before dispatching a run.
+
+The agent doctor should also report:
+- `codex-workspace-root: PASS`
+- `codex-workspace-agents: PASS`
+
+This is required for real BI UAT runs. The agent copies `AGENTS.md` and `BI_TEST_RULES/*.md` from the workspace root into each run workspace so the spawned Codex process inherits the same UAT discipline as this project.
 
 ## Start Agent With Launchd
 
@@ -167,6 +174,9 @@ Expected output files:
 
 - `input/dispatch.json`
 - `input/downloaded-inputs.json`
+- `input/codex-context.json`
+- `AGENTS.md`
+- `rules/BI_TEST_RULES/*.md`
 - `output/result.xlsx`
 - `output/agent.log`
 - `output/codex-result.json`
@@ -178,6 +188,10 @@ Agent uploads:
 - `agent.log` to `/api/runs/:id/output/log`
 
 The API ingests result xlsx into run cases, bugs, logs, and summary views.
+
+Result workbook behavior:
+- Preferred path: spawned Codex writes `output/result.xlsx` itself after executing the UAT cases.
+- Fallback path: if Codex exits without creating `output/result.xlsx`, the agent creates a one-row summary workbook so the run still has an ingestible artifact.
 
 ## Verification Commands
 

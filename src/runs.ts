@@ -1317,7 +1317,12 @@ router.post("/:id/dispatch-agent", (req, res) => {
       output_urls: outputUrls,
       startup_instruction:
         inputUrls.xlsx && inputUrls.startup_instruction
-          ? "Download the provided input files, inspect the testcase workbook and markdown instructions, then report the first executable case you would run next. Do not execute Galaxy UI yet in this M1 input-package smoke."
+          ? [
+            "Execute the assigned Galaxy BI UAT run using the uploaded testcase workbook and markdown instruction as the source of truth.",
+            "Use real UI/browser automation for BI validation; do not bypass BI UI with direct BI API calls.",
+            "Write the completed result workbook to output/result.xlsx in the agent workdir. Include sheets named 索引, 測試案例, and Bug when applicable.",
+            "If SSO login, irreversible operation approval, or an ambiguous testing decision blocks progress, emit a Tool Bridge [TOOL_REQUEST]...[/TOOL_REQUEST] block and stop at the safe pause point."
+          ].join(" ")
           : "You are assigned a Galaxy BI UAT run, but no uploaded testcase package is available. Report missing inputs and exit cleanly."
     });
 

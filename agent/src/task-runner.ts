@@ -27,6 +27,37 @@ const ensureRunWorkspace = (config: AgentConfig, runId: string): string => {
   return runDir;
 };
 
+const copyIfExists = (source: string, target: string): boolean => {
+  if (!fs.existsSync(source)) return false;
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  fs.copyFileSync(source, target);
+  return true;
+};
+
+const prepareCodexContext = (config: AgentConfig, runDir: string): void => {
+  const copied: Record<string, string> = {};
+  const workspaceRoot = config.codex_workspace_root;
+  const agentsSource = path.join(workspaceRoot, "AGENTS.md");
+  if (copyIfExists(agentsSource, path.join(runDir, "AGENTS.md"))) {
+    copied.AGENTS = agentsSource;
+  }
+
+  const rulesDir = path.join(workspaceRoot, "BI_TEST_RULES");
+  if (fs.existsSync(rulesDir)) {
+    for (const entry of fs.readdirSync(rulesDir, { withFileTypes: true })) {
+      if (!entry.isFile() || !entry.name.endsWith(".md")) continue;
+      const source = path.join(rulesDir, entry.name);
+      const target = path.join(runDir, "rules", "BI_TEST_RULES", entry.name);
+      if (copyIfExists(source, target)) copied[`BI_TEST_RULES/${entry.name}`] = source;
+    }
+  }
+
+  writeJson(path.join(runDir, "input", "codex-context.json"), {
+    codex_workspace_root: workspaceRoot,
+    copied_context: copied
+  });
+};
+
 const writeJson = (filePath: string, value: unknown): void => {
   fs.writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`);
 };
@@ -162,6 +193,12 @@ const readTextSample = (filePath: string | undefined, maxChars: number): string 
   return fs.readFileSync(filePath, "utf8").slice(0, maxChars);
 };
 
+const getCodexGeneratedResultXlsx = (runDir: string): string | null => {
+  const filePath = path.join(runDir, "output", "result.xlsx");
+  if (!fs.existsSync(filePath)) return null;
+  return fs.statSync(filePath).size > 0 ? filePath : null;
+};
+
 const buildPrompt = (runId: string, message: AgentMessage, runDir: string, inputs: DownloadedInputs): string => {
   const instruction = getStringPayload(message, "startup_instruction") ?? "Acknowledge this UAT run assignment and finish.";
   const domain = getStringPayload(message, "domain") ?? "BI";
@@ -170,6 +207,7 @@ const buildPrompt = (runId: string, message: AgentMessage, runDir: string, input
   const startupText = readTextSample(inputs.startup_instruction ?? inputs.md, 8000);
   const domainRulesText = readTextSample(inputs.domain_rules, 8000);
   const domainStartupTemplateText = readTextSample(inputs.domain_startup_template, 4000);
+  const resultXlsxPath = path.join(runDir, "output", "result.xlsx");
 
   return [
     "You are running inside the Galaxy UAT Tool Mac Agent.",
@@ -178,12 +216,16 @@ const buildPrompt = (runId: string, message: AgentMessage, runDir: string, input
     "- Treat this as an automated agent turn, not an interactive chat with Tommy.",
     "- Do not perform destructive operations.",
     "- If required input files or credentials are missing, report the missing prerequisites and exit cleanly.",
-    "- Keep the response concise and machine-ingestable.",
+    "- Follow the AGENTS.md copied into this run workspace. It contains the BI UAT execution discipline.",
+    "- If you execute UAT cases, write the complete result workbook to the exact path listed below.",
+    "- Keep the final response concise; the workbook and log are the primary artifacts.",
     "",
     `Run ID: ${runId}`,
     `Domain: ${domain}`,
     `Round ID: ${roundId}`,
     `Agent workdir: ${runDir}`,
+    `Copied context manifest: ${path.resolve(runDir, "input", "codex-context.json")}`,
+    `Expected result workbook path: ${resultXlsxPath}`,
     "",
     "Downloaded input files:",
     inputLines.length > 0 ? inputLines.join("\n") : "- none",
@@ -196,6 +238,12 @@ const buildPrompt = (runId: string, message: AgentMessage, runDir: string, input
     "",
     "Startup instruction file excerpt:",
     startupText || "(no startup instruction file downloaded)",
+    "",
+    "Result workbook contract:",
+    "- Preferred: create output/result.xlsx yourself with sheets named 索引, 測試案例, Bug.",
+    "- 測試案例 sheet should include at minimum: 群組, 編號, 測試項目, 測試類型, 執行方式, 結果, 失敗分類, 詳細紀錄JSON.",
+    "- If you cannot execute the real UAT, explain why; the agent will create a fallback summary workbook.",
+    "- For any user approval or SSO/manual blocker, emit a Tool Bridge block: [TOOL_REQUEST]{...}[/TOOL_REQUEST].",
     "",
     "Startup instruction:",
     instruction
@@ -318,6 +366,7 @@ export const handleTaskDispatch = async (
 ): Promise<void> => {
   const runId = getRunId(message);
   const runDir = ensureRunWorkspace(config, runId);
+  prepareCodexContext(config, runDir);
   connection.setRunState("busy", runId);
 
   try {
@@ -497,8 +546,9 @@ export const handleTaskDispatch = async (
       }
     }
 
-    const sourceCase = await readFirstInputCase(downloadedInputs.xlsx);
-    const resultXlsxPath = await writeAgentResultXlsx({
+    const codexGeneratedResultXlsx = getCodexGeneratedResultXlsx(runDir);
+    const sourceCase = codexGeneratedResultXlsx ? null : await readFirstInputCase(downloadedInputs.xlsx);
+    const resultXlsxPath = codexGeneratedResultXlsx ?? await writeAgentResultXlsx({
       runId,
       roundId: getStringPayload(message, "round_id") ?? runId,
       outputDir: path.join(runDir, "output"),
@@ -511,6 +561,7 @@ export const handleTaskDispatch = async (
     writeJson(path.join(runDir, "output", "result-xlsx.json"), {
       path: resultXlsxPath,
       uploaded: false,
+      source: codexGeneratedResultXlsx ? "codex_generated" : "agent_fallback",
       output_url_keys: Object.keys(outputUrls)
     });
 
@@ -527,6 +578,7 @@ export const handleTaskDispatch = async (
       writeJson(path.join(runDir, "output", "result-xlsx.json"), {
         path: resultXlsxPath,
         uploaded: true,
+        source: codexGeneratedResultXlsx ? "codex_generated" : "agent_fallback",
         upload_response: uploadResponse
       });
       connection.send(
@@ -606,6 +658,7 @@ export const handleToolResponse = async (
 ): Promise<void> => {
   const runId = getRunId(message);
   const runDir = ensureRunWorkspace(config, runId);
+  prepareCodexContext(config, runDir);
   connection.setRunState("busy", runId);
 
   try {
@@ -776,8 +829,9 @@ export const handleToolResponse = async (
       }
     }
 
-    const sourceCase = await readFirstInputCase(downloadedInputs.xlsx);
-    const resultXlsxPath = await writeAgentResultXlsx({
+    const codexGeneratedResultXlsx = getCodexGeneratedResultXlsx(runDir);
+    const sourceCase = codexGeneratedResultXlsx ? null : await readFirstInputCase(downloadedInputs.xlsx);
+    const resultXlsxPath = codexGeneratedResultXlsx ?? await writeAgentResultXlsx({
       runId,
       roundId: getStringPayload(originalDispatch, "round_id") ?? runId,
       outputDir: path.join(runDir, "output"),
