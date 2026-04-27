@@ -55,6 +55,15 @@ type RunLog = {
   created_at: string;
 };
 
+type RunEvent = {
+  id: string;
+  event_type: string;
+  seq: number | null;
+  payload_json: string | null;
+  payload?: unknown;
+  created_at: string;
+};
+
 type RunCase = {
   id: string;
   case_no: string;
@@ -180,6 +189,7 @@ function App() {
   const [runPage, setRunPage] = useState(1);
   const [runTotal, setRunTotal] = useState(0);
   const [summary, setSummary] = useState<Summary | null>(null);
+  const [runEvents, setRunEvents] = useState<RunEvent[]>([]);
   const [runLogs, setRunLogs] = useState<RunLog[]>([]);
   const [runCases, setRunCases] = useState<RunCase[]>([]);
   const [runBugs, setRunBugs] = useState<BugItem[]>([]);
@@ -478,13 +488,15 @@ function App() {
   const loadRunDetail = async (runId: string) => {
     if (!runId) return;
     try {
-      const [summaryData, logsData, casesData, approvalsData] = await Promise.all([
+      const [summaryData, eventsData, logsData, casesData, approvalsData] = await Promise.all([
         api<Summary>(`/api/runs/${runId}/summary`),
+        api<{ items: RunEvent[] }>(`/api/runs/${runId}/events`),
         api<{ items: RunLog[] }>(`/api/runs/${runId}/logs`),
         api<{ items: RunCase[] }>(`/api/runs/${runId}/cases`),
         api<{ items: Approval[] }>(`/api/runs/${runId}/approvals`),
       ]);
       setSummary(summaryData);
+      setRunEvents(eventsData.items);
       setRunLogs(logsData.items);
       setRunCases(casesData.items);
       setApprovals(approvalsData.items);
@@ -1448,10 +1460,21 @@ function App() {
 
               <div className="card">
                 <div className="card-header">
-                  <h2>執行 Log</h2>
-                  <span className="count">最近 {runLogs.length} 筆</span>
+                  <h2>執行事件</h2>
+                  <span className="count">Events {runEvents.length} / Logs {runLogs.length}</span>
                 </div>
                 <div className="scroll-y" style={{ maxHeight: 220 }}>
+                  {runEvents.map((event) => (
+                    <div className="log-entry event-entry" key={event.id}>
+                      <span className="log-time">{new Date(event.created_at).toLocaleTimeString("zh-TW", { hour12: false })}</span>
+                      <span className="event-type">{event.event_type}</span>
+                      <span className="log-msg">
+                        {typeof event.payload === "object" && event.payload
+                          ? JSON.stringify(event.payload).slice(0, 220)
+                          : event.payload_json?.slice(0, 220) || "—"}
+                      </span>
+                    </div>
+                  ))}
                   {runLogs.map((log) => (
                     <div className="log-entry" key={log.id}>
                       <span className="log-time">{new Date(log.created_at).toLocaleTimeString("zh-TW", { hour12: false })}</span>

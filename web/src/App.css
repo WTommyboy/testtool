@@ -686,6 +686,23 @@
 .log-entry .log-level.WARN { background: #fff8f0; color: #e67e22; }
 .log-entry .log-level.ERROR { background: #fef2f2; color: #dc3545; }
 
+.event-entry {
+  background: var(--card-hover);
+  margin: 0 -8px;
+  padding-left: 8px;
+  padding-right: 8px;
+}
+
+.event-type {
+  font: 500 11px var(--mono);
+  color: var(--accent);
+  background: var(--accent-light);
+  padding: 1px 6px;
+  border-radius: 4px;
+  min-width: 132px;
+  text-align: left;
+}
+
 .log-entry .log-msg {
   color: var(--text-2);
   flex: 1;
