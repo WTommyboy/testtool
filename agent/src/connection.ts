@@ -15,8 +15,14 @@ export class AgentConnection {
   private heartbeatTimer: NodeJS.Timeout | null = null;
   private status: "idle" | "busy" = "idle";
   private currentRunId: string | null = null;
+  private readonly closedPromise: Promise<void>;
+  private resolveClosed: (() => void) | null = null;
 
-  constructor(private readonly options: AgentConnectionOptions) {}
+  constructor(private readonly options: AgentConnectionOptions) {
+    this.closedPromise = new Promise((resolve) => {
+      this.resolveClosed = resolve;
+    });
+  }
 
   connect(): Promise<void> {
     return new Promise((resolve, reject) => {
@@ -48,9 +54,13 @@ export class AgentConnection {
         });
       });
       this.ws.on("message", (data) => this.handleMessage(data.toString("utf8")));
-      this.ws.on("close", () => {
+      this.ws.on("close", (code, reason) => {
         if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
-        this.options.onStatus?.("closed");
+        this.options.onStatus?.("closed", {
+          code,
+          reason: reason.toString("utf8")
+        });
+        this.resolveClosed?.();
       });
       this.ws.on("error", (error) => {
         this.options.onStatus?.("error", error);
@@ -62,6 +72,10 @@ export class AgentConnection {
   close(): void {
     if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
     this.ws?.close();
+  }
+
+  waitUntilClosed(): Promise<void> {
+    return this.closedPromise;
   }
 
   setRunState(status: "idle" | "busy", runId: string | null): void {

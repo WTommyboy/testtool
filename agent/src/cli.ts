@@ -22,6 +22,8 @@ const maskToken = (token: string): string => {
   return `${token.slice(0, 4)}...${token.slice(-4)}`;
 };
 
+const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+
 const getPayloadRunId = (message: { payload: Record<string, unknown> }): string | null => {
   const runId = message.payload.run_id;
   return typeof runId === "string" && runId.trim() ? runId : null;
@@ -104,90 +106,123 @@ const main = async (): Promise<void> => {
   if (command === "start") {
     const config = readConfig();
     ensureAgentDirectories(config);
-    let activeTask: { runId: string; cancel: (reason?: string) => void } | null = null;
-    const connection = new AgentConnection({
-      config,
-      onStatus: (status, detail) => {
-        printJson({ event: "status", status, detail: detail instanceof Error ? detail.message : detail });
-      },
-      onMessage: (message) => {
-        printJson({ event: "message", type: message.type, id: message.id });
-        if (message.type === "task.cancel") {
-          const runId = getPayloadRunId(message);
-          const reason = typeof message.payload.reason === "string" ? message.payload.reason : "cancelled_by_pm";
-          if (activeTask && (!runId || activeTask.runId === runId)) {
-            activeTask.cancel(reason);
-            printJson({ event: "task_cancelled", runId: activeTask.runId, reason });
-          } else {
-            printJson({ event: "task_cancel_ignored", runId, reason, activeRunId: activeTask?.runId ?? null });
+    let stopping = false;
+    let currentConnection: AgentConnection | null = null;
+    const stop = (): void => {
+      stopping = true;
+      currentConnection?.close();
+    };
+    process.once("SIGINT", stop);
+    process.once("SIGTERM", stop);
+
+    for (let attempt = 0; !stopping; attempt += 1) {
+      let activeTask: { runId: string; cancel: (reason?: string) => void } | null = null;
+      const connection = new AgentConnection({
+        config,
+        onStatus: (status, detail) => {
+          printJson({ event: "status", status, detail: detail instanceof Error ? detail.message : detail });
+          if (status === "closed" && activeTask) {
+            activeTask.cancel("agent_connection_closed");
+            printJson({ event: "task_cancelled", runId: activeTask.runId, reason: "agent_connection_closed" });
           }
-          return;
-        }
-        if (message.type === "task.dispatch") {
-          const runId = getPayloadRunId(message);
-          if (activeTask) {
-            connection.send(
-              "run.rejected",
-              {
-                run_id: runId ?? "unknown",
-                reason: "AGENT_BUSY",
-                current_run_id: activeTask.runId
-              },
-              true
-            );
+        },
+        onMessage: (message) => {
+          printJson({ event: "message", type: message.type, id: message.id });
+          if (message.type === "task.cancel") {
+            const runId = getPayloadRunId(message);
+            const reason = typeof message.payload.reason === "string" ? message.payload.reason : "cancelled_by_pm";
+            if (activeTask && (!runId || activeTask.runId === runId)) {
+              activeTask.cancel(reason);
+              printJson({ event: "task_cancelled", runId: activeTask.runId, reason });
+            } else {
+              printJson({ event: "task_cancel_ignored", runId, reason, activeRunId: activeTask?.runId ?? null });
+            }
             return;
           }
-          void handleTaskDispatch(connection, config, message, {
-            onCancelReady: (readyRunId, cancel) => {
-              activeTask = { runId: readyRunId, cancel };
-            },
-            onCancelClear: (doneRunId) => {
-              if (activeTask?.runId === doneRunId) activeTask = null;
+          if (message.type === "task.dispatch") {
+            const runId = getPayloadRunId(message);
+            if (activeTask) {
+              connection.send(
+                "run.rejected",
+                {
+                  run_id: runId ?? "unknown",
+                  reason: "AGENT_BUSY",
+                  current_run_id: activeTask.runId
+                },
+                true
+              );
+              return;
             }
-          }).catch((error) => {
-            if (runId && activeTask?.runId === runId) activeTask = null;
-            printJson({
-              event: "task_error",
-              type: message.type,
-              id: message.id,
-              error: error instanceof Error ? error.message : String(error)
-            });
-          });
-        }
-        if (message.type === "tool_response") {
-          const runId = getPayloadRunId(message);
-          if (activeTask) {
-            connection.send(
-              "run.rejected",
-              {
-                run_id: runId ?? "unknown",
-                reason: "AGENT_BUSY",
-                current_run_id: activeTask.runId
+            void handleTaskDispatch(connection, config, message, {
+              onCancelReady: (readyRunId, cancel) => {
+                activeTask = { runId: readyRunId, cancel };
               },
-              true
-            );
-            return;
-          }
-          void handleToolResponse(connection, config, message, {
-            onCancelReady: (readyRunId, cancel) => {
-              activeTask = { runId: readyRunId, cancel };
-            },
-            onCancelClear: (doneRunId) => {
-              if (activeTask?.runId === doneRunId) activeTask = null;
-            }
-          }).catch((error) => {
-            if (runId && activeTask?.runId === runId) activeTask = null;
-            printJson({
-              event: "tool_response_error",
-              type: message.type,
-              id: message.id,
-              error: error instanceof Error ? error.message : String(error)
+              onCancelClear: (doneRunId) => {
+                if (activeTask?.runId === doneRunId) activeTask = null;
+              }
+            }).catch((error) => {
+              if (runId && activeTask?.runId === runId) activeTask = null;
+              printJson({
+                event: "task_error",
+                type: message.type,
+                id: message.id,
+                error: error instanceof Error ? error.message : String(error)
+              });
             });
-          });
+          }
+          if (message.type === "tool_response") {
+            const runId = getPayloadRunId(message);
+            if (activeTask) {
+              connection.send(
+                "run.rejected",
+                {
+                  run_id: runId ?? "unknown",
+                  reason: "AGENT_BUSY",
+                  current_run_id: activeTask.runId
+                },
+                true
+              );
+              return;
+            }
+            void handleToolResponse(connection, config, message, {
+              onCancelReady: (readyRunId, cancel) => {
+                activeTask = { runId: readyRunId, cancel };
+              },
+              onCancelClear: (doneRunId) => {
+                if (activeTask?.runId === doneRunId) activeTask = null;
+              }
+            }).catch((error) => {
+              if (runId && activeTask?.runId === runId) activeTask = null;
+              printJson({
+                event: "tool_response_error",
+                type: message.type,
+                id: message.id,
+                error: error instanceof Error ? error.message : String(error)
+              });
+            });
+          }
         }
+      });
+      currentConnection = connection;
+
+      try {
+        await connection.connect();
+        printJson({ event: "connected" });
+        attempt = 0;
+        await connection.waitUntilClosed();
+      } catch (error) {
+        printJson({ event: "connection_error", error: error instanceof Error ? error.message : String(error) });
+      } finally {
+        if (currentConnection === connection) currentConnection = null;
       }
-    });
-    await connection.connect();
+
+      if (!stopping) {
+        const delayMs = Math.min(1_000 * 2 ** Math.min(attempt, 4), 15_000);
+        printJson({ event: "reconnect_scheduled", delay_ms: delayMs });
+        await sleep(delayMs);
+      }
+    }
+    printJson({ event: "stopped" });
     return;
   }
 
