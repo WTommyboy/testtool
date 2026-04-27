@@ -36,7 +36,15 @@ export type AgentMessageEvent = {
   message: AgentMessage;
 };
 
+export type AgentDisconnectEvent = {
+  agentId: string;
+  agent: AgentSnapshot;
+  code?: number;
+  reason?: string;
+};
+
 type AgentMessageListener = (event: AgentMessageEvent) => void;
+type AgentDisconnectListener = (event: AgentDisconnectEvent) => void;
 
 const isStatus = (value: unknown): value is "idle" | "busy" => value === "idle" || value === "busy";
 
@@ -67,13 +75,20 @@ const asDoctorChecks = (value: unknown): AgentDoctorCheck[] => {
 class AgentRegistry {
   private readonly agents = new Map<string, ConnectedAgent>();
   private readonly listeners = new Set<AgentMessageListener>();
+  private readonly disconnectListeners = new Set<AgentDisconnectListener>();
 
   upsert(agent: ConnectedAgent): void {
     this.agents.set(agent.id, agent);
   }
 
-  remove(agentId: string): void {
+  remove(agentId: string, detail?: { code?: number; reason?: string }): void {
+    const agent = this.agents.get(agentId);
+    if (!agent) return;
+    const snapshot = this.toSnapshot(agent);
     this.agents.delete(agentId);
+    for (const listener of this.disconnectListeners) {
+      listener({ agentId, agent: snapshot, code: detail?.code, reason: detail?.reason });
+    }
   }
 
   updateHeartbeat(agentId: string, payload: Record<string, unknown>): void {
@@ -105,27 +120,32 @@ class AgentRegistry {
   }
 
   list(): AgentSnapshot[] {
-    return [...this.agents.values()].map(({ socket: _socket, serverSeq: _serverSeq, ...agent }) => agent);
+    return [...this.agents.values()].map((agent) => this.toSnapshot(agent));
   }
 
   get(agentId: string): AgentSnapshot | undefined {
     const agent = this.agents.get(agentId);
     if (!agent) return undefined;
-    const { socket: _socket, serverSeq: _serverSeq, ...snapshot } = agent;
-    return snapshot;
+    return this.toSnapshot(agent);
   }
 
   findByCurrentRunId(runId: string): AgentSnapshot | undefined {
     const agent = [...this.agents.values()].find((item) => item.currentRunId === runId);
     if (!agent) return undefined;
-    const { socket: _socket, serverSeq: _serverSeq, ...snapshot } = agent;
-    return snapshot;
+    return this.toSnapshot(agent);
   }
 
   onMessage(listener: AgentMessageListener): () => void {
     this.listeners.add(listener);
     return () => {
       this.listeners.delete(listener);
+    };
+  }
+
+  onDisconnect(listener: AgentDisconnectListener): () => void {
+    this.disconnectListeners.add(listener);
+    return () => {
+      this.disconnectListeners.delete(listener);
     };
   }
 
@@ -202,6 +222,11 @@ class AgentRegistry {
     for (const listener of this.listeners) {
       listener({ agentId, message });
     }
+  }
+
+  private toSnapshot(agent: ConnectedAgent): AgentSnapshot {
+    const { socket: _socket, serverSeq: _serverSeq, ...snapshot } = agent;
+    return snapshot;
   }
 }
 

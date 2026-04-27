@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { db } from "../db";
 import type { AgentMessage } from "../agent-protocol/messages";
 import { insertRunEvent } from "../run-events";
-import { agentRegistry } from "./agent-registry";
+import { agentRegistry, type AgentDisconnectEvent } from "./agent-registry";
 
 let registered = false;
 
@@ -183,6 +183,34 @@ const handleAgentRunMessage = (agentId: string, message: AgentMessage): void => 
   }
 };
 
+const handleAgentDisconnect = (event: AgentDisconnectEvent): void => {
+  const runId = event.agent.currentRunId;
+  if (!runId || !runExists(runId)) return;
+
+  const currentStatus = getRunStatus(runId);
+  if (isTerminalStatus(currentStatus)) return;
+
+  setRunStatus(runId, "FAILED");
+  insertRunEvent(runId, "run.interrupted", {
+    agentId: event.agentId,
+    deviceName: event.agent.deviceName,
+    reason: "agent_lost",
+    closeCode: event.code,
+    closeReason: event.reason,
+    previousStatus: currentStatus,
+    agentStatus: event.agent.status
+  });
+  insertRunLog(runId, "ERROR", "Agent disconnected during active run", {
+    agentId: event.agentId,
+    deviceName: event.agent.deviceName,
+    reason: "agent_lost",
+    closeCode: event.code,
+    closeReason: event.reason,
+    previousStatus: currentStatus,
+    agentStatus: event.agent.status
+  });
+};
+
 export const registerAgentRunEventHandlers = (): void => {
   if (registered) return;
   registered = true;
@@ -196,6 +224,19 @@ export const registerAgentRunEventHandlers = (): void => {
         insertRunLog(runId, "ERROR", "Agent event handling failed", {
           agentId,
           type: message.type,
+          error: error instanceof Error ? error.message : String(error)
+        });
+      }
+    }
+  });
+  agentRegistry.onDisconnect((event) => {
+    try {
+      handleAgentDisconnect(event);
+    } catch (error) {
+      const runId = event.agent.currentRunId;
+      if (runId && runExists(runId)) {
+        insertRunLog(runId, "ERROR", "Agent disconnect handling failed", {
+          agentId: event.agentId,
           error: error instanceof Error ? error.message : String(error)
         });
       }

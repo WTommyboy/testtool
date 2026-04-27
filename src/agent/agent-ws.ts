@@ -74,8 +74,11 @@ export const attachAgentWebSocketServer = (server: http.Server): WebSocketServer
       agentRegistry.handleMessage(agentId, message);
     });
 
-    socket.on("close", () => {
-      agentRegistry.remove(agentId);
+    socket.on("close", (code, reason) => {
+      agentRegistry.remove(agentId, {
+        code,
+        reason: reason.toString("utf8")
+      });
     });
   });
 

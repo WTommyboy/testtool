@@ -91,6 +91,17 @@ const stopServer = async (child: ChildProcess): Promise<void> => {
   ]);
 };
 
+const waitForRunStatus = async (baseUrl: string, runId: string, status: string): Promise<void> => {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < 5_000) {
+    const summary = await requestJson<{ runStatus: string }>(baseUrl, `/api/runs/${runId}/summary`);
+    if (summary.runStatus === status) return;
+    await sleep(100);
+  }
+  const summary = await requestJson<{ runStatus: string }>(baseUrl, `/api/runs/${runId}/summary`);
+  throw new Error(`Run ${runId} did not reach ${status}; current status is ${summary.runStatus}.`);
+};
+
 const verifyDomainPackEndpoints = async (baseUrl: string): Promise<void> => {
   const domains = await requestJson<{ items: Array<{ name: string; valid: boolean; schemaVersion: string | null }> }>(baseUrl, "/api/domains");
   const bi = domains.items.find((item) => item.name === "BI");
@@ -210,11 +221,81 @@ const verifyToolResponseRoundtrip = async (baseUrl: string): Promise<void> => {
   ws.close();
 };
 
+const verifyAgentDisconnectMarksRunFailed = async (baseUrl: string): Promise<void> => {
+  const run = await postJson<{ id: string; status: string }>(baseUrl, "/api/runs", {
+    domain: "BI",
+    roundId: "ROUNDTRIP-DISCONNECT-001",
+    location: "數據中心",
+    featureMain: "BI工具",
+    featureSub: "agent disconnect smoke",
+    runName: "Agent Disconnect Smoke",
+    devUrl: "https://example.com",
+    executionMode: "interactive"
+  });
+  assert.equal(run.status, "READY");
+
+  const token = await postJson<{ token: string }>(baseUrl, "/api/agents/tokens", { deviceName: "Disconnect Agent" });
+  const wsUrl = baseUrl.replace(/^http/, "ws");
+  const ws = new WebSocket(`${wsUrl}/agent-ws`, {
+    headers: { Authorization: `Bearer ${token.token}` }
+  });
+  let seq = 1;
+  const send = (type: string, payload: JsonObject, ackRequired = false): void => {
+    ws.send(JSON.stringify({
+      id: `msg_disconnect_${seq}`,
+      seq: seq++,
+      type,
+      timestamp: new Date().toISOString(),
+      ack_required: ackRequired,
+      payload
+    }));
+  };
+
+  await new Promise<void>((resolve, reject) => {
+    ws.once("open", () => resolve());
+    ws.once("error", reject);
+  });
+  send("agent.online", {
+    device_name: "Disconnect Agent",
+    agent_version: "smoke",
+    status: "busy",
+    current_run_id: run.id
+  });
+  send("run.started", { run_id: run.id });
+  await waitForRunStatus(baseUrl, run.id, "RUNNING");
+
+  await new Promise<void>((resolve) => {
+    ws.once("close", () => resolve());
+    ws.close(4000, "roundtrip disconnect smoke");
+  });
+  await waitForRunStatus(baseUrl, run.id, "FAILED");
+
+  const events = await requestJson<{ items: Array<{ event_type: string; payload: unknown }> }>(
+    baseUrl,
+    `/api/runs/${run.id}/events?limit=50`
+  );
+  assert.ok(events.items.some((event) => {
+    const payload = event.payload && typeof event.payload === "object" && !Array.isArray(event.payload)
+      ? event.payload as Record<string, unknown>
+      : {};
+    return event.event_type === "run.interrupted" && payload.reason === "agent_lost";
+  }), "agent disconnect should insert run.interrupted event");
+
+  const logs = await requestJson<{ items: Array<{ message: string; level: string }> }>(
+    baseUrl,
+    `/api/runs/${run.id}/logs?limit=50`
+  );
+  assert.ok(logs.items.some((log) => (
+    log.level === "ERROR" && log.message === "Agent disconnected during active run"
+  )), "agent disconnect should insert an ERROR log");
+};
+
 const main = async (): Promise<void> => {
   const { child, baseUrl, tempDir } = await startServer();
   try {
     await verifyDomainPackEndpoints(baseUrl);
     await verifyToolResponseRoundtrip(baseUrl);
+    await verifyAgentDisconnectMarksRunFailed(baseUrl);
     console.log("Agent roundtrip smoke passed.");
   } finally {
     await stopServer(child);
