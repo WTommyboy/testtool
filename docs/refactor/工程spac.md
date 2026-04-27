@@ -1,7 +1,7 @@
 # UAT Tool 最新工程 Spec
 
 **版本**: v2026-04-28  
-**狀態**: Mac Agent MVP / Indexed Guidance 已部署  
+**狀態**: Mac Agent MVP / Indexed Guidance + Preflight Safeguards 已部署
 **適用分支**: `refactor/mac-agent-mvp` / `codex/uat-tool-mvp`  
 **說明**: 檔名沿用 Tommy 提供的 `工程spac.md`;本文內容為工程 spec。
 
@@ -134,6 +134,9 @@ agent/
   src/case-manifest.ts
   src/rule-index.ts
   src/bi-ui-helper-guidance.ts
+  src/preflight-guidance.ts
+  src/run-state-guide.ts
+  src/batch-case-detector.ts
 ```
 
 package:
@@ -275,6 +278,8 @@ input/current-case.json
 input/cases/*.json
 input/rule-index.json
 input/bi-ui-helper-guidance.md
+input/preflight-auth-check.md
+input/run-state.json
 ```
 
 ### 3.4 Codex Execution
@@ -344,6 +349,8 @@ Required content:
 - `current_case`
 - `rule_index`
 - `bi_ui_helper_guidance`
+- `preflight_auth_check`
+- `run_state`
 - fast path
 - hard gates
 - Tool Bridge schemas
@@ -442,6 +449,8 @@ type RuleIndexEntry = {
 
 Required entries:
 
+- `preflight-auth-check`
+- `run-state`
 - `platform-skill`
 - `domain-routing`
 - `tool-bridge`
@@ -457,7 +466,81 @@ Required entries:
 - `current-case`
 - `bi-ui-helper-guidance`
 
-### 4.5 `input/bi-ui-helper-guidance.md`
+### 4.5 `input/preflight-auth-check.md`
+
+Purpose:
+
+- Define the first browser step before deep domain rule loading.
+- Avoid spending tokens on rules if SSO/login/reachability is blocked.
+- Convert SSO/login/載入失敗 into Tool Bridge `playwright_recovery`.
+
+Allowed preflight behavior:
+
+- Open DEV URL.
+- Confirm persistent Chrome / Playwright page is usable.
+- Detect app shell / title / current URL.
+- Detect SSO redirect, login page, 401/403, `載入失敗`, blank page, or obvious blocker.
+
+Forbidden preflight behavior:
+
+- testcase step execution
+- baseline capture
+- field/filter/group/date setup
+- save/delete/create report
+- deep BI rule reading
+
+Failure:
+
+```text
+[TOOL_REQUEST]{"type":"playwright_recovery",...}[/TOOL_REQUEST]
+```
+
+### 4.6 `input/run-state.json`
+
+Purpose:
+
+- Define allowed carryover for this run.
+- Make previous-case evidence explicitly isolated.
+- Prevent Codex from using old workbook rows or previous case UI state as current-case proof.
+
+Schema summary:
+
+```ts
+type RunState = {
+  schemaVersion: "run-state-v1";
+  runId: string;
+  currentCase: {
+    caseNo: string;
+    order: number;
+    caseFile: string;
+    groupName: string | null;
+  } | null;
+  carryover: {
+    baseline: CarryoverItem;
+    createdReports: CarryoverItem;
+    userApprovals: CarryoverItem;
+  };
+  isolated: {
+    lastCaseEvidence: IsolationRule;
+    previousCaseUiState: IsolationRule;
+    priorWorkbookRows: IsolationRule;
+  };
+  updateProtocol: string[];
+  batchGuard: {
+    policy: "ONE_CASE_AT_A_TIME";
+    rule: string;
+    manifestIsIndexOnly: true;
+  };
+};
+```
+
+Rules:
+
+- `carryover` may be used only when current testcase explicitly requires it.
+- `isolated` values cannot prove a current case.
+- Codex may write `output/run-state.json` only for explicitly allowed carryover produced in the current run.
+
+### 4.7 `input/bi-ui-helper-guidance.md`
 
 Purpose:
 
@@ -471,6 +554,11 @@ Must include:
 - Prohibited direct API-as-result.
 - Prohibited state-changing `browser_evaluate`.
 - One case guard.
+- Evidence priority:
+  - DOM/form state
+  - network observation
+  - chart/table data
+  - screenshot
 - Common operation recipes:
   - project navigation
   - add field
@@ -507,13 +595,16 @@ Hard requirements:
 2. BI rules must not be added to Layer 1.
 3. Evidence policy must require current-run evidence.
 4. Tool Bridge must be required for SSO/recovery/irreversible/ambiguity.
-5. `agent-security.md` must define:
+5. Runtime must require preflight before deep domain rule loading or testcase actions.
+6. Runtime must use `run-state.json` for allowed carryover and treat previous-case evidence as isolated.
+7. Evidence policy must prefer structured evidence before screenshots, while requiring screenshots for Tool Bridge / FAIL / bug / major state / final evidence when possible.
+8. `agent-security.md` must define:
    - task whitelist
    - active run lock
    - token scope
    - local filesystem boundary
    - cancellation boundary
-6. Runtime rules must preserve one-case-at-a-time.
+9. Runtime rules must preserve one-case-at-a-time.
 
 ---
 
@@ -562,8 +653,7 @@ Aliases currently normalized:
 - `case_no`
 - `caseNo`
 - `requested_action`
--
-`proposed_action`
+- `proposed_action`
 
 Case may be inferred from request id pattern such as:
 
@@ -614,6 +704,30 @@ TOOL_BRIDGE_POLICY_VIOLATION
 ```
 
 Run should not be trusted.
+
+### 6.4 Batch Case Policy Guard
+
+Agent scans Playwright MCP `session.md` after Codex exits or resumes.
+
+If a single Playwright code/tool block contains multiple distinct case IDs and action-like terms, Agent records:
+
+```text
+output/batch-case-policy-violations.json
+```
+
+and fails the run with:
+
+```text
+BATCH_CASE_POLICY_VIOLATION
+```
+
+Purpose:
+
+- Detect regression where Codex batches multiple case flows into one tool call.
+- Protect evidence attribution.
+- Preserve the one-case-at-a-time invariant even while optimizing speed.
+
+This guard is intentionally conservative. It does not replace prompt/rule discipline; it is the last line of defense.
 
 ---
 
@@ -716,6 +830,7 @@ browser_start
 codex_starting
 codex_running
 context_loading
+preflight_auth
 browser_execution
 waiting_user
 upload_result
@@ -1032,6 +1147,10 @@ Known sources:
 - per-case JSON files
 - `rule-index.json`
 - `bi-ui-helper-guidance.md`
+- `preflight-auth-check.md`
+- `run-state.json`
+- structured evidence priority
+- batch-case policy detector
 - phase duration UI
 - filtered duplicate event timeline
 
@@ -1066,7 +1185,8 @@ Recommended:
    - `target=frontend`
    - `target=backend`
 4. Add safe Playwright recipe library as guidance first, then code helper only after safety review.
-5. Add policy detector for multi-case claims in one Codex turn.
+5. Add rule digest + hash validation, with red-line rules preserved verbatim.
+6. Add evidence metadata cross-check: required evidence in case-plan/current-case must appear in result detail.
 
 ---
 
@@ -1171,11 +1291,13 @@ Current mitigations:
 - prompt hard gate
 - rule index warning
 - BI helper one case guard
+- run-state isolated evidence rule
+- Agent session log scan for `BATCH_CASE_POLICY_VIOLATION`
 
 Recommended next guard:
 
-- scan assistant text and session logs for multiple case IDs in one action block
-- warn/fail if one tool call contains multiple case execution claims
+- result parser checks every case detail has independent evidence metadata
+- Web UI surfaces batch-case policy violations prominently
 
 ### 15.3 SSO Wait Does Not Trigger
 
@@ -1188,11 +1310,14 @@ Current mitigations:
 - persistent Chrome profile
 - Tool Bridge recovery schema
 - phase/log visibility
+- `input/preflight-auth-check.md`
+- `preflight_auth` phase
+- prompt requires preflight before deep rule loading
 
 Recommended next guard:
 
-- Codex startup must do explicit auth check before deep context loading
-- if page shows login/loading failed/API 401, emit `playwright_recovery`
+- Web UI displays preflight result details and screenshot/log path when available.
+- Add explicit preflight timeout classification if browser opens but app shell never appears.
 
 ### 15.4 Token/Time Cost Too High
 
@@ -1206,11 +1331,13 @@ Current mitigations:
 - current case JSON
 - rule index
 - BI helper
+- preflight-first
+- run-state explicit carryover
+- structured evidence priority
 - phase duration
 
 Recommended:
 
-- stricter startup prompt: browser auth check before reading BI full rules
 - summarize stable Layer 1 in Agent-generated brief by version/hash
 
 ### 15.5 Tool Bridge Format Drift
@@ -1288,7 +1415,7 @@ codex/uat-tool-mvp
 2. Add per-case progress events.
 3. Add current-case pointer update.
 4. Add Tool Bridge UI schema error display.
-5. Add auth-check-first instruction and phase.
+5. Add Web UI display for `BATCH_CASE_POLICY_VIOLATION` with clear explanation.
 
 ### P1
 
@@ -1348,6 +1475,9 @@ Optimize:
 - case manifest
 - rule index
 - domain helper guidance
+- preflight-first
+- explicit run-state carryover
+- structured evidence priority
 - phase duration
 - case pointer
 - per-case progress
