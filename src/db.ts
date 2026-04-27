@@ -154,6 +154,18 @@ export const migrate = (): void => {
       revoked_at TEXT
     );
 
+    CREATE TABLE IF NOT EXISTS user_sessions (
+      id TEXT PRIMARY KEY,
+      github_login TEXT NOT NULL,
+      github_id TEXT NOT NULL,
+      github_name TEXT,
+      avatar_url TEXT,
+      session_token_hash TEXT NOT NULL UNIQUE,
+      created_at TEXT NOT NULL,
+      expires_at TEXT NOT NULL,
+      revoked_at TEXT
+    );
+
     CREATE INDEX IF NOT EXISTS idx_run_cases_run_id ON run_cases(run_id);
     CREATE UNIQUE INDEX IF NOT EXISTS idx_run_cases_run_case_no ON run_cases(run_id, case_no);
     CREATE INDEX IF NOT EXISTS idx_run_logs_run_id ON run_logs(run_id);
@@ -167,6 +179,8 @@ export const migrate = (): void => {
     CREATE INDEX IF NOT EXISTS idx_bugs_round_id ON bugs(round_id);
     CREATE INDEX IF NOT EXISTS idx_conversation_messages_conversation_id ON conversation_messages(conversation_id);
     CREATE INDEX IF NOT EXISTS idx_agent_tokens_revoked_at ON agent_tokens(revoked_at);
+    CREATE INDEX IF NOT EXISTS idx_user_sessions_token_hash ON user_sessions(session_token_hash);
+    CREATE INDEX IF NOT EXISTS idx_user_sessions_github_login ON user_sessions(github_login);
   `);
 
   const hasColumn = (table: string, column: string): boolean => {

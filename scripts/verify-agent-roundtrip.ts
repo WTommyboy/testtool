@@ -72,6 +72,7 @@ const startServer = async (): Promise<{ child: ChildProcess; baseUrl: string; te
       DB_PATH: path.join(tempDir, "data", "uat.db"),
       STORAGE_ROOT: path.join(tempDir, "storage"),
       MAC_AGENT_BOOTSTRAP_TOKEN: roundtripBootstrapToken,
+      AUTH_REQUIRED: "false",
       MAC_AGENT_HEARTBEAT_TIMEOUT_MS: "1200",
       MAC_AGENT_HEARTBEAT_SWEEP_INTERVAL_MS: "100",
       NODE_ENV: "development"

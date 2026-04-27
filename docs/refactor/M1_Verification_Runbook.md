@@ -127,3 +127,29 @@ Important notes:
 - The smoke instruction intentionally says not to operate Galaxy BI. This verifies the cloud-to-Mac closed loop, not real BI UI automation.
 - In-app Browser currently does not support file uploads, so UI file picker verification must be manual or done through another browser automation surface.
 - `POST /api/agents/:id/dispatch-smoke` requires `AGENT_BOOTSTRAP_SECRET`; do not expose this endpoint publicly without the secret.
+
+## Production Auth Smoke
+
+Before setting `AUTH_REQUIRED=true`, make sure GitHub OAuth env vars are present in Railway:
+
+```bash
+GITHUB_CLIENT_ID
+GITHUB_CLIENT_SECRET
+GITHUB_OAUTH_CALLBACK_URL
+SESSION_SECRET
+APP_ORIGIN
+```
+
+Expected unauthenticated behavior after enabling auth:
+
+```bash
+curl -i https://testtool-production.up.railway.app/api/auth/me
+curl -i https://testtool-production.up.railway.app/api/runs/history
+```
+
+Both should return `401 UNAUTHENTICATED`.
+
+Expected agent/admin exceptions:
+- `POST /api/agents/tokens` still works only with `x-agent-bootstrap-token: $AGENT_BOOTSTRAP_SECRET`.
+- Agent bearer token can read `/api/domains/BI/rules` and run input/output endpoints.
+- Agent bearer token cannot read PM-facing `/api/agents`; that still requires GitHub session.

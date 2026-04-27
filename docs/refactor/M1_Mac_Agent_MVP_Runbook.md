@@ -9,6 +9,26 @@ This runbook describes how to use the Vercel UI + Railway API + local Mac Agent 
 - Tommy's Mac runs `uat-agent`, connects to Railway through WebSocket, and launches local Codex CLI when a run is dispatched.
 - The old offline runner still exists for local/batch fallback, but the intended M1 path is `interactive` execution through Mac Agent.
 
+## Production Auth Setup
+
+Railway API supports GitHub OAuth for PM-facing routes. Configure these Railway env vars before enabling auth:
+
+```bash
+GITHUB_CLIENT_ID=<github-oauth-client-id>
+GITHUB_CLIENT_SECRET=<github-oauth-client-secret>
+GITHUB_OAUTH_CALLBACK_URL=https://testtool-production.up.railway.app/api/auth/github/callback
+SESSION_SECRET=<long-random-secret>
+APP_ORIGIN=https://testtool-eight.vercel.app
+AUTH_REQUIRED=true
+```
+
+GitHub OAuth app callback URL must exactly match `GITHUB_OAUTH_CALLBACK_URL`.
+
+Notes:
+- Default allowed GitHub login is `WTommyboy`; override with `GITHUB_ALLOWED_LOGINS=WTommyboy,other-login`.
+- Because Vercel and Railway are different domains, the frontend uses `credentials: include` and the API sets production cookies as `SameSite=None; Secure`.
+- Agent token administration still requires `AGENT_BOOTSTRAP_SECRET`; GitHub session and agent bootstrap are separate trust paths.
+
 ## One-Time Local Agent Setup
 
 Build the API and agent:

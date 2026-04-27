@@ -128,11 +128,31 @@ type Approval = {
   snapshot_path?: string | null;
 };
 
-const api = async <T,>(url: string, init?: RequestInit): Promise<T> => {
+type AuthUser = {
+  login: string;
+  id: string;
+  name: string | null;
+  avatarUrl: string | null;
+};
+
+type AuthMeResponse = {
+  authenticated: boolean;
+  authRequired: boolean;
+  user: AuthUser | null;
+  loginUrl?: string;
+};
+
+const buildApiUrl = (url: string): string => {
   const base = (import.meta.env.VITE_API_BASE_URL ?? "").replace(/\/+$/, "");
-  const requestUrl = base ? `${base}${url}` : url;
-  const resp = await fetch(requestUrl, init);
-  const data = (await resp.json()) as T & { error?: string; message?: string };
+  return base ? `${base}${url}` : url;
+};
+
+const api = async <T,>(url: string, init?: RequestInit): Promise<T> => {
+  const resp = await fetch(buildApiUrl(url), {
+    credentials: "include",
+    ...init,
+  });
+  const data = (await resp.json().catch(() => ({}))) as T & { error?: string; message?: string };
   if (!resp.ok) {
     throw new Error(data.message || data.error || `HTTP_${resp.status}`);
   }
@@ -155,6 +175,10 @@ const getCaseGroupName = (c: RunCase): string => {
 
 function App() {
   const [tab, setTab] = useState<"conversations" | "execution" | "history">("history");
+  const [authStatus, setAuthStatus] = useState<"checking" | "authenticated" | "unauthenticated">("checking");
+  const [authUser, setAuthUser] = useState<AuthUser | null>(null);
+  const [authRequired, setAuthRequired] = useState(false);
+  const [authError, setAuthError] = useState("");
 
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [selectedConversationId, setSelectedConversationId] = useState<string>("");
@@ -245,14 +269,9 @@ function App() {
   const blockedPct = totalCases > 0 ? (blockedCases / totalCases) * 100 : 0;
   const pendingPct = totalCases > 0 ? (pendingCases / totalCases) * 100 : 0;
 
-  const buildApiUrl = (url: string): string => {
-    const base = (import.meta.env.VITE_API_BASE_URL ?? "").replace(/\/+$/, "");
-    return base ? `${base}${url}` : url;
-  };
-
   const checkPlaywrightHealth = async (): Promise<{ status: PlaywrightHealthStatus; message: string }> => {
     try {
-      const resp = await fetch(buildApiUrl("/api/playwright/health"));
+      const resp = await fetch(buildApiUrl("/api/playwright/health"), { credentials: "include" });
       const data = (await resp.json().catch(() => ({}))) as PlaywrightHealthResponse;
       if (!resp.ok) {
         return {
@@ -443,6 +462,42 @@ function App() {
     </div>
   );
 
+  const loadAuth = async () => {
+    setAuthError("");
+    try {
+      const resp = await fetch(buildApiUrl("/api/auth/me"), { credentials: "include" });
+      const data = (await resp.json().catch(() => ({}))) as Partial<AuthMeResponse> & { error?: string; message?: string };
+      if (resp.status === 401) {
+        setAuthRequired(Boolean(data.authRequired ?? true));
+        setAuthUser(null);
+        setAuthStatus("unauthenticated");
+        return;
+      }
+      if (!resp.ok) {
+        throw new Error(data.message || data.error || `HTTP_${resp.status}`);
+      }
+      setAuthRequired(Boolean(data.authRequired));
+      setAuthUser(data.user ?? null);
+      setAuthStatus("authenticated");
+    } catch (error) {
+      setAuthError(error instanceof Error ? error.message : String(error));
+      setAuthStatus("unauthenticated");
+    }
+  };
+
+  const handleLogin = () => {
+    window.location.href = `${buildApiUrl("/api/auth/github/start")}?returnTo=${encodeURIComponent(window.location.href)}`;
+  };
+
+  const handleLogout = async () => {
+    try {
+      await api("/api/auth/logout", { method: "POST" });
+    } finally {
+      setAuthUser(null);
+      setAuthStatus("unauthenticated");
+    }
+  };
+
   const loadConversations = async () => {
     try {
       const data = await api<{ items: Conversation[] }>("/api/conversations");
@@ -528,45 +583,56 @@ function App() {
   };
 
   useEffect(() => {
-    void loadConversations();
-    void loadRuns();
-    void loadAgents();
+    void loadAuth();
   }, []);
 
   useEffect(() => {
+    if (authStatus !== "authenticated") return;
+    void loadConversations();
+    void loadRuns();
+    void loadAgents();
+  }, [authStatus]);
+
+  useEffect(() => {
+    if (authStatus !== "authenticated") return;
     if (selectedConversationId) {
       void loadConversationDetail(selectedConversationId);
     }
-  }, [selectedConversationId]);
+  }, [authStatus, selectedConversationId]);
 
   useEffect(() => {
+    if (authStatus !== "authenticated") return;
     void loadRuns();
-  }, [runPage]);
+  }, [authStatus, runPage]);
 
   useEffect(() => {
+    if (authStatus !== "authenticated") return;
     if (selectedRunId) {
       void loadRunDetail(selectedRunId);
     }
-  }, [selectedRunId]);
+  }, [authStatus, selectedRunId]);
 
   useEffect(() => {
+    if (authStatus !== "authenticated") return;
     if (!selectedRunId) return;
     if (!(summary?.runStatus === "RUNNING" || summary?.runStatus === "WAITING_APPROVAL")) return;
     const timer = setInterval(() => {
       void loadRunDetail(selectedRunId);
     }, 2500);
     return () => clearInterval(timer);
-  }, [selectedRunId, summary?.runStatus]);
+  }, [authStatus, selectedRunId, summary?.runStatus]);
 
   useEffect(() => {
+    if (authStatus !== "authenticated") return;
     if (runExecutionMode !== "interactive") return;
     const timer = setInterval(() => {
       void loadAgents();
     }, 10000);
     return () => clearInterval(timer);
-  }, [runExecutionMode]);
+  }, [authStatus, runExecutionMode]);
 
   useEffect(() => {
+    if (authStatus !== "authenticated") return;
     let cancelled = false;
     const poll = async () => {
       const health = await checkPlaywrightHealth();
@@ -582,7 +648,7 @@ function App() {
       cancelled = true;
       clearInterval(timer);
     };
-  }, []);
+  }, [authStatus]);
 
   const handleCreateConversation = async (e: FormEvent) => {
     e.preventDefault();
@@ -853,10 +919,10 @@ function App() {
 
   const handleDownloadMd = async () => {
     if (!selectedRunId) return;
-    setRunError("");
+      setRunError("");
     try {
       const requestUrl = buildApiUrl(`/api/runs/${selectedRunId}/export-md`);
-      const resp = await fetch(requestUrl, { method: "POST" });
+      const resp = await fetch(requestUrl, { method: "POST", credentials: "include" });
       if (!resp.ok) {
         const msg = await resp.text().catch(() => "");
         throw new Error(msg || "Export failed");
@@ -886,7 +952,7 @@ function App() {
     setRunError("");
     try {
       const requestUrl = buildApiUrl(`/api/runs/${selectedRunId}/output/result-xlsx`);
-      const resp = await fetch(requestUrl);
+      const resp = await fetch(requestUrl, { credentials: "include" });
       if (!resp.ok) {
         const msg = await resp.text().catch(() => "");
         throw new Error(msg || "尚無可下載的 result.xlsx");
@@ -916,7 +982,7 @@ function App() {
     setRunError("");
     try {
       const requestUrl = buildApiUrl(`/api/runs/${selectedRunId}/output/log`);
-      const resp = await fetch(requestUrl);
+      const resp = await fetch(requestUrl, { credentials: "include" });
       if (!resp.ok) {
         const msg = await resp.text().catch(() => "");
         throw new Error(msg || "尚無可下載的 Agent log");
@@ -941,6 +1007,34 @@ function App() {
     }
   };
 
+  if (authStatus === "checking") {
+    return (
+      <main className="app auth-screen">
+        <section className="auth-card card">
+          <h1>Galaxy UAT Test Tool</h1>
+          <p className="muted">正在檢查登入狀態...</p>
+        </section>
+      </main>
+    );
+  }
+
+  if (authStatus === "unauthenticated") {
+    return (
+      <main className="app auth-screen">
+        <section className="auth-card card">
+          <h1>Galaxy UAT Test Tool</h1>
+          <p className="muted">
+            {authRequired ? "線上工具需要 GitHub OAuth 登入後才能使用。" : "目前無法確認登入狀態。"}
+          </p>
+          {authError ? <p className="error-msg">{authError}</p> : null}
+          <button type="button" className="btn primary" onClick={handleLogin}>
+            使用 GitHub 登入
+          </button>
+        </section>
+      </main>
+    );
+  }
+
   return (
     <main className="app">
       <header className="topbar">
@@ -960,6 +1054,11 @@ function App() {
           <button className={`tab-btn ${tab === "history" ? "active" : ""}`} onClick={() => setTab("history")}>
             📋 執行紀錄
           </button>
+          {authUser ? (
+            <button className="tab-btn auth-user" onClick={() => void handleLogout()} title="登出">
+              {authUser.login} 登出
+            </button>
+          ) : null}
         </div>
       </header>
 
