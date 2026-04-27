@@ -64,6 +64,15 @@ type RunEvent = {
   created_at: string;
 };
 
+type RunPhase = {
+  id: string;
+  phase: string;
+  title: string;
+  detail?: string;
+  status: "active" | "done" | "waiting" | "failed" | string;
+  createdAt: string;
+};
+
 type RunCase = {
   id: string;
   case_no: string;
@@ -178,6 +187,10 @@ const formatDate = (v?: string): string => {
 };
 
 const numberOf = (obj: Record<string, number> | undefined, key: string): number => obj?.[key] ?? 0;
+const objectValue = (value: unknown): Record<string, unknown> | null => (
+  value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null
+);
+
 const getCaseGroupName = (c: RunCase): string => {
   if (c.group_name && c.group_name.trim()) return c.group_name.trim();
   const m = c.case_no.match(/^[A-Za-z]+/);
@@ -284,6 +297,20 @@ function App() {
   const failPct = totalCases > 0 ? (failCases / totalCases) * 100 : 0;
   const blockedPct = totalCases > 0 ? (blockedCases / totalCases) * 100 : 0;
   const pendingPct = totalCases > 0 ? (pendingCases / totalCases) * 100 : 0;
+  const runPhases: RunPhase[] = runEvents
+    .filter((event) => event.event_type === "run.phase")
+    .map((event) => {
+      const payload = objectValue(event.payload);
+      return {
+        id: event.id,
+        phase: String(payload?.phase ?? "unknown"),
+        title: String(payload?.title ?? payload?.phase ?? "Agent phase"),
+        detail: typeof payload?.detail === "string" ? payload.detail : undefined,
+        status: String(payload?.status ?? "active"),
+        createdAt: event.created_at,
+      };
+    });
+  const latestRunPhase = runPhases.at(-1) ?? null;
 
   const checkPlaywrightHealth = async (): Promise<{ status: PlaywrightHealthStatus; message: string }> => {
     try {
@@ -478,9 +505,40 @@ function App() {
     </div>
   );
 
+  const renderPhaseCard = () => {
+    if (runPhases.length === 0) return null;
+    const visiblePhases = runPhases.slice(-8);
+    return (
+      <div className="card phase-card mb-16">
+        <div className="card-header">
+          <h2>目前執行階段</h2>
+          {latestRunPhase ? <span className={`badge phase-${latestRunPhase.status}`}>{latestRunPhase.status}</span> : null}
+        </div>
+        {latestRunPhase ? (
+          <div className="phase-current">
+            <div>
+              <div className="phase-title">{latestRunPhase.title}</div>
+              {latestRunPhase.detail ? <div className="phase-detail">{latestRunPhase.detail}</div> : null}
+            </div>
+            <div className="phase-time">{new Date(latestRunPhase.createdAt).toLocaleTimeString("zh-TW", { hour12: false })}</div>
+          </div>
+        ) : null}
+        <div className="phase-list">
+          {visiblePhases.map((phase) => (
+            <div className={`phase-step ${phase.status}`} key={phase.id}>
+              <span className="phase-dot" />
+              <span className="phase-step-time">{new Date(phase.createdAt).toLocaleTimeString("zh-TW", { hour12: false })}</span>
+              <span className="phase-step-title">{phase.title}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  };
+
   const renderRunLogCard = (maxHeight: number) => {
     const timeline = [
-      ...runEvents.map((event) => {
+      ...runEvents.filter((event) => event.event_type !== "run.progress" && event.event_type !== "run.phase").map((event) => {
         let payloadText = event.payload_json || "";
         if (event.payload) {
           payloadText = typeof event.payload === "object" ? JSON.stringify(event.payload) : String(event.payload);
@@ -1618,6 +1676,7 @@ function App() {
 
             {renderCaseResultsCard(340)}
           </div>
+          {renderPhaseCard()}
           {renderRunLogCard(280)}
           {renderBugCard()}
         </section>
@@ -1740,6 +1799,7 @@ function App() {
                 </div>
               </div>
 
+              {renderPhaseCard()}
               {renderCaseResultsCard(280)}
               {renderBugCard()}
               {renderRunLogCard(260)}

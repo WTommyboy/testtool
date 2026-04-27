@@ -71,7 +71,9 @@ const prepareCodexContext = (config: AgentConfig, runDir: string): void => {
     "This file is generated for a single Mac Agent run.",
     "",
     "Platform entrypoint:",
-    "- Start by reading `agent-skills/uat-tool/SKILL.md`.",
+    "- Start by reading `input/run-brief.md` when present.",
+    "- The run brief is a compact dispatch packet generated from Layer 1 + the current run inputs.",
+    "- Use `agent-skills/uat-tool/SKILL.md` as the full Layer 1 reference only when the run brief is insufficient.",
     "- Use progressive disclosure: read only the Layer 1 rule needed for the current decision.",
     "- Route to domain-specific rules through `agent-skills/uat-tool/rules/domain-routing.md`.",
     "",
@@ -105,6 +107,59 @@ const prepareCodexContext = (config: AgentConfig, runDir: string): void => {
     codex_workspace_root: workspaceRoot,
     copied_context: copied
   });
+};
+
+const writeRunBrief = (runId: string, message: AgentMessage, runDir: string, inputs: DownloadedInputs): string => {
+  const domain = getStringPayload(message, "domain") ?? "BI";
+  const roundId = getStringPayload(message, "round_id") ?? runId;
+  const devUrl = getStringPayload(message, "dev_url") ?? "(missing)";
+  const resultXlsxPath = path.join(runDir, "output", "result.xlsx");
+  const inputLines = Object.entries(inputs).map(([key, filePath]) => `- ${key}: ${filePath}`);
+  const briefPath = path.join(runDir, "input", "run-brief.md");
+  const content = [
+    "# UAT Agent Run Brief",
+    "",
+    "This compact brief is the fast-path entrypoint for the current run. Use full Layer 1 or BI reference files only when exact policy text is needed.",
+    "",
+    "## Run",
+    `- run_id: ${runId}`,
+    `- round_id: ${roundId}`,
+    `- domain: ${domain}`,
+    `- dev_url: ${devUrl}`,
+    `- workdir: ${runDir}`,
+    `- expected_result_xlsx: ${resultXlsxPath}`,
+    "",
+    "## Required Inputs",
+    inputLines.length > 0 ? inputLines.join("\n") : "- none",
+    "",
+    "## Fast Path",
+    "1. Confirm testcase workbook and startup instruction exist.",
+    "2. Read the startup instruction and only the current case row/details needed for the next action.",
+    "3. For domain=BI, use `input/domain_AGENTS.md`, `rules/PROJECT_AGENTS_FULL.md`, and `rules/BI_TEST_RULES/*` as domain references. Do not dump all rules before first UI action.",
+    "4. Start browser evidence early: establish whether Galaxy BI is authenticated and reachable before deep analysis.",
+    "5. Execute one case at a time and write real UAT results to `output/result.xlsx`.",
+    "",
+    "## Hard Gates",
+    "- No trusted PASS/FAIL without current-run evidence.",
+    "- Old workbook rows, existing reports, and previous run artifacts are stale unless the testcase explicitly says to reuse them.",
+    "- If SSO, native alert/confirm, irreversible operation, or ambiguity blocks progress, stop and emit a Tool Bridge request.",
+    "- If the real UAT cannot continue, do not create a fake PASS. Explain the blocker; the Agent fallback will mark the run as not trusted.",
+    "",
+    "## Tool Bridge Schemas",
+    '- Irreversible: [TOOL_REQUEST]{"type":"irreversible_operation","request_id":"<run-id>-<case-no>-<slug>","case":"<case-no>","action":"<short action>","reason":"<why approval is required>","proposed_action":"<exact PM-approved action>"}[/TOOL_REQUEST]',
+    '- SSO/recovery: [TOOL_REQUEST]{"type":"playwright_recovery","request_id":"<run-id>-sso","error":"LOGIN_REQUIRED: ...","proposed_action":"Tommy completes SSO/login in persistent Chrome, then clicks 已處理/continue in the UAT Tool."}[/TOOL_REQUEST]',
+    '- Ambiguity: [TOOL_REQUEST]{"type":"ambiguity_decision","request_id":"<run-id>-<case-no>-<slug>","case":"<case-no>","context":"<what is ambiguous>","options":["<option A>","<option B>"],"recommendation":"<recommended option>"}[/TOOL_REQUEST]',
+    "",
+    "## Suggested Visible Phases",
+    "- context_loading: read this brief, startup instruction, and minimal testcase metadata.",
+    "- browser_check: open persistent Chrome / Playwright CDP and verify auth/reachability.",
+    "- case_execution: perform UI actions and evidence reads for one case.",
+    "- waiting_user: Tool Bridge approval or SSO recovery required.",
+    "- result_writing: write `output/result.xlsx` and finish.",
+    ""
+  ].join("\n");
+  fs.writeFileSync(briefPath, content);
+  return briefPath;
 };
 
 const writeJson = (filePath: string, value: unknown): void => {
@@ -270,14 +325,17 @@ const buildPrompt = (runId: string, message: AgentMessage, runDir: string, input
     .filter(([key]) => key.startsWith("supporting_doc_"))
     .map(([key, filePath]) => `- ${key}: ${filePath}`);
   const resultXlsxPath = path.join(runDir, "output", "result.xlsx");
+  const runBriefPath = path.join(runDir, "input", "run-brief.md");
   const platformSkillPath = path.join(runDir, "agent-skills", "uat-tool", "SKILL.md");
 
   return [
     "You are executing a Galaxy UAT Tool run inside the Mac Agent.",
     "",
     "Start here:",
-    `- Read the Layer 1 platform skill first: ${platformSkillPath}`,
+    `- Read the compact run brief first: ${runBriefPath}`,
+    `- Full Layer 1 platform skill is available if needed: ${platformSkillPath}`,
     "- Follow progressive disclosure: do not read every rule or every testcase at once.",
+    "- The run brief is enough for the initial execution decision; open full rule files only when exact policy text is needed.",
     "- Use `agent-skills/uat-tool/rules/domain-routing.md` to route domain-specific rules.",
     "- Treat `rules/PROJECT_AGENTS_FULL.md` and `rules/BI_TEST_RULES/` as BI domain references, not platform rules.",
     "",
@@ -513,6 +571,26 @@ const sendProgress = (connection: AgentConnection, runId: string, text: string, 
   }
 };
 
+const sendPhase = (
+  connection: AgentConnection,
+  runId: string,
+  phase: string,
+  title: string,
+  detail?: string,
+  status: "active" | "done" | "waiting" | "failed" = "active",
+  context?: Record<string, unknown>
+): void => {
+  sendBestEffort(connection, "run.phase", {
+    run_id: runId,
+    phase,
+    title,
+    detail,
+    status,
+    context,
+    at: new Date().toISOString()
+  });
+};
+
 const sendBestEffort = (
   connection: AgentConnection,
   type: string,
@@ -534,12 +612,35 @@ const createCodexRunner = (
   chromeCdpEndpoint: string | null
 ): CodexRunner => {
   let lastProgress = "";
+  const emittedPhases = new Set<string>();
+  const emitOnce = (
+    phase: string,
+    title: string,
+    detail?: string,
+    status: "active" | "done" | "waiting" | "failed" = "active"
+  ): void => {
+    if (emittedPhases.has(`${phase}:${status}`)) return;
+    emittedPhases.add(`${phase}:${status}`);
+    sendPhase(connection, runId, phase, title, detail, status);
+  };
   return new CodexRunner({
     codexBin: config.codex_bin,
     cwd: runDir,
     playwrightCdpEndpoint: chromeCdpEndpoint,
     playwrightOutputDir: path.join(runDir, "mcp-output"),
     onJsonEvent: (event) => {
+      const eventType = textFromUnknown(event.type);
+      const item = objectFromUnknown(event.item);
+      const itemType = item ? textFromUnknown(item.type) : null;
+      if (eventType === "thread.started") {
+        emitOnce("codex_running", "Codex 已啟動", "已建立 Codex thread，開始讀取 run brief 與必要輸入。");
+      }
+      if (eventType === "item.started" && itemType === "command_execution") {
+        emitOnce("context_loading", "讀取規則與測試檔", "Codex 正在讀 run brief、startup instruction、xlsx 結構或必要 domain rules。");
+      }
+      if (eventType === "item.started" && itemType === "mcp_tool_call") {
+        emitOnce("browser_execution", "瀏覽器操作中", "Playwright MCP 已開始操作或讀取 Galaxy BI UI。");
+      }
       const summary = summarizeCodexEvent(event);
       if (!summary || summary === lastProgress) return;
       lastProgress = summary;
@@ -821,15 +922,35 @@ export const handleTaskDispatch = async (
   let uploadedArtifacts: UploadedArtifacts | null = null;
 
   try {
+    sendPhase(connection, runId, "prepare_workspace", "準備 Agent 工作區", `workdir: ${runDir}`);
     writeJson(path.join(runDir, "input", "dispatch.json"), message);
     writeJson(path.join(runDir, "state.json"), {
       run_id: runId,
       status: "started",
       started_at: new Date().toISOString()
     });
+    sendPhase(connection, runId, "download_inputs", "下載測試輸入", "下載 xlsx、md、startup instruction、domain pack。");
     downloadedInputs = await downloadInputs(config, message, runDir);
     writeJson(path.join(runDir, "input", "downloaded-inputs.json"), downloadedInputs);
+    const runBriefPath = writeRunBrief(runId, message, runDir, downloadedInputs);
+    sendPhase(
+      connection,
+      runId,
+      "download_inputs",
+      "測試輸入已就緒",
+      `已下載 ${Object.keys(downloadedInputs).length} 個輸入檔；run brief: ${runBriefPath}`,
+      "done"
+    );
+    sendPhase(connection, runId, "browser_start", "開啟持久化 Chrome", "準備 Playwright CDP 與 Galaxy SSO session。");
     const chromeCdpEndpoint = await ensureChromeDebugSession(config, getStringPayload(message, "dev_url"));
+    sendPhase(
+      connection,
+      runId,
+      "browser_start",
+      chromeCdpEndpoint ? "Chrome CDP 已就緒" : "Chrome CDP 未取得，改用預設 Playwright",
+      chromeCdpEndpoint ?? "persistent Chrome CDP unavailable",
+      "done"
+    );
 
     connection.send(
       "run.started",
@@ -870,6 +991,7 @@ export const handleTaskDispatch = async (
         // Cancellation must still kill Codex even if the WebSocket is already closing.
       }
     });
+    sendPhase(connection, runId, "codex_starting", "啟動 Codex CLI", "Codex 將先讀 compact run brief，再進入必要規則與 testcase。");
     const result = await activeRunner.start(buildPrompt(runId, message, runDir, downloadedInputs));
     lastResult = result;
     persistCodexResult(runDir, result, "codex");
@@ -964,6 +1086,7 @@ export const handleTaskDispatch = async (
     }
 
     if (validToolRequests.length > 0) {
+      sendPhase(connection, runId, "waiting_user", "等待人工處理", "Codex 發出 Tool Bridge request，等待 Tommy 授權或處理。", "waiting");
       for (const request of validToolRequests) {
         connection.send(
           "run.tool_request",
@@ -994,6 +1117,7 @@ export const handleTaskDispatch = async (
       return;
     }
 
+    sendPhase(connection, runId, "upload_result", "上傳結果與 Log", "Codex 已結束，Agent 正在上傳 output/result.xlsx 與 agent.log。");
     uploadedArtifacts = await uploadRunArtifacts({
       connection,
       config,
@@ -1015,6 +1139,7 @@ export const handleTaskDispatch = async (
       completed_at: new Date().toISOString(),
       thread_id: result.threadId
     });
+    sendPhase(connection, runId, "completed", "Run 已完成", "Agent 已完成本次派工。", "done");
 
     connection.send(
       "run.completed",
@@ -1034,6 +1159,14 @@ export const handleTaskDispatch = async (
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     const cancelled = errorMessage.startsWith("CODEX_RUN_CANCELLED");
+    sendPhase(
+      connection,
+      runId,
+      cancelled ? "cancelled" : "failed",
+      cancelled ? "Run 已取消" : "Run 執行失敗",
+      errorMessage,
+      cancelled ? "done" : "failed"
+    );
     if (!uploadedArtifacts) {
       const partialResult = lastResult ?? runner?.getPartialResult() ?? makeSyntheticCodexResult(errorMessage);
       try {
@@ -1110,6 +1243,7 @@ export const handleToolResponse = async (
   let uploadedArtifacts: UploadedArtifacts | null = null;
 
   try {
+    sendPhase(connection, runId, "resuming", "收到人工回覆，準備續跑", "Agent 正在載入 paused thread 與原始 dispatch。");
     const statePath = path.join(runDir, "state.json");
     if (!fs.existsSync(statePath)) {
       throw new Error(`TOOL_RESPONSE_STATE_NOT_FOUND:${statePath}`);
@@ -1125,7 +1259,16 @@ export const handleToolResponse = async (
     const inputsPath = path.join(runDir, "input", "downloaded-inputs.json");
     originalDispatch = readJson<AgentMessage>(dispatchPath);
     downloadedInputs = readJson<DownloadedInputs>(inputsPath);
+    sendPhase(connection, runId, "browser_start", "重新確認 Chrome CDP", "續跑前確認持久化 Chrome / Playwright CDP。");
     const chromeCdpEndpoint = await ensureChromeDebugSession(config, getStringPayload(originalDispatch, "dev_url"));
+    sendPhase(
+      connection,
+      runId,
+      "browser_start",
+      chromeCdpEndpoint ? "Chrome CDP 已就緒" : "Chrome CDP 未取得，改用預設 Playwright",
+      chromeCdpEndpoint ?? "persistent Chrome CDP unavailable",
+      "done"
+    );
 
     writeJson(path.join(runDir, "input", `tool-response-${getStringPayload(message, "request_id") ?? Date.now()}.json`), message);
     writeJson(path.join(runDir, "state.json"), {
@@ -1171,6 +1314,7 @@ export const handleToolResponse = async (
       }
     });
 
+    sendPhase(connection, runId, "codex_resuming", "續跑 Codex thread", `thread: ${threadId}`);
     const result = await activeRunner.resume(threadId, buildToolResponsePrompt(runId, message));
     lastResult = result;
     persistCodexResult(runDir, result, "codex-resume");
@@ -1264,6 +1408,7 @@ export const handleToolResponse = async (
       );
     }
     if (validToolRequests.length > 0) {
+      sendPhase(connection, runId, "waiting_user", "等待人工處理", "Codex 續跑後再次發出 Tool Bridge request。", "waiting");
       for (const request of validToolRequests) {
         connection.send(
           "run.tool_request",
@@ -1294,6 +1439,7 @@ export const handleToolResponse = async (
       return;
     }
 
+    sendPhase(connection, runId, "upload_result", "上傳結果與 Log", "Codex 續跑已結束，Agent 正在上傳 output/result.xlsx 與 agent.log。");
     uploadedArtifacts = await uploadRunArtifacts({
       connection,
       config,
@@ -1315,6 +1461,7 @@ export const handleToolResponse = async (
       completed_at: new Date().toISOString(),
       thread_id: result.threadId ?? threadId
     });
+    sendPhase(connection, runId, "completed", "Run 已完成", "Agent 已完成續跑派工。", "done");
 
     connection.send(
       "run.completed",
@@ -1334,6 +1481,14 @@ export const handleToolResponse = async (
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     const cancelled = errorMessage.startsWith("CODEX_RUN_CANCELLED");
+    sendPhase(
+      connection,
+      runId,
+      cancelled ? "cancelled" : "failed",
+      cancelled ? "Run 已取消" : "Run 續跑失敗",
+      errorMessage,
+      cancelled ? "done" : "failed"
+    );
     if (!uploadedArtifacts && originalDispatch) {
       const partialResult = lastResult ?? runner?.getPartialResult() ?? makeSyntheticCodexResult(errorMessage);
       try {

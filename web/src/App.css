@@ -262,6 +262,72 @@
 .progress-bar .seg.blocked { background: var(--blocked); }
 .progress-bar .seg.pending { background: var(--pending-bg); }
 
+/* ─── Agent Phase Timeline ─── */
+.phase-card {
+  border-left: 4px solid var(--accent);
+}
+
+.phase-current {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 12px;
+  background: var(--accent-light);
+  border: 1px solid #dbe7ff;
+  border-radius: var(--r-sm);
+  margin-bottom: 12px;
+}
+
+.phase-title {
+  font-weight: 700;
+  color: var(--text);
+}
+
+.phase-detail {
+  color: var(--text-2);
+  font-size: 12px;
+  margin-top: 2px;
+  overflow-wrap: anywhere;
+}
+
+.phase-time,
+.phase-step-time {
+  color: var(--text-3);
+  font: 500 11px var(--mono);
+  white-space: nowrap;
+}
+
+.phase-list {
+  display: grid;
+  gap: 6px;
+}
+
+.phase-step {
+  display: grid;
+  grid-template-columns: 12px 72px 1fr;
+  gap: 8px;
+  align-items: center;
+  color: var(--text-2);
+  font-size: 12px;
+}
+
+.phase-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--running);
+}
+
+.phase-step.done .phase-dot { background: var(--pass); }
+.phase-step.waiting .phase-dot { background: var(--blocked); }
+.phase-step.failed .phase-dot { background: var(--fail); }
+.phase-step-title { overflow-wrap: anywhere; }
+.badge.phase-active { background: var(--running-bg); color: var(--running); }
+.badge.phase-done { background: var(--pass-bg); color: var(--pass); }
+.badge.phase-waiting { background: var(--blocked-bg); color: var(--blocked); }
+.badge.phase-failed { background: var(--fail-bg); color: var(--fail); }
+
 /* ─── Badges ─── */
 .badge {
   display: inline-block;

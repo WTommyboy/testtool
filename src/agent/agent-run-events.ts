@@ -163,6 +163,19 @@ const handleAgentRunMessage = (agentId: string, message: AgentMessage): void => 
     return;
   }
 
+  if (message.type === "run.phase") {
+    const title = asString(message.payload.title) ?? asString(message.payload.phase) ?? "Agent phase";
+    const detail = asString(message.payload.detail);
+    insertRunEvent(runId, "run.phase", { agentId, ...message.payload }, message.seq);
+    insertRunLog(runId, "INFO", detail ? `${title}: ${detail}` : title, {
+      agentId,
+      type: message.type,
+      phase: message.payload.phase,
+      status: message.payload.status
+    });
+    return;
+  }
+
   if (message.type === "run.stderr") {
     insertRunEvent(runId, "run.stderr", { agentId, text: textFromPayload(message) }, message.seq);
     insertRunLog(runId, "WARN", textFromPayload(message), { agentId, type: message.type });
