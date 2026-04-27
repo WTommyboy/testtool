@@ -6,6 +6,9 @@ import type { AgentConfig, AgentMessage } from "./types";
 import type { AgentConnection } from "./connection";
 import { readFirstInputCase, writeAgentResultXlsx } from "./result-writer";
 import { parseToolRequests } from "./tool-bridge";
+import { writeBiUiHelperGuidance } from "./bi-ui-helper-guidance";
+import { writeCaseManifest, type CaseManifestResult } from "./case-manifest";
+import { writeRuleIndex } from "./rule-index";
 
 const getRunId = (message: AgentMessage): string => {
   const runId = message.payload.run_id;
@@ -109,7 +112,13 @@ const prepareCodexContext = (config: AgentConfig, runDir: string): void => {
   });
 };
 
-const writeRunBrief = (runId: string, message: AgentMessage, runDir: string, inputs: DownloadedInputs): string => {
+const writeRunBrief = (
+  runId: string,
+  message: AgentMessage,
+  runDir: string,
+  inputs: DownloadedInputs,
+  guides: GeneratedRunGuides
+): string => {
   const domain = getStringPayload(message, "domain") ?? "BI";
   const roundId = getStringPayload(message, "round_id") ?? runId;
   const devUrl = getStringPayload(message, "dev_url") ?? "(missing)";
@@ -128,22 +137,37 @@ const writeRunBrief = (runId: string, message: AgentMessage, runDir: string, inp
     `- dev_url: ${devUrl}`,
     `- workdir: ${runDir}`,
     `- expected_result_xlsx: ${resultXlsxPath}`,
+    `- case_manifest: ${guides.caseManifest.manifestPath ?? "(unavailable)"}`,
+    `- current_case: ${guides.caseManifest.currentCasePath ?? "(unavailable)"}`,
+    `- rule_index: ${guides.ruleIndexPath}`,
+    `- bi_ui_helper_guidance: ${guides.biUiHelperGuidancePath}`,
     "",
     "## Required Inputs",
     inputLines.length > 0 ? inputLines.join("\n") : "- none",
     "",
+    "## Case Manifest",
+    `- total_cases: ${guides.caseManifest.totalCases}`,
+    guides.caseManifest.currentCasePath
+      ? `- current_case_file: ${guides.caseManifest.currentCasePath}`
+      : "- current_case_file: (unavailable)",
+    guides.caseManifest.warnings.length > 0
+      ? `- manifest_warnings: ${guides.caseManifest.warnings.join(", ")}`
+      : "- manifest_warnings: none",
+    "",
     "## Fast Path",
     "1. Confirm testcase workbook and startup instruction exist.",
-    "2. Read the startup instruction and only the current case row/details needed for the next action.",
-    "3. For domain=BI, use `input/domain_AGENTS.md`, `rules/PROJECT_AGENTS_FULL.md`, and `rules/BI_TEST_RULES/*` as domain references. Do not dump all rules before first UI action.",
-    "4. Start browser evidence early: establish whether Galaxy BI is authenticated and reachable before deep analysis.",
-    "5. Execute one case at a time and write real UAT results to `output/result.xlsx`.",
+    "2. Read `input/current-case.json` first. Use `input/case-manifest.json` only as a navigation index, not as permission to batch execute cases.",
+    "3. Read `input/rule-index.json` and load only the smallest rule file required for the current decision.",
+    "4. For BI UI operations, read `input/bi-ui-helper-guidance.md` before exploring the page from scratch.",
+    "5. Start browser evidence early: establish whether Galaxy BI is authenticated and reachable before deep analysis.",
+    "6. Execute one case at a time, write evidence/result for that case, then move to the next case JSON if needed.",
     "",
     "## Hard Gates",
     "- No trusted PASS/FAIL without current-run evidence.",
     "- Old workbook rows, existing reports, and previous run artifacts are stale unless the testcase explicitly says to reuse them.",
     "- If SSO, native alert/confirm, irreversible operation, or ambiguity blocks progress, stop and emit a Tool Bridge request.",
     "- If the real UAT cannot continue, do not create a fake PASS. Explain the blocker; the Agent fallback will mark the run as not trusted.",
+    "- Speed optimizations must never merge multiple testcase executions into one tool call or one result write.",
     "",
     "## Tool Bridge Schemas",
     '- Irreversible: [TOOL_REQUEST]{"type":"irreversible_operation","request_id":"<run-id>-<case-no>-<slug>","case":"<case-no>","action":"<short action>","reason":"<why approval is required>","proposed_action":"<exact PM-approved action>"}[/TOOL_REQUEST]',
@@ -171,6 +195,12 @@ const readJson = <T>(filePath: string): T => {
 };
 
 type DownloadedInputs = Record<string, string>;
+
+type GeneratedRunGuides = {
+  caseManifest: CaseManifestResult;
+  ruleIndexPath: string;
+  biUiHelperGuidancePath: string;
+};
 
 export type TaskDispatchHooks = {
   onCancelReady?: (runId: string, cancel: (reason?: string) => void) => void;
@@ -310,13 +340,34 @@ const downloadInputs = async (config: AgentConfig, message: AgentMessage, runDir
   return downloaded;
 };
 
+const generateRunGuides = async (runDir: string, message: AgentMessage, inputs: DownloadedInputs): Promise<GeneratedRunGuides> => {
+  const inputDir = path.join(runDir, "input");
+  const domain = getStringPayload(message, "domain") ?? "BI";
+  const biUiHelperGuidancePath = writeBiUiHelperGuidance(runDir);
+  const caseManifest = await writeCaseManifest(inputs.xlsx, inputDir);
+  const ruleIndexPath = writeRuleIndex(runDir, domain);
+  writeJson(path.join(inputDir, "generated-guides.json"), {
+    case_manifest: caseManifest,
+    rule_index_path: ruleIndexPath,
+    bi_ui_helper_guidance_path: biUiHelperGuidancePath,
+    generated_at: new Date().toISOString()
+  });
+  return { caseManifest, ruleIndexPath, biUiHelperGuidancePath };
+};
+
 const getCodexGeneratedResultXlsx = (runDir: string): string | null => {
   const filePath = path.join(runDir, "output", "result.xlsx");
   if (!fs.existsSync(filePath)) return null;
   return fs.statSync(filePath).size > 0 ? filePath : null;
 };
 
-const buildPrompt = (runId: string, message: AgentMessage, runDir: string, inputs: DownloadedInputs): string => {
+const buildPrompt = (
+  runId: string,
+  message: AgentMessage,
+  runDir: string,
+  inputs: DownloadedInputs,
+  guides: GeneratedRunGuides
+): string => {
   const instruction = getStringPayload(message, "startup_instruction") ?? "Acknowledge this UAT run assignment and finish.";
   const domain = getStringPayload(message, "domain") ?? "BI";
   const roundId = getStringPayload(message, "round_id") ?? runId;
@@ -333,6 +384,9 @@ const buildPrompt = (runId: string, message: AgentMessage, runDir: string, input
     "",
     "Start here:",
     `- Read the compact run brief first: ${runBriefPath}`,
+    `- Read the current case first: ${guides.caseManifest.currentCasePath ?? "(current-case unavailable; inspect workbook minimally)"}`,
+    `- Use the rule index to avoid loading unnecessary rules: ${guides.ruleIndexPath}`,
+    `- For BI UI recipes, use: ${guides.biUiHelperGuidancePath}`,
     `- Full Layer 1 platform skill is available if needed: ${platformSkillPath}`,
     "- Follow progressive disclosure: do not read every rule or every testcase at once.",
     "- The run brief is enough for the initial execution decision; open full rule files only when exact policy text is needed.",
@@ -347,7 +401,9 @@ const buildPrompt = (runId: string, message: AgentMessage, runDir: string, input
     "- If required input files or credentials are missing, report the missing prerequisites and exit cleanly.",
     "- If evidence is insufficient, do not write trusted PASS/FAIL; use BLOCKED/EVIDENCE_INSUFFICIENT.",
     "- Existing page data or old reports are not evidence that this run performed the action.",
-    "- Execute and record one case at a time.",
+    "- Execute and record one case at a time. `case-manifest.json` is only an index; it is not permission to batch multiple case flows.",
+    "- After each case, write or update evidence/result for that case before reading the next case JSON.",
+    "- Never trade correctness gates for speed. Keep evidence, Tool Bridge, stale-evidence and one-case-at-a-time gates intact.",
     "- Keep the final response concise; the workbook and log are the primary artifacts.",
     "- Playwright MCP is configured to connect to a persistent local Chrome session through CDP when available.",
     "",
@@ -356,6 +412,10 @@ const buildPrompt = (runId: string, message: AgentMessage, runDir: string, input
     `Round ID: ${roundId}`,
     `Agent workdir: ${runDir}`,
     `Copied context manifest: ${path.resolve(runDir, "input", "codex-context.json")}`,
+    `Case manifest: ${guides.caseManifest.manifestPath ?? "(unavailable)"}`,
+    `Current case JSON: ${guides.caseManifest.currentCasePath ?? "(unavailable)"}`,
+    `Rule index: ${guides.ruleIndexPath}`,
+    `BI UI helper guidance: ${guides.biUiHelperGuidancePath}`,
     `Expected result workbook path: ${resultXlsxPath}`,
     "",
     "Downloaded input files:",
@@ -932,7 +992,17 @@ export const handleTaskDispatch = async (
     sendPhase(connection, runId, "download_inputs", "下載測試輸入", "下載 xlsx、md、startup instruction、domain pack。");
     downloadedInputs = await downloadInputs(config, message, runDir);
     writeJson(path.join(runDir, "input", "downloaded-inputs.json"), downloadedInputs);
-    const runBriefPath = writeRunBrief(runId, message, runDir, downloadedInputs);
+    sendPhase(connection, runId, "prepare_guides", "建立執行索引", "解析 case manifest、rule index 與 BI UI helper guidance。");
+    const generatedGuides = await generateRunGuides(runDir, message, downloadedInputs);
+    sendPhase(
+      connection,
+      runId,
+      "prepare_guides",
+      "執行索引已建立",
+      `cases: ${generatedGuides.caseManifest.totalCases}; rule index: ${generatedGuides.ruleIndexPath}`,
+      "done"
+    );
+    const runBriefPath = writeRunBrief(runId, message, runDir, downloadedInputs, generatedGuides);
     sendPhase(
       connection,
       runId,
@@ -992,7 +1062,7 @@ export const handleTaskDispatch = async (
       }
     });
     sendPhase(connection, runId, "codex_starting", "啟動 Codex CLI", "Codex 將先讀 compact run brief，再進入必要規則與 testcase。");
-    const result = await activeRunner.start(buildPrompt(runId, message, runDir, downloadedInputs));
+    const result = await activeRunner.start(buildPrompt(runId, message, runDir, downloadedInputs, generatedGuides));
     lastResult = result;
     persistCodexResult(runDir, result, "codex");
     const cancelReason = activeRunner.getCancelReason();

@@ -292,10 +292,21 @@
 }
 
 .phase-time,
-.phase-step-time {
+.phase-step-time,
+.phase-step-duration,
+.phase-duration {
   color: var(--text-3);
   font: 500 11px var(--mono);
   white-space: nowrap;
+}
+
+.phase-time {
+  text-align: right;
+}
+
+.phase-duration,
+.phase-step-duration {
+  color: var(--text-2);
 }
 
 .phase-list {
@@ -305,7 +316,7 @@
 
 .phase-step {
   display: grid;
-  grid-template-columns: 12px 72px 1fr;
+  grid-template-columns: 12px 72px 1fr 70px;
   gap: 8px;
   align-items: center;
   color: var(--text-2);

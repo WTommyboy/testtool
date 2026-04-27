@@ -71,6 +71,7 @@ type RunPhase = {
   detail?: string;
   status: "active" | "done" | "waiting" | "failed" | string;
   createdAt: string;
+  durationMs?: number | null;
 };
 
 type RunCase = {
@@ -186,6 +187,18 @@ const formatDate = (v?: string): string => {
   return d.toLocaleString("zh-TW", { hour12: false });
 };
 
+const formatDuration = (ms?: number | null): string => {
+  if (ms === null || ms === undefined || !Number.isFinite(ms)) return "進行中";
+  const totalSeconds = Math.max(0, Math.round(ms / 1000));
+  if (totalSeconds < 60) return `${totalSeconds}s`;
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  if (minutes < 60) return `${minutes}m ${seconds}s`;
+  const hours = Math.floor(minutes / 60);
+  const restMinutes = minutes % 60;
+  return `${hours}h ${restMinutes}m`;
+};
+
 const numberOf = (obj: Record<string, number> | undefined, key: string): number => obj?.[key] ?? 0;
 const objectValue = (value: unknown): Record<string, unknown> | null => (
   value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null
@@ -297,7 +310,7 @@ function App() {
   const failPct = totalCases > 0 ? (failCases / totalCases) * 100 : 0;
   const blockedPct = totalCases > 0 ? (blockedCases / totalCases) * 100 : 0;
   const pendingPct = totalCases > 0 ? (pendingCases / totalCases) * 100 : 0;
-  const runPhases: RunPhase[] = runEvents
+  const rawRunPhases: RunPhase[] = runEvents
     .filter((event) => event.event_type === "run.phase")
     .map((event) => {
       const payload = objectValue(event.payload);
@@ -310,6 +323,19 @@ function App() {
         createdAt: event.created_at,
       };
     });
+  const nowMs = Date.now();
+  const runPhases: RunPhase[] = rawRunPhases.map((phase, index) => {
+    const startedAt = new Date(phase.createdAt).getTime();
+    const nextStartedAt = rawRunPhases[index + 1] ? new Date(rawRunPhases[index + 1].createdAt).getTime() : null;
+    const fallbackEnd = !selectedRunIsTerminal && (phase.status === "active" || phase.status === "waiting") ? nowMs : null;
+    const endedAt = nextStartedAt ?? fallbackEnd;
+    return {
+      ...phase,
+      durationMs: Number.isFinite(startedAt) && endedAt !== null && Number.isFinite(endedAt)
+        ? Math.max(0, endedAt - startedAt)
+        : null
+    };
+  });
   const latestRunPhase = runPhases.at(-1) ?? null;
 
   const checkPlaywrightHealth = async (): Promise<{ status: PlaywrightHealthStatus; message: string }> => {
@@ -520,7 +546,10 @@ function App() {
               <div className="phase-title">{latestRunPhase.title}</div>
               {latestRunPhase.detail ? <div className="phase-detail">{latestRunPhase.detail}</div> : null}
             </div>
-            <div className="phase-time">{new Date(latestRunPhase.createdAt).toLocaleTimeString("zh-TW", { hour12: false })}</div>
+            <div className="phase-time">
+              <div>{new Date(latestRunPhase.createdAt).toLocaleTimeString("zh-TW", { hour12: false })}</div>
+              <div className="phase-duration">{formatDuration(latestRunPhase.durationMs)}</div>
+            </div>
           </div>
         ) : null}
         <div className="phase-list">
@@ -529,6 +558,7 @@ function App() {
               <span className="phase-dot" />
               <span className="phase-step-time">{new Date(phase.createdAt).toLocaleTimeString("zh-TW", { hour12: false })}</span>
               <span className="phase-step-title">{phase.title}</span>
+              <span className="phase-step-duration">{formatDuration(phase.durationMs)}</span>
             </div>
           ))}
         </div>
