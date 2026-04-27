@@ -206,6 +206,7 @@ function App() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const selectedConversation = conversations.find((x) => x.id === selectedConversationId) ?? null;
+  const selectedRun = history.find((x) => x.id === selectedRunId) ?? null;
   const selectedAgent = agents.find((agent) => agent.id === selectedAgentId) ?? null;
   const selectedAgentDoctorStats = selectedAgent?.doctorChecks.reduce(
     (acc, check) => {
@@ -216,6 +217,21 @@ function App() {
   ) ?? { PASS: 0, FAIL: 0, SKIPPED: 0 };
   const selectedAgentFailedChecks = selectedAgent?.doctorChecks.filter((check) => check.verdict === "FAIL") ?? [];
   const pendingApprovals = approvals.filter((x) => x.status === "PENDING");
+  const getSelectedAgentBlockingReason = (): string | null => {
+    if (runExecutionMode !== "interactive") return null;
+    if (!selectedAgent) return "請先選擇一台在線 Agent";
+    if (selectedAgent.status === "busy") return `Agent 正在執行 ${selectedAgent.currentRunId || "其他 Run"}`;
+    if (selectedAgent.status !== "idle") return "Agent 尚未 ready";
+    if (selectedAgent.doctorOk === false) return "Agent doctor 未通過，請先在本機執行 uat-agent doctor";
+    if (selectedAgent.supportedTaskTypes.length > 0 && !selectedAgent.supportedTaskTypes.includes("uat_run")) {
+      return "Agent 不支援 uat_run 任務";
+    }
+    if (selectedAgent.supportedExecutionModes.length > 0 && !selectedAgent.supportedExecutionModes.includes("interactive")) {
+      return "Agent 不支援 interactive 模式";
+    }
+    return null;
+  };
+  const selectedAgentBlockingReason = getSelectedAgentBlockingReason();
 
   const totalCases = runCases.length || Object.values(summary?.caseStats ?? {}).reduce((a, b) => a + b, 0);
   const passCases = numberOf(summary?.caseStats, "PASS") + numberOf(summary?.caseStats, "MANUAL_PASS");
@@ -696,6 +712,35 @@ function App() {
     }
   };
 
+  const handleDispatchRunToAgent = async (runId: string) => {
+    const blockReason = getSelectedAgentBlockingReason();
+    if (blockReason) {
+      setStartError(blockReason);
+      return;
+    }
+    if (!selectedAgentId) return;
+
+    setRunBusy(true);
+    setIsStarting(true);
+    setRunError("");
+    setStartError(null);
+    try {
+      await api(`/api/runs/${runId}/dispatch-agent`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ agentId: selectedAgentId })
+      });
+      await loadAgents();
+      await loadRuns();
+      await loadRunDetail(runId);
+    } catch (error) {
+      setStartError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setRunBusy(false);
+      setIsStarting(false);
+    }
+  };
+
   const handleCreateRun = async () => {
     setRunBusy(true);
     setIsStarting(true);
@@ -709,8 +754,8 @@ function App() {
           // Keep creation flow moving; backend /start has the final authoritative health gate.
           setStartError(`預檢查：${health.message || "Playwright 未連線"}，將交由啟動時再次確認。`);
         }
-      } else if (!selectedAgentId) {
-        setRunError("請先選擇一台在線 Agent");
+      } else if (selectedAgentBlockingReason) {
+        setRunError(selectedAgentBlockingReason);
         return;
       }
 
@@ -1235,15 +1280,30 @@ function App() {
               <button className="btn" onClick={() => void loadRuns()} disabled={runBusy || isStarting}>
                 查詢
               </button>
-              <button className="btn primary" onClick={() => void handleCreateRun()} disabled={runBusy || isStarting}>
+              <button
+                className="btn primary"
+                onClick={() => void handleCreateRun()}
+                disabled={runBusy || isStarting || (runExecutionMode === "interactive" && Boolean(selectedAgentBlockingReason))}
+                title={selectedAgentBlockingReason || undefined}
+              >
                 {isStarting ? (
                   <>
-                    <span className="spinner-sm" /> 檢查 Playwright...
+                    <span className="spinner-sm" /> {runExecutionMode === "interactive" ? "派發 Agent..." : "檢查 Playwright..."}
                   </>
                 ) : (
                   <>▶ 開始執行</>
                 )}
               </button>
+              {selectedRunId && summary?.runStatus === "READY" && selectedRun?.execution_mode === "interactive" ? (
+                <button
+                  className="btn success"
+                  onClick={() => void handleDispatchRunToAgent(selectedRunId)}
+                  disabled={runBusy || isStarting || Boolean(selectedAgentBlockingReason)}
+                  title={selectedAgentBlockingReason || "派發目前選取的 READY Run 到 Agent"}
+                >
+                  🛰️ 派發目前 Run
+                </button>
+              ) : null}
               <button
                 className="btn danger"
                 onClick={() => selectedRunId && void handleRunAction("cancel", selectedRunId)}
@@ -1252,6 +1312,9 @@ function App() {
                 取消 Run
               </button>
             </div>
+            {runExecutionMode === "interactive" && selectedAgentBlockingReason ? (
+              <p className="muted mt-8">Agent 檢查：{selectedAgentBlockingReason}</p>
+            ) : null}
             {startError ? (
               <div className="error-banner">
                 <span className="error-icon">⚠️</span>
