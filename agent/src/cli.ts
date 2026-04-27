@@ -190,6 +190,7 @@ const main = async (): Promise<void> => {
                 error: error instanceof Error ? error.message : String(error)
               });
             });
+            return;
           }
           if (message.type === "tool_response") {
             const runId = getPayloadRunId(message);
