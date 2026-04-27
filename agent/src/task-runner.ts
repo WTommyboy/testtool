@@ -13,6 +13,13 @@ import { writePreflightGuidance } from "./preflight-guidance";
 import { writeRunStateGuide } from "./run-state-guide";
 import { scanBatchCasePolicyViolations } from "./batch-case-detector";
 import { detectStartCaseHint, type StartCaseHint } from "./start-case";
+import { writeSupportingDocsManifest } from "./supporting-docs-manifest";
+import { writeDocumentConsistency } from "./document-consistency";
+import { writeCurrentCasePack } from "./current-case-pack";
+import { writeEvidenceTemplates, type EvidenceTemplateFiles } from "./evidence-templates";
+import { writeNetworkObservationGuidance } from "./network-observation-guidance";
+import { writeReferenceIndex } from "./reference-index";
+import { writeResultTemplate } from "./result-template";
 
 const getRunId = (message: AgentMessage): string => {
   const runId = message.payload.run_id;
@@ -106,6 +113,9 @@ const prepareCodexContext = (config: AgentConfig, runDir: string): void => {
     "- Use progressive disclosure: read only the Layer 1 rule needed for the current decision.",
     "- Route to domain-specific rules through `agent-skills/uat-tool/rules/domain-routing.md`.",
     "- Perform `input/preflight-auth-check.md` before deep domain loading or testcase actions.",
+    "- Read `input/document-consistency.json` before any browser action; status=error requires Tool Bridge ambiguity handling.",
+    "- Use `input/current-case-pack.md` as the compact current-case card; it is not result evidence.",
+    "- Use `input/reference-index.json` for exact paths before broad searches.",
     "",
     "Domain context:",
     "- The current BI domain source is copied to `rules/PROJECT_AGENTS_FULL.md` for reference.",
@@ -118,6 +128,7 @@ const prepareCodexContext = (config: AgentConfig, runDir: string): void => {
     "- Do not execute UAT when the testcase workbook or startup instruction markdown is missing; report the missing prerequisite and exit cleanly.",
     "- Do not perform destructive operations unless an actionable Tool Bridge request is approved.",
     "- Do not write trusted PASS/FAIL when evidence is insufficient; use BLOCKED/EVIDENCE_INSUFFICIENT.",
+    "- Do not let speed optimizations merge multiple testcase executions or result writes.",
     "- Use `input/run-state.json` for allowed carryover only; previous-case evidence is isolated.",
     "- Never execute or write results for multiple cases in one Playwright tool call or one workbook write.",
     "- Write the final workbook to `output/result.xlsx` when real UAT cases are executed.",
@@ -178,10 +189,18 @@ const writeRunBrief = (
     guides.caseManifest.currentCaseSelection
       ? `- current_case_selection: ${guides.caseManifest.currentCaseSelection.reason}; requested=${guides.caseManifest.currentCaseSelection.requestedCaseNo ?? "(none)"}; source=${guides.caseManifest.currentCaseSelection.source ?? "(none)"}`
       : "- current_case_selection: (unavailable)",
+    `- document_consistency: ${guides.documentConsistencyPath}`,
+    `- current_case_pack: ${guides.currentCasePackMarkdownPath}`,
+    `- current_case_pack_json: ${guides.currentCasePackJsonPath}`,
     `- rule_index: ${guides.ruleIndexPath}`,
+    `- reference_index: ${guides.referenceIndexPath}`,
+    `- supporting_docs_manifest: ${guides.supportingDocsManifestPath}`,
     `- bi_ui_helper_guidance: ${guides.biUiHelperGuidancePath}`,
     `- preflight_auth_check: ${guides.preflightGuidancePath}`,
     `- run_state: ${guides.runStatePath}`,
+    `- evidence_templates: ${guides.evidenceTemplates.indexPath}`,
+    `- result_template: ${guides.resultTemplatePath}`,
+    `- network_observation_guidance: ${guides.networkObservationGuidancePath}`,
     `- bi_metadata_csv: ${biMetadataCsv ?? "(not copied; use uploaded/reference docs only)"}`,
     "",
     "## Required Inputs",
@@ -201,19 +220,23 @@ const writeRunBrief = (
     "",
     "## Fast Path",
     "1. Confirm testcase workbook and startup instruction exist.",
-    "2. Read `input/preflight-auth-check.md` and perform only the auth/reachability preflight before deep domain rule loading.",
-    "3. Read `input/current-case.json` and `input/run-state.json`. If startup instruction explicitly requested a starting case, Agent has already aligned current-case.json to that request.",
-    "4. Read `input/rule-index.json` and load only the smallest rule file required for the current decision.",
+    "2. Read `input/document-consistency.json`. If status=error, do not touch the browser; emit Tool Bridge ambiguity_decision.",
+    "3. Read `input/preflight-auth-check.md` and perform only the auth/reachability preflight before deep domain rule loading.",
+    "4. Read `input/current-case-pack.md`, `input/current-case-pack.json`, and `input/run-state.json` before loading full testcase/supporting docs.",
+    "5. Read `input/reference-index.json` for exact paths; avoid broad filesystem search.",
+    "6. Read `input/rule-index.json` and load only the smallest rule file required for the current decision.",
     biMetadataCsv
-      ? "5. If the current BI case needs metadata counts, use the copied `rules/BI_DATA/metadata.csv`; do not search the workspace for another metadata source first."
-      : "5. If the current BI case needs metadata counts and no baseline/reference CSV is downloaded, use uploaded supporting docs before doing broad filesystem searches.",
-    "6. For BI UI operations, read `input/bi-ui-helper-guidance.md` before exploring the page from scratch.",
-    "7. Execute one case at a time, write evidence/result for that case, then move to the next case JSON if needed.",
+      ? "7. If the current BI case needs metadata counts, use the copied `rules/BI_DATA/metadata.csv`; do not search the workspace for another metadata source first."
+      : "7. If the current BI case needs metadata counts and no baseline/reference CSV is downloaded, use uploaded supporting docs before doing broad filesystem searches.",
+    "8. For BI UI operations, read `input/bi-ui-helper-guidance.md` before exploring the page from scratch.",
+    "9. Use `input/evidence-templates/index.json` and only the current-case template(s) when writing evidence/detail_json.",
+    "10. Execute one case at a time, write evidence/result for that case, then move to the next case JSON if needed.",
     "",
     "## Hard Gates",
     "- No trusted PASS/FAIL without current-run evidence.",
     "- Old workbook rows, existing reports, and previous run artifacts are stale unless the testcase explicitly says to reuse them.",
     "- If SSO, native alert/confirm, irreversible operation, or ambiguity blocks progress, stop and emit a Tool Bridge request.",
+    "- A document-consistency error is an ambiguity blocker. Do not open Playwright before PM resolves it.",
     "- If the real UAT cannot continue, do not create a fake PASS. Explain the blocker; the Agent fallback will mark the run as not trusted.",
     "- Speed optimizations must never merge multiple testcase executions into one tool call or one result write.",
     "- `input/run-state.json` defines allowed carryover. Evidence from a previous case is isolated and cannot prove a later case.",
@@ -253,6 +276,14 @@ type GeneratedRunGuides = {
   biUiHelperGuidancePath: string;
   preflightGuidancePath: string;
   runStatePath: string;
+  supportingDocsManifestPath: string;
+  documentConsistencyPath: string;
+  currentCasePackJsonPath: string;
+  currentCasePackMarkdownPath: string;
+  evidenceTemplates: EvidenceTemplateFiles;
+  resultTemplatePath: string;
+  networkObservationGuidancePath: string;
+  referenceIndexPath: string;
   startCaseHint: StartCaseHint | null;
 };
 
@@ -409,6 +440,31 @@ const generateRunGuides = async (runId: string, runDir: string, message: AgentMe
   });
   const preflightGuidancePath = writePreflightGuidance(runDir, getStringPayload(message, "dev_url"));
   const runStatePath = writeRunStateGuide(runDir, runId, caseManifest);
+  const supportingDocsManifestPath = writeSupportingDocsManifest(runDir, inputs);
+  const documentConsistencyPath = writeDocumentConsistency(runDir, caseManifest, startCaseHint);
+  const currentCasePack = writeCurrentCasePack(runDir, caseManifest, documentConsistencyPath);
+  const evidenceTemplates = writeEvidenceTemplates(runDir);
+  const resultTemplatePath = await writeResultTemplate(runDir);
+  const networkObservationGuidancePath = writeNetworkObservationGuidance(runDir);
+  const plannedRuleIndexPath = path.join(inputDir, "rule-index.json");
+  const referenceIndexPath = writeReferenceIndex({
+    runDir,
+    inputs,
+    generated: {
+      runBrief: path.join(inputDir, "run-brief.md"),
+      documentConsistency: documentConsistencyPath,
+      currentCasePack: currentCasePack.markdownPath,
+      currentCasePackJson: currentCasePack.jsonPath,
+      ruleIndex: plannedRuleIndexPath,
+      supportingDocsManifest: supportingDocsManifestPath,
+      evidenceTemplateIndex: evidenceTemplates.indexPath,
+      resultTemplate: resultTemplatePath,
+      networkObservationGuidance: networkObservationGuidancePath,
+      preflightGuidance: preflightGuidancePath,
+      runState: runStatePath,
+      biUiHelperGuidance: biUiHelperGuidancePath
+    }
+  });
   const ruleIndexPath = writeRuleIndex(runDir, domain);
   writeJson(path.join(inputDir, "generated-guides.json"), {
     case_manifest: caseManifest,
@@ -416,10 +472,33 @@ const generateRunGuides = async (runId: string, runDir: string, message: AgentMe
     bi_ui_helper_guidance_path: biUiHelperGuidancePath,
     preflight_guidance_path: preflightGuidancePath,
     run_state_path: runStatePath,
+    supporting_docs_manifest_path: supportingDocsManifestPath,
+    document_consistency_path: documentConsistencyPath,
+    current_case_pack_json_path: currentCasePack.jsonPath,
+    current_case_pack_markdown_path: currentCasePack.markdownPath,
+    evidence_templates: evidenceTemplates,
+    result_template_path: resultTemplatePath,
+    network_observation_guidance_path: networkObservationGuidancePath,
+    reference_index_path: referenceIndexPath,
     start_case_hint: startCaseHint,
     generated_at: new Date().toISOString()
   });
-  return { caseManifest, ruleIndexPath, biUiHelperGuidancePath, preflightGuidancePath, runStatePath, startCaseHint };
+  return {
+    caseManifest,
+    ruleIndexPath,
+    biUiHelperGuidancePath,
+    preflightGuidancePath,
+    runStatePath,
+    supportingDocsManifestPath,
+    documentConsistencyPath,
+    currentCasePackJsonPath: currentCasePack.jsonPath,
+    currentCasePackMarkdownPath: currentCasePack.markdownPath,
+    evidenceTemplates,
+    resultTemplatePath,
+    networkObservationGuidancePath,
+    referenceIndexPath,
+    startCaseHint
+  };
 };
 
 const getCodexGeneratedResultXlsx = (runDir: string): string | null => {
@@ -453,16 +532,24 @@ const buildPrompt = (
     "",
     "Start here:",
     `- Read the compact run brief first: ${runBriefPath}`,
+    `- Read the document consistency gate before browser execution: ${guides.documentConsistencyPath}`,
     `- Perform preflight before deep rule loading or testcase action: ${guides.preflightGuidancePath}`,
-    `- Read the current case first: ${guides.caseManifest.currentCasePath ?? "(current-case unavailable; inspect workbook minimally)"}`,
+    `- Read the current case execution card first: ${guides.currentCasePackMarkdownPath}`,
+    `- Structured current case pack: ${guides.currentCasePackJsonPath}`,
+    `- Raw current case row if needed: ${guides.caseManifest.currentCasePath ?? "(current-case unavailable; inspect workbook minimally)"}`,
     `- Read allowed carryover and isolation policy: ${guides.runStatePath}`,
+    `- Use exact file paths from: ${guides.referenceIndexPath}`,
     `- Use the rule index to avoid loading unnecessary rules: ${guides.ruleIndexPath}`,
+    `- Use evidence templates only as needed: ${guides.evidenceTemplates.indexPath}`,
     `- For BI UI recipes, use: ${guides.biUiHelperGuidancePath}`,
+    `- For network request observation, use: ${guides.networkObservationGuidancePath}`,
+    `- Result workbook template reference: ${guides.resultTemplatePath}`,
     `- Full Layer 1 platform skill is available if needed: ${platformSkillPath}`,
     "- Follow progressive disclosure: do not read every rule or every testcase at once.",
     "- The run brief is enough for the initial execution decision; open full rule files only when exact policy text is needed.",
     "- Use `agent-skills/uat-tool/rules/domain-routing.md` to route domain-specific rules.",
     "- Treat `rules/PROJECT_AGENTS_FULL.md` and `rules/BI_TEST_RULES/` as BI domain references, not platform rules.",
+    "- If `input/document-consistency.json` has status=error, do not touch the browser. Emit a Tool Bridge ambiguity_decision with the conflict and wait.",
     "- The first browser MCP action must be preflight only: open DEV URL, verify auth/reachability, detect SSO/login/載入失敗/401/403/blank blocker.",
     "- Preflight must not run testcase steps, capture baseline, change date/filter/field/group state, save/delete, or inspect deep BI behavior.",
     "",
@@ -474,6 +561,7 @@ const buildPrompt = (
     "- If required input files or credentials are missing, report the missing prerequisites and exit cleanly.",
     "- If evidence is insufficient, do not write trusted PASS/FAIL; use BLOCKED/EVIDENCE_INSUFFICIENT.",
     "- Existing page data or old reports are not evidence that this run performed the action.",
+    "- `input/current-case-pack.*` is a plan card, not a result. It reduces reading, but it never proves PASS/FAIL/BLOCKED.",
     "- Execute and record one case at a time. `case-manifest.json` is only an index; it is not permission to batch multiple case flows.",
     "- After each case, write or update evidence/result for that case before reading the next case JSON.",
     "- If startup instruction names a starting case, Agent resolves that into `current-case.json`; do not emit ambiguity merely because the workbook contains earlier cases.",
@@ -490,6 +578,9 @@ const buildPrompt = (
     `Agent workdir: ${runDir}`,
     `Copied context manifest: ${path.resolve(runDir, "input", "codex-context.json")}`,
     `Case manifest: ${guides.caseManifest.manifestPath ?? "(unavailable)"}`,
+    `Document consistency: ${guides.documentConsistencyPath}`,
+    `Current case pack: ${guides.currentCasePackMarkdownPath}`,
+    `Current case pack JSON: ${guides.currentCasePackJsonPath}`,
     `Current case JSON: ${guides.caseManifest.currentCasePath ?? "(unavailable)"}`,
     `Current case no: ${guides.caseManifest.currentCaseNo ?? "(unavailable)"}`,
     guides.caseManifest.currentCaseSelection
@@ -497,8 +588,13 @@ const buildPrompt = (
       : "Current case selection: (unavailable)",
     `Preflight auth check: ${guides.preflightGuidancePath}`,
     `Run state / carryover: ${guides.runStatePath}`,
+    `Reference index: ${guides.referenceIndexPath}`,
     `Rule index: ${guides.ruleIndexPath}`,
+    `Supporting docs manifest: ${guides.supportingDocsManifestPath}`,
+    `Evidence template index: ${guides.evidenceTemplates.indexPath}`,
     `BI UI helper guidance: ${guides.biUiHelperGuidancePath}`,
+    `Network observation guidance: ${guides.networkObservationGuidancePath}`,
+    `Result template workbook: ${guides.resultTemplatePath}`,
     `BI metadata CSV: ${biMetadataCsv ?? "(not copied; use uploaded/reference docs only)"}`,
     `Expected result workbook path: ${resultXlsxPath}`,
     "",
@@ -516,6 +612,7 @@ const buildPrompt = (
     supportingDocLines.length > 0 ? supportingDocLines.join("\n") : "- none",
     "",
     "Result workbook contract:",
+    `- Use ${guides.resultTemplatePath} as a column/shape reference when useful; do not edit the template in place.`,
     "- Preferred: create output/result.xlsx yourself with sheets named 索引, 測試案例, Bug.",
     "- 測試案例 sheet should include at minimum: 群組, 編號, 測試項目, 測試類型, 執行方式, 結果, 失敗分類, 詳細紀錄JSON.",
     "- If you cannot execute the real UAT, explain why; the agent will create a fallback summary workbook.",
@@ -757,6 +854,7 @@ const createCodexRunner = (
 ): CodexRunner => {
   let lastProgress = "";
   let mcpToolCallCount = 0;
+  let commandExecutionCount = 0;
   const emittedPhases = new Set<string>();
   const emitOnce = (
     phase: string,
@@ -785,10 +883,21 @@ const createCodexRunner = (
         emitOnce("codex_running", "Codex 已啟動", "已建立 Codex thread，開始讀取 run brief 與必要輸入。");
       }
       if (eventType === "item.started" && itemType === "command_execution") {
+        commandExecutionCount += 1;
         emitOnce("context_loading", "讀取規則與測試檔", "Codex 正在讀 run brief、startup instruction、xlsx 結構或必要 domain rules。");
+        if (commandExecutionCount === 1 || commandExecutionCount % 5 === 0) {
+          sendProgress(connection, runId, `Codex command executions: ${commandExecutionCount}`, {
+            commandExecutionCount,
+            mcpToolCallCount
+          });
+        }
       }
       if (eventType === "item.started" && itemType === "mcp_tool_call") {
         mcpToolCallCount += 1;
+        sendProgress(connection, runId, `Playwright/Tool calls: ${mcpToolCallCount}`, {
+          commandExecutionCount,
+          mcpToolCallCount
+        });
         if (mcpToolCallCount === 1) {
           emitOnce("preflight_auth", "確認登入與頁面可達", "Playwright MCP 正在做最小 preflight：開啟 DEV URL、確認登入狀態與頁面可測。");
         } else {
@@ -1125,14 +1234,14 @@ export const handleTaskDispatch = async (
     sendPhase(connection, runId, "download_inputs", "下載測試輸入", "下載 xlsx、md、startup instruction、domain pack。");
     downloadedInputs = await downloadInputs(config, message, runDir);
     writeJson(path.join(runDir, "input", "downloaded-inputs.json"), downloadedInputs);
-    sendPhase(connection, runId, "prepare_guides", "建立執行索引", "解析 case manifest、rule index 與 BI UI helper guidance。");
+    sendPhase(connection, runId, "prepare_guides", "建立執行索引", "解析 case manifest、文件一致性、current-case-pack、rule/reference index。");
     const generatedGuides = await generateRunGuides(runId, runDir, message, downloadedInputs);
     sendPhase(
       connection,
       runId,
       "prepare_guides",
       "執行索引已建立",
-      `cases: ${generatedGuides.caseManifest.totalCases}; rule index: ${generatedGuides.ruleIndexPath}`,
+      `cases: ${generatedGuides.caseManifest.totalCases}; current case: ${generatedGuides.caseManifest.currentCaseNo ?? "(none)"}; reference index: ${generatedGuides.referenceIndexPath}`,
       "done"
     );
     const runBriefPath = writeRunBrief(runId, message, runDir, downloadedInputs, generatedGuides);

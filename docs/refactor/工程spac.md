@@ -451,6 +451,9 @@ type RuleIndexEntry = {
 Required entries:
 
 - `preflight-auth-check`
+- `document-consistency`
+- `reference-index`
+- `supporting-docs-manifest`
 - `run-state`
 - `platform-skill`
 - `domain-routing`
@@ -465,7 +468,12 @@ Required entries:
 - `bi-rule-*`
 - `case-manifest`
 - `current-case`
+- `current-case-pack`
+- `current-case-pack-json`
 - `bi-ui-helper-guidance`
+- `evidence-template-index`
+- `result-template`
+- `network-observation-guidance`
 
 ### 4.5 `input/preflight-auth-check.md`
 
@@ -538,6 +546,142 @@ type RunState = {
 Rules:
 
 - `carryover` may be used only when current testcase explicitly requires it.
+
+### 4.7 `input/document-consistency.json`
+
+Purpose:
+
+- Detect conflict between startup instruction and workbook current execution state.
+- Stop before browser execution when the startup instruction selects a later case but earlier workbook rows are not completed.
+- Convert this conflict into Tool Bridge `ambiguity_decision`.
+
+Schema summary:
+
+```ts
+type DocumentConsistency = {
+  schemaVersion: "document-consistency-v1";
+  status: "ok" | "warning" | "error";
+  selectedCaseNo: string | null;
+  requestedCaseNo: string | null;
+  currentCaseSelection: CaseManifestCurrentCaseSelection | null;
+  precedingCases: Array<{
+    caseNo: string;
+    order: number;
+    resultStatus: string | null;
+    hasDetailJson: boolean;
+  }>;
+  issues: Array<{
+    severity: "warning" | "error";
+    code: string;
+    message: string;
+    context?: Record<string, unknown>;
+  }>;
+};
+```
+
+Runtime rule:
+
+- If `status=error`, Codex must not touch browser.
+- Codex must emit Tool Bridge `ambiguity_decision` with the conflict.
+
+### 4.8 `input/current-case-pack.*`
+
+Purpose:
+
+- Provide a compact current-case execution card.
+- Reduce xlsx/supporting-doc reads.
+- Make evidence requirements explicit before execution.
+
+Files:
+
+- `input/current-case-pack.md`
+- `input/current-case-pack.json`
+
+Required JSON fields:
+
+```ts
+type CurrentCasePack = {
+  schemaVersion: "current-case-pack-v1";
+  policy: string[];
+  documentConsistencyPath: string;
+  currentCase: CaseManifestCase | null;
+  evidenceTemplates: Array<"metadata-dropdown" | "network-request" | "chart-datasets" | "ui-workflow">;
+  requiredEvidence: string[];
+  screenshotPolicy: string;
+  executionRequirement: string;
+};
+```
+
+Hard rule:
+
+- Current-case pack is not a result.
+- It cannot be used to skip UI operation or current-run evidence.
+- Only the current case should be exposed in detail; do not provide an all-case plan payload that encourages cross-case batching.
+
+### 4.9 `input/reference-index.json`
+
+Purpose:
+
+- Provide exact file paths for generated inputs, downloaded inputs and copied local references.
+- Avoid broad filesystem searches.
+- Make supporting document roles explicit.
+
+Runtime rule:
+
+- Codex should check this file before searching the workspace.
+- Missing referenced files should be reported, not guessed.
+
+### 4.10 `input/evidence-templates/`
+
+Purpose:
+
+- Provide minimal evidence shape templates.
+- Reduce repeated detail_json design work.
+
+M1 templates:
+
+- `metadata-dropdown-evidence.json`
+- `network-request-evidence.json`
+- `chart-datasets-evidence.json`
+- `ui-workflow-evidence.json`
+- `index.json`
+
+Rules:
+
+- Template is not evidence.
+- Codex fills only the template relevant to current-case-pack.
+- No multi-case payload arrays.
+
+### 4.11 `input/result-template.xlsx`
+
+Purpose:
+
+- Provide workbook column/shape reference.
+- Keep Codex responsible for authoring `output/result.xlsx`.
+
+Rules:
+
+- Do not edit template in place.
+- Do not switch to Agent-writing-results without a separate architecture decision.
+- Codex writes one case result at a time.
+
+### 4.12 `input/network-observation-guidance.md`
+
+Purpose:
+
+- Clarify UI-triggered network observation.
+- Prevent direct BI API substitution.
+
+Allowed:
+
+- Observe request/response caused by current UI action.
+- Read request body relevant fields.
+
+Forbidden:
+
+- Direct BI API calls as test action.
+- DevTools UI as formal test step.
+- evaluate-based click/change/input to manufacture a request.
 - `isolated` values cannot prove a current case.
 - Codex may write `output/run-state.json` only for explicitly allowed carryover produced in the current run.
 
@@ -1150,9 +1294,17 @@ Known sources:
 - `bi-ui-helper-guidance.md`
 - `preflight-auth-check.md`
 - `run-state.json`
+- `document-consistency.json`
+- `current-case-pack.md` / `current-case-pack.json`
+- `reference-index.json`
+- `supporting-docs-manifest.json`
+- `evidence-templates/`
+- `result-template.xlsx`
+- `network-observation-guidance.md`
 - structured evidence priority
 - batch-case policy detector
 - phase duration UI
+- Codex command / Playwright tool call count progress
 - filtered duplicate event timeline
 
 ### 13.3 Required Safety During Optimization
@@ -1188,6 +1340,8 @@ Recommended:
 4. Add safe Playwright recipe library as guidance first, then code helper only after safety review.
 5. Add rule digest + hash validation, with red-line rules preserved verbatim.
 6. Add evidence metadata cross-check: required evidence in case-plan/current-case must appear in result detail.
+7. Add real token/cost summary if Codex CLI exposes token usage reliably.
+8. Add UI summary for command/tool-call count per phase.
 
 ---
 

@@ -14,8 +14,13 @@ export type CaseManifestCase = {
   riskLevel: string | null;
   testTarget: string | null;
   cleanupChecklist: string | null;
+  preconditions: string | null;
   stepsSummary: string | null;
   expected: string | null;
+  resultStatus: string | null;
+  testDate: string | null;
+  detailJson: string | null;
+  validationMethod: string | null;
   currentCaseFile: string;
 };
 
@@ -44,6 +49,7 @@ export type CaseManifestResult = {
   casesDir: string | null;
   currentCaseNo: string | null;
   currentCaseSelection: CaseManifestCurrentCaseSelection | null;
+  cases: CaseManifestCase[];
   totalCases: number;
   warnings: string[];
 };
@@ -62,8 +68,13 @@ type HeaderColumns = {
   riskLevel: number | null;
   testTarget: number | null;
   cleanupChecklist: number | null;
+  preconditions: number | null;
   stepsSummary: number | null;
   expected: number | null;
+  resultStatus: number | null;
+  testDate: number | null;
+  detailJson: number | null;
+  validationMethod: number | null;
 };
 
 const cellText = (value: unknown): string => {
@@ -114,8 +125,13 @@ const aliases: Record<keyof HeaderColumns, string[]> = {
   riskLevel: ["風險等級", "risk_level", "risklevel", "risk"],
   testTarget: ["測試標的", "test_target", "testtarget", "target"],
   cleanupChecklist: ["狀態清理", "狀態清理checklist", "cleanup", "cleanup_checklist", "前置清理"],
+  preconditions: ["前置條件", "前提條件", "preconditions", "precondition", "setup"],
   stepsSummary: ["執行步驟", "步驟", "操作步驟", "steps", "teststeps", "step"],
-  expected: ["預期結果", "expected", "expectedresult", "expectation"]
+  expected: ["預期結果", "expected", "expectedresult", "expectation"],
+  resultStatus: ["結果", "result", "status", "result_status"],
+  testDate: ["測試日", "測試日期", "test_date", "testdate", "date"],
+  detailJson: ["詳細紀錄json", "詳細紀錄JSON", "detail_json", "detailjson", "details"],
+  validationMethod: ["驗證方法", "取證方法", "verification", "validation", "evidence"]
 };
 
 const aliasSets = Object.fromEntries(
@@ -343,6 +359,7 @@ const writeManifestFiles = (
     casesDir: path.join(outputDir, "cases"),
     currentCaseNo: selectedCase?.caseNo ?? null,
     currentCaseSelection,
+    cases,
     totalCases: cases.length,
     warnings
   };
@@ -357,12 +374,12 @@ const writeMinimalCaseManifest = async (
   const sheets = await loadMinimalXlsxSheets(xlsxPath);
   const sheet = sheets.find((item) => item.name === "測試案例") ?? sheets[0];
   if (!sheet) {
-    return { manifestPath: null, currentCasePath: null, casesDir: null, currentCaseNo: null, currentCaseSelection: null, totalCases: 0, warnings: [...warnings, "XLSX_NO_WORKSHEET"] };
+    return { manifestPath: null, currentCasePath: null, casesDir: null, currentCaseNo: null, currentCaseSelection: null, cases: [], totalCases: 0, warnings: [...warnings, "XLSX_NO_WORKSHEET"] };
   }
 
   const header = detectArrayHeader(sheet.rows);
   if (!header) {
-    return { manifestPath: null, currentCasePath: null, casesDir: null, currentCaseNo: null, currentCaseSelection: null, totalCases: 0, warnings: [...warnings, "CASE_HEADER_NOT_FOUND"] };
+    return { manifestPath: null, currentCasePath: null, casesDir: null, currentCaseNo: null, currentCaseSelection: null, cases: [], totalCases: 0, warnings: [...warnings, "CASE_HEADER_NOT_FOUND"] };
   }
 
   const casesDir = path.join(outputDir, "cases");
@@ -393,8 +410,13 @@ const writeMinimalCaseManifest = async (
       riskLevel: nullable(getArrayCell(row, header.columns.riskLevel)),
       testTarget: nullable(getArrayCell(row, header.columns.testTarget)),
       cleanupChecklist: nullable(getArrayCell(row, header.columns.cleanupChecklist)),
+      preconditions: nullable(getArrayCell(row, header.columns.preconditions)),
       stepsSummary: nullable(getArrayCell(row, header.columns.stepsSummary)),
       expected: nullable(getArrayCell(row, header.columns.expected)),
+      resultStatus: nullable(getArrayCell(row, header.columns.resultStatus)),
+      testDate: nullable(getArrayCell(row, header.columns.testDate)),
+      detailJson: nullable(getArrayCell(row, header.columns.detailJson)),
+      validationMethod: nullable(getArrayCell(row, header.columns.validationMethod)),
       currentCaseFile
     };
     cases.push(item);
@@ -411,7 +433,7 @@ export const writeCaseManifest = async (
 ): Promise<CaseManifestResult> => {
   const warnings: string[] = [];
   if (!xlsxPath) {
-    return { manifestPath: null, currentCasePath: null, casesDir: null, currentCaseNo: null, currentCaseSelection: null, totalCases: 0, warnings: ["XLSX_INPUT_MISSING"] };
+    return { manifestPath: null, currentCasePath: null, casesDir: null, currentCaseNo: null, currentCaseSelection: null, cases: [], totalCases: 0, warnings: ["XLSX_INPUT_MISSING"] };
   }
 
   const workbook = new ExcelJS.Workbook();
@@ -432,6 +454,7 @@ export const writeCaseManifest = async (
         casesDir: null,
         currentCaseNo: null,
         currentCaseSelection: null,
+        cases: [],
         totalCases: 0,
         warnings: [
           `XLSX_READ_FAILED:${error instanceof Error ? error.message : String(error)}`,
@@ -443,12 +466,12 @@ export const writeCaseManifest = async (
 
   const sheet = workbook.getWorksheet("測試案例") ?? workbook.worksheets[0];
   if (!sheet) {
-    return { manifestPath: null, currentCasePath: null, casesDir: null, currentCaseNo: null, currentCaseSelection: null, totalCases: 0, warnings: ["XLSX_NO_WORKSHEET"] };
+    return { manifestPath: null, currentCasePath: null, casesDir: null, currentCaseNo: null, currentCaseSelection: null, cases: [], totalCases: 0, warnings: ["XLSX_NO_WORKSHEET"] };
   }
 
   const header = detectHeader(sheet);
   if (!header) {
-    return { manifestPath: null, currentCasePath: null, casesDir: null, currentCaseNo: null, currentCaseSelection: null, totalCases: 0, warnings: ["CASE_HEADER_NOT_FOUND"] };
+    return { manifestPath: null, currentCasePath: null, casesDir: null, currentCaseNo: null, currentCaseSelection: null, cases: [], totalCases: 0, warnings: ["CASE_HEADER_NOT_FOUND"] };
   }
 
   if (!header.columns.groupName) warnings.push("GROUP_COLUMN_NOT_FOUND");
@@ -483,8 +506,13 @@ export const writeCaseManifest = async (
       riskLevel: nullable(getCell(row, header.columns.riskLevel)),
       testTarget: nullable(getCell(row, header.columns.testTarget)),
       cleanupChecklist: nullable(getCell(row, header.columns.cleanupChecklist)),
+      preconditions: nullable(getCell(row, header.columns.preconditions)),
       stepsSummary: nullable(getCell(row, header.columns.stepsSummary)),
       expected: nullable(getCell(row, header.columns.expected)),
+      resultStatus: nullable(getCell(row, header.columns.resultStatus)),
+      testDate: nullable(getCell(row, header.columns.testDate)),
+      detailJson: nullable(getCell(row, header.columns.detailJson)),
+      validationMethod: nullable(getCell(row, header.columns.validationMethod)),
       currentCaseFile
     };
     cases.push(item);

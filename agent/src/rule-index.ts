@@ -135,6 +135,27 @@ export const writeRuleIndex = (runDir: string, domain: string): string => {
     summary: "Minimal preflight contract. Check DEV URL reachability/login only before deep rule loading or testcase actions."
   });
   addIfExists(entries, runDir, {
+    id: "document-consistency",
+    scope: "input",
+    filePath: path.join(runDir, "input", "document-consistency.json"),
+    loadWhen: ["before browser execution", "startup instruction conflicts with workbook", "current case ambiguity"],
+    summary: "Document conflict gate. If status=error, stop before browser and emit Tool Bridge ambiguity_decision."
+  });
+  addIfExists(entries, runDir, {
+    id: "reference-index",
+    scope: "input",
+    filePath: path.join(runDir, "input", "reference-index.json"),
+    loadWhen: ["need exact file path", "avoid broad filesystem search", "supporting document lookup"],
+    summary: "Exact input/generated/reference paths for this run."
+  });
+  addIfExists(entries, runDir, {
+    id: "supporting-docs-manifest",
+    scope: "input",
+    filePath: path.join(runDir, "input", "supporting-docs-manifest.json"),
+    loadWhen: ["need supporting document role", "startup instruction references extra md", "avoid bulk-read supporting docs"],
+    summary: "Downloaded file roles and load policy."
+  });
+  addIfExists(entries, runDir, {
     id: "run-state",
     scope: "input",
     filePath: path.join(runDir, "input", "run-state.json"),
@@ -156,11 +177,46 @@ export const writeRuleIndex = (runDir: string, domain: string): string => {
     summary: "The first/current case only. Read this before opening the full workbook."
   });
   addIfExists(entries, runDir, {
+    id: "current-case-pack",
+    scope: "input",
+    filePath: path.join(runDir, "input", "current-case-pack.md"),
+    loadWhen: ["starting execution", "need current case summary", "need evidence requirements"],
+    summary: "Compact execution card for the current case. Plan only; not a result."
+  });
+  addIfExists(entries, runDir, {
+    id: "current-case-pack-json",
+    scope: "input",
+    filePath: path.join(runDir, "input", "current-case-pack.json"),
+    loadWhen: ["need structured evidence requirements", "need screenshot policy", "case plan cross-check"],
+    summary: "Structured current-case pack with required evidence and screenshot policy."
+  });
+  addIfExists(entries, runDir, {
     id: "bi-ui-helper-guidance",
     scope: "domain",
     filePath: path.join(runDir, "input", "bi-ui-helper-guidance.md"),
     loadWhen: ["BI UI operation", "need safe Playwright recipe", "reduce UI exploration"],
     summary: "Safe BI UI recipes. Guidance only; does not permit internal state setters or multi-case batching."
+  });
+  addIfExists(entries, runDir, {
+    id: "evidence-template-index",
+    scope: "input",
+    filePath: path.join(runDir, "input", "evidence-templates", "index.json"),
+    loadWhen: ["need evidence shape", "writing detail_json", "checking required evidence"],
+    summary: "Evidence template index. Choose only the template named by current-case-pack."
+  });
+  addIfExists(entries, runDir, {
+    id: "result-template",
+    scope: "input",
+    filePath: path.join(runDir, "input", "result-template.xlsx"),
+    loadWhen: ["writing output/result.xlsx", "need workbook columns"],
+    summary: "Template workbook for result shape. Codex must still write output/result.xlsx one case at a time."
+  });
+  addIfExists(entries, runDir, {
+    id: "network-observation-guidance",
+    scope: "input",
+    filePath: path.join(runDir, "input", "network-observation-guidance.md"),
+    loadWhen: ["request body evidence needed", "network observation needed", "avoid direct API use"],
+    summary: "Safe network observation guidance. UI-triggered observation only; no direct BI API substitution."
   });
 
   const index: RuleIndex = {
@@ -169,7 +225,10 @@ export const writeRuleIndex = (runDir: string, domain: string): string => {
     entries,
     loadingPolicy: [
       "Read input/run-brief.md first.",
+      "Read input/document-consistency.json before browser execution; if status=error, emit Tool Bridge ambiguity_decision.",
       "Perform input/preflight-auth-check.md before deep domain rule loading or testcase actions.",
+      "Read input/current-case-pack.md before loading full testcase/supporting docs.",
+      "Use input/reference-index.json for exact paths before broad searches.",
       "Read input/run-state.json before using any carryover from prior case actions.",
       "Read input/current-case.json for the current case before the full workbook.",
       "Use this index to choose the smallest rule file that answers the current question.",
