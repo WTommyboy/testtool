@@ -101,6 +101,24 @@ const inputFileNameByKey: Record<string, string> = {
   domain_startup_template: "domain_startup_prompt_template.md"
 };
 
+const sanitizeInputFileName = (value: string, fallback: string): string => {
+  const decoded = decodeURIComponent(value).replace(/[\\/]/g, "_").trim();
+  const safe = decoded.replace(/[^a-zA-Z0-9._() -\u4e00-\u9fff\u3040-\u30ff]/g, "_");
+  return safe && safe !== "." && safe !== ".." ? safe : fallback;
+};
+
+const inputFileNameForKey = (key: string, url: string): string => {
+  const fixed = inputFileNameByKey[key];
+  if (fixed) return fixed;
+  try {
+    const basename = path.basename(new URL(url).pathname);
+    if (basename) return sanitizeInputFileName(basename, `${key.replace(/[^a-zA-Z0-9_-]/g, "_")}.dat`);
+  } catch {
+    // Fall through to deterministic key-based name.
+  }
+  return `${key.replace(/[^a-zA-Z0-9_-]/g, "_")}.dat`;
+};
+
 const getInputUrls = (message: AgentMessage): Record<string, string> => {
   const value = message.payload.input_urls;
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
@@ -195,7 +213,7 @@ const downloadInputs = async (config: AgentConfig, message: AgentMessage, runDir
       continue;
     }
 
-    const fileName = inputFileNameByKey[key] ?? `${key.replace(/[^a-zA-Z0-9_-]/g, "_")}.dat`;
+    const fileName = inputFileNameForKey(key, url);
     const filePath = path.join(inputDir, fileName);
     await downloadFile(url, filePath, config.token);
     downloaded[key] = filePath;

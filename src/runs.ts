@@ -136,6 +136,7 @@ const TERMINAL_STATUSES = new Set(["SUCCEEDED", "FAILED", "CANCELLED"]);
 type RunInputPaths = {
   testcase_xlsx_path?: string | null;
   testcase_md_path?: string | null;
+  testcase_supporting_docs_json?: string | null;
   reference_csv_path?: string | null;
 };
 
@@ -335,12 +336,62 @@ const generateMd = (
 const getRun = (runId: string): Record<string, unknown> | undefined =>
   db.prepare("SELECT * FROM runs WHERE id = ?").get(runId) as Record<string, unknown> | undefined;
 
+const deleteRunCascade = (runId: string): void => {
+  const remove = db.transaction((id: string) => {
+    for (const table of ["run_case_steps", "approvals", "bugs", "run_cases", "run_logs", "run_events"]) {
+      db.prepare(`DELETE FROM ${table} WHERE run_id = ?`).run(id);
+    }
+    db.prepare("DELETE FROM runs WHERE id = ?").run(id);
+  });
+  remove(runId);
+};
+
 const getRequestBaseUrl = (req: Request): string => {
   const forwardedProto = String(req.headers["x-forwarded-proto"] ?? "").split(",")[0]?.trim();
   const proto = forwardedProto || req.protocol;
   const forwardedHost = String(req.headers["x-forwarded-host"] ?? "").split(",")[0]?.trim();
   const host = forwardedHost || req.get("host") || "localhost";
   return `${proto}://${host}`;
+};
+
+type SupportingDoc = {
+  path: string;
+  originalName: string;
+  mimeType?: string;
+  size?: number;
+};
+
+const cjkCharCount = (value: string): number => value.match(/[\u4e00-\u9fff]/g)?.length ?? 0;
+
+const normalizeUploadOriginalName = (value: string): string => {
+  const decoded = Buffer.from(value, "latin1").toString("utf8");
+  return cjkCharCount(decoded) > cjkCharCount(value) ? decoded : value;
+};
+
+const parseSupportingDocs = (value: unknown): SupportingDoc[] => {
+  if (typeof value !== "string" || !value.trim()) return [];
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .map((item) => {
+        if (!item || typeof item !== "object" || Array.isArray(item)) return null;
+        const doc = item as Record<string, unknown>;
+        if (typeof doc.path !== "string" || !doc.path.trim()) return null;
+        const supportingDoc: SupportingDoc = {
+          path: doc.path,
+          originalName: typeof doc.originalName === "string" && doc.originalName.trim()
+            ? doc.originalName
+            : path.basename(doc.path),
+          mimeType: typeof doc.mimeType === "string" ? doc.mimeType : undefined,
+          size: typeof doc.size === "number" ? doc.size : undefined
+        };
+        return supportingDoc;
+      })
+      .filter((item): item is SupportingDoc => Boolean(item));
+  } catch {
+    return [];
+  }
 };
 
 const getRunInputUrls = (req: Request, runId: string, paths: RunInputPaths): Record<string, string> => {
@@ -353,6 +404,10 @@ const getRunInputUrls = (req: Request, runId: string, paths: RunInputPaths): Rec
     urls.md = `${base}/api/runs/${runId}/input/md`;
     urls.startup_instruction = `${base}/api/runs/${runId}/input/startup`;
   }
+  const supportingDocs = parseSupportingDocs(paths.testcase_supporting_docs_json);
+  supportingDocs.forEach((doc, index) => {
+    urls[`supporting_doc_${index + 1}`] = `${base}/api/runs/${runId}/input/supporting/${index}/${encodeURIComponent(doc.originalName)}`;
+  });
   if (paths.reference_csv_path) {
     urls.baseline = `${base}/api/runs/${runId}/input/baseline`;
   }
@@ -900,7 +955,7 @@ router.post(
   "/",
   upload.fields([
     { name: "testcaseXlsx", maxCount: 1 },
-    { name: "testcaseMd", maxCount: 1 },
+    { name: "testcaseMd", maxCount: 10 },
     { name: "referenceCsv", maxCount: 1 }
   ]),
   async (req, res) => {
@@ -957,7 +1012,7 @@ router.post(
           referenceCsv?: Express.Multer.File[];
         }
       | undefined;
-    const hasUploadFiles = Boolean(files?.testcaseXlsx?.[0] || files?.testcaseMd?.[0]);
+    const hasUploadFiles = Boolean(files?.testcaseXlsx?.[0] || (files?.testcaseMd?.length ?? 0) > 0);
     const sourceMode =
       body.sourceMode === "upload" || body.sourceMode === "conversation"
         ? body.sourceMode
@@ -967,14 +1022,21 @@ router.post(
 
     if (sourceMode === "upload") {
       const testcaseXlsx = files?.testcaseXlsx?.[0];
-      const testcaseMd = files?.testcaseMd?.[0];
+      const testcaseDocs = files?.testcaseMd ?? [];
+      const testcaseMd = testcaseDocs[0];
+      const supportingDocs = testcaseDocs.slice(1).map((file) => ({
+        path: file.path,
+        originalName: normalizeUploadOriginalName(file.originalname),
+        mimeType: file.mimetype,
+        size: file.size
+      }));
       const referenceCsv = files?.referenceCsv?.[0];
 
       if (!testcaseXlsx || !testcaseMd) {
-        db.prepare("DELETE FROM runs WHERE id = ?").run(runId);
+        deleteRunCascade(runId);
         return res.status(400).json({
           error: "UPLOAD_FILES_REQUIRED",
-          message: "請上傳 xlsx 和 md 檔案"
+          message: "請上傳 xlsx 和至少一份說明文件"
         });
       }
 
@@ -984,14 +1046,22 @@ router.post(
         db.prepare(
           `
             UPDATE runs
-            SET testcase_xlsx_path = ?, testcase_md_path = ?, reference_csv_path = ?, updated_at = ?
+            SET testcase_xlsx_path = ?, testcase_md_path = ?, testcase_supporting_docs_json = ?, reference_csv_path = ?, updated_at = ?
             WHERE id = ?
           `
-        ).run(testcaseXlsx.path, testcaseMd.path, referenceCsv?.path ?? null, nowIso(), runId);
+        ).run(
+          testcaseXlsx.path,
+          testcaseMd.path,
+          JSON.stringify(supportingDocs),
+          referenceCsv?.path ?? null,
+          nowIso(),
+          runId
+        );
         insertRunLog(runId, "INFO", "XLSX+MD uploaded and parsed", {
           sourceMode,
           testcaseXlsx: testcaseXlsx.path,
           testcaseMd: testcaseMd.path,
+          supportingDocs,
           referenceCsv: referenceCsv?.path ?? null,
           importedCases: imported.cases.length,
           importedSteps: imported.steps.length,
@@ -1004,7 +1074,7 @@ router.post(
           manualCases
         });
       } catch (error) {
-        db.prepare("DELETE FROM runs WHERE id = ?").run(runId);
+        deleteRunCascade(runId);
         return res.status(400).json({
           error: "XLSX_IMPORT_FAILED",
           message: error instanceof Error ? error.message : String(error)
@@ -1581,6 +1651,25 @@ router.get("/:id/input/startup", (req, res) => {
     return res.status(404).json({ error: "RUN_NOT_FOUND" });
   }
   return safeSendRunInputFile(res, run.testcase_md_path, `${String(run.round_id ?? req.params.id)}_startup.md`);
+});
+
+router.get("/:id/input/supporting/:index/:filename", (req, res) => {
+  const run = getRun(req.params.id);
+  if (!run) {
+    return res.status(404).json({ error: "RUN_NOT_FOUND" });
+  }
+
+  const index = Number.parseInt(req.params.index, 10);
+  if (!Number.isInteger(index) || index < 0) {
+    return res.status(400).json({ error: "INVALID_SUPPORTING_DOC_INDEX" });
+  }
+
+  const doc = parseSupportingDocs(run.testcase_supporting_docs_json)[index];
+  if (!doc) {
+    return res.status(404).json({ error: "SUPPORTING_DOC_NOT_FOUND" });
+  }
+
+  return safeSendRunInputFile(res, doc.path, doc.originalName);
 });
 
 router.get("/:id/input/baseline", (req, res) => {

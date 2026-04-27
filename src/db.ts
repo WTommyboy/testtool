@@ -27,6 +27,7 @@ export const migrate = (): void => {
       execution_mode TEXT NOT NULL DEFAULT 'offline',
       testcase_xlsx_path TEXT,
       testcase_md_path TEXT,
+      testcase_supporting_docs_json TEXT,
       reference_csv_path TEXT,
       result_xlsx_path TEXT,
       result_ingested_at TEXT,
@@ -208,6 +209,9 @@ export const migrate = (): void => {
   }
   if (!hasColumn("runs", "testcase_md_path")) {
     db.exec("ALTER TABLE runs ADD COLUMN testcase_md_path TEXT");
+  }
+  if (!hasColumn("runs", "testcase_supporting_docs_json")) {
+    db.exec("ALTER TABLE runs ADD COLUMN testcase_supporting_docs_json TEXT");
   }
   if (!hasColumn("runs", "reference_csv_path")) {
     db.exec("ALTER TABLE runs ADD COLUMN reference_csv_path TEXT");

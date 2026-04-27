@@ -901,6 +901,20 @@
   border-radius: 6px;
 }
 
+.file-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.hint-text {
+  display: block;
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
 .file-remove {
   border: none;
   background: none;

@@ -202,7 +202,7 @@ function App() {
   const [agents, setAgents] = useState<AgentItem[]>([]);
   const [selectedAgentId, setSelectedAgentId] = useState("");
   const [uploadXlsx, setUploadXlsx] = useState<File | null>(null);
-  const [uploadMd, setUploadMd] = useState<File | null>(null);
+  const [uploadDocs, setUploadDocs] = useState<File[]>([]);
   const [uploadCsv, setUploadCsv] = useState<File | null>(null);
   const [runRoundId, setRunRoundId] = useState("");
   const [runLocation, setRunLocation] = useState("數據中心");
@@ -840,12 +840,14 @@ function App() {
       formData.append("executionMode", runExecutionMode);
 
       if (sourceMode === "upload") {
-        if (!uploadXlsx || !uploadMd) {
-          setRunError("請上傳 xlsx 和 md 檔案");
+        if (!uploadXlsx || uploadDocs.length === 0) {
+          setRunError("請上傳 xlsx 和至少一份說明文件");
           return;
         }
         formData.append("testcaseXlsx", uploadXlsx);
-        formData.append("testcaseMd", uploadMd);
+        for (const file of uploadDocs) {
+          formData.append("testcaseMd", file);
+        }
       } else {
         if (!selectedConversationId) {
           setRunError("請先選擇對話");
@@ -864,7 +866,7 @@ function App() {
       });
 
       setUploadXlsx(null);
-      setUploadMd(null);
+      setUploadDocs([]);
       setUploadCsv(null);
       setSelectedRunId(created.id);
       await loadRuns();
@@ -1296,18 +1298,32 @@ function App() {
                   </div>
                   <div className="form-group">
                     <label>
-                      Testcase MD <span className="required">*</span>
+                      Testcase 文件 <span className="required">*</span>
                     </label>
                     <div className="file-input-wrap">
-                      <input type="file" accept=".md" onChange={(e) => setUploadMd(e.target.files?.[0] || null)} />
-                      {uploadMd ? (
-                        <span className="file-name">
-                          📄 {uploadMd.name}
-                          <button type="button" className="file-remove" onClick={() => setUploadMd(null)}>
-                            ✕
-                          </button>
-                        </span>
+                      <input
+                        type="file"
+                        accept=".md,.txt,.pdf"
+                        multiple
+                        onChange={(e) => setUploadDocs(Array.from(e.target.files ?? []))}
+                      />
+                      {uploadDocs.length > 0 ? (
+                        <div className="file-list">
+                          {uploadDocs.map((file, index) => (
+                            <span className="file-name" key={`${file.name}-${file.lastModified}-${index}`}>
+                              📄 {index === 0 ? "主說明：" : "附件："}{file.name}
+                              <button
+                                type="button"
+                                className="file-remove"
+                                onClick={() => setUploadDocs((current) => current.filter((_, currentIndex) => currentIndex !== index))}
+                              >
+                                ✕
+                              </button>
+                            </span>
+                          ))}
+                        </div>
                       ) : null}
+                      <span className="hint-text">可一次選多檔；第一份會作為 startup instruction，其餘會一併傳給 Mac Agent。</span>
                     </div>
                   </div>
                 </div>

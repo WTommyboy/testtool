@@ -15,6 +15,7 @@ export const runs = pgTable("runs", {
   xlsxPath: text("xlsx_path"),
   xlsxSchemaVersion: text("xlsx_schema_version"),
   startupInstructionPath: text("startup_instruction_path"),
+  supportingDocs: jsonb("supporting_docs").$type<Array<{ path: string; originalName: string; mimeType?: string; size?: number }>>().notNull().default([]),
   baselineData: jsonb("baseline_data").$type<Record<string, unknown>>().notNull().default({}),
   resultXlsxUrl: text("result_xlsx_url"),
   resultXlsxParserVersion: text("result_xlsx_parser_version"),
