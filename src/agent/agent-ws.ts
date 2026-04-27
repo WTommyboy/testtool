@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import type http from "node:http";
 import { WebSocketServer } from "ws";
 import type { AgentMessage } from "../agent-protocol/messages";
+import { validateAgentToken } from "./agent-tokens";
 import { agentRegistry } from "./agent-registry";
 
 const getAllowedToken = (): string | undefined => {
@@ -9,9 +10,11 @@ const getAllowedToken = (): string | undefined => {
 };
 
 const isAuthorized = (authorization: string | undefined): boolean => {
+  const token = authorization?.startsWith("Bearer ") ? authorization.slice("Bearer ".length) : "";
   const allowed = getAllowedToken();
-  if (!allowed) return process.env.NODE_ENV !== "production";
-  return authorization === `Bearer ${allowed}`;
+  if (allowed && token === allowed) return true;
+  if (token && validateAgentToken(token)) return true;
+  return !allowed && process.env.NODE_ENV !== "production";
 };
 
 export const attachAgentWebSocketServer = (server: http.Server): WebSocketServer => {

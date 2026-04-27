@@ -143,6 +143,16 @@ export const migrate = (): void => {
       FOREIGN KEY (conversation_id) REFERENCES conversations(id)
     );
 
+    CREATE TABLE IF NOT EXISTS agent_tokens (
+      id TEXT PRIMARY KEY,
+      token_hash TEXT NOT NULL UNIQUE,
+      token_prefix TEXT NOT NULL,
+      device_name TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      last_seen_at TEXT,
+      revoked_at TEXT
+    );
+
     CREATE INDEX IF NOT EXISTS idx_run_cases_run_id ON run_cases(run_id);
     CREATE UNIQUE INDEX IF NOT EXISTS idx_run_cases_run_case_no ON run_cases(run_id, case_no);
     CREATE INDEX IF NOT EXISTS idx_run_logs_run_id ON run_logs(run_id);
@@ -155,6 +165,7 @@ export const migrate = (): void => {
     CREATE INDEX IF NOT EXISTS idx_bugs_run_id ON bugs(run_id);
     CREATE INDEX IF NOT EXISTS idx_bugs_round_id ON bugs(round_id);
     CREATE INDEX IF NOT EXISTS idx_conversation_messages_conversation_id ON conversation_messages(conversation_id);
+    CREATE INDEX IF NOT EXISTS idx_agent_tokens_revoked_at ON agent_tokens(revoked_at);
   `);
 
   const hasColumn = (table: string, column: string): boolean => {
