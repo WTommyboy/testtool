@@ -54,6 +54,20 @@ const validateStringArray = (value: Record<string, unknown>, key: string, warnin
   }
 };
 
+const normalizeToolRequest = (value: unknown): unknown => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return value;
+  const request = { ...(value as Record<string, unknown>) };
+  if (request.type === "playwright_recovery") {
+    if (typeof request.error !== "string" && typeof request.reason === "string") {
+      request.error = request.reason;
+    }
+    if (typeof request.proposed_action !== "string" && typeof request.requested_action === "string") {
+      request.proposed_action = request.requested_action;
+    }
+  }
+  return request;
+};
+
 export const validateToolRequest = (
   value: unknown
 ): { valid: boolean; warnings: ToolRequestParseWarning[] } => {
@@ -66,7 +80,7 @@ export const validateToolRequest = (
     };
   }
 
-  const request = value as Record<string, unknown>;
+  const request = normalizeToolRequest(value) as Record<string, unknown>;
   validateString(request, "type", warnings);
   if (request.type !== "missing_prerequisite") {
     validateString(request, "request_id", warnings);
@@ -128,6 +142,7 @@ export const parseToolRequests = (input: string): ToolRequestParseResult => {
       continue;
     }
 
+    parsed = normalizeToolRequest(parsed);
     const validation = validateToolRequest(parsed);
     const requestId = getRequestId(parsed);
     if (requestId && seenIds.has(requestId)) {

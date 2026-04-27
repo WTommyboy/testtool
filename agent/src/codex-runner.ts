@@ -17,6 +17,8 @@ export type CodexRunnerOptions = {
   codexBin: string;
   cwd: string;
   timeoutMs?: number;
+  playwrightCdpEndpoint?: string | null;
+  playwrightOutputDir?: string | null;
 };
 
 const parseJsonl = (stdout: string): { events: CodexJsonEvent[]; parseErrors: string[] } => {
@@ -80,9 +82,22 @@ export class CodexRunner {
     return this.cancelReason;
   }
 
+  private configArgs(): string[] {
+    if (!this.options.playwrightCdpEndpoint) return [];
+    const playwrightArgs = [
+      "--cdp-endpoint",
+      this.options.playwrightCdpEndpoint,
+      "--shared-browser-context",
+      "--save-session",
+      "--output-dir",
+      this.options.playwrightOutputDir ?? "/tmp/playwright-mcp"
+    ];
+    return ["-c", `mcp_servers.playwright.args=${JSON.stringify(playwrightArgs)}`];
+  }
+
   private run(args: string[]): Promise<CodexTurnResult> {
     return new Promise((resolve, reject) => {
-      const child = spawn(this.options.codexBin, args, {
+      const child = spawn(this.options.codexBin, [...this.configArgs(), ...args], {
         cwd: this.options.cwd,
         env: { ...process.env, NO_COLOR: "1" },
         detached: true,

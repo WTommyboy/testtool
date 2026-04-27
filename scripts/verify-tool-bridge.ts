@@ -65,6 +65,19 @@ const fixtures: Fixture[] = [
     validCount: 1
   },
   {
+    name: "playwright recovery accepts SSO alias fields",
+    input: wrap(
+      JSON.stringify({
+        type: "playwright_recovery",
+        request_id: "req-003b",
+        reason: "LOGIN_REQUIRED: BI page shows 載入失敗",
+        requested_action: "Tommy completes SSO in the persistent Chrome window, then clicks 已處理."
+      })
+    ),
+    requestCount: 1,
+    validCount: 1
+  },
+  {
     name: "diagnostic missing prerequisite request does not require request id",
     input: wrap(validMissingPrerequisite()),
     requestCount: 1,

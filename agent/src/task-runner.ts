@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { ensureChromeDebugSession } from "./browser-session";
 import { CodexRunner } from "./codex-runner";
 import type { AgentConfig, AgentMessage } from "./types";
 import type { AgentConnection } from "./connection";
@@ -255,6 +256,10 @@ const buildPrompt = (runId: string, message: AgentMessage, runDir: string, input
     "- The full project discipline is available at rules/PROJECT_AGENTS_FULL.md; BI rulebooks are under rules/BI_TEST_RULES/.",
     "- If you execute UAT cases, write the complete result workbook to the exact path listed below.",
     "- Keep the final response concise; the workbook and log are the primary artifacts.",
+    "- Playwright MCP is configured to connect to a persistent local Chrome session through CDP when available.",
+    "- If the Galaxy BI page shows 載入失敗, SSO, login, or API 401/403, do not fail the run and do not create a fallback workbook.",
+    "- For SSO/login blockers, emit exactly one actionable Tool Bridge request with type playwright_recovery and fields request_id, error, proposed_action.",
+    "- For SSO/login blockers, proposed_action must tell Tommy to complete SSO in the Chrome window opened by UAT Agent, then click 已處理/continue in the UAT Tool.",
     "",
     `Run ID: ${runId}`,
     `Domain: ${domain}`,
@@ -282,6 +287,7 @@ const buildPrompt = (runId: string, message: AgentMessage, runDir: string, input
     "- Do not use Tool Bridge for missing testcase files; report the missing files and exit cleanly.",
     "- For user approval or SSO/manual blockers, emit only supported actionable Tool Bridge types: irreversible_operation, ambiguity_decision, playwright_recovery.",
     "- Every actionable Tool Bridge block must include request_id and use this envelope: [TOOL_REQUEST]{...}[/TOOL_REQUEST].",
+    "- Example SSO Tool Bridge block: [TOOL_REQUEST]{\"type\":\"playwright_recovery\",\"request_id\":\"<uuid>\",\"error\":\"LOGIN_REQUIRED: Galaxy BI DEV shows 載入失敗 or API 401\",\"proposed_action\":\"Tommy completes SSO/login in the persistent Chrome window opened by UAT Agent, then clicks 已處理/continue in the UAT Tool.\"}[/TOOL_REQUEST]",
     "",
     "Startup instruction:",
     instruction
@@ -422,6 +428,7 @@ export const handleTaskDispatch = async (
     });
     const downloadedInputs = await downloadInputs(config, message, runDir);
     writeJson(path.join(runDir, "input", "downloaded-inputs.json"), downloadedInputs);
+    const chromeCdpEndpoint = await ensureChromeDebugSession(config, getStringPayload(message, "dev_url"));
 
     connection.send(
       "run.started",
@@ -438,14 +445,18 @@ export const handleTaskDispatch = async (
       "run.stdout",
       {
         run_id: runId,
-        text: `uat-agent starting CodexRunner for ${runId}`
+        text: chromeCdpEndpoint
+          ? `uat-agent starting CodexRunner for ${runId} with persistent Chrome CDP ${chromeCdpEndpoint}`
+          : `uat-agent starting CodexRunner for ${runId}; persistent Chrome CDP unavailable, falling back to default Playwright MCP browser`
       },
       false
     );
 
     const runner = new CodexRunner({
       codexBin: config.codex_bin,
-      cwd: runDir
+      cwd: runDir,
+      playwrightCdpEndpoint: chromeCdpEndpoint,
+      playwrightOutputDir: path.join(runDir, "mcp-output")
     });
     hooks.onCancelReady?.(runId, (reason = "cancelled_by_pm") => {
       runner.cancel(reason);
@@ -733,6 +744,7 @@ export const handleToolResponse = async (
     const inputsPath = path.join(runDir, "input", "downloaded-inputs.json");
     const originalDispatch = readJson<AgentMessage>(dispatchPath);
     const downloadedInputs = readJson<DownloadedInputs>(inputsPath);
+    const chromeCdpEndpoint = await ensureChromeDebugSession(config, getStringPayload(originalDispatch, "dev_url"));
 
     writeJson(path.join(runDir, "input", `tool-response-${getStringPayload(message, "request_id") ?? Date.now()}.json`), message);
     writeJson(path.join(runDir, "state.json"), {
@@ -762,7 +774,9 @@ export const handleToolResponse = async (
 
     const runner = new CodexRunner({
       codexBin: config.codex_bin,
-      cwd: runDir
+      cwd: runDir,
+      playwrightCdpEndpoint: chromeCdpEndpoint,
+      playwrightOutputDir: path.join(runDir, "mcp-output")
     });
     hooks.onCancelReady?.(runId, (reason = "cancelled_by_pm") => {
       runner.cancel(reason);

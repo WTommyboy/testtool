@@ -46,7 +46,11 @@ const nullable = (value: string): string | null => (value ? value : null);
 export const readFirstInputCase = async (xlsxPath: string | undefined): Promise<AgentResultSourceCase | null> => {
   if (!xlsxPath) return null;
   const workbook = new ExcelJS.Workbook();
-  await workbook.xlsx.readFile(xlsxPath);
+  try {
+    await workbook.xlsx.readFile(xlsxPath);
+  } catch {
+    return null;
+  }
   const sheet = workbook.getWorksheet("測試案例") ?? workbook.worksheets[0];
   if (!sheet) return null;
 
