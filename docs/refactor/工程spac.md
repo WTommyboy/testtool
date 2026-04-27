@@ -1,0 +1,1355 @@
+# UAT Tool 最新工程 Spec
+
+**版本**: v2026-04-28  
+**狀態**: Mac Agent MVP / Indexed Guidance 已部署  
+**適用分支**: `refactor/mac-agent-mvp` / `codex/uat-tool-mvp`  
+**說明**: 檔名沿用 Tommy 提供的 `工程spac.md`;本文內容為工程 spec。
+
+---
+
+## 1. Scope
+
+本文規範目前最新版 UAT Tool 的工程實作狀態與下一階段開發基準。
+
+涵蓋:
+
+- Vercel 前端
+- Railway API / WebSocket Hub
+- Mac Agent
+- CodexRunner
+- Tool Bridge
+- Layer 1 Skill
+- BI Domain Pack / generated guidance
+- result.xlsx ingestion
+- phase / log / artifact
+
+不涵蓋:
+
+- cloud_novnc 正式方案
+- 多 Agent 並行 scheduler
+- 完整 artifacts table
+- 非 BI domain 的正式 domain pack
+- 完整 product-grade auth / RBAC
+
+---
+
+## 2. System Components
+
+### 2.1 Frontend
+
+位置:
+
+```text
+web/
+  src/App.tsx
+  src/App.css
+```
+
+部署:
+
+```text
+Vercel: https://testtool-eight.vercel.app/
+```
+
+環境變數:
+
+```env
+VITE_API_BASE_URL=https://testtool-production.up.railway.app
+```
+
+主要 UI 區塊:
+
+- 對話生成
+- 測試執行
+- 執行記錄
+- Agent 狀態
+- run form
+- upload xlsx / md / csv
+- phase card
+- run log/event timeline
+- approval / Tool Bridge panel
+- case result list
+- bug list
+
+### 2.2 Backend
+
+主要位置:
+
+```text
+src/server.ts
+src/agent/
+src/result-parser/
+src/xlsx-parser.ts
+src/db.ts
+```
+
+部署:
+
+```text
+Railway: https://testtool-production.up.railway.app
+```
+
+重要 API:
+
+```text
+GET  /health
+GET  /version
+GET  /api/agents
+POST /api/agents/tokens
+GET  /api/domains
+GET  /api/domains/:name/rules
+POST /api/runs
+GET  /api/runs/history
+GET  /api/runs/:id/summary
+GET  /api/runs/:id/logs
+GET  /api/runs/:id/events
+GET  /api/runs/:id/cases
+POST /api/runs/:id/start
+POST /api/runs/:id/cancel
+POST /api/runs/:id/tool-response
+```
+
+WebSocket:
+
+```text
+GET /agent-ws
+Authorization: Bearer <agent-token>
+```
+
+### 2.3 Mac Agent
+
+位置:
+
+```text
+agent/
+  src/cli.ts
+  src/config.ts
+  src/connection.ts
+  src/task-runner.ts
+  src/codex-runner.ts
+  src/browser-session.ts
+  src/tool-bridge.ts
+  src/doctor.ts
+  src/launchd.ts
+  src/case-manifest.ts
+  src/rule-index.ts
+  src/bi-ui-helper-guidance.ts
+```
+
+package:
+
+```text
+package name: uat-tool-agent
+binary: uat-agent
+```
+
+本機路徑:
+
+```text
+~/.uat-agent/config.json
+~/.uat-agent/runs/<runId>/
+~/.uat-agent/chrome-profile/
+```
+
+launchd:
+
+```text
+com.tommy.uat-agent
+```
+
+CLI:
+
+```bash
+node agent/dist/cli.js login --server <wss-url> --token <token> --device-name "Tommy Mac"
+node agent/dist/cli.js status
+node agent/dist/cli.js doctor
+node agent/dist/cli.js start
+node agent/dist/cli.js launchd install
+node agent/dist/cli.js launchd start
+```
+
+---
+
+## 3. Runtime Data Flow
+
+### 3.1 Run Create
+
+Frontend sends multipart form to backend.
+
+Inputs:
+
+- `testcaseXlsx`
+- `testcaseMd` or multiple docs
+- optional `referenceCsv`
+- `roundId`
+- `location`
+- `featureMain`
+- `featureSub`
+- `runName`
+- `devUrl`
+- `domain`
+- `executionMode=interactive`
+- selected `agentId`
+
+Backend actions:
+
+1. Save upload files.
+2. Parse testcase xlsx into initial run cases.
+3. Create run row.
+4. Create run logs.
+5. Return selected run summary.
+
+### 3.2 Run Dispatch
+
+Backend builds `task.dispatch`.
+
+Payload includes:
+
+```json
+{
+  "run_id": "...",
+  "round_id": "...",
+  "domain": "BI",
+  "dev_url": "https://galaxy.games.gamania.com/biapi-dev/testview/home?gameID=541",
+  "startup_instruction": "...",
+  "input_urls": {
+    "domain_rules": "...",
+    "domain_schema": "...",
+    "domain_result_adapter": "...",
+    "domain_startup_template": "...",
+    "xlsx": "...",
+    "md": "...",
+    "startup_instruction": "...",
+    "supporting_doc_1": "..."
+  },
+  "output_urls": {
+    "result_xlsx": "...",
+    "log": "..."
+  }
+}
+```
+
+Expected backend status transition:
+
+```text
+READY/ASSIGNED -> RUNNING
+```
+
+### 3.3 Agent Workspace Preparation
+
+Agent creates:
+
+```text
+~/.uat-agent/runs/<runId>/
+  AGENTS.md
+  state.json
+  input/
+  rules/
+  output/
+  mcp-output/
+  agent-skills/
+```
+
+Downloaded input paths:
+
+```text
+input/testcase.xlsx
+input/testcase.md
+input/startup_instruction.md
+input/domain_AGENTS.md
+input/domain_xlsx_schema.json
+input/domain_result_parser_adapter.json
+input/domain_startup_prompt_template.md
+input/supporting_doc_*.md
+```
+
+Generated guidance:
+
+```text
+input/run-brief.md
+input/codex-context.json
+input/downloaded-inputs.json
+input/generated-guides.json
+input/case-manifest.json
+input/current-case.json
+input/cases/*.json
+input/rule-index.json
+input/bi-ui-helper-guidance.md
+```
+
+### 3.4 Codex Execution
+
+Agent calls CodexRunner.
+
+Current strategy:
+
+```text
+codex exec --json <prompt>
+codex exec resume --json <thread_id> <tool-response-prompt>
+```
+
+CodexRunner responsibilities:
+
+- Spawn Codex CLI.
+- Capture JSON events.
+- Capture assistant text.
+- Capture stderr.
+- Stream summarized progress to backend.
+- Detect thread id.
+- Support cancellation.
+- Persist raw stdout/stderr.
+
+### 3.5 Browser Session
+
+Agent ensures persistent Chrome CDP:
+
+```text
+http://127.0.0.1:9222
+```
+
+Purpose:
+
+- Maintain Galaxy SSO.
+- Avoid opening fresh browser profile for every run.
+- Let Tommy manually login in the same browser when required.
+
+If Chrome CDP unavailable:
+
+- Agent can fallback to default Playwright MCP browser.
+- This is lower confidence for SSO persistence.
+- Web UI should still surface phase/log clearly.
+
+---
+
+## 4. Generated Guidance Contract
+
+### 4.1 `input/run-brief.md`
+
+Purpose:
+
+- First file Codex should read.
+- Compact dispatch packet.
+- Contains run id, domain, dev url, workdir, required files.
+- Points to current case, rule index, BI helper guidance.
+- Repeats hard gates.
+
+Required content:
+
+- `run_id`
+- `round_id`
+- `domain`
+- `dev_url`
+- `expected_result_xlsx`
+- `case_manifest`
+- `current_case`
+- `rule_index`
+- `bi_ui_helper_guidance`
+- fast path
+- hard gates
+- Tool Bridge schemas
+- visible phases
+
+### 4.2 `input/case-manifest.json`
+
+Purpose:
+
+- Index of testcase rows.
+- Navigation aid only.
+- Not permission to execute multiple cases in one flow.
+
+Schema:
+
+```ts
+type CaseManifest = {
+  generatedAt: string;
+  workbookPath: string;
+  sheetName: string | null;
+  totalCases: number;
+  groups: Array<{
+    name: string;
+    caseCount: number;
+    caseNos: string[];
+  }>;
+  cases: CaseManifestCase[];
+  warnings: string[];
+};
+
+type CaseManifestCase = {
+  order: number;
+  rowNumber: number;
+  groupName: string | null;
+  caseNo: string;
+  caseTitle: string | null;
+  testType: string | null;
+  executionMethod: string | null;
+  riskLevel: string | null;
+  testTarget: string | null;
+  cleanupChecklist: string | null;
+  stepsSummary: string | null;
+  expected: string | null;
+  currentCaseFile: string;
+};
+```
+
+Parser behavior:
+
+- Prefer ExcelJS.
+- If ExcelJS fails, fallback to minimal JSZip xlsx XML reader.
+- Missing optional headers become `null`.
+- Parse failure must not crash the entire run; warnings are written.
+
+### 4.3 `input/current-case.json`
+
+Purpose:
+
+- First/current case only.
+- Codex should read this before full workbook.
+
+Current limitation:
+
+- It is generated at run start for the first case.
+- It does not yet automatically advance after each case.
+
+Next improvement:
+
+- Add Agent or Codex-side case pointer update after each completed case.
+
+### 4.4 `input/rule-index.json`
+
+Purpose:
+
+- Rule routing index.
+- Helps Codex choose minimal rule file.
+
+Schema:
+
+```ts
+type RuleIndex = {
+  generatedAt: string;
+  domain: string;
+  entries: RuleIndexEntry[];
+  loadingPolicy: string[];
+};
+
+type RuleIndexEntry = {
+  id: string;
+  scope: "platform" | "domain" | "input";
+  path: string;
+  loadWhen: string[];
+  summary: string;
+};
+```
+
+Required entries:
+
+- `platform-skill`
+- `domain-routing`
+- `tool-bridge`
+- `evidence-policy`
+- `artifacts-and-results`
+- `codex-runtime`
+- `agent-security`
+- `run-lifecycle`
+- `bi-domain-entrypoint`
+- `bi-project-agents-full`
+- `bi-rule-*`
+- `case-manifest`
+- `current-case`
+- `bi-ui-helper-guidance`
+
+### 4.5 `input/bi-ui-helper-guidance.md`
+
+Purpose:
+
+- Domain-level helper guidance.
+- Reduce repeated UI exploration.
+- Preserve safety boundaries.
+
+Must include:
+
+- Prohibited internal state setters.
+- Prohibited direct API-as-result.
+- Prohibited state-changing `browser_evaluate`.
+- One case guard.
+- Common operation recipes:
+  - project navigation
+  - add field
+  - set date
+  - execute and verify
+  - save/delete/dialog Tool Bridge
+
+---
+
+## 5. Layer 1 Skill Contract
+
+Path:
+
+```text
+agent-skills/uat-tool/
+```
+
+Files:
+
+```text
+SKILL.md
+rules/run-lifecycle.md
+rules/tool-bridge.md
+rules/evidence-policy.md
+rules/artifacts-and-results.md
+rules/domain-routing.md
+rules/codex-runtime.md
+rules/agent-security.md
+```
+
+Hard requirements:
+
+1. Layer 1 must remain domain-neutral.
+2. BI rules must not be added to Layer 1.
+3. Evidence policy must require current-run evidence.
+4. Tool Bridge must be required for SSO/recovery/irreversible/ambiguity.
+5. `agent-security.md` must define:
+   - task whitelist
+   - active run lock
+   - token scope
+   - local filesystem boundary
+   - cancellation boundary
+6. Runtime rules must preserve one-case-at-a-time.
+
+---
+
+## 6. Tool Bridge Spec
+
+### 6.1 Envelope
+
+Codex must emit:
+
+```text
+[TOOL_REQUEST]{...json...}[/TOOL_REQUEST]
+```
+
+Parser must tolerate:
+
+- surrounding assistant text
+- multiline JSON
+- alias fields
+- duplicated request blocks
+
+Parser must not tolerate:
+
+- missing request_id
+- unsupported actionable type
+- malformed actionable schema
+
+### 6.2 Supported Types
+
+#### `irreversible_operation`
+
+Required fields:
+
+```json
+{
+  "type": "irreversible_operation",
+  "request_id": "<run-id>-<case-no>-<slug>",
+  "case": "<case-no>",
+  "action": "<short action>",
+  "reason": "<why approval is required>",
+  "proposed_action": "<exact action>"
+}
+```
+
+Aliases currently normalized:
+
+- `case_no`
+- `caseNo`
+- `requested_action`
+-
+`proposed_action`
+
+Case may be inferred from request id pattern such as:
+
+```text
+...-demo-a01-save -> DEMO-A-01
+```
+
+#### `playwright_recovery`
+
+Required fields:
+
+```json
+{
+  "type": "playwright_recovery",
+  "request_id": "<run-id>-sso",
+  "error": "LOGIN_REQUIRED: ...",
+  "proposed_action": "Tommy completes SSO/login..."
+}
+```
+
+#### `ambiguity_decision`
+
+Required fields:
+
+```json
+{
+  "type": "ambiguity_decision",
+  "request_id": "<run-id>-<case-no>-<slug>",
+  "case": "<case-no>",
+  "context": "<what is ambiguous>",
+  "options": ["<option A>", "<option B>"],
+  "recommendation": "<recommended option>"
+}
+```
+
+### 6.3 Policy Guard
+
+If no Tool Bridge response exists in current run, Agent scans for policy violations:
+
+- Codex claimed Tommy/PM approved without Tool Bridge response.
+- Native dialog was accepted without Tool Bridge response.
+- Destructive click detected without Tool Bridge response.
+
+Violation result:
+
+```text
+TOOL_BRIDGE_POLICY_VIOLATION
+```
+
+Run should not be trusted.
+
+---
+
+## 7. Agent Message Protocol
+
+### 7.1 Agent Registration
+
+Agent connects to:
+
+```text
+wss://testtool-production.up.railway.app/agent-ws
+Authorization: Bearer <agent token>
+```
+
+Agent status fields:
+
+```ts
+type AgentItem = {
+  id: string;
+  deviceName: string;
+  agentVersion: string | null;
+  platform: string | null;
+  codexVersion: string | null;
+  nodeVersion: string | null;
+  supportedTaskTypes: string[];
+  supportedExecutionModes: string[];
+  toolBridgeVersions: string[];
+  playwrightMcpAvailable: boolean | null;
+  chromeProfileReady: boolean | null;
+  doctorOk: boolean | null;
+  doctorChecks: AgentDoctorCheck[];
+  connectedAt: string;
+  lastSeenAt: string;
+  status: "idle" | "busy" | "unknown";
+  currentRunId: string | null;
+};
+```
+
+### 7.2 Backend to Agent
+
+Supported:
+
+```text
+task.dispatch
+task.cancel
+tool_response
+```
+
+Not allowed:
+
+```text
+shell.exec
+file.read
+agent.update_self
+arbitrary command
+```
+
+### 7.3 Agent to Backend
+
+Current message types:
+
+```text
+run.started
+run.stdout
+run.stderr
+run.progress
+run.phase
+run.tool_request
+run.uploading_result
+run.partial_artifacts
+run.completed
+run.failed
+run.cancelled
+tool_response.delivered
+```
+
+### 7.4 `run.phase`
+
+Payload:
+
+```json
+{
+  "run_id": "...",
+  "phase": "prepare_guides",
+  "title": "建立執行索引",
+  "detail": "解析 case manifest、rule index 與 BI UI helper guidance。",
+  "status": "active",
+  "context": {},
+  "at": "2026-04-28T..."
+}
+```
+
+Known phases:
+
+```text
+prepare_workspace
+download_inputs
+prepare_guides
+browser_start
+codex_starting
+codex_running
+context_loading
+browser_execution
+waiting_user
+upload_result
+completed
+failed
+cancelled
+resuming
+codex_resuming
+```
+
+Frontend computes duration:
+
+- phase duration = next phase timestamp - current phase timestamp
+- active/waiting latest phase = now - current phase timestamp
+
+---
+
+## 8. Run Status Model
+
+Current backend status model still uses the existing app status vocabulary.
+
+Practical states:
+
+```text
+READY
+RUNNING
+WAITING_APPROVAL / WAITING_USER
+SUCCEEDED
+FAILED
+CANCELLED
+```
+
+Agent state:
+
+```text
+idle
+busy
+unknown
+```
+
+Important distinction:
+
+- `run.completed` from Agent means Agent-side Codex process completed.
+- Backend should only mark run successful after result ingestion succeeds.
+- If Codex exits 0 but no real UAT result.xlsx exists, fallback result must not become trusted PASS.
+
+---
+
+## 9. Result Workbook Contract
+
+### 9.1 Preferred Codex Output
+
+Codex should write:
+
+```text
+output/result.xlsx
+```
+
+Required sheets:
+
+```text
+索引
+測試案例
+Bug
+```
+
+Minimum `測試案例` columns:
+
+```text
+群組
+編號
+測試項目
+測試類型
+執行方式
+結果
+失敗分類
+詳細紀錄JSON
+```
+
+Result values:
+
+```text
+PASS
+FAIL
+BLOCKED
+PARTIAL
+```
+
+### 9.2 Fallback Workbook
+
+Agent may create fallback result.xlsx when:
+
+- Codex failed before writing result.
+- Codex was cancelled.
+- Tool Bridge schema/policy failed.
+- Codex exited 0 but did not write real result.xlsx.
+
+Fallback must:
+
+- never produce trusted UAT PASS for uploaded testcase cases
+- include fail category
+- include partial artifacts context
+- preserve assistant text excerpt and stderr excerpt
+
+Current important category:
+
+```text
+CODEX_NO_RESULT_XLSX
+```
+
+This prevents the old bug where Codex ran some UI but only wrote `AGENT-RESULT PASS`.
+
+### 9.3 Parser
+
+Backend result parser must:
+
+- parse case rows independently
+- preserve invalid detail_json raw value
+- not fail entire workbook for one bad detail_json row
+- ingest Bug sheet rows
+- save parser version
+
+---
+
+## 10. Frontend UI Spec
+
+### 10.1 Execution Form
+
+Required controls:
+
+- testcase source
+- execution mode
+- agent selector
+- round id
+- location
+- feature main
+- feature sub
+- run name
+- dev url
+- testcase xlsx
+- testcase files multiple upload
+- optional csv
+- query
+- start
+- cancel
+
+Testcase files:
+
+- multiple files accepted
+- first file is startup instruction
+- remaining files are supporting docs sent to Agent
+
+### 10.2 Agent Status Panel
+
+Shows:
+
+- selected Agent
+- status idle/busy
+- lastSeenAt
+- platform
+- Codex version
+- Node version
+- doctor PASS/FAIL/SKIP counts
+- macOS permission reminder
+
+### 10.3 Phase Card
+
+Shows:
+
+- latest phase title/detail/status
+- latest phase start time
+- latest phase elapsed duration
+- last 8 phases
+- each phase duration
+
+Purpose:
+
+- identify whether slowness is from context loading, browser, waiting user, result upload, etc.
+
+### 10.4 Run Log / Events
+
+Should show:
+
+- backend logs
+- important run events
+- filtered duplicate noise
+- `run.progress` should not flood main event table if phase card is enough
+
+### 10.5 Approval Panel
+
+Shows:
+
+- Tool Bridge request
+- snapshot/log path if available
+- `已處理 / 繼續執行`
+- skip / cancel
+
+Important:
+
+- Clicking `已處理` should resume the same Codex thread.
+- Browser must not be closed while waiting for SSO.
+
+---
+
+## 11. Agent Doctor Spec
+
+Doctor checks:
+
+```text
+node-version
+agent-token-present
+server-config-present
+codex-workspace-root
+codex-workspace-agents
+workdir-writable
+chrome-profile-writable
+codex-version
+playwright-mcp-availability
+galaxy-sso-session
+railway-websocket-token-live
+macos-permission-hint
+```
+
+Current behavior:
+
+- Some checks are SKIPPED if not safely automatable.
+- macOS permissions cannot be granted programmatically.
+- UI should display guidance:
+  - Terminal / Codex / Google Chrome
+  - Accessibility
+  - Screen Recording
+  - Automation
+
+---
+
+## 12. Security Boundaries
+
+### 12.1 Agent Command Boundary
+
+Agent only accepts whitelisted protocol messages.
+
+Railway must not be able to instruct Mac Agent to execute arbitrary shell commands.
+
+Startup instruction content is:
+
+- passed to Codex as prompt/input
+- not parsed as shell
+- not executed by Agent
+
+### 12.2 Active Run Lock
+
+One Agent can run only one active run at a time.
+
+Reason:
+
+- Chrome profile cannot safely support parallel SSO runs.
+- Playwright MCP sessions may conflict.
+- Codex token/rate/cost pressure.
+- Evidence artifacts become hard to attribute.
+
+If second run arrives while busy:
+
+```text
+task.rejected reason=agent_busy
+```
+
+### 12.3 Filesystem Boundary
+
+Agent writes only:
+
+```text
+~/.uat-agent/config.json
+~/.uat-agent/runs/
+~/.uat-agent/chrome-profile/
+~/.uat-agent/logs/ or launchd stdout/stderr paths
+```
+
+Agent must not modify arbitrary user files based on cloud instruction.
+
+### 12.4 Token Scope
+
+Agent token permits:
+
+- WebSocket connection
+- pulling assigned run inputs
+- uploading assigned run outputs
+
+Agent token must not permit:
+
+- listing all runs
+- reading unrelated run files
+- admin APIs
+
+---
+
+## 13. Performance / Token Strategy
+
+### 13.1 Current Bottlenecks
+
+Known sources:
+
+- Codex startup cost
+- Codex reading too many rules
+- xlsx exploration
+- Playwright snapshot overhead
+- UI wait / DOM redraw
+- Tool Bridge pauses
+- result upload / parse
+
+### 13.2 Implemented Optimizations
+
+- `run-brief.md`
+- `case-manifest.json`
+- per-case JSON files
+- `rule-index.json`
+- `bi-ui-helper-guidance.md`
+- phase duration UI
+- filtered duplicate event timeline
+
+### 13.3 Required Safety During Optimization
+
+Performance optimizations must not:
+
+- batch multiple case UI execution
+- skip current-run evidence
+- skip Tool Bridge
+- use direct BI API as result
+- use internal JS setters
+- convert missing result into PASS
+
+### 13.4 Next Performance Work
+
+Recommended:
+
+1. Add case pointer update after each completed case.
+2. Add per-case phase:
+   - `case_context_loading`
+   - `case_state_cleanup`
+   - `case_ui_action`
+   - `case_evidence_read`
+   - `case_result_write`
+3. Add domain rule tags:
+   - `mode=collage`
+   - `mode=record`
+   - `mode=metric`
+   - `risk=create`
+   - `risk=delete`
+   - `target=frontend`
+   - `target=backend`
+4. Add safe Playwright recipe library as guidance first, then code helper only after safety review.
+5. Add policy detector for multi-case claims in one Codex turn.
+
+---
+
+## 14. Testing / Verification
+
+### 14.1 Standard Verify Command
+
+Run before commit:
+
+```bash
+npm run verify:all
+```
+
+Expected:
+
+- root typecheck
+- agent build
+- web build
+- Tool Bridge parser fixtures
+- Agent roundtrip smoke
+
+### 14.2 Agent Specific
+
+```bash
+npm run typecheck --prefix agent
+npm run build --prefix agent
+```
+
+### 14.3 Web Specific
+
+```bash
+npm run build --prefix web
+```
+
+### 14.4 Manifest Fixture Check
+
+Use DEMO workbook:
+
+```text
+/Users/tommy/Downloads/codex_galaxy/BI_UAT_ROUNDS/DEMO001_工程團隊示範/DEMO_BI示範_測試案例_v1_0.xlsx
+```
+
+Expected:
+
+- `totalCases = 6`
+- first case `DEMO-A-01`
+- fallback XML reader works if ExcelJS fails
+
+### 14.5 Deployment Checks
+
+Railway:
+
+```bash
+curl -s https://testtool-production.up.railway.app/version | jq
+curl -s https://testtool-production.up.railway.app/health | jq
+curl -s https://testtool-production.up.railway.app/api/agents | jq
+```
+
+Vercel:
+
+- deployment should be READY
+- production deployment should point to latest `codex/uat-tool-mvp` commit
+
+Agent:
+
+```bash
+launchctl list | rg com.tommy.uat-agent
+curl -s https://testtool-production.up.railway.app/api/agents | jq
+```
+
+---
+
+## 15. Known Risks
+
+### 15.1 Codex Produces Summary Instead of Real Result
+
+Symptom:
+
+- result.xlsx only has `AGENT-RESULT`
+- real testcase cases not written
+
+Mitigation already added:
+
+- if uploaded testcase exists and no Codex-generated `output/result.xlsx`, fallback is not trusted PASS
+
+Recommended next guard:
+
+- backend rejects `AGENT-RESULT PASS` as full success when run has imported cases > 0
+
+### 15.2 Multi-case Batching Regression
+
+Symptom:
+
+- Codex executes multiple testcase flows in one tool call
+- detail_json written later from memory
+- evidence attribution unclear
+
+Current mitigations:
+
+- Layer 1 one-case-at-a-time
+- run brief hard gate
+- prompt hard gate
+- rule index warning
+- BI helper one case guard
+
+Recommended next guard:
+
+- scan assistant text and session logs for multiple case IDs in one action block
+- warn/fail if one tool call contains multiple case execution claims
+
+### 15.3 SSO Wait Does Not Trigger
+
+Symptom:
+
+- Browser opens and closes or fails without Tool Bridge
+
+Current mitigations:
+
+- persistent Chrome profile
+- Tool Bridge recovery schema
+- phase/log visibility
+
+Recommended next guard:
+
+- Codex startup must do explicit auth check before deep context loading
+- if page shows login/loading failed/API 401, emit `playwright_recovery`
+
+### 15.4 Token/Time Cost Too High
+
+Symptom:
+
+- long context loading before browser action
+
+Current mitigations:
+
+- run brief
+- current case JSON
+- rule index
+- BI helper
+- phase duration
+
+Recommended:
+
+- stricter startup prompt: browser auth check before reading BI full rules
+- summarize stable Layer 1 in Agent-generated brief by version/hash
+
+### 15.5 Tool Bridge Format Drift
+
+Symptom:
+
+- Codex emits request missing `case` or `action`
+
+Current mitigations:
+
+- parser aliases
+- case inference
+- invalid actionable schema fails run
+
+Recommended:
+
+- show schema validation errors in UI
+- add self-repair prompt before failing if safe
+
+---
+
+## 16. Development Rules
+
+### 16.1 Dirty Files
+
+Known pre-existing dirty files:
+
+```text
+.env.example
+src/config.ts
+src/runner.ts
+```
+
+Unless explicitly requested, do not stage or revert them.
+
+### 16.2 Commit Discipline
+
+Before commit:
+
+```bash
+git status --short
+npm run verify:all
+```
+
+Only stage files related to the current change.
+
+### 16.3 Deployment Branches
+
+Push both:
+
+```bash
+git push origin refactor/mac-agent-mvp
+git push origin refactor/mac-agent-mvp:codex/uat-tool-mvp
+```
+
+Railway tracks:
+
+```text
+codex/uat-tool-mvp
+```
+
+Vercel production also tracks:
+
+```text
+codex/uat-tool-mvp
+```
+
+---
+
+## 17. Recommended Next Engineering Tasks
+
+### P0
+
+1. Add backend guard: imported cases > 0 but result only contains `AGENT-RESULT` should not mark run as `SUCCEEDED`.
+2. Add per-case progress events.
+3. Add current-case pointer update.
+4. Add Tool Bridge UI schema error display.
+5. Add auth-check-first instruction and phase.
+
+### P1
+
+1. Split BI helper guidance into recipe files.
+2. Add rule-index tags by case metadata.
+3. Add result evidence metadata columns.
+4. Add artifact table.
+5. Add session log download link.
+
+### P2
+
+1. Remote machine Agent.
+2. Multi-agent registry and scheduler.
+3. Non-BI domain pack.
+4. Notification integration.
+5. Cost/token dashboard.
+
+---
+
+## 18. Acceptance Criteria For Current MVP
+
+The current MVP is acceptable if:
+
+1. Web UI can create a BI run with xlsx + multiple md.
+2. Mac Agent is online and selected.
+3. Railway dispatches to Mac Agent.
+4. Agent downloads inputs and generates indexed guidance.
+5. Chrome CDP opens with persistent SSO profile.
+6. Codex starts and emits phase/progress.
+7. Codex reads current case first, not full workbook first.
+8. Codex performs UI operation for at least one real case.
+9. Tool Bridge request appears for save/confirm or SSO.
+10. After approval, Codex resumes same thread.
+11. Agent uploads real result.xlsx or safe fallback.
+12. Backend does not mark fake/fallback result as trusted PASS.
+13. Web UI shows phase duration and useful logs.
+
+---
+
+## 19. Current Engineering Judgment
+
+The current system should optimize context loading and UI recipes, not relax correctness rules.
+
+Keep strict:
+
+- evidence gate
+- Tool Bridge
+- one-case-at-a-time
+- no direct API-as-result
+- no internal state setters
+- stale evidence rejection
+- partial artifact preservation
+
+Optimize:
+
+- run brief
+- case manifest
+- rule index
+- domain helper guidance
+- phase duration
+- case pointer
+- per-case progress
+
+This is the safest path to reduce token/time cost without recreating the old class of false results caused by batching or insufficient evidence.
