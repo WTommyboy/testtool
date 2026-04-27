@@ -3,7 +3,7 @@ import fs from "node:fs";
 import { AgentConnection } from "./connection";
 import { defaultAgentConfig, defaultConfigPath, ensureAgentDirectories, readConfig, writeConfig } from "./config";
 import { runDoctor } from "./doctor";
-import { handleTaskDispatch } from "./task-runner";
+import { handleTaskDispatch, handleToolResponse } from "./task-runner";
 
 const args = process.argv.slice(2);
 
@@ -148,6 +148,37 @@ const main = async (): Promise<void> => {
             if (runId && activeTask?.runId === runId) activeTask = null;
             printJson({
               event: "task_error",
+              type: message.type,
+              id: message.id,
+              error: error instanceof Error ? error.message : String(error)
+            });
+          });
+        }
+        if (message.type === "tool_response") {
+          const runId = getPayloadRunId(message);
+          if (activeTask) {
+            connection.send(
+              "run.rejected",
+              {
+                run_id: runId ?? "unknown",
+                reason: "AGENT_BUSY",
+                current_run_id: activeTask.runId
+              },
+              true
+            );
+            return;
+          }
+          void handleToolResponse(connection, config, message, {
+            onCancelReady: (readyRunId, cancel) => {
+              activeTask = { runId: readyRunId, cancel };
+            },
+            onCancelClear: (doneRunId) => {
+              if (activeTask?.runId === doneRunId) activeTask = null;
+            }
+          }).catch((error) => {
+            if (runId && activeTask?.runId === runId) activeTask = null;
+            printJson({
+              event: "tool_response_error",
               type: message.type,
               id: message.id,
               error: error instanceof Error ? error.message : String(error)

@@ -31,6 +31,10 @@ const writeJson = (filePath: string, value: unknown): void => {
   fs.writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`);
 };
 
+const readJson = <T>(filePath: string): T => {
+  return JSON.parse(fs.readFileSync(filePath, "utf8")) as T;
+};
+
 type DownloadedInputs = Record<string, string>;
 
 export type TaskDispatchHooks = {
@@ -239,6 +243,24 @@ const getToolRequestId = (request: unknown): string | null => {
   if (!request || typeof request !== "object" || Array.isArray(request)) return null;
   const requestId = (request as { request_id?: unknown }).request_id;
   return typeof requestId === "string" && requestId.trim() ? requestId : null;
+};
+
+const buildToolResponsePrompt = (runId: string, message: AgentMessage): string => {
+  const requestId = getStringPayload(message, "request_id") ?? "unknown";
+  const approved = message.payload.approved === true;
+  const note = getStringPayload(message, "note") ?? "";
+  return [
+    "Tool Bridge response received from PM.",
+    "",
+    `Run ID: ${runId}`,
+    `Request ID: ${requestId}`,
+    `Approved: ${approved ? "true" : "false"}`,
+    note ? `Note: ${note}` : "Note: (empty)",
+    "",
+    approved
+      ? "Continue the prior UAT task from the paused point. Respect the PM note and keep output concise."
+      : "The PM did not approve the requested action. Skip or abort the affected step safely, then produce a concise result."
+  ].join("\n");
 };
 
 const writeCombinedLog = (
@@ -544,6 +566,257 @@ export const handleTaskDispatch = async (
         completed_at: new Date().toISOString(),
         result: "codex_completed",
         thread_id: result.threadId,
+        workdir: runDir,
+        inputs: Object.keys(downloadedInputs),
+        result_xlsx_path: resultXlsxPath,
+        log_path: combinedLogPath,
+        result_xlsx_uploaded: Boolean(outputUrls.result_xlsx)
+      },
+      true
+    );
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    const cancelled = errorMessage.startsWith("CODEX_RUN_CANCELLED");
+    writeJson(path.join(runDir, "state.json"), {
+      run_id: runId,
+      status: cancelled ? "cancelled" : "failed",
+      failed_at: new Date().toISOString(),
+      error: errorMessage
+    });
+    connection.send(
+      cancelled ? "run.cancelled" : "run.failed",
+      {
+        run_id: runId,
+        error: errorMessage,
+        workdir: runDir
+      },
+      true
+    );
+  } finally {
+    hooks.onCancelClear?.(runId);
+    connection.setRunState("idle", null);
+  }
+};
+
+export const handleToolResponse = async (
+  connection: AgentConnection,
+  config: AgentConfig,
+  message: AgentMessage,
+  hooks: TaskDispatchHooks = {}
+): Promise<void> => {
+  const runId = getRunId(message);
+  const runDir = ensureRunWorkspace(config, runId);
+  connection.setRunState("busy", runId);
+
+  try {
+    const statePath = path.join(runDir, "state.json");
+    if (!fs.existsSync(statePath)) {
+      throw new Error(`TOOL_RESPONSE_STATE_NOT_FOUND:${statePath}`);
+    }
+
+    const state = readJson<Record<string, unknown>>(statePath);
+    const threadId = typeof state.thread_id === "string" && state.thread_id.trim() ? state.thread_id : null;
+    if (!threadId) {
+      throw new Error("TOOL_RESPONSE_THREAD_ID_MISSING");
+    }
+
+    const dispatchPath = path.join(runDir, "input", "dispatch.json");
+    const inputsPath = path.join(runDir, "input", "downloaded-inputs.json");
+    const originalDispatch = readJson<AgentMessage>(dispatchPath);
+    const downloadedInputs = readJson<DownloadedInputs>(inputsPath);
+
+    writeJson(path.join(runDir, "input", `tool-response-${getStringPayload(message, "request_id") ?? Date.now()}.json`), message);
+    writeJson(path.join(runDir, "state.json"), {
+      ...state,
+      status: "resuming",
+      resumed_at: new Date().toISOString(),
+      tool_response_request_id: getStringPayload(message, "request_id") ?? null
+    });
+
+    connection.send(
+      "tool_response.delivered",
+      {
+        run_id: runId,
+        request_id: getStringPayload(message, "request_id") ?? null,
+        thread_id: threadId
+      },
+      true
+    );
+    connection.send(
+      "run.stdout",
+      {
+        run_id: runId,
+        text: `uat-agent resuming Codex thread ${threadId}`
+      },
+      false
+    );
+
+    const runner = new CodexRunner({
+      codexBin: config.codex_bin,
+      cwd: runDir
+    });
+    hooks.onCancelReady?.(runId, (reason = "cancelled_by_pm") => {
+      runner.cancel(reason);
+      try {
+        connection.send(
+          "run.stderr",
+          {
+            run_id: runId,
+            text: `uat-agent cancellation requested during resume: ${reason}`
+          },
+          false
+        );
+      } catch {
+        // Cancellation must still kill Codex even if the WebSocket is already closing.
+      }
+    });
+
+    const result = await runner.resume(threadId, buildToolResponsePrompt(runId, message));
+    const cancelReason = runner.getCancelReason();
+    if (cancelReason) {
+      throw new Error(`CODEX_RUN_CANCELLED reason=${cancelReason}`);
+    }
+
+    fs.writeFileSync(path.join(runDir, "codex-resume.log"), result.rawStdout);
+    fs.writeFileSync(path.join(runDir, "codex-resume.stderr.log"), result.stderr);
+    writeJson(path.join(runDir, "output", "codex-resume-result.json"), {
+      threadId: result.threadId,
+      assistantText: result.assistantText,
+      exitCode: result.exitCode,
+      signal: result.signal,
+      stderr: result.stderr,
+      parseErrors: result.parseErrors,
+      eventCount: result.events.length
+    });
+
+    if (result.parseErrors.length > 0) {
+      connection.send(
+        "run.stderr",
+        {
+          run_id: runId,
+          text: `Codex resume JSON parse warnings: ${result.parseErrors.length}`
+        },
+        false
+      );
+    }
+
+    const stderrSummary = summarizeStderr(result.stderr);
+    if (stderrSummary) {
+      connection.send(
+        "run.stderr",
+        {
+          run_id: runId,
+          text: stderrSummary
+        },
+        false
+      );
+    }
+
+    if (result.assistantText.trim()) {
+      connection.send(
+        "run.stdout",
+        {
+          run_id: runId,
+          text: result.assistantText.slice(0, 8000)
+        },
+        false
+      );
+    }
+
+    const toolRequestParse = extractToolRequests(result.assistantText);
+    const validToolRequests = toolRequestParse.requests.filter((request) => request.valid);
+    writeJson(path.join(runDir, "output", "tool-requests-resume.json"), toolRequestParse);
+    if (validToolRequests.length > 0) {
+      for (const request of validToolRequests) {
+        connection.send(
+          "run.tool_request",
+          {
+            run_id: runId,
+            request_id: getToolRequestId(request.data),
+            request: request.data,
+            raw: request.raw
+          },
+          true
+        );
+      }
+      writeJson(path.join(runDir, "state.json"), {
+        run_id: runId,
+        status: "waiting_user",
+        waiting_at: new Date().toISOString(),
+        tool_request_count: validToolRequests.length,
+        thread_id: result.threadId ?? threadId
+      });
+      connection.send(
+        "run.stdout",
+        {
+          run_id: runId,
+          text: `uat-agent paused again for ${validToolRequests.length} Tool Bridge request(s).`
+        },
+        false
+      );
+      return;
+    }
+
+    const outputUrls = getOutputUrls(originalDispatch);
+    const combinedLogPath = writeCombinedLog(runDir, result);
+    if (outputUrls.log) {
+      try {
+        const logUploadResponse = await uploadLogFile(outputUrls.log, combinedLogPath, config.token);
+        writeJson(path.join(runDir, "output", "log-upload.json"), {
+          path: combinedLogPath,
+          uploaded: true,
+          upload_response: logUploadResponse
+        });
+      } catch (error) {
+        writeJson(path.join(runDir, "output", "log-upload.json"), {
+          path: combinedLogPath,
+          uploaded: false,
+          error: error instanceof Error ? error.message : String(error)
+        });
+      }
+    }
+
+    const sourceCase = await readFirstInputCase(downloadedInputs.xlsx);
+    const resultXlsxPath = await writeAgentResultXlsx({
+      runId,
+      roundId: getStringPayload(originalDispatch, "round_id") ?? runId,
+      outputDir: path.join(runDir, "output"),
+      sourceCase,
+      status: result.exitCode === 0 ? "PASS" : "FAIL",
+      failCategory: result.exitCode === 0 ? null : "CODEX_RUN_FAILED",
+      detailJson: buildResultDetail(runId, originalDispatch, runDir, downloadedInputs, result)
+    });
+
+    if (outputUrls.result_xlsx) {
+      connection.send(
+        "run.uploading_result",
+        {
+          run_id: runId,
+          result_xlsx_path: resultXlsxPath
+        },
+        true
+      );
+      await uploadResultXlsx(outputUrls.result_xlsx, resultXlsxPath, config.token);
+    }
+
+    if (result.exitCode !== 0) {
+      throw new Error(`CODEX_RUN_FAILED exit=${result.exitCode} signal=${result.signal ?? "none"}`);
+    }
+
+    writeJson(path.join(runDir, "state.json"), {
+      run_id: runId,
+      status: "completed",
+      completed_at: new Date().toISOString(),
+      thread_id: result.threadId ?? threadId
+    });
+
+    connection.send(
+      "run.completed",
+      {
+        run_id: runId,
+        completed_at: new Date().toISOString(),
+        result: "codex_resumed_completed",
+        thread_id: result.threadId ?? threadId,
         workdir: runDir,
         inputs: Object.keys(downloadedInputs),
         result_xlsx_path: resultXlsxPath,

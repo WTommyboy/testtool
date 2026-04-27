@@ -108,7 +108,7 @@ const importXlsxSchema = z.object({
 
 const approveSchema = z.object({
   caseNo: z.string().min(1),
-  stepNo: z.number().int().positive(),
+  stepNo: z.number().int().min(0),
   action: z.enum(["continue", "skip"]),
   resolvedBy: z.string().min(1),
   note: z.string().optional()
@@ -376,6 +376,100 @@ const getRunOutputUrls = (req: Request, runId: string): Record<string, string> =
     result_xlsx: `${base}/api/runs/${runId}/output/result-xlsx`,
     log: `${base}/api/runs/${runId}/output/log`
   };
+};
+
+const parseJsonObject = (value: unknown): Record<string, unknown> | null => {
+  if (typeof value !== "string" || !value.trim()) return null;
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed as Record<string, unknown> : null;
+  } catch {
+    return null;
+  }
+};
+
+const extractToolRequestIdFromReason = (reason: unknown): string | null => {
+  if (typeof reason !== "string") return null;
+  const match = reason.match(/request_id:\s*([^\s]+)/);
+  return match?.[1] ?? null;
+};
+
+const findToolRequestEvent = (runId: string, requestId: string | null): { agentId: string; requestId: string | null } | null => {
+  const rows = db
+    .prepare(
+      `
+        SELECT payload_json
+        FROM run_events
+        WHERE run_id = ? AND event_type = 'tool_request.created'
+        ORDER BY rowid DESC
+        LIMIT 20
+      `
+    )
+    .all(runId) as Array<{ payload_json: string | null }>;
+
+  for (const row of rows) {
+    const payload = parseJsonObject(row.payload_json);
+    const agentId = typeof payload?.agentId === "string" ? payload.agentId : null;
+    const toolPayload = payload?.payload && typeof payload.payload === "object" && !Array.isArray(payload.payload)
+      ? payload.payload as Record<string, unknown>
+      : {};
+    const eventRequestId = typeof toolPayload.request_id === "string" ? toolPayload.request_id : null;
+    if (agentId && (!requestId || requestId === eventRequestId)) {
+      return { agentId, requestId: eventRequestId };
+    }
+  }
+  return null;
+};
+
+const dispatchToolResponseIfNeeded = (
+  runId: string,
+  approval: Record<string, unknown>,
+  parsed: z.infer<typeof approveSchema>
+): { sent: boolean; agentId?: string; messageId?: string; requestId?: string | null; error?: string } => {
+  const reason = typeof approval.reason === "string" ? approval.reason : "";
+  if (!reason.startsWith("TOOL_REQUEST")) return { sent: false };
+
+  const requestId = extractToolRequestIdFromReason(reason);
+  const event = findToolRequestEvent(runId, requestId);
+  if (!event) {
+    return { sent: false, requestId, error: "TOOL_REQUEST_EVENT_NOT_FOUND" };
+  }
+
+  try {
+    const message = agentRegistry.send(
+      event.agentId,
+      "tool_response",
+      {
+        run_id: runId,
+        request_id: event.requestId ?? requestId,
+        approved: parsed.action === "continue",
+        note: parsed.note ?? "",
+        resolved_by: parsed.resolvedBy
+      },
+      true
+    );
+    insertRunEvent(runId, "tool_response.sent", {
+      agentId: event.agentId,
+      requestId: event.requestId ?? requestId,
+      approved: parsed.action === "continue",
+      messageId: message.id
+    }, message.seq);
+    insertRunLog(runId, "INFO", "Tool response sent to Mac Agent", {
+      agentId: event.agentId,
+      requestId: event.requestId ?? requestId,
+      approved: parsed.action === "continue",
+      messageId: message.id
+    });
+    return { sent: true, agentId: event.agentId, messageId: message.id, requestId: event.requestId ?? requestId };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    insertRunLog(runId, "ERROR", "Tool response dispatch failed", {
+      agentId: event.agentId,
+      requestId: event.requestId ?? requestId,
+      error: message
+    });
+    return { sent: false, agentId: event.agentId, requestId: event.requestId ?? requestId, error: message };
+  }
 };
 
 const safeSendRunInputFile = (res: Response, filePath: unknown, downloadName: string): Response | void => {
@@ -1430,12 +1524,15 @@ router.post("/:id/approve", (req, res) => {
     ).run(now, req.params.id, parsed.data.caseNo);
   }
 
-  db.prepare("UPDATE runs SET status = 'READY', updated_at = ? WHERE id = ?").run(now, req.params.id);
+  const toolResponse = dispatchToolResponseIfNeeded(req.params.id, approval, parsed.data);
+  const runStatus = toolResponse.sent ? "RUNNING" : "READY";
+  db.prepare("UPDATE runs SET status = ?, updated_at = ? WHERE id = ?").run(runStatus, now, req.params.id);
   insertRunLog(req.params.id, "INFO", "Approval resolved", {
     caseNo: parsed.data.caseNo,
     stepNo: parsed.data.stepNo,
     action: parsed.data.action,
-    by: parsed.data.resolvedBy
+    by: parsed.data.resolvedBy,
+    toolResponse
   });
 
   return res.json({
@@ -1443,7 +1540,8 @@ router.post("/:id/approve", (req, res) => {
     caseNo: parsed.data.caseNo,
     stepNo: parsed.data.stepNo,
     action: parsed.data.action,
-    runStatus: "READY"
+    runStatus,
+    toolResponse
   });
 });
 

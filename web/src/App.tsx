@@ -797,6 +797,7 @@ function App() {
           resolvedBy,
         }),
       });
+      await loadRuns();
       await loadRunDetail(selectedRunId);
     } catch (error) {
       setRunError(error instanceof Error ? error.message : String(error));
