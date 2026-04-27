@@ -41,6 +41,19 @@ const validateString = (value: Record<string, unknown>, key: string, warnings: T
   }
 };
 
+const validateStringArray = (value: Record<string, unknown>, key: string, warnings: ToolRequestParseWarning[]): void => {
+  if (
+    !Array.isArray(value[key]) ||
+    (value[key] as unknown[]).length === 0 ||
+    (value[key] as unknown[]).some((item) => typeof item !== "string" || !item)
+  ) {
+    warnings.push({
+      code: `INVALID_${key.toUpperCase()}`,
+      message: `${key} must be a non-empty string array.`
+    });
+  }
+};
+
 export const validateToolRequest = (
   value: unknown
 ): { valid: boolean; warnings: ToolRequestParseWarning[] } => {
@@ -55,7 +68,9 @@ export const validateToolRequest = (
 
   const request = value as Record<string, unknown>;
   validateString(request, "type", warnings);
-  validateString(request, "request_id", warnings);
+  if (request.type !== "missing_prerequisite") {
+    validateString(request, "request_id", warnings);
+  }
 
   if (request.type === "irreversible_operation") {
     validateString(request, "case", warnings);
@@ -74,6 +89,9 @@ export const validateToolRequest = (
   } else if (request.type === "playwright_recovery") {
     validateString(request, "error", warnings);
     validateString(request, "proposed_action", warnings);
+  } else if (request.type === "missing_prerequisite") {
+    validateStringArray(request, "missing", warnings);
+    validateString(request, "reason", warnings);
   } else if (typeof request.type === "string") {
     warnings.push({
       code: "UNKNOWN_TYPE",

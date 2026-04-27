@@ -38,6 +38,13 @@ const validRecovery = (id: string): string =>
     proposed_action: "Restart Playwright MCP session"
   });
 
+const validMissingPrerequisite = (): string =>
+  JSON.stringify({
+    type: "missing_prerequisite",
+    missing: ["uploaded testcase workbook", "startup instruction markdown"],
+    reason: "Cannot execute UAT without the testcase package."
+  });
+
 const fixtures: Fixture[] = [
   {
     name: "single irreversible request",
@@ -54,6 +61,12 @@ const fixtures: Fixture[] = [
   {
     name: "single playwright recovery request",
     input: wrap(validRecovery("req-003")),
+    requestCount: 1,
+    validCount: 1
+  },
+  {
+    name: "diagnostic missing prerequisite request does not require request id",
+    input: wrap(validMissingPrerequisite()),
     requestCount: 1,
     validCount: 1
   },
@@ -145,6 +158,13 @@ const fixtures: Fixture[] = [
     requestCount: 1,
     validCount: 0,
     warningCodes: ["MISSING_PROPOSED_ACTION"]
+  },
+  {
+    name: "missing prerequisite missing list invalid",
+    input: wrap(JSON.stringify({ type: "missing_prerequisite", reason: "x" })),
+    requestCount: 1,
+    validCount: 0,
+    warningCodes: ["INVALID_MISSING"]
   },
   {
     name: "empty object invalid",

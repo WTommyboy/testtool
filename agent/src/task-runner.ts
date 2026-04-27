@@ -38,9 +38,26 @@ const prepareCodexContext = (config: AgentConfig, runDir: string): void => {
   const copied: Record<string, string> = {};
   const workspaceRoot = config.codex_workspace_root;
   const agentsSource = path.join(workspaceRoot, "AGENTS.md");
-  if (copyIfExists(agentsSource, path.join(runDir, "AGENTS.md"))) {
-    copied.AGENTS = agentsSource;
+  if (copyIfExists(agentsSource, path.join(runDir, "rules", "PROJECT_AGENTS_FULL.md"))) {
+    copied["rules/PROJECT_AGENTS_FULL.md"] = agentsSource;
   }
+
+  const generatedAgents = [
+    "# AGENTS.md - Generated UAT Agent Run Workspace",
+    "",
+    "This file is generated for a single Mac Agent run.",
+    "",
+    "Rules:",
+    "- Follow the task prompt and downloaded input files in `input/`.",
+    "- The full project AGENTS.md is copied to `rules/PROJECT_AGENTS_FULL.md` for reference.",
+    "- BI testing rulebooks are copied under `rules/BI_TEST_RULES/`.",
+    "- Do not execute UAT when the testcase workbook or startup instruction markdown is missing; report the missing prerequisite and exit cleanly.",
+    "- Do not perform destructive operations unless an actionable Tool Bridge request is approved.",
+    "- Write the final workbook to `output/result.xlsx` when real UAT cases are executed.",
+    ""
+  ].join("\n");
+  fs.writeFileSync(path.join(runDir, "AGENTS.md"), generatedAgents);
+  copied["AGENTS.md"] = "generated compact run workspace instructions";
 
   const rulesDir = path.join(workspaceRoot, "BI_TEST_RULES");
   if (fs.existsSync(rulesDir)) {
@@ -216,7 +233,8 @@ const buildPrompt = (runId: string, message: AgentMessage, runDir: string, input
     "- Treat this as an automated agent turn, not an interactive chat with Tommy.",
     "- Do not perform destructive operations.",
     "- If required input files or credentials are missing, report the missing prerequisites and exit cleanly.",
-    "- Follow the AGENTS.md copied into this run workspace. It contains the BI UAT execution discipline.",
+    "- Follow the generated AGENTS.md in this run workspace.",
+    "- The full project discipline is available at rules/PROJECT_AGENTS_FULL.md; BI rulebooks are under rules/BI_TEST_RULES/.",
     "- If you execute UAT cases, write the complete result workbook to the exact path listed below.",
     "- Keep the final response concise; the workbook and log are the primary artifacts.",
     "",
@@ -243,7 +261,9 @@ const buildPrompt = (runId: string, message: AgentMessage, runDir: string, input
     "- Preferred: create output/result.xlsx yourself with sheets named 索引, 測試案例, Bug.",
     "- 測試案例 sheet should include at minimum: 群組, 編號, 測試項目, 測試類型, 執行方式, 結果, 失敗分類, 詳細紀錄JSON.",
     "- If you cannot execute the real UAT, explain why; the agent will create a fallback summary workbook.",
-    "- For any user approval or SSO/manual blocker, emit a Tool Bridge block: [TOOL_REQUEST]{...}[/TOOL_REQUEST].",
+    "- Do not use Tool Bridge for missing testcase files; report the missing files and exit cleanly.",
+    "- For user approval or SSO/manual blockers, emit only supported actionable Tool Bridge types: irreversible_operation, ambiguity_decision, playwright_recovery.",
+    "- Every actionable Tool Bridge block must include request_id and use this envelope: [TOOL_REQUEST]{...}[/TOOL_REQUEST].",
     "",
     "Startup instruction:",
     instruction
@@ -291,6 +311,12 @@ const getToolRequestId = (request: unknown): string | null => {
   if (!request || typeof request !== "object" || Array.isArray(request)) return null;
   const requestId = (request as { request_id?: unknown }).request_id;
   return typeof requestId === "string" && requestId.trim() ? requestId : null;
+};
+
+const isActionableToolRequest = (request: unknown): boolean => {
+  if (!request || typeof request !== "object" || Array.isArray(request)) return false;
+  const type = (request as { type?: unknown }).type;
+  return type === "irreversible_operation" || type === "ambiguity_decision" || type === "playwright_recovery";
 };
 
 const buildToolResponsePrompt = (runId: string, message: AgentMessage): string => {
@@ -470,7 +496,8 @@ export const handleTaskDispatch = async (
     }
 
     const toolRequestParse = extractToolRequests(result.assistantText);
-    const validToolRequests = toolRequestParse.requests.filter((request) => request.valid);
+    const validToolRequests = toolRequestParse.requests.filter((request) => request.valid && isActionableToolRequest(request.data));
+    const diagnosticToolRequests = toolRequestParse.requests.filter((request) => request.valid && !isActionableToolRequest(request.data));
     writeJson(path.join(runDir, "output", "tool-requests.json"), toolRequestParse);
 
     const parseWarningCodes = [
@@ -483,6 +510,17 @@ export const handleTaskDispatch = async (
         {
           run_id: runId,
           text: `Tool Bridge parse warnings: ${parseWarningCodes.join(", ")}`
+        },
+        false
+      );
+    }
+
+    if (diagnosticToolRequests.length > 0) {
+      connection.send(
+        "run.stdout",
+        {
+          run_id: runId,
+          text: `uat-agent captured ${diagnosticToolRequests.length} diagnostic Tool Bridge request(s); continuing without waiting for PM response.`
         },
         false
       );
@@ -777,8 +815,19 @@ export const handleToolResponse = async (
     }
 
     const toolRequestParse = extractToolRequests(result.assistantText);
-    const validToolRequests = toolRequestParse.requests.filter((request) => request.valid);
+    const validToolRequests = toolRequestParse.requests.filter((request) => request.valid && isActionableToolRequest(request.data));
+    const diagnosticToolRequests = toolRequestParse.requests.filter((request) => request.valid && !isActionableToolRequest(request.data));
     writeJson(path.join(runDir, "output", "tool-requests-resume.json"), toolRequestParse);
+    if (diagnosticToolRequests.length > 0) {
+      connection.send(
+        "run.stdout",
+        {
+          run_id: runId,
+          text: `uat-agent captured ${diagnosticToolRequests.length} diagnostic Tool Bridge request(s) during resume; continuing without waiting for PM response.`
+        },
+        false
+      );
+    }
     if (validToolRequests.length > 0) {
       for (const request of validToolRequests) {
         connection.send(
