@@ -438,6 +438,15 @@
   padding: 2px 8px;
 }
 
+.agent-guidance {
+  color: var(--text-2);
+  background: #fff8f0;
+  border: 1px solid #fed7aa;
+  border-radius: var(--r-sm);
+  padding: 8px 10px;
+  font-size: 12px;
+}
+
 /* ─── Run List (Tab B-1 left) ─── */
 .run-list {
   display: flex;
@@ -728,6 +737,7 @@
 .log-entry .log-msg {
   color: var(--text-2);
   flex: 1;
+  overflow-wrap: anywhere;
 }
 
 /* ─── Run Detail Meta ─── */

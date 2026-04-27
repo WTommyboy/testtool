@@ -240,6 +240,7 @@ function App() {
     { PASS: 0, FAIL: 0, SKIPPED: 0 } as Record<AgentDoctorCheck["verdict"], number>
   ) ?? { PASS: 0, FAIL: 0, SKIPPED: 0 };
   const selectedAgentFailedChecks = selectedAgent?.doctorChecks.filter((check) => check.verdict === "FAIL") ?? [];
+  const selectedAgentMacPermissionCheck = selectedAgent?.doctorChecks.find((check) => check.name === "macos-ui-automation-permissions");
   const pendingApprovals = approvals.filter((x) => x.status === "PENDING");
   const getSelectedAgentBlockingReason = (): string | null => {
     if (runExecutionMode !== "interactive") return null;
@@ -461,6 +462,53 @@ function App() {
       )}
     </div>
   );
+
+  const renderRunLogCard = (maxHeight: number) => {
+    const timeline = [
+      ...runEvents.map((event) => {
+        let payloadText = event.payload_json || "";
+        if (event.payload) {
+          payloadText = typeof event.payload === "object" ? JSON.stringify(event.payload) : String(event.payload);
+        }
+        return {
+          id: `event-${event.id}`,
+          createdAt: event.created_at,
+          type: "event",
+          marker: event.event_type,
+          message: payloadText.slice(0, 260)
+        };
+      }),
+      ...runLogs.map((log) => ({
+        id: `log-${log.id}`,
+        createdAt: log.created_at,
+        type: "log",
+        marker: log.level,
+        message: log.message
+      }))
+    ].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+
+    return (
+      <div className="card mb-16">
+        <div className="card-header">
+          <h2>即時執行 Log / Events</h2>
+          <span className="count">Events {runEvents.length} / Logs {runLogs.length}</span>
+        </div>
+        <div className="scroll-y run-log-list" style={{ maxHeight }}>
+          {timeline.length === 0 ? (
+            <p className="muted" style={{ padding: 24, textAlign: "center" }}>尚未有執行事件</p>
+          ) : (
+            timeline.map((item) => (
+              <div className={`log-entry ${item.type === "event" ? "event-entry" : ""}`} key={item.id}>
+                <span className="log-time">{new Date(item.createdAt).toLocaleTimeString("zh-TW", { hour12: false })}</span>
+                <span className={item.type === "event" ? "event-type" : `log-level ${item.marker}`}>{item.marker}</span>
+                <span className="log-msg">{item.message || "—"}</span>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+    );
+  };
 
   const loadAuth = async () => {
     setAuthError("");
@@ -1270,6 +1318,11 @@ function App() {
                             ))}
                           </div>
                         ) : null}
+                        {selectedAgentMacPermissionCheck ? (
+                          <div className="agent-guidance">
+                            macOS 權限建議：Terminal / Codex / Google Chrome 開啟 Accessibility、Screen Recording、Automation。
+                          </div>
+                        ) : null}
                       </div>
                     ) : null}
                   </div>
@@ -1513,6 +1566,7 @@ function App() {
 
             {renderCaseResultsCard(340)}
           </div>
+          {renderRunLogCard(280)}
           {renderBugCard()}
         </section>
       ) : null}
@@ -1636,33 +1690,7 @@ function App() {
 
               {renderCaseResultsCard(280)}
               {renderBugCard()}
-
-              <div className="card">
-                <div className="card-header">
-                  <h2>執行事件</h2>
-                  <span className="count">Events {runEvents.length} / Logs {runLogs.length}</span>
-                </div>
-                <div className="scroll-y" style={{ maxHeight: 220 }}>
-                  {runEvents.map((event) => (
-                    <div className="log-entry event-entry" key={event.id}>
-                      <span className="log-time">{new Date(event.created_at).toLocaleTimeString("zh-TW", { hour12: false })}</span>
-                      <span className="event-type">{event.event_type}</span>
-                      <span className="log-msg">
-                        {typeof event.payload === "object" && event.payload
-                          ? JSON.stringify(event.payload).slice(0, 220)
-                          : event.payload_json?.slice(0, 220) || "—"}
-                      </span>
-                    </div>
-                  ))}
-                  {runLogs.map((log) => (
-                    <div className="log-entry" key={log.id}>
-                      <span className="log-time">{new Date(log.created_at).toLocaleTimeString("zh-TW", { hour12: false })}</span>
-                      <span className={`log-level ${log.level}`}>{log.level}</span>
-                      <span className="log-msg">{log.message}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
+              {renderRunLogCard(260)}
             </div>
           </div>
         </section>

@@ -19,6 +19,9 @@ export type CodexRunnerOptions = {
   timeoutMs?: number;
   playwrightCdpEndpoint?: string | null;
   playwrightOutputDir?: string | null;
+  onStdoutLine?: (line: string) => void;
+  onStderrLine?: (line: string) => void;
+  onJsonEvent?: (event: CodexJsonEvent, line: string) => void;
 };
 
 const parseJsonl = (stdout: string): { events: CodexJsonEvent[]; parseErrors: string[] } => {
@@ -54,6 +57,10 @@ const extractAssistantText = (events: CodexJsonEvent[]): string => {
 export class CodexRunner {
   private child: ChildProcess | null = null;
   private cancelReason: string | null = null;
+  private rawStdout = "";
+  private rawStderr = "";
+  private stdoutLineBuffer = "";
+  private stderrLineBuffer = "";
 
   constructor(private readonly options: CodexRunnerOptions) {}
 
@@ -82,6 +89,80 @@ export class CodexRunner {
     return this.cancelReason;
   }
 
+  getPartialResult(): CodexTurnResult {
+    const { events, parseErrors } = parseJsonl(this.rawStdout);
+    return {
+      threadId: extractThreadId(events),
+      assistantText: extractAssistantText(events),
+      events,
+      rawStdout: this.rawStdout,
+      parseErrors,
+      exitCode: null,
+      signal: null,
+      stderr: this.rawStderr
+    };
+  }
+
+  private emitStdoutChunk(chunk: Buffer): void {
+    const text = chunk.toString("utf8");
+    this.rawStdout += text;
+    this.stdoutLineBuffer += text;
+    this.stdoutLineBuffer = this.emitBufferedLines(this.stdoutLineBuffer, (line) => {
+      this.safeCall(() => this.options.onStdoutLine?.(line));
+      try {
+        const event = JSON.parse(line) as CodexJsonEvent;
+        this.safeCall(() => this.options.onJsonEvent?.(event, line));
+      } catch {
+        // The final parser records malformed JSONL lines. Streaming is best-effort.
+      }
+    });
+  }
+
+  private emitStderrChunk(chunk: Buffer): void {
+    const text = chunk.toString("utf8");
+    this.rawStderr += text;
+    this.stderrLineBuffer += text;
+    this.stderrLineBuffer = this.emitBufferedLines(this.stderrLineBuffer, (line) => {
+      this.safeCall(() => this.options.onStderrLine?.(line));
+    });
+  }
+
+  private flushLineBuffers(): void {
+    if (this.stdoutLineBuffer) {
+      const line = this.stdoutLineBuffer;
+      this.stdoutLineBuffer = "";
+      this.safeCall(() => this.options.onStdoutLine?.(line));
+      try {
+        const event = JSON.parse(line) as CodexJsonEvent;
+        this.safeCall(() => this.options.onJsonEvent?.(event, line));
+      } catch {
+        // The final parser records malformed JSONL lines. Streaming is best-effort.
+      }
+    }
+    if (this.stderrLineBuffer) {
+      const line = this.stderrLineBuffer;
+      this.stderrLineBuffer = "";
+      this.safeCall(() => this.options.onStderrLine?.(line));
+    }
+  }
+
+  private emitBufferedLines(buffer: string, emit: (line: string) => void): string {
+    const lines = buffer.split(/\r?\n/);
+    const remainder = lines.pop() ?? "";
+    for (const line of lines) {
+      if (line) emit(line);
+    }
+    return remainder;
+  }
+
+  private safeCall(callback: () => void): void {
+    try {
+      callback();
+    } catch {
+      // Progress callbacks must never crash or block the Codex child process.
+    }
+  }
+
   private configArgs(): string[] {
     if (!this.options.playwrightCdpEndpoint) return [];
     const playwrightArgs = [
@@ -105,17 +186,19 @@ export class CodexRunner {
       });
       this.child = child;
       this.cancelReason = null;
-      let stdout = "";
-      let stderr = "";
+      this.rawStdout = "";
+      this.rawStderr = "";
+      this.stdoutLineBuffer = "";
+      this.stderrLineBuffer = "";
       const timer = setTimeout(() => {
         this.cancel("timeout");
       }, this.options.timeoutMs ?? 30 * 60 * 1000);
 
       child.stdout.on("data", (chunk) => {
-        stdout += chunk.toString("utf8");
+        this.emitStdoutChunk(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
       });
       child.stderr.on("data", (chunk) => {
-        stderr += chunk.toString("utf8");
+        this.emitStderrChunk(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
       });
       child.on("error", (error) => {
         clearTimeout(timer);
@@ -125,16 +208,17 @@ export class CodexRunner {
       child.on("close", (exitCode, signal) => {
         clearTimeout(timer);
         this.child = null;
-        const { events, parseErrors } = parseJsonl(stdout);
+        this.flushLineBuffers();
+        const { events, parseErrors } = parseJsonl(this.rawStdout);
         resolve({
           threadId: extractThreadId(events),
           assistantText: extractAssistantText(events),
           events,
-          rawStdout: stdout,
+          rawStdout: this.rawStdout,
           parseErrors,
           exitCode,
           signal,
-          stderr
+          stderr: this.rawStderr
         });
       });
     });

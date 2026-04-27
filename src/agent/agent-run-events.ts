@@ -157,6 +157,12 @@ const handleAgentRunMessage = (agentId: string, message: AgentMessage): void => 
     return;
   }
 
+  if (message.type === "run.progress") {
+    insertRunEvent(runId, "run.progress", { agentId, payload: message.payload, text: textFromPayload(message) }, message.seq);
+    insertRunLog(runId, "INFO", textFromPayload(message), { agentId, type: message.type, context: message.payload.context });
+    return;
+  }
+
   if (message.type === "run.stderr") {
     insertRunEvent(runId, "run.stderr", { agentId, text: textFromPayload(message) }, message.seq);
     insertRunLog(runId, "WARN", textFromPayload(message), { agentId, type: message.type });
@@ -184,6 +190,12 @@ const handleAgentRunMessage = (agentId: string, message: AgentMessage): void => 
   if (message.type === "run.uploading_result") {
     insertRunEvent(runId, "result.upload_started", { agentId, payload: message.payload }, message.seq);
     insertRunLog(runId, "INFO", "Agent uploading result", { agentId, payload: message.payload });
+    return;
+  }
+
+  if (message.type === "run.partial_artifacts") {
+    insertRunEvent(runId, "result.partial_artifacts", { agentId, payload: message.payload }, message.seq);
+    insertRunLog(runId, "WARN", "Agent uploaded partial artifacts", { agentId, payload: message.payload });
     return;
   }
 

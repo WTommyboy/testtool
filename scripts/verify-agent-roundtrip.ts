@@ -448,6 +448,81 @@ const verifyAgentRunSnapshotIsRecorded = async (baseUrl: string): Promise<void> 
   ws.close();
 };
 
+const verifyAgentProgressAndPartialArtifactsAreRecorded = async (baseUrl: string): Promise<void> => {
+  const run = await postJson<{ id: string; status: string }>(baseUrl, "/api/runs", {
+    domain: "BI",
+    roundId: "ROUNDTRIP-PROGRESS-001",
+    location: "數據中心",
+    featureMain: "BI工具",
+    featureSub: "agent progress smoke",
+    runName: "Agent Progress Smoke",
+    devUrl: "https://example.com",
+    executionMode: "interactive"
+  });
+  assert.equal(run.status, "READY");
+
+  const token = await postBootstrapJson<{ token: string }>(baseUrl, "/api/agents/tokens", { deviceName: "Progress Agent" });
+  const wsUrl = baseUrl.replace(/^http/, "ws");
+  const ws = new WebSocket(`${wsUrl}/agent-ws`, {
+    headers: { Authorization: `Bearer ${token.token}` }
+  });
+  let seq = 1;
+  const send = (type: string, payload: JsonObject, ackRequired = false): void => {
+    ws.send(JSON.stringify({
+      id: `msg_progress_${seq}`,
+      seq: seq++,
+      type,
+      timestamp: new Date().toISOString(),
+      ack_required: ackRequired,
+      payload
+    }));
+  };
+
+  await new Promise<void>((resolve, reject) => {
+    ws.once("open", () => resolve());
+    ws.once("error", reject);
+  });
+  send("agent.online", {
+    device_name: "Progress Agent",
+    agent_version: "smoke",
+    status: "busy",
+    current_run_id: run.id
+  });
+  send("run.started", { run_id: run.id });
+  send("run.progress", {
+    run_id: run.id,
+    text: "Codex tool started: browser_click",
+    context: { codex_event_type: "item.started" }
+  });
+  send("run.partial_artifacts", {
+    run_id: run.id,
+    result_xlsx_path: "/tmp/result.xlsx",
+    log_path: "/tmp/agent.log",
+    result_xlsx_uploaded: true
+  });
+  await sleep(300);
+
+  const events = await requestJson<{ items: Array<{ event_type: string; payload: unknown }> }>(
+    baseUrl,
+    `/api/runs/${run.id}/events?limit=50`
+  );
+  assert.ok(events.items.some((event) => event.event_type === "run.progress"), "run.progress should be recorded as run event");
+  assert.ok(events.items.some((event) => event.event_type === "result.partial_artifacts"), "partial artifacts should be recorded as run event");
+
+  const logs = await requestJson<{ items: Array<{ message: string; level: string }> }>(
+    baseUrl,
+    `/api/runs/${run.id}/logs?limit=50`
+  );
+  assert.ok(logs.items.some((log) => (
+    log.level === "INFO" && log.message === "Codex tool started: browser_click"
+  )), "run.progress should be recorded as INFO log");
+  assert.ok(logs.items.some((log) => (
+    log.level === "WARN" && log.message === "Agent uploaded partial artifacts"
+  )), "partial artifacts should be recorded as WARN log");
+
+  ws.close();
+};
+
 const main = async (): Promise<void> => {
   const { child, baseUrl, tempDir } = await startServer();
   try {
@@ -456,6 +531,7 @@ const main = async (): Promise<void> => {
     await verifyAgentDisconnectMarksRunFailed(baseUrl);
     await verifyAgentHeartbeatTimeoutMarksRunFailed(baseUrl);
     await verifyAgentRunSnapshotIsRecorded(baseUrl);
+    await verifyAgentProgressAndPartialArtifactsAreRecorded(baseUrl);
     console.log("Agent roundtrip smoke passed.");
   } finally {
     await stopServer(child);

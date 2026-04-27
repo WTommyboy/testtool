@@ -71,11 +71,26 @@ export const runDoctor = async (config: AgentConfig): Promise<DoctorCheck[]> => 
     }),
     check("workdir-writable", ensureWritableDir(config.workdir_root), { dir: config.workdir_root }),
     check("chrome-profile-writable", ensureWritableDir(config.chrome_profile_dir), { dir: config.chrome_profile_dir }),
+    os.platform() === "darwin"
+      ? skipped("macos-ui-automation-permissions", {
+          reason: "macOS privacy grants cannot be changed programmatically by Agent doctor.",
+          required_for: "Visible Chrome automation, screen observation, and any desktop fallback interaction.",
+          recommended_apps: ["Terminal", "Codex", "Google Chrome"],
+          grant_in: [
+            "System Settings > Privacy & Security > Accessibility",
+            "System Settings > Privacy & Security > Screen Recording",
+            "System Settings > Privacy & Security > Automation"
+          ],
+          note: "Persistent Playwright CDP usually works without Accessibility, but visible UI/desktop recovery can stall if these grants are missing."
+        })
+      : skipped("macos-ui-automation-permissions", {
+          reason: "Not running on macOS."
+        }),
     check("codex-version", codexVersion.exitCode === 0, {
       version: codexVersion.stdout.trim() || codexVersion.stderr.trim()
     }),
     skipped("playwright-mcp-availability", {
-      reason: "M1 skeleton does not yet launch Codex with MCP doctor prompt"
+      reason: "Verified during live runs through persistent Chrome CDP; doctor does not launch a Codex MCP session."
     }),
     skipped("galaxy-sso-session", {
       reason: "Open Galaxy URL with persistent profile and ask Tommy to login/confirm"
