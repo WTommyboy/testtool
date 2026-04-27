@@ -31,14 +31,31 @@ export const insertRunEvent = (
   });
 };
 
-export const listRunEvents = (runId: string, limit: number): RunEvent[] => {
+export const listRunEvents = (runId: string, limit: number, afterId?: string): RunEvent[] => {
+  const afterRow = afterId
+    ? db.prepare("SELECT rowid FROM run_events WHERE run_id = ? AND id = ?").get(runId, afterId) as { rowid: number } | undefined
+    : undefined;
+  if (afterId && !afterRow) return [];
+  if (afterRow) {
+    return db
+      .prepare(
+        `
+          SELECT *
+          FROM run_events
+          WHERE run_id = ? AND rowid > ?
+          ORDER BY rowid ASC
+          LIMIT ?
+        `
+      )
+      .all(runId, afterRow.rowid, limit) as RunEvent[];
+  }
   return db
     .prepare(
       `
         SELECT *
         FROM run_events
         WHERE run_id = ?
-        ORDER BY created_at ASC, rowid ASC
+        ORDER BY rowid ASC
         LIMIT ?
       `
     )

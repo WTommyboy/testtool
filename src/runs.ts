@@ -1722,7 +1722,8 @@ router.get("/:id/events", (req, res) => {
   }
 
   const limit = Math.min(Number(req.query.limit ?? 200), 1000);
-  const items = listRunEvents(req.params.id, limit).map((event) => {
+  const afterId = typeof req.query.after_id === "string" ? req.query.after_id : undefined;
+  const items = listRunEvents(req.params.id, limit, afterId).map((event) => {
     let payload: unknown = null;
     try {
       payload = event.payload_json ? JSON.parse(event.payload_json) : null;
