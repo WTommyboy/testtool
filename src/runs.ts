@@ -359,6 +359,17 @@ const getRunInputUrls = (req: Request, runId: string, paths: RunInputPaths): Rec
   return urls;
 };
 
+const getDomainInputUrls = (req: Request, domain: string): Record<string, string> => {
+  const base = getRequestBaseUrl(req);
+  const encodedDomain = encodeURIComponent(domain || "BI");
+  return {
+    domain_rules: `${base}/api/domains/${encodedDomain}/rules`,
+    domain_schema: `${base}/api/domains/${encodedDomain}/schema`,
+    domain_result_adapter: `${base}/api/domains/${encodedDomain}/result-adapter`,
+    domain_startup_template: `${base}/api/domains/${encodedDomain}/startup-template`
+  };
+};
+
 const getRunOutputUrls = (req: Request, runId: string): Record<string, string> => {
   const base = getRequestBaseUrl(req);
   return {
@@ -1194,11 +1205,15 @@ router.post("/:id/dispatch-agent", (req, res) => {
   }
 
   try {
-    const inputUrls = getRunInputUrls(req, req.params.id, run as RunInputPaths);
+    const domain = String(run.domain ?? "BI");
+    const inputUrls = {
+      ...getDomainInputUrls(req, domain),
+      ...getRunInputUrls(req, req.params.id, run as RunInputPaths)
+    };
     const outputUrls = getRunOutputUrls(req, req.params.id);
     const message = agentRegistry.dispatchTask(parsed.data.agentId, {
       run_id: req.params.id,
-      domain: String(run.domain ?? "BI"),
+      domain,
       round_id: String(run.round_id ?? ""),
       execution_mode: String(run.execution_mode ?? "interactive"),
       dev_url: String(run.dev_url ?? ""),

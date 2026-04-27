@@ -41,7 +41,11 @@ const inputFileNameByKey: Record<string, string> = {
   xlsx: "testcase.xlsx",
   md: "testcase.md",
   startup_instruction: "startup_instruction.md",
-  baseline: "baseline.csv"
+  baseline: "baseline.csv",
+  domain_rules: "domain_AGENTS.md",
+  domain_schema: "domain_xlsx_schema.json",
+  domain_result_adapter: "domain_result_parser_adapter.json",
+  domain_startup_template: "domain_startup_prompt_template.md"
 };
 
 const getInputUrls = (message: AgentMessage): Record<string, string> => {
@@ -159,6 +163,8 @@ const buildPrompt = (runId: string, message: AgentMessage, runDir: string, input
   const roundId = getStringPayload(message, "round_id") ?? runId;
   const inputLines = Object.entries(inputs).map(([key, filePath]) => `- ${key}: ${filePath}`);
   const startupText = readTextSample(inputs.startup_instruction ?? inputs.md, 8000);
+  const domainRulesText = readTextSample(inputs.domain_rules, 8000);
+  const domainStartupTemplateText = readTextSample(inputs.domain_startup_template, 4000);
 
   return [
     "You are running inside the Galaxy UAT Tool Mac Agent.",
@@ -176,6 +182,12 @@ const buildPrompt = (runId: string, message: AgentMessage, runDir: string, input
     "",
     "Downloaded input files:",
     inputLines.length > 0 ? inputLines.join("\n") : "- none",
+    "",
+    "Domain startup template excerpt:",
+    domainStartupTemplateText || "(no domain startup template downloaded)",
+    "",
+    "Domain rules excerpt:",
+    domainRulesText || "(no domain rules downloaded)",
     "",
     "Startup instruction file excerpt:",
     startupText || "(no startup instruction file downloaded)",

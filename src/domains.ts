@@ -31,4 +31,20 @@ router.get("/:name/schema", (req, res) => {
   return res.type("application/json").send(content);
 });
 
+router.get("/:name/result-adapter", (req, res) => {
+  const pack = getDomainPack(req.params.name);
+  if (!pack) return res.status(404).json({ error: "DOMAIN_NOT_FOUND" });
+  const content = readDomainPackFile(req.params.name, "result_parser_adapter.json");
+  if (content === null) return res.status(409).json({ error: "DOMAIN_RESULT_ADAPTER_MISSING" });
+  return res.type("application/json").send(content);
+});
+
+router.get("/:name/startup-template", (req, res) => {
+  const pack = getDomainPack(req.params.name);
+  if (!pack) return res.status(404).json({ error: "DOMAIN_NOT_FOUND" });
+  const content = readDomainPackFile(req.params.name, "startup_prompt_template.md");
+  if (content === null) return res.status(409).json({ error: "DOMAIN_STARTUP_TEMPLATE_MISSING" });
+  return res.type("text/markdown").send(content);
+});
+
 export default router;
