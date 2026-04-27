@@ -60,6 +60,8 @@ const startServer = async (): Promise<{ child: ChildProcess; baseUrl: string; te
       DB_PATH: path.join(tempDir, "data", "uat.db"),
       STORAGE_ROOT: path.join(tempDir, "storage"),
       MAC_AGENT_BOOTSTRAP_TOKEN: "roundtrip-bootstrap-token",
+      MAC_AGENT_HEARTBEAT_TIMEOUT_MS: "1200",
+      MAC_AGENT_HEARTBEAT_SWEEP_INTERVAL_MS: "100",
       NODE_ENV: "development"
     },
     stdio: ["ignore", "pipe", "pipe"]
@@ -290,12 +292,76 @@ const verifyAgentDisconnectMarksRunFailed = async (baseUrl: string): Promise<voi
   )), "agent disconnect should insert an ERROR log");
 };
 
+const verifyAgentHeartbeatTimeoutMarksRunFailed = async (baseUrl: string): Promise<void> => {
+  const run = await postJson<{ id: string; status: string }>(baseUrl, "/api/runs", {
+    domain: "BI",
+    roundId: "ROUNDTRIP-STALE-001",
+    location: "數據中心",
+    featureMain: "BI工具",
+    featureSub: "agent heartbeat timeout smoke",
+    runName: "Agent Heartbeat Timeout Smoke",
+    devUrl: "https://example.com",
+    executionMode: "interactive"
+  });
+  assert.equal(run.status, "READY");
+
+  const token = await postJson<{ token: string }>(baseUrl, "/api/agents/tokens", { deviceName: "Stale Agent" });
+  const wsUrl = baseUrl.replace(/^http/, "ws");
+  const ws = new WebSocket(`${wsUrl}/agent-ws`, {
+    headers: { Authorization: `Bearer ${token.token}` }
+  });
+  let seq = 1;
+  const send = (type: string, payload: JsonObject, ackRequired = false): void => {
+    ws.send(JSON.stringify({
+      id: `msg_stale_${seq}`,
+      seq: seq++,
+      type,
+      timestamp: new Date().toISOString(),
+      ack_required: ackRequired,
+      payload
+    }));
+  };
+
+  await new Promise<void>((resolve, reject) => {
+    ws.once("open", () => resolve());
+    ws.once("error", reject);
+  });
+  send("agent.online", {
+    device_name: "Stale Agent",
+    agent_version: "smoke",
+    status: "busy",
+    current_run_id: run.id
+  });
+  send("run.started", { run_id: run.id });
+  await waitForRunStatus(baseUrl, run.id, "RUNNING");
+  await waitForRunStatus(baseUrl, run.id, "FAILED");
+
+  const events = await requestJson<{ items: Array<{ event_type: string; payload: unknown }> }>(
+    baseUrl,
+    `/api/runs/${run.id}/events?limit=50`
+  );
+  assert.ok(events.items.some((event) => {
+    const payload = event.payload && typeof event.payload === "object" && !Array.isArray(event.payload)
+      ? event.payload as Record<string, unknown>
+      : {};
+    return event.event_type === "run.interrupted" && payload.reason === "agent_lost" && payload.closeReason === "heartbeat_timeout";
+  }), "heartbeat timeout should insert run.interrupted event");
+
+  const agents = await requestJson<{ items: Array<{ deviceName: string }> }>(baseUrl, "/api/agents");
+  assert.equal(agents.items.some((agent) => agent.deviceName === "Stale Agent"), false);
+
+  if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
+    ws.close();
+  }
+};
+
 const main = async (): Promise<void> => {
   const { child, baseUrl, tempDir } = await startServer();
   try {
     await verifyDomainPackEndpoints(baseUrl);
     await verifyToolResponseRoundtrip(baseUrl);
     await verifyAgentDisconnectMarksRunFailed(baseUrl);
+    await verifyAgentHeartbeatTimeoutMarksRunFailed(baseUrl);
     console.log("Agent roundtrip smoke passed.");
   } finally {
     await stopServer(child);

@@ -91,6 +91,25 @@ class AgentRegistry {
     }
   }
 
+  sweepStale(maxAgeMs: number, nowMs = Date.now()): number {
+    let removed = 0;
+    for (const agent of [...this.agents.values()]) {
+      const lastSeenMs = Date.parse(agent.lastSeenAt);
+      if (!Number.isFinite(lastSeenMs) || nowMs - lastSeenMs <= maxAgeMs) continue;
+      try {
+        agent.socket.terminate();
+      } catch {
+        // Socket termination is best effort; registry cleanup still proceeds.
+      }
+      this.remove(agent.id, {
+        code: 1006,
+        reason: "heartbeat_timeout"
+      });
+      removed += 1;
+    }
+    return removed;
+  }
+
   updateHeartbeat(agentId: string, payload: Record<string, unknown>): void {
     const agent = this.agents.get(agentId);
     if (!agent) return;

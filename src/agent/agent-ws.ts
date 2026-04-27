@@ -5,6 +5,14 @@ import type { AgentMessage } from "../agent-protocol/messages";
 import { validateAgentToken } from "./agent-tokens";
 import { agentRegistry } from "./agent-registry";
 
+const parsePositiveInt = (value: string | undefined, fallback: number): number => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+};
+
+const heartbeatTimeoutMs = parsePositiveInt(process.env.MAC_AGENT_HEARTBEAT_TIMEOUT_MS, 75_000);
+const heartbeatSweepIntervalMs = parsePositiveInt(process.env.MAC_AGENT_HEARTBEAT_SWEEP_INTERVAL_MS, 30_000);
+
 const getAllowedToken = (): string | undefined => {
   return process.env.MAC_AGENT_BOOTSTRAP_TOKEN || process.env.AGENT_BOOTSTRAP_TOKEN;
 };
@@ -19,6 +27,11 @@ const isAuthorized = (authorization: string | undefined): boolean => {
 
 export const attachAgentWebSocketServer = (server: http.Server): WebSocketServer => {
   const wss = new WebSocketServer({ noServer: true });
+  const heartbeatSweepTimer = setInterval(() => {
+    agentRegistry.sweepStale(heartbeatTimeoutMs);
+  }, heartbeatSweepIntervalMs);
+  heartbeatSweepTimer.unref();
+  wss.on("close", () => clearInterval(heartbeatSweepTimer));
 
   server.on("upgrade", (request, socket, head) => {
     const url = new URL(request.url ?? "", "http://localhost");
