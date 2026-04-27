@@ -1146,10 +1146,29 @@ router.post("/:id/dispatch-agent", (req, res) => {
   if (!agent) {
     return res.status(404).json({ error: "AGENT_NOT_FOUND" });
   }
-  if (agent.status === "busy") {
+  if (agent.status !== "idle") {
     return res.status(409).json({
-      error: "AGENT_BUSY",
-      currentRunId: agent.currentRunId
+      error: agent.status === "busy" ? "AGENT_BUSY" : "AGENT_NOT_READY",
+      currentRunId: agent.currentRunId,
+      status: agent.status
+    });
+  }
+  if (agent.doctorOk === false) {
+    return res.status(409).json({
+      error: "AGENT_DOCTOR_FAILED",
+      failedChecks: agent.doctorChecks.filter((check) => check.verdict === "FAIL").map((check) => check.name)
+    });
+  }
+  if (agent.supportedTaskTypes.length > 0 && !agent.supportedTaskTypes.includes("uat_run")) {
+    return res.status(409).json({
+      error: "AGENT_UNSUPPORTED_TASK_TYPE",
+      supportedTaskTypes: agent.supportedTaskTypes
+    });
+  }
+  if (agent.supportedExecutionModes.length > 0 && !agent.supportedExecutionModes.includes("interactive")) {
+    return res.status(409).json({
+      error: "AGENT_UNSUPPORTED_EXECUTION_MODE",
+      supportedExecutionModes: agent.supportedExecutionModes
     });
   }
 
