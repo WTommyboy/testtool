@@ -18,6 +18,7 @@ export const migrate = (): void => {
     CREATE TABLE IF NOT EXISTS runs (
       id TEXT PRIMARY KEY,
       round_id TEXT NOT NULL,
+      domain TEXT NOT NULL DEFAULT 'BI',
       location TEXT NOT NULL,
       feature_main TEXT NOT NULL,
       feature_sub TEXT NOT NULL,
@@ -184,6 +185,9 @@ export const migrate = (): void => {
   }
   if (!hasColumn("runs", "execution_mode")) {
     db.exec("ALTER TABLE runs ADD COLUMN execution_mode TEXT NOT NULL DEFAULT 'offline'");
+  }
+  if (!hasColumn("runs", "domain")) {
+    db.exec("ALTER TABLE runs ADD COLUMN domain TEXT NOT NULL DEFAULT 'BI'");
   }
   if (!hasColumn("runs", "testcase_xlsx_path")) {
     db.exec("ALTER TABLE runs ADD COLUMN testcase_xlsx_path TEXT");

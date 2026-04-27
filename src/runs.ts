@@ -59,6 +59,7 @@ const ALLOWED_STATUS_TRANSITIONS: Record<string, string[]> = {
 };
 
 const createRunSchema = z.object({
+  domain: z.string().min(1).optional(),
   roundId: z.string().min(1),
   location: z.string().min(1),
   featureMain: z.string().min(1),
@@ -814,14 +815,15 @@ router.post(
     db.prepare(
       `
       INSERT INTO runs (
-        id, round_id, location, feature_main, feature_sub, run_name, dev_url, execution_mode, status, created_at, updated_at
+        id, round_id, domain, location, feature_main, feature_sub, run_name, dev_url, execution_mode, status, created_at, updated_at
       ) VALUES (
-        @id, @round_id, @location, @feature_main, @feature_sub, @run_name, @dev_url, @execution_mode, @status, @created_at, @updated_at
+        @id, @round_id, @domain, @location, @feature_main, @feature_sub, @run_name, @dev_url, @execution_mode, @status, @created_at, @updated_at
       )
       `
     ).run({
       id: runId,
       round_id: payload.roundId,
+      domain: payload.domain ?? "BI",
       location: payload.location,
       feature_main: payload.featureMain,
       feature_sub: payload.featureSub,
@@ -835,6 +837,7 @@ router.post(
 
     insertRunLog(runId, "INFO", "Run created", payload);
     insertRunEvent(runId, "run.created", {
+      domain: payload.domain ?? "BI",
       roundId: payload.roundId,
       location: payload.location,
       featureMain: payload.featureMain,
@@ -1195,7 +1198,7 @@ router.post("/:id/dispatch-agent", (req, res) => {
     const outputUrls = getRunOutputUrls(req, req.params.id);
     const message = agentRegistry.dispatchTask(parsed.data.agentId, {
       run_id: req.params.id,
-      domain: "BI",
+      domain: String(run.domain ?? "BI"),
       round_id: String(run.round_id ?? ""),
       execution_mode: String(run.execution_mode ?? "interactive"),
       dev_url: String(run.dev_url ?? ""),
