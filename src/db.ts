@@ -64,6 +64,16 @@ export const migrate = (): void => {
       FOREIGN KEY (run_id) REFERENCES runs(id)
     );
 
+    CREATE TABLE IF NOT EXISTS run_events (
+      id TEXT PRIMARY KEY,
+      run_id TEXT NOT NULL,
+      event_type TEXT NOT NULL,
+      seq INTEGER,
+      payload_json TEXT,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (run_id) REFERENCES runs(id)
+    );
+
     CREATE TABLE IF NOT EXISTS run_case_steps (
       id TEXT PRIMARY KEY,
       run_id TEXT NOT NULL,
@@ -136,6 +146,8 @@ export const migrate = (): void => {
     CREATE INDEX IF NOT EXISTS idx_run_cases_run_id ON run_cases(run_id);
     CREATE UNIQUE INDEX IF NOT EXISTS idx_run_cases_run_case_no ON run_cases(run_id, case_no);
     CREATE INDEX IF NOT EXISTS idx_run_logs_run_id ON run_logs(run_id);
+    CREATE INDEX IF NOT EXISTS idx_run_events_run_id ON run_events(run_id);
+    CREATE INDEX IF NOT EXISTS idx_run_events_event_type ON run_events(event_type);
     CREATE INDEX IF NOT EXISTS idx_run_case_steps_run_id ON run_case_steps(run_id);
     CREATE UNIQUE INDEX IF NOT EXISTS idx_run_case_steps_unique ON run_case_steps(run_id, case_no, step_no);
     CREATE INDEX IF NOT EXISTS idx_approvals_run_id ON approvals(run_id);

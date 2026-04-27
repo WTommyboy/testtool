@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { db } from "../db";
 import type { AgentMessage } from "../agent-protocol/messages";
+import { insertRunEvent } from "../run-events";
 import { agentRegistry } from "./agent-registry";
 
 let registered = false;
@@ -66,27 +67,32 @@ const handleAgentRunMessage = (agentId: string, message: AgentMessage): void => 
 
   if (message.type === "run.started") {
     setRunStatus(runId, "RUNNING");
+    insertRunEvent(runId, "run.started", { agentId, payload: message.payload }, message.seq);
     insertRunLog(runId, "INFO", "Agent run started", { agentId, payload: message.payload });
     return;
   }
 
   if (message.type === "run.stdout") {
+    insertRunEvent(runId, "run.stdout", { agentId, text: textFromPayload(message) }, message.seq);
     insertRunLog(runId, "INFO", textFromPayload(message), { agentId, type: message.type });
     return;
   }
 
   if (message.type === "run.stderr") {
+    insertRunEvent(runId, "run.stderr", { agentId, text: textFromPayload(message) }, message.seq);
     insertRunLog(runId, "WARN", textFromPayload(message), { agentId, type: message.type });
     return;
   }
 
   if (message.type === "run.tool_request") {
     setRunStatus(runId, "WAITING_APPROVAL");
+    insertRunEvent(runId, "tool_request.created", { agentId, payload: message.payload }, message.seq);
     insertRunLog(runId, "WARN", "Agent requested PM action", { agentId, payload: message.payload });
     return;
   }
 
   if (message.type === "run.uploading_result") {
+    insertRunEvent(runId, "result.upload_started", { agentId, payload: message.payload }, message.seq);
     insertRunLog(runId, "INFO", "Agent uploading result", { agentId, payload: message.payload });
     return;
   }
@@ -96,12 +102,14 @@ const handleAgentRunMessage = (agentId: string, message: AgentMessage): void => 
     if (!isTerminalStatus(currentStatus)) {
       setRunStatus(runId, "SUCCEEDED");
     }
+    insertRunEvent(runId, "run.completed", { agentId, payload: message.payload, currentStatus }, message.seq);
     insertRunLog(runId, "INFO", "Agent run completed", { agentId, payload: message.payload, currentStatus });
     return;
   }
 
   if (message.type === "run.cancelled") {
     setRunStatus(runId, "CANCELLED");
+    insertRunEvent(runId, "run.interrupted", { agentId, reason: "agent_cancelled", payload: message.payload }, message.seq);
     insertRunLog(runId, "WARN", "Agent run cancelled", { agentId, payload: message.payload });
     return;
   }
@@ -111,6 +119,7 @@ const handleAgentRunMessage = (agentId: string, message: AgentMessage): void => 
     if (!isTerminalStatus(currentStatus)) {
       setRunStatus(runId, "FAILED");
     }
+    insertRunEvent(runId, "run.failed", { agentId, type: message.type, payload: message.payload, currentStatus }, message.seq);
     insertRunLog(runId, "ERROR", "Agent run failed", { agentId, type: message.type, payload: message.payload, currentStatus });
   }
 };

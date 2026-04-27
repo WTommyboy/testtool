@@ -10,6 +10,7 @@ import { agentRegistry } from "./agent/agent-registry";
 import { db } from "./db";
 import { requestRunCancel, startRun } from "./runner";
 import { checkPlaywrightHealth } from "./playwright-health";
+import { insertRunEvent, listRunEvents } from "./run-events";
 import { parseTestcaseXlsx, type ParsedCase, type ParsedStep } from "./xlsx-parser";
 import {
   parseResultXlsx,
@@ -833,6 +834,13 @@ router.post(
     });
 
     insertRunLog(runId, "INFO", "Run created", payload);
+    insertRunEvent(runId, "run.created", {
+      roundId: payload.roundId,
+      location: payload.location,
+      featureMain: payload.featureMain,
+      featureSub: payload.featureSub,
+      executionMode: payload.executionMode ?? null
+    });
 
     const files = req.files as
       | {
@@ -881,6 +889,12 @@ router.post(
           importedSteps: imported.steps.length,
           manualCases
         });
+        insertRunEvent(runId, "input.xlsx_parsed", {
+          sourceMode,
+          importedCases: imported.cases.length,
+          importedSteps: imported.steps.length,
+          manualCases
+        });
       } catch (error) {
         db.prepare("DELETE FROM runs WHERE id = ?").run(runId);
         return res.status(400).json({
@@ -890,6 +904,10 @@ router.post(
       }
     } else {
       insertRunLog(runId, "INFO", "Run created from conversation mode", {
+        sourceMode,
+        conversationId: body.conversationId ?? null
+      });
+      insertRunEvent(runId, "input.conversation_created", {
         sourceMode,
         conversationId: body.conversationId ?? null
       });
@@ -1192,6 +1210,13 @@ router.post("/:id/dispatch-agent", (req, res) => {
     });
 
     setRunStatusWithMeta(req.params.id, "RUNNING");
+    insertRunEvent(req.params.id, "task.dispatched", {
+      agentId: parsed.data.agentId,
+      deviceName: agent.deviceName,
+      messageId: message.id,
+      inputUrls: Object.keys(inputUrls),
+      outputUrls: Object.keys(outputUrls)
+    }, message.seq);
     insertRunLog(req.params.id, "INFO", "Run dispatched to Mac Agent", {
       agentId: parsed.data.agentId,
       deviceName: agent.deviceName,
@@ -1225,6 +1250,7 @@ router.post("/:id/cancel", (req, res) => {
 
   requestRunCancel(req.params.id);
   setRunStatusWithMeta(req.params.id, "CANCELLED");
+  insertRunEvent(req.params.id, "run.interrupted", { reason: "pm_cancelled" });
   insertRunLog(req.params.id, "WARN", "Run cancel requested");
   const agent = agentRegistry.findByCurrentRunId(req.params.id);
   if (agent) {
@@ -1243,8 +1269,17 @@ router.post("/:id/cancel", (req, res) => {
         deviceName: agent.deviceName,
         messageId: message.id
       });
+      insertRunEvent(req.params.id, "task.cancelled", {
+        agentId: agent.id,
+        deviceName: agent.deviceName,
+        messageId: message.id
+      }, message.seq);
     } catch (error) {
       insertRunLog(req.params.id, "ERROR", "Cancel dispatch to Mac Agent failed", {
+        agentId: agent.id,
+        error: error instanceof Error ? error.message : String(error)
+      });
+      insertRunEvent(req.params.id, "task.cancel_failed", {
         agentId: agent.id,
         error: error instanceof Error ? error.message : String(error)
       });
@@ -1454,9 +1489,16 @@ router.post("/:id/output/result-xlsx", resultUpload.single("resultXlsx"), async 
     originalName: req.file.originalname,
     parserVersion: RESULT_XLSX_PARSER_VERSION
   });
+  insertRunEvent(runId, "result.uploaded", {
+    filePath: req.file.path,
+    originalName: req.file.originalname,
+    parserVersion: RESULT_XLSX_PARSER_VERSION
+  });
 
   try {
+    insertRunEvent(runId, "result.ingest_started", { filePath: req.file.path });
     const result = await ingestResultXlsx(runId, req.file.path);
+    insertRunEvent(runId, "result.ingested", result);
     insertRunLog(runId, "INFO", "Agent result xlsx ingested", result);
     return res.status(201).json({
       runId,
@@ -1465,6 +1507,10 @@ router.post("/:id/output/result-xlsx", resultUpload.single("resultXlsx"), async 
     });
   } catch (error) {
     setRunStatusWithMeta(runId, "FAILED");
+    insertRunEvent(runId, "result.ingest_failed", {
+      filePath: req.file.path,
+      error: error instanceof Error ? error.message : String(error)
+    });
     insertRunLog(runId, "ERROR", "Agent result xlsx ingest failed", {
       filePath: req.file.path,
       error: error instanceof Error ? error.message : String(error)
@@ -1488,7 +1534,9 @@ router.post("/:id/ingest-result", async (req, res) => {
   }
 
   try {
+    insertRunEvent(runId, "result.ingest_started", { filePath: run.result_xlsx_path, source: "manual" });
     const result = await ingestResultXlsx(runId, run.result_xlsx_path);
+    insertRunEvent(runId, "result.ingested", { ...result, source: "manual" });
     insertRunLog(runId, "INFO", "Result xlsx manually re-ingested", result);
     return res.json({
       runId,
@@ -1496,6 +1544,11 @@ router.post("/:id/ingest-result", async (req, res) => {
       ...result
     });
   } catch (error) {
+    insertRunEvent(runId, "result.ingest_failed", {
+      filePath: run.result_xlsx_path,
+      source: "manual",
+      error: error instanceof Error ? error.message : String(error)
+    });
     insertRunLog(runId, "ERROR", "Result xlsx manual ingest failed", {
       filePath: run.result_xlsx_path,
       error: error instanceof Error ? error.message : String(error)
@@ -1659,6 +1712,25 @@ router.get("/:id/logs", (req, res) => {
   const items = db
     .prepare("SELECT * FROM run_logs WHERE run_id = ? ORDER BY created_at ASC LIMIT ?")
     .all(req.params.id, limit);
+  return res.json({ items });
+});
+
+router.get("/:id/events", (req, res) => {
+  const run = getRun(req.params.id);
+  if (!run) {
+    return res.status(404).json({ error: "RUN_NOT_FOUND" });
+  }
+
+  const limit = Math.min(Number(req.query.limit ?? 200), 1000);
+  const items = listRunEvents(req.params.id, limit).map((event) => {
+    let payload: unknown = null;
+    try {
+      payload = event.payload_json ? JSON.parse(event.payload_json) : null;
+    } catch {
+      payload = event.payload_json;
+    }
+    return { ...event, payload };
+  });
   return res.json({ items });
 });
 
