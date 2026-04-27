@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
+import { execFileSync } from "node:child_process";
 import cors from "cors";
 import express from "express";
 import type { NextFunction, Request, Response } from "express";
@@ -19,11 +20,66 @@ const ensureDirectory = (dirPath: string): void => {
   fs.mkdirSync(path.resolve(dirPath), { recursive: true });
 };
 
+const readPackageVersion = (): string | null => {
+  try {
+    const packageJsonPath = path.resolve(process.cwd(), "package.json");
+    const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, "utf8")) as { version?: unknown };
+    return typeof packageJson.version === "string" ? packageJson.version : null;
+  } catch {
+    return null;
+  }
+};
+
+const readLocalGitCommit = (): string | null => {
+  try {
+    return execFileSync("git", ["rev-parse", "HEAD"], {
+      cwd: process.cwd(),
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"]
+    }).trim();
+  } catch {
+    return null;
+  }
+};
+
+const compactObject = <T extends Record<string, unknown>>(value: T): Partial<T> => {
+  return Object.fromEntries(
+    Object.entries(value).filter(([, item]) => item !== undefined && item !== null && item !== "")
+  ) as Partial<T>;
+};
+
+const buildVersionInfo = () => {
+  const commitSha = process.env.RAILWAY_GIT_COMMIT_SHA
+    ?? process.env.VERCEL_GIT_COMMIT_SHA
+    ?? process.env.GIT_COMMIT_SHA
+    ?? readLocalGitCommit();
+
+  const branch = process.env.RAILWAY_GIT_BRANCH
+    ?? process.env.VERCEL_GIT_COMMIT_REF
+    ?? process.env.GIT_BRANCH;
+
+  return compactObject({
+    appVersion: readPackageVersion(),
+    commitSha,
+    shortCommitSha: commitSha ? commitSha.slice(0, 7) : undefined,
+    branch,
+    deploymentId: process.env.RAILWAY_DEPLOYMENT_ID ?? process.env.VERCEL_DEPLOYMENT_ID,
+    serviceId: process.env.RAILWAY_SERVICE_ID,
+    serviceName: process.env.RAILWAY_SERVICE_NAME,
+    environmentId: process.env.RAILWAY_ENVIRONMENT_ID,
+    environmentName: process.env.RAILWAY_ENVIRONMENT_NAME,
+    projectId: process.env.RAILWAY_PROJECT_ID,
+    region: process.env.RAILWAY_REGION,
+    buildTime: process.env.BUILD_TIME
+  });
+};
+
 ensureDirectory(config.storageRoot);
 migrate();
 registerAgentRunEventHandlers();
 
 const app = express();
+const versionInfo = buildVersionInfo();
 
 const allowedOrigins = getAllowedAppOrigins();
 app.use(cors({
@@ -61,7 +117,17 @@ app.get("/health", (_req, res) => {
     service: "uat-tool-api",
     timestamp: new Date().toISOString(),
     nodeEnv: config.nodeEnv,
-    timezone: config.defaultTimezone
+    timezone: config.defaultTimezone,
+    version: versionInfo
+  });
+});
+
+app.get("/version", (_req, res) => {
+  res.json({
+    service: "uat-tool-api",
+    nodeEnv: config.nodeEnv,
+    timezone: config.defaultTimezone,
+    version: versionInfo
   });
 });
 
