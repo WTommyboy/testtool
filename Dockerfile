@@ -31,6 +31,7 @@ RUN npm ci
 
 COPY tsconfig.json ./
 COPY src ./src
+COPY domain-packs ./domain-packs
 COPY README.md ./
 
 RUN npm run build
