@@ -15,6 +15,11 @@ const printJson = (value: unknown): void => {
   process.stdout.write(`${JSON.stringify(value, null, 2)}\n`);
 };
 
+const getPayloadRunId = (message: { payload: Record<string, unknown> }): string | null => {
+  const runId = message.payload.run_id;
+  return typeof runId === "string" && runId.trim() ? runId : null;
+};
+
 const usage = (): void => {
   process.stdout.write(`uat-agent commands:
   login --server <wss-url> --token <agent-token> [--device-name <name>]
@@ -63,6 +68,7 @@ const main = async (): Promise<void> => {
   if (command === "start") {
     const config = readConfig();
     ensureAgentDirectories(config);
+    let activeTask: { runId: string; cancel: (reason?: string) => void } | null = null;
     const connection = new AgentConnection({
       config,
       onStatus: (status, detail) => {
@@ -70,8 +76,40 @@ const main = async (): Promise<void> => {
       },
       onMessage: (message) => {
         printJson({ event: "message", type: message.type, id: message.id });
+        if (message.type === "task.cancel") {
+          const runId = getPayloadRunId(message);
+          const reason = typeof message.payload.reason === "string" ? message.payload.reason : "cancelled_by_pm";
+          if (activeTask && (!runId || activeTask.runId === runId)) {
+            activeTask.cancel(reason);
+            printJson({ event: "task_cancelled", runId: activeTask.runId, reason });
+          } else {
+            printJson({ event: "task_cancel_ignored", runId, reason, activeRunId: activeTask?.runId ?? null });
+          }
+          return;
+        }
         if (message.type === "task.dispatch") {
-          void handleTaskDispatch(connection, config, message).catch((error) => {
+          const runId = getPayloadRunId(message);
+          if (activeTask) {
+            connection.send(
+              "run.rejected",
+              {
+                run_id: runId ?? "unknown",
+                reason: "AGENT_BUSY",
+                current_run_id: activeTask.runId
+              },
+              true
+            );
+            return;
+          }
+          void handleTaskDispatch(connection, config, message, {
+            onCancelReady: (readyRunId, cancel) => {
+              activeTask = { runId: readyRunId, cancel };
+            },
+            onCancelClear: (doneRunId) => {
+              if (activeTask?.runId === doneRunId) activeTask = null;
+            }
+          }).catch((error) => {
+            if (runId && activeTask?.runId === runId) activeTask = null;
             printJson({
               event: "task_error",
               type: message.type,

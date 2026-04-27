@@ -100,9 +100,18 @@ const handleAgentRunMessage = (agentId: string, message: AgentMessage): void => 
     return;
   }
 
+  if (message.type === "run.cancelled") {
+    setRunStatus(runId, "CANCELLED");
+    insertRunLog(runId, "WARN", "Agent run cancelled", { agentId, payload: message.payload });
+    return;
+  }
+
   if (message.type === "run.failed" || message.type === "run.rejected") {
-    setRunStatus(runId, "FAILED");
-    insertRunLog(runId, "ERROR", "Agent run failed", { agentId, type: message.type, payload: message.payload });
+    const currentStatus = getRunStatus(runId);
+    if (!isTerminalStatus(currentStatus)) {
+      setRunStatus(runId, "FAILED");
+    }
+    insertRunLog(runId, "ERROR", "Agent run failed", { agentId, type: message.type, payload: message.payload, currentStatus });
   }
 };
 

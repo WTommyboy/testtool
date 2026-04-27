@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { spawn, type ChildProcess } from "node:child_process";
 
 export type CodexJsonEvent = Record<string, unknown>;
 
@@ -49,55 +49,84 @@ const extractAssistantText = (events: CodexJsonEvent[]): string => {
     .join("\n");
 };
 
-const runCodex = (
-  args: string[],
-  options: CodexRunnerOptions
-): Promise<CodexTurnResult> => {
-  return new Promise((resolve, reject) => {
-    const child = spawn(options.codexBin, args, {
-      cwd: options.cwd,
-      env: { ...process.env, NO_COLOR: "1" },
-      stdio: ["ignore", "pipe", "pipe"]
-    });
-    let stdout = "";
-    let stderr = "";
-    const timer = setTimeout(() => {
-      child.kill("SIGTERM");
-      setTimeout(() => child.kill("SIGKILL"), 3_000).unref();
-    }, options.timeoutMs ?? 30 * 60 * 1000);
-
-    child.stdout.on("data", (chunk) => {
-      stdout += chunk.toString("utf8");
-    });
-    child.stderr.on("data", (chunk) => {
-      stderr += chunk.toString("utf8");
-    });
-    child.on("error", (error) => {
-      clearTimeout(timer);
-      reject(error);
-    });
-    child.on("close", (exitCode, signal) => {
-      clearTimeout(timer);
-      const { events, parseErrors } = parseJsonl(stdout);
-      resolve({
-        threadId: extractThreadId(events),
-        assistantText: extractAssistantText(events),
-        events,
-        rawStdout: stdout,
-        parseErrors,
-        exitCode,
-        signal,
-        stderr
-      });
-    });
-  });
-};
-
 export class CodexRunner {
+  private child: ChildProcess | null = null;
+  private cancelReason: string | null = null;
+
   constructor(private readonly options: CodexRunnerOptions) {}
 
+  private killActiveChild(signal: NodeJS.Signals): void {
+    if (!this.child || this.child.killed) return;
+    if (typeof this.child.pid === "number") {
+      try {
+        process.kill(-this.child.pid, signal);
+        return;
+      } catch {
+        // Fall back to killing the direct child if process-group kill is unavailable.
+      }
+    }
+    this.child.kill(signal);
+  }
+
+  cancel(reason = "cancelled"): void {
+    this.cancelReason = reason;
+    this.killActiveChild("SIGTERM");
+    setTimeout(() => {
+      this.killActiveChild("SIGKILL");
+    }, 3_000).unref();
+  }
+
+  getCancelReason(): string | null {
+    return this.cancelReason;
+  }
+
+  private run(args: string[]): Promise<CodexTurnResult> {
+    return new Promise((resolve, reject) => {
+      const child = spawn(this.options.codexBin, args, {
+        cwd: this.options.cwd,
+        env: { ...process.env, NO_COLOR: "1" },
+        detached: true,
+        stdio: ["ignore", "pipe", "pipe"]
+      });
+      this.child = child;
+      this.cancelReason = null;
+      let stdout = "";
+      let stderr = "";
+      const timer = setTimeout(() => {
+        this.cancel("timeout");
+      }, this.options.timeoutMs ?? 30 * 60 * 1000);
+
+      child.stdout.on("data", (chunk) => {
+        stdout += chunk.toString("utf8");
+      });
+      child.stderr.on("data", (chunk) => {
+        stderr += chunk.toString("utf8");
+      });
+      child.on("error", (error) => {
+        clearTimeout(timer);
+        this.child = null;
+        reject(error);
+      });
+      child.on("close", (exitCode, signal) => {
+        clearTimeout(timer);
+        this.child = null;
+        const { events, parseErrors } = parseJsonl(stdout);
+        resolve({
+          threadId: extractThreadId(events),
+          assistantText: extractAssistantText(events),
+          events,
+          rawStdout: stdout,
+          parseErrors,
+          exitCode,
+          signal,
+          stderr
+        });
+      });
+    });
+  }
+
   start(prompt: string): Promise<CodexTurnResult> {
-    return runCodex(
+    return this.run(
       [
         "exec",
         "--json",
@@ -107,12 +136,11 @@ export class CodexRunner {
         "-C",
         this.options.cwd,
         prompt
-      ],
-      this.options
+      ]
     );
   }
 
   resume(threadId: string, prompt: string): Promise<CodexTurnResult> {
-    return runCodex(["exec", "resume", "--json", threadId, prompt], this.options);
+    return this.run(["exec", "resume", "--json", threadId, prompt]);
   }
 }

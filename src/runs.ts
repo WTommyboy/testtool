@@ -1207,6 +1207,30 @@ router.post("/:id/cancel", (req, res) => {
   requestRunCancel(req.params.id);
   setRunStatusWithMeta(req.params.id, "CANCELLED");
   insertRunLog(req.params.id, "WARN", "Run cancel requested");
+  const agent = agentRegistry.findByCurrentRunId(req.params.id);
+  if (agent) {
+    try {
+      const message = agentRegistry.send(
+        agent.id,
+        "task.cancel",
+        {
+          run_id: req.params.id,
+          reason: "cancelled_by_pm"
+        },
+        true
+      );
+      insertRunLog(req.params.id, "WARN", "Cancel dispatched to Mac Agent", {
+        agentId: agent.id,
+        deviceName: agent.deviceName,
+        messageId: message.id
+      });
+    } catch (error) {
+      insertRunLog(req.params.id, "ERROR", "Cancel dispatch to Mac Agent failed", {
+        agentId: agent.id,
+        error: error instanceof Error ? error.message : String(error)
+      });
+    }
+  }
 
   return res.json({
     id: req.params.id,

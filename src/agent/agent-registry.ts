@@ -115,6 +115,13 @@ class AgentRegistry {
     return snapshot;
   }
 
+  findByCurrentRunId(runId: string): AgentSnapshot | undefined {
+    const agent = [...this.agents.values()].find((item) => item.currentRunId === runId);
+    if (!agent) return undefined;
+    const { socket: _socket, serverSeq: _serverSeq, ...snapshot } = agent;
+    return snapshot;
+  }
+
   onMessage(listener: AgentMessageListener): () => void {
     this.listeners.add(listener);
     return () => {
@@ -175,7 +182,7 @@ class AgentRegistry {
         agent.currentRunId = typeof message.payload.run_id === "string" ? message.payload.run_id : agent.currentRunId;
       }
     }
-    if (["run.completed", "run.failed", "run.rejected"].includes(message.type)) {
+    if (["run.completed", "run.failed", "run.rejected", "run.cancelled"].includes(message.type)) {
       const agent = this.agents.get(agentId);
       if (agent) {
         agent.status = "idle";

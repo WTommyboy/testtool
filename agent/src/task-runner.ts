@@ -32,6 +32,11 @@ const writeJson = (filePath: string, value: unknown): void => {
 
 type DownloadedInputs = Record<string, string>;
 
+export type TaskDispatchHooks = {
+  onCancelReady?: (runId: string, cancel: (reason?: string) => void) => void;
+  onCancelClear?: (runId: string) => void;
+};
+
 const inputFileNameByKey: Record<string, string> = {
   xlsx: "testcase.xlsx",
   md: "testcase.md",
@@ -263,7 +268,8 @@ const summarizeStderr = (stderr: string): string => {
 export const handleTaskDispatch = async (
   connection: AgentConnection,
   config: AgentConfig,
-  message: AgentMessage
+  message: AgentMessage,
+  hooks: TaskDispatchHooks = {}
 ): Promise<void> => {
   const runId = getRunId(message);
   const runDir = ensureRunWorkspace(config, runId);
@@ -303,7 +309,26 @@ export const handleTaskDispatch = async (
       codexBin: config.codex_bin,
       cwd: runDir
     });
+    hooks.onCancelReady?.(runId, (reason = "cancelled_by_pm") => {
+      runner.cancel(reason);
+      try {
+        connection.send(
+          "run.stderr",
+          {
+            run_id: runId,
+            text: `uat-agent cancellation requested: ${reason}`
+          },
+          false
+        );
+      } catch {
+        // Cancellation must still kill Codex even if the WebSocket is already closing.
+      }
+    });
     const result = await runner.start(buildPrompt(runId, message, runDir, downloadedInputs));
+    const cancelReason = runner.getCancelReason();
+    if (cancelReason) {
+      throw new Error(`CODEX_RUN_CANCELLED reason=${cancelReason}`);
+    }
     fs.writeFileSync(path.join(runDir, "codex.log"), result.rawStdout);
     fs.writeFileSync(path.join(runDir, "codex.stderr.log"), result.stderr);
     writeJson(path.join(runDir, "output", "codex-result.json"), {
@@ -455,22 +480,25 @@ export const handleTaskDispatch = async (
       true
     );
   } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    const cancelled = errorMessage.startsWith("CODEX_RUN_CANCELLED");
     writeJson(path.join(runDir, "state.json"), {
       run_id: runId,
-      status: "failed",
+      status: cancelled ? "cancelled" : "failed",
       failed_at: new Date().toISOString(),
-      error: error instanceof Error ? error.message : String(error)
+      error: errorMessage
     });
     connection.send(
-      "run.failed",
+      cancelled ? "run.cancelled" : "run.failed",
       {
         run_id: runId,
-        error: error instanceof Error ? error.message : String(error),
+        error: errorMessage,
         workdir: runDir
       },
       true
     );
   } finally {
+    hooks.onCancelClear?.(runId);
     connection.setRunState("idle", null);
   }
 };
