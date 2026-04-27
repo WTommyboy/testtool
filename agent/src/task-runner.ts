@@ -50,6 +50,28 @@ const copyDirectoryIfExists = (source: string, target: string): boolean => {
   return true;
 };
 
+const copyBiDataContext = (workspaceRoot: string, runDir: string, copied: Record<string, string>): string | null => {
+  const sourceDir = path.join(workspaceRoot, "BI_DATA");
+  if (!fs.existsSync(sourceDir) || !fs.statSync(sourceDir).isDirectory()) return null;
+
+  let canonicalMetadataPath: string | null = null;
+  for (const entry of fs.readdirSync(sourceDir, { withFileTypes: true })) {
+    if (!entry.isFile() || !entry.name.toLowerCase().endsWith(".csv")) continue;
+    const source = path.join(sourceDir, entry.name);
+    const target = path.join(runDir, "rules", "BI_DATA", entry.name);
+    if (copyIfExists(source, target)) {
+      copied[`BI_DATA/${entry.name}`] = source;
+      if (!canonicalMetadataPath && /metadata/i.test(entry.name)) {
+        canonicalMetadataPath = path.join(runDir, "rules", "BI_DATA", "metadata.csv");
+        copyIfExists(source, canonicalMetadataPath);
+        copied["BI_DATA/metadata.csv"] = source;
+      }
+    }
+  }
+
+  return canonicalMetadataPath;
+};
+
 const findPlatformSkillDir = (workspaceRoot: string): string | null => {
   const candidates = [
     path.join(process.cwd(), "agent-skills", "uat-tool"),
@@ -88,6 +110,7 @@ const prepareCodexContext = (config: AgentConfig, runDir: string): void => {
     "Domain context:",
     "- The current BI domain source is copied to `rules/PROJECT_AGENTS_FULL.md` for reference.",
     "- BI testing rulebooks are copied under `rules/BI_TEST_RULES/`.",
+    "- BI metadata CSV, when available locally, is copied to `rules/BI_DATA/metadata.csv`.",
     "- Domain pack files downloaded from the API are in `input/`.",
     "",
     "Run rules:",
@@ -113,8 +136,11 @@ const prepareCodexContext = (config: AgentConfig, runDir: string): void => {
     }
   }
 
+  const biMetadataCsv = copyBiDataContext(workspaceRoot, runDir, copied);
+
   writeJson(path.join(runDir, "input", "codex-context.json"), {
     codex_workspace_root: workspaceRoot,
+    bi_metadata_csv: biMetadataCsv,
     copied_context: copied
   });
 };
@@ -130,6 +156,8 @@ const writeRunBrief = (
   const roundId = getStringPayload(message, "round_id") ?? runId;
   const devUrl = getStringPayload(message, "dev_url") ?? "(missing)";
   const resultXlsxPath = path.join(runDir, "output", "result.xlsx");
+  const biMetadataCsvPath = path.join(runDir, "rules", "BI_DATA", "metadata.csv");
+  const biMetadataCsv = fs.existsSync(biMetadataCsvPath) ? biMetadataCsvPath : null;
   const inputLines = Object.entries(inputs).map(([key, filePath]) => `- ${key}: ${filePath}`);
   const briefPath = path.join(runDir, "input", "run-brief.md");
   const content = [
@@ -154,6 +182,7 @@ const writeRunBrief = (
     `- bi_ui_helper_guidance: ${guides.biUiHelperGuidancePath}`,
     `- preflight_auth_check: ${guides.preflightGuidancePath}`,
     `- run_state: ${guides.runStatePath}`,
+    `- bi_metadata_csv: ${biMetadataCsv ?? "(not copied; use uploaded/reference docs only)"}`,
     "",
     "## Required Inputs",
     inputLines.length > 0 ? inputLines.join("\n") : "- none",
@@ -175,8 +204,11 @@ const writeRunBrief = (
     "2. Read `input/preflight-auth-check.md` and perform only the auth/reachability preflight before deep domain rule loading.",
     "3. Read `input/current-case.json` and `input/run-state.json`. If startup instruction explicitly requested a starting case, Agent has already aligned current-case.json to that request.",
     "4. Read `input/rule-index.json` and load only the smallest rule file required for the current decision.",
-    "5. For BI UI operations, read `input/bi-ui-helper-guidance.md` before exploring the page from scratch.",
-    "6. Execute one case at a time, write evidence/result for that case, then move to the next case JSON if needed.",
+    biMetadataCsv
+      ? "5. If the current BI case needs metadata counts, use the copied `rules/BI_DATA/metadata.csv`; do not search the workspace for another metadata source first."
+      : "5. If the current BI case needs metadata counts and no baseline/reference CSV is downloaded, use uploaded supporting docs before doing broad filesystem searches.",
+    "6. For BI UI operations, read `input/bi-ui-helper-guidance.md` before exploring the page from scratch.",
+    "7. Execute one case at a time, write evidence/result for that case, then move to the next case JSON if needed.",
     "",
     "## Hard Gates",
     "- No trusted PASS/FAIL without current-run evidence.",
@@ -186,6 +218,7 @@ const writeRunBrief = (
     "- Speed optimizations must never merge multiple testcase executions into one tool call or one result write.",
     "- `input/run-state.json` defines allowed carryover. Evidence from a previous case is isolated and cannot prove a later case.",
     "- Prefer structured evidence first: DOM read, network observation, chart/table data. Use screenshots for Tool Bridge, FAIL/bug, major state transitions, and final evidence.",
+    "- If structured DOM/network evidence already proves the result and a screenshot times out, do not repeatedly retry full-page screenshots. Try at most one smaller screenshot; if that also fails, record screenshot_unavailable_reason and continue.",
     "",
     "## Tool Bridge Schemas",
     '- Irreversible: [TOOL_REQUEST]{"type":"irreversible_operation","request_id":"<run-id>-<case-no>-<slug>","case":"<case-no>","action":"<short action>","reason":"<why approval is required>","proposed_action":"<exact PM-approved action>"}[/TOOL_REQUEST]',
@@ -412,6 +445,8 @@ const buildPrompt = (
   const resultXlsxPath = path.join(runDir, "output", "result.xlsx");
   const runBriefPath = path.join(runDir, "input", "run-brief.md");
   const platformSkillPath = path.join(runDir, "agent-skills", "uat-tool", "SKILL.md");
+  const biMetadataCsvPath = path.join(runDir, "rules", "BI_DATA", "metadata.csv");
+  const biMetadataCsv = fs.existsSync(biMetadataCsvPath) ? biMetadataCsvPath : null;
 
   return [
     "You are executing a Galaxy UAT Tool run inside the Mac Agent.",
@@ -444,6 +479,7 @@ const buildPrompt = (
     "- If startup instruction names a starting case, Agent resolves that into `current-case.json`; do not emit ambiguity merely because the workbook contains earlier cases.",
     "- Use only `input/run-state.json` allowed carryover. Prior workbook rows and previous-case evidence are stale/isolated unless the current testcase explicitly references same-run carryover.",
     "- Preferred evidence order: DOM/form state, network observation, chart/table data, then screenshot. Bugs and Tool Bridge/failure states must include screenshot evidence when possible.",
+    "- Screenshot retry budget: after structured evidence is captured, a screenshot timeout must not cause repeated full-page retries. Try at most one smaller/viewport screenshot; if it still times out, continue with structured evidence and note screenshot_unavailable_reason.",
     "- Never trade correctness gates for speed. Keep evidence, Tool Bridge, stale-evidence and one-case-at-a-time gates intact.",
     "- Keep the final response concise; the workbook and log are the primary artifacts.",
     "- Playwright MCP is configured to connect to a persistent local Chrome session through CDP when available.",
@@ -463,6 +499,7 @@ const buildPrompt = (
     `Run state / carryover: ${guides.runStatePath}`,
     `Rule index: ${guides.ruleIndexPath}`,
     `BI UI helper guidance: ${guides.biUiHelperGuidancePath}`,
+    `BI metadata CSV: ${biMetadataCsv ?? "(not copied; use uploaded/reference docs only)"}`,
     `Expected result workbook path: ${resultXlsxPath}`,
     "",
     "Downloaded input files:",
@@ -740,6 +777,10 @@ const createCodexRunner = (
       const eventType = textFromUnknown(event.type);
       const item = objectFromUnknown(event.item);
       const itemType = item ? textFromUnknown(item.type) : null;
+      const agentMessageText =
+        eventType === "item.completed" && itemType === "agent_message"
+          ? compactWhitespace(textFromUnknown(item?.text) ?? "")
+          : "";
       if (eventType === "thread.started") {
         emitOnce("codex_running", "Codex 已啟動", "已建立 Codex thread，開始讀取 run brief 與必要輸入。");
       }
@@ -752,6 +793,21 @@ const createCodexRunner = (
           emitOnce("preflight_auth", "確認登入與頁面可達", "Playwright MCP 正在做最小 preflight：開啟 DEV URL、確認登入狀態與頁面可測。");
         } else {
           emitOnce("browser_execution", "瀏覽器操作中", "Playwright MCP 已開始操作或讀取 Galaxy BI UI。");
+        }
+      }
+      if (agentMessageText) {
+        const caseNo = /\b((?:DEMO-)?[A-Z]+-\d{1,3})\b/i.exec(agentMessageText)?.[1]?.toUpperCase();
+        if (/preflight passed/i.test(agentMessageText)) {
+          sendPhase(connection, runId, "preflight_auth", "登入與頁面可達確認完成", agentMessageText.slice(0, 260), "done");
+        }
+        if (caseNo && /(current case|For\s+|狀態清理確認|state check|target count|metadata|dropdown|picker|field)/i.test(agentMessageText)) {
+          sendPhase(connection, runId, "case_execution", `執行 ${caseNo}`, agentMessageText.slice(0, 260));
+        }
+        if (/(DOM evidence|structured evidence|screenshot|metadata summary|target count|field picker|欄位清單|截圖)/i.test(agentMessageText)) {
+          sendPhase(connection, runId, "evidence_collection", caseNo ? `${caseNo} 收集 Evidence` : "收集 Evidence", agentMessageText.slice(0, 260));
+        }
+        if (agentMessageText.includes("[TOOL_REQUEST]")) {
+          sendPhase(connection, runId, "waiting_user", "等待人工處理", agentMessageText.slice(0, 260), "waiting");
         }
       }
       const summary = summarizeCodexEvent(event);

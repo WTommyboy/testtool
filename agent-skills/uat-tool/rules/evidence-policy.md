@@ -73,6 +73,13 @@ Screenshot 必須保留於以下情境：
 - major state transition，例如建立、儲存、刪除、重新載入後狀態。
 - final evidence，若該 case 的結果需要人眼快速確認。
 
+Screenshot timeout 的處理：
+
+- 若 DOM / network / rendered data 已足以支撐當前 case 結論，full-page screenshot timeout 不得阻塞結果寫入。
+- 最多改試一次較小 viewport 或 element screenshot。
+- 第二次仍失敗時，在 detail_json 寫入 `screenshot_unavailable_reason`，並保留已取得的結構化 evidence。
+- 不可因 screenshot timeout 反覆重試而造成 run 長時間無進展。
+
 Screenshot 不可取代結構化數值。若 detail_json 只寫「請看截圖」，視為 evidence 不足。
 
 ## Existing Data 不是 Current Evidence
