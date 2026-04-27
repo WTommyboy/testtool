@@ -229,7 +229,7 @@ class AgentRegistry {
         agent.currentRunId = null;
       }
     }
-    if (["run.completed", "run.failed", "run.rejected", "run.cancelled"].includes(message.type)) {
+    if (["run.completed", "run.failed", "run.rejected", "run.cancelled", "task.rejected"].includes(message.type)) {
       const agent = this.agents.get(agentId);
       if (agent) {
         agent.status = "idle";

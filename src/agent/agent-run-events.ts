@@ -216,13 +216,18 @@ const handleAgentRunMessage = (agentId: string, message: AgentMessage): void => 
     return;
   }
 
-  if (message.type === "run.failed" || message.type === "run.rejected") {
+  if (message.type === "run.failed" || message.type === "run.rejected" || message.type === "task.rejected") {
     const currentStatus = getRunStatus(runId);
     if (!isTerminalStatus(currentStatus)) {
       setRunStatus(runId, "FAILED");
     }
     insertRunEvent(runId, "run.failed", { agentId, type: message.type, payload: message.payload, currentStatus }, message.seq);
-    insertRunLog(runId, "ERROR", "Agent run failed", { agentId, type: message.type, payload: message.payload, currentStatus });
+    insertRunLog(runId, "ERROR", message.type === "task.rejected" ? "Agent task rejected" : "Agent run failed", {
+      agentId,
+      type: message.type,
+      payload: message.payload,
+      currentStatus
+    });
   }
 };
 

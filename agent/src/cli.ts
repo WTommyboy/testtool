@@ -30,6 +30,25 @@ const getPayloadRunId = (message: { payload: Record<string, unknown> }): string 
   return typeof runId === "string" && runId.trim() ? runId : null;
 };
 
+const sendRejection = (
+  connection: AgentConnection,
+  type: "run.rejected" | "task.rejected",
+  message: { type: string; payload: Record<string, unknown> },
+  reason: string,
+  extra: Record<string, unknown> = {}
+): void => {
+  connection.send(
+    type,
+    {
+      run_id: getPayloadRunId(message) ?? "unknown",
+      rejected_type: message.type,
+      reason,
+      ...extra
+    },
+    true
+  );
+};
+
 const usage = (): void => {
   process.stdout.write(`uat-agent commands:
   login --server <wss-url> --token <agent-token> [--device-name <name>]
@@ -150,15 +169,9 @@ const main = async (): Promise<void> => {
           if (message.type === "task.dispatch") {
             const runId = getPayloadRunId(message);
             if (activeTask) {
-              connection.send(
-                "run.rejected",
-                {
-                  run_id: runId ?? "unknown",
-                  reason: "AGENT_BUSY",
-                  current_run_id: activeTask.runId
-                },
-                true
-              );
+              sendRejection(connection, "run.rejected", message, "agent_busy", {
+                current_run_id: activeTask.runId
+              });
               return;
             }
             void handleTaskDispatch(connection, config, message, {
@@ -181,15 +194,9 @@ const main = async (): Promise<void> => {
           if (message.type === "tool_response") {
             const runId = getPayloadRunId(message);
             if (activeTask) {
-              connection.send(
-                "run.rejected",
-                {
-                  run_id: runId ?? "unknown",
-                  reason: "AGENT_BUSY",
-                  current_run_id: activeTask.runId
-                },
-                true
-              );
+              sendRejection(connection, "run.rejected", message, "agent_busy", {
+                current_run_id: activeTask.runId
+              });
               return;
             }
             void handleToolResponse(connection, config, message, {
@@ -207,6 +214,16 @@ const main = async (): Promise<void> => {
                 id: message.id,
                 error: error instanceof Error ? error.message : String(error)
               });
+            });
+            return;
+          }
+          if (message.type !== "ack") {
+            sendRejection(connection, "task.rejected", message, "unknown_task_type");
+            printJson({
+              event: "task_rejected",
+              type: message.type,
+              id: message.id,
+              reason: "unknown_task_type"
             });
           }
         }
