@@ -9,6 +9,7 @@ type JsonObject = Record<string, unknown>;
 
 const rootDir = process.cwd();
 const distServer = path.join(rootDir, "dist", "server.js");
+const roundtripBootstrapToken = "roundtrip-bootstrap-token";
 
 const randomPort = (): number => 39_000 + Math.floor(Math.random() * 5_000);
 
@@ -28,6 +29,17 @@ const postJson = async <T = JsonObject>(baseUrl: string, pathName: string, body:
   return requestJson<T>(baseUrl, pathName, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body)
+  });
+};
+
+const postBootstrapJson = async <T = JsonObject>(baseUrl: string, pathName: string, body: JsonObject): Promise<T> => {
+  return requestJson<T>(baseUrl, pathName, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-agent-bootstrap-token": roundtripBootstrapToken
+    },
     body: JSON.stringify(body)
   });
 };
@@ -59,7 +71,7 @@ const startServer = async (): Promise<{ child: ChildProcess; baseUrl: string; te
       PORT: String(port),
       DB_PATH: path.join(tempDir, "data", "uat.db"),
       STORAGE_ROOT: path.join(tempDir, "storage"),
-      MAC_AGENT_BOOTSTRAP_TOKEN: "roundtrip-bootstrap-token",
+      MAC_AGENT_BOOTSTRAP_TOKEN: roundtripBootstrapToken,
       MAC_AGENT_HEARTBEAT_TIMEOUT_MS: "1200",
       MAC_AGENT_HEARTBEAT_SWEEP_INTERVAL_MS: "100",
       NODE_ENV: "development"
@@ -136,7 +148,13 @@ const verifyToolResponseRoundtrip = async (baseUrl: string): Promise<void> => {
   });
   assert.equal(run.status, "READY");
 
-  const token = await postJson<{ token: string }>(baseUrl, "/api/agents/tokens", { deviceName: "Roundtrip Agent" });
+  await assert.rejects(
+    () => postJson(baseUrl, "/api/agents/tokens", { deviceName: "Unauthorized Agent" }),
+    /UNAUTHORIZED_AGENT_BOOTSTRAP/,
+    "agent token creation should require bootstrap authorization"
+  );
+
+  const token = await postBootstrapJson<{ token: string }>(baseUrl, "/api/agents/tokens", { deviceName: "Roundtrip Agent" });
   assert.ok(token.token, "agent token should be returned once");
 
   const wsUrl = baseUrl.replace(/^http/, "ws");
@@ -236,7 +254,7 @@ const verifyAgentDisconnectMarksRunFailed = async (baseUrl: string): Promise<voi
   });
   assert.equal(run.status, "READY");
 
-  const token = await postJson<{ token: string }>(baseUrl, "/api/agents/tokens", { deviceName: "Disconnect Agent" });
+  const token = await postBootstrapJson<{ token: string }>(baseUrl, "/api/agents/tokens", { deviceName: "Disconnect Agent" });
   const wsUrl = baseUrl.replace(/^http/, "ws");
   const ws = new WebSocket(`${wsUrl}/agent-ws`, {
     headers: { Authorization: `Bearer ${token.token}` }
@@ -305,7 +323,7 @@ const verifyAgentHeartbeatTimeoutMarksRunFailed = async (baseUrl: string): Promi
   });
   assert.equal(run.status, "READY");
 
-  const token = await postJson<{ token: string }>(baseUrl, "/api/agents/tokens", { deviceName: "Stale Agent" });
+  const token = await postBootstrapJson<{ token: string }>(baseUrl, "/api/agents/tokens", { deviceName: "Stale Agent" });
   const wsUrl = baseUrl.replace(/^http/, "ws");
   const ws = new WebSocket(`${wsUrl}/agent-ws`, {
     headers: { Authorization: `Bearer ${token.token}` }
@@ -368,7 +386,7 @@ const verifyAgentRunSnapshotIsRecorded = async (baseUrl: string): Promise<void> 
   });
   assert.equal(run.status, "READY");
 
-  const token = await postJson<{ token: string }>(baseUrl, "/api/agents/tokens", { deviceName: "Snapshot Agent" });
+  const token = await postBootstrapJson<{ token: string }>(baseUrl, "/api/agents/tokens", { deviceName: "Snapshot Agent" });
   const wsUrl = baseUrl.replace(/^http/, "ws");
   const ws = new WebSocket(`${wsUrl}/agent-ws`, {
     headers: { Authorization: `Bearer ${token.token}` }

@@ -95,7 +95,7 @@ router.get("/:id", (req, res) => {
   return res.json(agent);
 });
 
-router.post("/:id/dispatch-smoke", (req, res) => {
+router.post("/:id/dispatch-smoke", requireBootstrapToken, (req, res) => {
   const parsed = dispatchSmokeSchema.safeParse(req.body ?? {});
   if (!parsed.success) {
     return res.status(400).json({
@@ -105,7 +105,8 @@ router.post("/:id/dispatch-smoke", (req, res) => {
   }
 
   try {
-    const message = agentRegistry.dispatchTask(req.params.id, {
+    const agentId = String(req.params.id);
+    const message = agentRegistry.dispatchTask(agentId, {
       run_id: parsed.data.runId ?? `smoke_${Date.now()}`,
       domain: "BI",
       round_id: parsed.data.roundId ?? "SMOKE",
@@ -114,7 +115,7 @@ router.post("/:id/dispatch-smoke", (req, res) => {
     });
 
     return res.status(202).json({
-      agentId: req.params.id,
+      agentId,
       messageId: message.id,
       status: "DISPATCHED"
     });

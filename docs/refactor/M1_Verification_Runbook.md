@@ -87,3 +87,43 @@ To actually enable the background agent after `uat-agent login`:
 ```bash
 node agent/dist/cli.js install-launchd
 ```
+
+## Production Mac Agent Smoke
+
+Run after changing:
+- `Dockerfile`
+- `domain-packs/*`
+- Railway deployment settings
+- `src/runs.ts`
+- `src/agent/*`
+- `agent/src/*`
+- Vercel `VITE_API_BASE_URL`
+
+Prerequisites:
+- Railway service has `AGENT_BOOTSTRAP_SECRET` configured.
+- Vercel frontend points to `https://testtool-production.up.railway.app`.
+- Local agent is logged in to `wss://testtool-production.up.railway.app/agent-ws`.
+- One `node agent/dist/cli.js start` process is running.
+
+Checks:
+
+```bash
+curl -s https://testtool-production.up.railway.app/api/domains | jq
+curl -s https://testtool-production.up.railway.app/api/agents | jq
+```
+
+Expected:
+- `api/domains` includes `BI` with `valid: true`.
+- `api/agents` includes `Tommy Mac` with `status: idle`.
+
+Verified smoke runs on 2026-04-27:
+
+| Round ID | Purpose | Expected |
+|---|---|---|
+| `M1_SMOKE_20260427_183053` | Agent receives cloud dispatch without uploaded testcase package | `SUCCEEDED`, one `AGENT-RESULT / PASS`, log and result xlsx uploaded |
+| `M1_UI_SMOKE_20260427_183807` | Agent receives uploaded xlsx/md package, downloads inputs, runs Codex, uploads result xlsx/log, Railway ingests result | `SUCCEEDED`, one `M1-UI-SMOKE-01 / PASS`, Vercel UI shows result xlsx and agent log available |
+
+Important notes:
+- The smoke instruction intentionally says not to operate Galaxy BI. This verifies the cloud-to-Mac closed loop, not real BI UI automation.
+- In-app Browser currently does not support file uploads, so UI file picker verification must be manual or done through another browser automation surface.
+- `POST /api/agents/:id/dispatch-smoke` requires `AGENT_BOOTSTRAP_SECRET`; do not expose this endpoint publicly without the secret.

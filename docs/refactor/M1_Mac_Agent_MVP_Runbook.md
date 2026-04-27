@@ -20,11 +20,18 @@ npm run build
 npm run build --prefix agent
 ```
 
-Create an agent token from the API:
+Create an agent token from the API.
+
+Railway must have `AGENT_BOOTSTRAP_SECRET` configured first. Keep this value private; it is only used to administer agent tokens.
 
 ```bash
+printf "Paste AGENT_BOOTSTRAP_SECRET: "
+read -rs AGENT_BOOTSTRAP_SECRET
+printf "\n"
+
 curl -s -X POST https://testtool-production.up.railway.app/api/agents/tokens \
   -H "Content-Type: application/json" \
+  -H "x-agent-bootstrap-token: $AGENT_BOOTSTRAP_SECRET" \
   -d '{"deviceName":"Tommy Mac"}' | jq
 ```
 
@@ -186,3 +193,4 @@ npm run build --prefix agent
 - Launchd support assumes macOS and a built local `agent/dist/cli.js`.
 - GitHub OAuth is planned but not completed in this MVP slice.
 - Artifact table is still an M2 item. Current result and log files are stored through existing run output fields.
+- `POST /api/agents/:id/dispatch-smoke` and `/api/agents/tokens` require `AGENT_BOOTSTRAP_SECRET`. Normal UI run dispatch still depends on the planned GitHub OAuth layer for production access control.
