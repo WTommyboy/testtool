@@ -140,6 +140,16 @@ const handleAgentRunMessage = (agentId: string, message: AgentMessage): void => 
     return;
   }
 
+  if (message.type === "tool_response.delivered") {
+    const currentStatus = getRunStatus(runId);
+    if (!isTerminalStatus(currentStatus)) {
+      setRunStatus(runId, "RUNNING");
+    }
+    insertRunEvent(runId, "tool_response.delivered", { agentId, payload: message.payload, currentStatus }, message.seq);
+    insertRunLog(runId, "INFO", "Tool response delivered to Agent", { agentId, payload: message.payload, currentStatus });
+    return;
+  }
+
   if (message.type === "run.uploading_result") {
     insertRunEvent(runId, "result.upload_started", { agentId, payload: message.payload }, message.seq);
     insertRunLog(runId, "INFO", "Agent uploading result", { agentId, payload: message.payload });
