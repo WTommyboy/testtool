@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import fs from "node:fs";
 import { AgentConnection } from "./connection";
 import { defaultAgentConfig, defaultConfigPath, ensureAgentDirectories, readConfig, writeConfig } from "./config";
 import { runDoctor } from "./doctor";
@@ -15,6 +16,12 @@ const printJson = (value: unknown): void => {
   process.stdout.write(`${JSON.stringify(value, null, 2)}\n`);
 };
 
+const maskToken = (token: string): string => {
+  if (!token) return "";
+  if (token.length <= 8) return "********";
+  return `${token.slice(0, 4)}...${token.slice(-4)}`;
+};
+
 const getPayloadRunId = (message: { payload: Record<string, unknown> }): string | null => {
   const runId = message.payload.run_id;
   return typeof runId === "string" && runId.trim() ? runId : null;
@@ -24,6 +31,7 @@ const usage = (): void => {
   process.stdout.write(`uat-agent commands:
   login --server <wss-url> --token <agent-token> [--device-name <name>]
   doctor
+  status
   start
 `);
 };
@@ -61,6 +69,34 @@ const main = async (): Promise<void> => {
     printJson({
       ok: required.every((check) => check.verdict === "PASS"),
       checks
+    });
+    return;
+  }
+
+  if (command === "status") {
+    if (!fs.existsSync(defaultConfigPath)) {
+      printJson({
+        ok: false,
+        configured: false,
+        configPath: defaultConfigPath,
+        message: "Run `uat-agent login --server <url> --token <token>` first."
+      });
+      return;
+    }
+
+    const config = readConfig();
+    printJson({
+      ok: true,
+      configured: true,
+      configPath: defaultConfigPath,
+      server: config.server,
+      device_name: config.device_name,
+      token: maskToken(config.token),
+      codex_bin: config.codex_bin,
+      workdir_root: config.workdir_root,
+      chrome_profile_dir: config.chrome_profile_dir,
+      workdir_exists: fs.existsSync(config.workdir_root),
+      chrome_profile_exists: fs.existsSync(config.chrome_profile_dir)
     });
     return;
   }
