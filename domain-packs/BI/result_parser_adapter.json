@@ -1,0 +1,9 @@
+{
+  "adapterVersion": "bi-result-adapter-mvp-v1",
+  "parser": "result-xlsx-parser",
+  "sheets": {
+    "index": "索引",
+    "cases": "測試案例",
+    "bugs": "Bug"
+  }
+}

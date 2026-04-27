@@ -11,6 +11,7 @@ import { migrate } from "./db";
 import runsRouter from "./runs";
 import conversationsRouter from "./conversations";
 import playwrightRouter from "./playwright";
+import domainsRouter from "./domains";
 
 const ensureDirectory = (dirPath: string): void => {
   fs.mkdirSync(path.resolve(dirPath), { recursive: true });
@@ -39,6 +40,7 @@ app.use("/api/runs", runsRouter);
 app.use("/api/conversations", conversationsRouter);
 app.use("/api/playwright", playwrightRouter);
 app.use("/api/agents", agentsRouter);
+app.use("/api/domains", domainsRouter);
 
 app.use((req, res) => {
   res.status(404).json({

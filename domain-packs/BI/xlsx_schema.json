@@ -1,0 +1,8 @@
+{
+  "schemaVersion": "bi-mvp-v1",
+  "displayName": "Galaxy BI",
+  "requiredSheets": ["測試案例"],
+  "resultSheets": ["索引", "測試案例", "Bug"],
+  "caseNoColumnCandidates": ["編號", "測試編號", "case_no"],
+  "detailJsonColumnCandidates": ["詳細紀錄JSON", "detail_json"]
+}
