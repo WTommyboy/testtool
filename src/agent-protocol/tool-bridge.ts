@@ -56,9 +56,10 @@ export const parseToolRequests = (input: string): ToolRequestParseResult => {
 
   while ((match = pattern.exec(text)) !== null) {
     const raw = match[1]?.trim() ?? "";
+    const jsonText = normalizeToolRequestJson(raw);
     let parsed: unknown;
     try {
-      parsed = JSON.parse(raw);
+      parsed = JSON.parse(jsonText);
     } catch (error) {
       warnings.push({
         code: "INVALID_JSON",
@@ -95,6 +96,12 @@ export const parseToolRequests = (input: string): ToolRequestParseResult => {
   }
 
   return { requests, warnings };
+};
+
+export const normalizeToolRequestJson = (raw: string): string => {
+  const trimmed = raw.trim();
+  const fenceMatch = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
+  return fenceMatch?.[1]?.trim() ?? trimmed;
 };
 
 export const isToolRequest = (value: unknown): value is ToolRequest => {
