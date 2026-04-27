@@ -1,4 +1,6 @@
 import crypto from "node:crypto";
+import fs from "node:fs";
+import path from "node:path";
 import WebSocket from "ws";
 import { buildAgentCapability } from "./doctor";
 import type { AgentConfig, AgentMessage } from "./types";
@@ -7,6 +9,15 @@ export type AgentConnectionOptions = {
   config: AgentConfig;
   onMessage?: (message: AgentMessage) => void;
   onStatus?: (status: "open" | "closed" | "error", detail?: unknown) => void;
+};
+
+type RunSnapshot = {
+  run_id: string;
+  status: string;
+  thread_id: string | null;
+  tool_request_count: number | null;
+  state_path: string;
+  updated_at: string;
 };
 
 export class AgentConnection {
@@ -22,6 +33,35 @@ export class AgentConnection {
     this.closedPromise = new Promise((resolve) => {
       this.resolveClosed = resolve;
     });
+  }
+
+  private buildRunSnapshot(): RunSnapshot | null {
+    if (!fs.existsSync(this.options.config.workdir_root)) return null;
+    const candidates: RunSnapshot[] = [];
+    for (const entry of fs.readdirSync(this.options.config.workdir_root, { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue;
+      const statePath = path.join(this.options.config.workdir_root, entry.name, "state.json");
+      if (!fs.existsSync(statePath)) continue;
+      try {
+        const state = JSON.parse(fs.readFileSync(statePath, "utf8")) as Record<string, unknown>;
+        const status = typeof state.status === "string" ? state.status : "unknown";
+        if (!["started", "waiting_user", "resuming"].includes(status)) continue;
+        const updatedAt = fs.statSync(statePath).mtimeMs;
+        candidates.push({
+          run_id: typeof state.run_id === "string" ? state.run_id : entry.name,
+          status,
+          thread_id: typeof state.thread_id === "string" ? state.thread_id : null,
+          tool_request_count: typeof state.tool_request_count === "number" ? state.tool_request_count : null,
+          state_path: statePath,
+          updated_at: new Date(updatedAt).toISOString()
+        });
+      } catch {
+        // Ignore malformed state files; they should not block agent startup.
+      }
+    }
+    candidates.sort((a, b) => b.updated_at.localeCompare(a.updated_at));
+
+    return candidates[0] ?? null;
   }
 
   connect(): Promise<void> {
@@ -42,7 +82,8 @@ export class AgentConnection {
             agent_version: "0.1.0",
             ...capability,
             status: this.status,
-            current_run_id: this.currentRunId
+            current_run_id: this.currentRunId,
+            run_snapshot: this.buildRunSnapshot()
           }, true);
           this.heartbeatTimer = setInterval(() => {
             this.send("agent.heartbeat", { status: this.status, current_run_id: this.currentRunId }, false);

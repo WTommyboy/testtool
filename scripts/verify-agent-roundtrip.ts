@@ -355,6 +355,80 @@ const verifyAgentHeartbeatTimeoutMarksRunFailed = async (baseUrl: string): Promi
   }
 };
 
+const verifyAgentRunSnapshotIsRecorded = async (baseUrl: string): Promise<void> => {
+  const run = await postJson<{ id: string; status: string }>(baseUrl, "/api/runs", {
+    domain: "BI",
+    roundId: "ROUNDTRIP-SNAPSHOT-001",
+    location: "數據中心",
+    featureMain: "BI工具",
+    featureSub: "agent reconnect snapshot smoke",
+    runName: "Agent Reconnect Snapshot Smoke",
+    devUrl: "https://example.com",
+    executionMode: "interactive"
+  });
+  assert.equal(run.status, "READY");
+
+  const token = await postJson<{ token: string }>(baseUrl, "/api/agents/tokens", { deviceName: "Snapshot Agent" });
+  const wsUrl = baseUrl.replace(/^http/, "ws");
+  const ws = new WebSocket(`${wsUrl}/agent-ws`, {
+    headers: { Authorization: `Bearer ${token.token}` }
+  });
+  let seq = 1;
+  const send = (type: string, payload: JsonObject, ackRequired = false): void => {
+    ws.send(JSON.stringify({
+      id: `msg_snapshot_${seq}`,
+      seq: seq++,
+      type,
+      timestamp: new Date().toISOString(),
+      ack_required: ackRequired,
+      payload
+    }));
+  };
+
+  await new Promise<void>((resolve, reject) => {
+    ws.once("open", () => resolve());
+    ws.once("error", reject);
+  });
+  send("agent.online", {
+    device_name: "Snapshot Agent",
+    agent_version: "smoke",
+    status: "idle",
+    current_run_id: null,
+    run_snapshot: {
+      run_id: run.id,
+      status: "waiting_user",
+      thread_id: "thread_snapshot_smoke",
+      tool_request_count: 1,
+      state_path: "/tmp/uat-agent/snapshot/state.json"
+    }
+  });
+  await sleep(300);
+
+  const events = await requestJson<{ items: Array<{ event_type: string; payload: unknown }> }>(
+    baseUrl,
+    `/api/runs/${run.id}/events?limit=50`
+  );
+  assert.ok(events.items.some((event) => {
+    const payload = event.payload && typeof event.payload === "object" && !Array.isArray(event.payload)
+      ? event.payload as Record<string, unknown>
+      : {};
+    const snapshot = payload.snapshot && typeof payload.snapshot === "object" && !Array.isArray(payload.snapshot)
+      ? payload.snapshot as Record<string, unknown>
+      : {};
+    return event.event_type === "agent.run_snapshot" && snapshot.thread_id === "thread_snapshot_smoke";
+  }), "agent.online run_snapshot should be recorded as run event");
+
+  const logs = await requestJson<{ items: Array<{ message: string; level: string }> }>(
+    baseUrl,
+    `/api/runs/${run.id}/logs?limit=50`
+  );
+  assert.ok(logs.items.some((log) => (
+    log.level === "WARN" && log.message === "Agent reported local run snapshot on reconnect"
+  )), "agent.online run_snapshot should be recorded as run log");
+
+  ws.close();
+};
+
 const main = async (): Promise<void> => {
   const { child, baseUrl, tempDir } = await startServer();
   try {
@@ -362,6 +436,7 @@ const main = async (): Promise<void> => {
     await verifyToolResponseRoundtrip(baseUrl);
     await verifyAgentDisconnectMarksRunFailed(baseUrl);
     await verifyAgentHeartbeatTimeoutMarksRunFailed(baseUrl);
+    await verifyAgentRunSnapshotIsRecorded(baseUrl);
     console.log("Agent roundtrip smoke passed.");
   } finally {
     await stopServer(child);

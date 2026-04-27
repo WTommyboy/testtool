@@ -55,6 +55,18 @@ const getToolRequest = (message: AgentMessage): Record<string, unknown> => {
   return request && typeof request === "object" && !Array.isArray(request) ? request as Record<string, unknown> : {};
 };
 
+const getRunSnapshot = (message: AgentMessage): Record<string, unknown> | null => {
+  const snapshot = message.payload.run_snapshot;
+  return snapshot && typeof snapshot === "object" && !Array.isArray(snapshot)
+    ? snapshot as Record<string, unknown>
+    : null;
+};
+
+const getRunIdFromSnapshot = (snapshot: Record<string, unknown> | null): string | null => {
+  const runId = snapshot?.run_id;
+  return typeof runId === "string" && runId.trim() ? runId : null;
+};
+
 const formatToolRequestReason = (message: AgentMessage): string => {
   const request = getToolRequest(message);
   const type = asString(request.type) ?? "tool_request";
@@ -110,6 +122,25 @@ const textFromPayload = (message: AgentMessage): string => {
 };
 
 const handleAgentRunMessage = (agentId: string, message: AgentMessage): void => {
+  if (message.type === "agent.online") {
+    const snapshot = getRunSnapshot(message);
+    const snapshotRunId = getRunIdFromSnapshot(snapshot);
+    if (!snapshot || !snapshotRunId || !runExists(snapshotRunId)) return;
+
+    const currentStatus = getRunStatus(snapshotRunId);
+    insertRunEvent(snapshotRunId, "agent.run_snapshot", {
+      agentId,
+      snapshot,
+      currentStatus
+    }, message.seq);
+    insertRunLog(snapshotRunId, "WARN", "Agent reported local run snapshot on reconnect", {
+      agentId,
+      snapshot,
+      currentStatus
+    });
+    return;
+  }
+
   const runId = getRunId(message);
   if (!runId || !runExists(runId)) return;
 
