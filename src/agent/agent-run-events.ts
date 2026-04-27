@@ -17,6 +17,15 @@ const runExists = (runId: string): boolean => {
   return Boolean(row);
 };
 
+const getRunStatus = (runId: string): string | null => {
+  const row = db.prepare("SELECT status FROM runs WHERE id = ?").get(runId) as { status: string } | undefined;
+  return row?.status ?? null;
+};
+
+const isTerminalStatus = (status: string | null): boolean => {
+  return status === "SUCCEEDED" || status === "FAILED" || status === "CANCELLED";
+};
+
 const insertRunLog = (
   runId: string,
   level: "INFO" | "WARN" | "ERROR",
@@ -83,8 +92,11 @@ const handleAgentRunMessage = (agentId: string, message: AgentMessage): void => 
   }
 
   if (message.type === "run.completed") {
-    setRunStatus(runId, "SUCCEEDED");
-    insertRunLog(runId, "INFO", "Agent run completed", { agentId, payload: message.payload });
+    const currentStatus = getRunStatus(runId);
+    if (!isTerminalStatus(currentStatus)) {
+      setRunStatus(runId, "SUCCEEDED");
+    }
+    insertRunLog(runId, "INFO", "Agent run completed", { agentId, payload: message.payload, currentStatus });
     return;
   }
 
