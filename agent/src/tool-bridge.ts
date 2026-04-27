@@ -32,6 +32,13 @@ const getRequestId = (value: unknown): string | undefined => {
   return typeof maybe.request_id === "string" ? maybe.request_id : undefined;
 };
 
+const extractCaseFromRequestId = (requestId: string): string | undefined => {
+  const match = requestId.match(/(?:^|[-_])((?:demo[-_]?)?)([a-z])[-_]?(\d{2,3})(?:$|[-_])/i);
+  if (!match) return undefined;
+  const prefix = match[1] ? "DEMO-" : "";
+  return `${prefix}${match[2]?.toUpperCase()}-${match[3]}`;
+};
+
 const validateString = (value: Record<string, unknown>, key: string, warnings: ToolRequestParseWarning[]): void => {
   if (typeof value[key] !== "string" || !value[key]) {
     warnings.push({
@@ -57,6 +64,24 @@ const validateStringArray = (value: Record<string, unknown>, key: string, warnin
 const normalizeToolRequest = (value: unknown): unknown => {
   if (!value || typeof value !== "object" || Array.isArray(value)) return value;
   const request = { ...(value as Record<string, unknown>) };
+  if (request.type === "irreversible_operation") {
+    if (typeof request.action !== "string" && typeof request.proposed_action === "string") {
+      request.action = request.proposed_action;
+    }
+    if (typeof request.action !== "string" && typeof request.requested_action === "string") {
+      request.action = request.requested_action;
+    }
+    if (typeof request.case !== "string" && typeof request.case_no === "string") {
+      request.case = request.case_no;
+    }
+    if (typeof request.case !== "string" && typeof request.caseNo === "string") {
+      request.case = request.caseNo;
+    }
+    if (typeof request.case !== "string" && typeof request.request_id === "string") {
+      const caseNo = extractCaseFromRequestId(request.request_id);
+      if (caseNo) request.case = caseNo;
+    }
+  }
   if (request.type === "playwright_recovery") {
     if (typeof request.error !== "string" && typeof request.reason === "string") {
       request.error = request.reason;

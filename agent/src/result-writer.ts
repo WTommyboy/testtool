@@ -6,7 +6,7 @@ type ResultWriterInput = {
   roundId: string;
   outputDir: string;
   sourceCase?: AgentResultSourceCase | null;
-  status: "PASS" | "FAIL";
+  status: "PASS" | "FAIL" | "BLOCKED";
   failCategory?: string | null;
   detailJson: Record<string, unknown>;
 };

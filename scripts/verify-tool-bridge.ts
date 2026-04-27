@@ -53,6 +53,33 @@ const fixtures: Fixture[] = [
     validCount: 1
   },
   {
+    name: "irreversible accepts proposed_action alias and extracts demo case from request id",
+    input: wrap(
+      JSON.stringify({
+        type: "irreversible_operation",
+        request_id: "14b6f8b7-a211-43a2-a53b-fd949a3a073d-demo-a01-save",
+        reason: "Save flow requires native alert/confirm approval.",
+        proposed_action: "Authorize saving timestamped temporary report."
+      })
+    ),
+    requestCount: 1,
+    validCount: 1
+  },
+  {
+    name: "irreversible accepts case_no and requested_action aliases",
+    input: wrap(
+      JSON.stringify({
+        type: "irreversible_operation",
+        request_id: "req-001b",
+        case_no: "DEMO-B-01",
+        reason: "Native confirm is expected.",
+        requested_action: "Authorize confirm acceptance."
+      })
+    ),
+    requestCount: 1,
+    validCount: 1
+  },
+  {
     name: "single ambiguity request",
     input: wrap(validAmbiguity("req-002")),
     requestCount: 1,
