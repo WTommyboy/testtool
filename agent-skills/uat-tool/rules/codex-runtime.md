@@ -22,6 +22,27 @@ initial prompt 應保持短：
 
 不要把所有 BI rules 貼進 initial prompt。
 
+## Preflight First
+
+正式讀取深層 domain rules 或執行 testcase 前，Codex 必須先做最小 preflight。
+
+Preflight 只允許：
+
+- 開啟 DEV URL。
+- 確認 persistent Chrome / Playwright page 可用。
+- 判斷是否進入目標 app shell。
+- 偵測 SSO redirect、login page、401/403、`載入失敗`、空白頁或明顯 blocker。
+
+Preflight 不允許：
+
+- 執行任何 testcase step。
+- 取 baseline。
+- 設定欄位、篩選、分組、日期。
+- 新增、儲存、刪除報表或專案。
+- 深讀完整 BI rules bundle。
+
+若 preflight 失敗，emit `playwright_recovery` Tool Bridge request，然後停止本 turn。不可自動登入，不可把等待登入寫成 case result，不可繼續燒 token 讀大量規則。
+
 ## Runtime Progress
 
 Codex 必須 emit，或讓 Agent emit，足以讓 Web UI 顯示的 progress。
@@ -63,13 +84,19 @@ CodexRunner 不可假設 hidden approvals。
 逐 case 執行與記錄：
 
 1. 讀 current case。
-2. 執行 current case。
-3. capture evidence。
-4. 寫 current case result。
-5. emit progress。
-6. 移到 next case。
+2. 讀 `run-state.json`，只取明確允許 carryover 的資訊。
+3. 執行 current case。
+4. capture evidence。
+5. 寫 current case result。
+6. emit progress。
+7. 若產生同 run 可 carryover 的資料，寫入 output/run-state.json。
+8. 移到 next case。
 
 不可用 opaque tool call 批次執行多個 case。
+
+`case-manifest.json` 只是索引，不是批次執行授權。每次 Playwright MCP tool call 不可同時包含多個 case 的正式 UI 操作或 result write。
+
+Previous-case evidence 永遠不可證明 current case。若 current case 需要沿用前題建立的報表或 baseline，必須由 `run-state.json` 明確列入 allowed carryover，且 current case 仍要做自己的狀態清理與 evidence capture。
 
 ## Result Conservatism
 

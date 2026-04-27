@@ -9,6 +9,9 @@ import { parseToolRequests } from "./tool-bridge";
 import { writeBiUiHelperGuidance } from "./bi-ui-helper-guidance";
 import { writeCaseManifest, type CaseManifestResult } from "./case-manifest";
 import { writeRuleIndex } from "./rule-index";
+import { writePreflightGuidance } from "./preflight-guidance";
+import { writeRunStateGuide } from "./run-state-guide";
+import { scanBatchCasePolicyViolations } from "./batch-case-detector";
 
 const getRunId = (message: AgentMessage): string => {
   const runId = message.payload.run_id;
@@ -79,6 +82,7 @@ const prepareCodexContext = (config: AgentConfig, runDir: string): void => {
     "- Use `agent-skills/uat-tool/SKILL.md` as the full Layer 1 reference only when the run brief is insufficient.",
     "- Use progressive disclosure: read only the Layer 1 rule needed for the current decision.",
     "- Route to domain-specific rules through `agent-skills/uat-tool/rules/domain-routing.md`.",
+    "- Perform `input/preflight-auth-check.md` before deep domain loading or testcase actions.",
     "",
     "Domain context:",
     "- The current BI domain source is copied to `rules/PROJECT_AGENTS_FULL.md` for reference.",
@@ -90,6 +94,8 @@ const prepareCodexContext = (config: AgentConfig, runDir: string): void => {
     "- Do not execute UAT when the testcase workbook or startup instruction markdown is missing; report the missing prerequisite and exit cleanly.",
     "- Do not perform destructive operations unless an actionable Tool Bridge request is approved.",
     "- Do not write trusted PASS/FAIL when evidence is insufficient; use BLOCKED/EVIDENCE_INSUFFICIENT.",
+    "- Use `input/run-state.json` for allowed carryover only; previous-case evidence is isolated.",
+    "- Never execute or write results for multiple cases in one Playwright tool call or one workbook write.",
     "- Write the final workbook to `output/result.xlsx` when real UAT cases are executed.",
     ""
   ].join("\n");
@@ -141,6 +147,8 @@ const writeRunBrief = (
     `- current_case: ${guides.caseManifest.currentCasePath ?? "(unavailable)"}`,
     `- rule_index: ${guides.ruleIndexPath}`,
     `- bi_ui_helper_guidance: ${guides.biUiHelperGuidancePath}`,
+    `- preflight_auth_check: ${guides.preflightGuidancePath}`,
+    `- run_state: ${guides.runStatePath}`,
     "",
     "## Required Inputs",
     inputLines.length > 0 ? inputLines.join("\n") : "- none",
@@ -156,10 +164,10 @@ const writeRunBrief = (
     "",
     "## Fast Path",
     "1. Confirm testcase workbook and startup instruction exist.",
-    "2. Read `input/current-case.json` first. Use `input/case-manifest.json` only as a navigation index, not as permission to batch execute cases.",
-    "3. Read `input/rule-index.json` and load only the smallest rule file required for the current decision.",
-    "4. For BI UI operations, read `input/bi-ui-helper-guidance.md` before exploring the page from scratch.",
-    "5. Start browser evidence early: establish whether Galaxy BI is authenticated and reachable before deep analysis.",
+    "2. Read `input/preflight-auth-check.md` and perform only the auth/reachability preflight before deep domain rule loading.",
+    "3. Read `input/current-case.json` and `input/run-state.json`. Use `input/case-manifest.json` only as a navigation index, not as permission to batch execute cases.",
+    "4. Read `input/rule-index.json` and load only the smallest rule file required for the current decision.",
+    "5. For BI UI operations, read `input/bi-ui-helper-guidance.md` before exploring the page from scratch.",
     "6. Execute one case at a time, write evidence/result for that case, then move to the next case JSON if needed.",
     "",
     "## Hard Gates",
@@ -168,6 +176,8 @@ const writeRunBrief = (
     "- If SSO, native alert/confirm, irreversible operation, or ambiguity blocks progress, stop and emit a Tool Bridge request.",
     "- If the real UAT cannot continue, do not create a fake PASS. Explain the blocker; the Agent fallback will mark the run as not trusted.",
     "- Speed optimizations must never merge multiple testcase executions into one tool call or one result write.",
+    "- `input/run-state.json` defines allowed carryover. Evidence from a previous case is isolated and cannot prove a later case.",
+    "- Prefer structured evidence first: DOM read, network observation, chart/table data. Use screenshots for Tool Bridge, FAIL/bug, major state transitions, and final evidence.",
     "",
     "## Tool Bridge Schemas",
     '- Irreversible: [TOOL_REQUEST]{"type":"irreversible_operation","request_id":"<run-id>-<case-no>-<slug>","case":"<case-no>","action":"<short action>","reason":"<why approval is required>","proposed_action":"<exact PM-approved action>"}[/TOOL_REQUEST]',
@@ -175,8 +185,8 @@ const writeRunBrief = (
     '- Ambiguity: [TOOL_REQUEST]{"type":"ambiguity_decision","request_id":"<run-id>-<case-no>-<slug>","case":"<case-no>","context":"<what is ambiguous>","options":["<option A>","<option B>"],"recommendation":"<recommended option>"}[/TOOL_REQUEST]',
     "",
     "## Suggested Visible Phases",
-    "- context_loading: read this brief, startup instruction, and minimal testcase metadata.",
-    "- browser_check: open persistent Chrome / Playwright CDP and verify auth/reachability.",
+    "- preflight_auth: open DEV URL and verify auth/reachability only.",
+    "- context_loading: read this brief, startup instruction, current case, run-state, and minimal domain metadata.",
     "- case_execution: perform UI actions and evidence reads for one case.",
     "- waiting_user: Tool Bridge approval or SSO recovery required.",
     "- result_writing: write `output/result.xlsx` and finish.",
@@ -200,6 +210,8 @@ type GeneratedRunGuides = {
   caseManifest: CaseManifestResult;
   ruleIndexPath: string;
   biUiHelperGuidancePath: string;
+  preflightGuidancePath: string;
+  runStatePath: string;
 };
 
 export type TaskDispatchHooks = {
@@ -340,19 +352,23 @@ const downloadInputs = async (config: AgentConfig, message: AgentMessage, runDir
   return downloaded;
 };
 
-const generateRunGuides = async (runDir: string, message: AgentMessage, inputs: DownloadedInputs): Promise<GeneratedRunGuides> => {
+const generateRunGuides = async (runId: string, runDir: string, message: AgentMessage, inputs: DownloadedInputs): Promise<GeneratedRunGuides> => {
   const inputDir = path.join(runDir, "input");
   const domain = getStringPayload(message, "domain") ?? "BI";
   const biUiHelperGuidancePath = writeBiUiHelperGuidance(runDir);
   const caseManifest = await writeCaseManifest(inputs.xlsx, inputDir);
+  const preflightGuidancePath = writePreflightGuidance(runDir, getStringPayload(message, "dev_url"));
+  const runStatePath = writeRunStateGuide(runDir, runId, caseManifest);
   const ruleIndexPath = writeRuleIndex(runDir, domain);
   writeJson(path.join(inputDir, "generated-guides.json"), {
     case_manifest: caseManifest,
     rule_index_path: ruleIndexPath,
     bi_ui_helper_guidance_path: biUiHelperGuidancePath,
+    preflight_guidance_path: preflightGuidancePath,
+    run_state_path: runStatePath,
     generated_at: new Date().toISOString()
   });
-  return { caseManifest, ruleIndexPath, biUiHelperGuidancePath };
+  return { caseManifest, ruleIndexPath, biUiHelperGuidancePath, preflightGuidancePath, runStatePath };
 };
 
 const getCodexGeneratedResultXlsx = (runDir: string): string | null => {
@@ -384,7 +400,9 @@ const buildPrompt = (
     "",
     "Start here:",
     `- Read the compact run brief first: ${runBriefPath}`,
+    `- Perform preflight before deep rule loading or testcase action: ${guides.preflightGuidancePath}`,
     `- Read the current case first: ${guides.caseManifest.currentCasePath ?? "(current-case unavailable; inspect workbook minimally)"}`,
+    `- Read allowed carryover and isolation policy: ${guides.runStatePath}`,
     `- Use the rule index to avoid loading unnecessary rules: ${guides.ruleIndexPath}`,
     `- For BI UI recipes, use: ${guides.biUiHelperGuidancePath}`,
     `- Full Layer 1 platform skill is available if needed: ${platformSkillPath}`,
@@ -392,6 +410,8 @@ const buildPrompt = (
     "- The run brief is enough for the initial execution decision; open full rule files only when exact policy text is needed.",
     "- Use `agent-skills/uat-tool/rules/domain-routing.md` to route domain-specific rules.",
     "- Treat `rules/PROJECT_AGENTS_FULL.md` and `rules/BI_TEST_RULES/` as BI domain references, not platform rules.",
+    "- The first browser MCP action must be preflight only: open DEV URL, verify auth/reachability, detect SSO/login/載入失敗/401/403/blank blocker.",
+    "- Preflight must not run testcase steps, capture baseline, change date/filter/field/group state, save/delete, or inspect deep BI behavior.",
     "",
     "Runtime constraints:",
     "- Treat this as an automated agent turn, not an interactive chat with Tommy.",
@@ -403,6 +423,8 @@ const buildPrompt = (
     "- Existing page data or old reports are not evidence that this run performed the action.",
     "- Execute and record one case at a time. `case-manifest.json` is only an index; it is not permission to batch multiple case flows.",
     "- After each case, write or update evidence/result for that case before reading the next case JSON.",
+    "- Use only `input/run-state.json` allowed carryover. Prior workbook rows and previous-case evidence are stale/isolated unless the current testcase explicitly references same-run carryover.",
+    "- Preferred evidence order: DOM/form state, network observation, chart/table data, then screenshot. Bugs and Tool Bridge/failure states must include screenshot evidence when possible.",
     "- Never trade correctness gates for speed. Keep evidence, Tool Bridge, stale-evidence and one-case-at-a-time gates intact.",
     "- Keep the final response concise; the workbook and log are the primary artifacts.",
     "- Playwright MCP is configured to connect to a persistent local Chrome session through CDP when available.",
@@ -414,6 +436,8 @@ const buildPrompt = (
     `Copied context manifest: ${path.resolve(runDir, "input", "codex-context.json")}`,
     `Case manifest: ${guides.caseManifest.manifestPath ?? "(unavailable)"}`,
     `Current case JSON: ${guides.caseManifest.currentCasePath ?? "(unavailable)"}`,
+    `Preflight auth check: ${guides.preflightGuidancePath}`,
+    `Run state / carryover: ${guides.runStatePath}`,
     `Rule index: ${guides.ruleIndexPath}`,
     `BI UI helper guidance: ${guides.biUiHelperGuidancePath}`,
     `Expected result workbook path: ${resultXlsxPath}`,
@@ -672,6 +696,7 @@ const createCodexRunner = (
   chromeCdpEndpoint: string | null
 ): CodexRunner => {
   let lastProgress = "";
+  let mcpToolCallCount = 0;
   const emittedPhases = new Set<string>();
   const emitOnce = (
     phase: string,
@@ -699,7 +724,12 @@ const createCodexRunner = (
         emitOnce("context_loading", "讀取規則與測試檔", "Codex 正在讀 run brief、startup instruction、xlsx 結構或必要 domain rules。");
       }
       if (eventType === "item.started" && itemType === "mcp_tool_call") {
-        emitOnce("browser_execution", "瀏覽器操作中", "Playwright MCP 已開始操作或讀取 Galaxy BI UI。");
+        mcpToolCallCount += 1;
+        if (mcpToolCallCount === 1) {
+          emitOnce("preflight_auth", "確認登入與頁面可達", "Playwright MCP 正在做最小 preflight：開啟 DEV URL、確認登入狀態與頁面可測。");
+        } else {
+          emitOnce("browser_execution", "瀏覽器操作中", "Playwright MCP 已開始操作或讀取 Galaxy BI UI。");
+        }
       }
       const summary = summarizeCodexEvent(event);
       if (!summary || summary === lastProgress) return;
@@ -801,6 +831,30 @@ const scanToolBridgePolicyViolations = (runDir: string, assistantText = ""): Too
   }
 
   return violations;
+};
+
+const enforceBatchCasePolicy = (
+  connection: AgentConnection,
+  runId: string,
+  runDir: string,
+  outputFileName: string,
+  messagePrefix: string
+): void => {
+  const violations = scanBatchCasePolicyViolations(runDir);
+  if (violations.length === 0) return;
+
+  writeJson(path.join(runDir, "output", outputFileName), {
+    violations
+  });
+  connection.send(
+    "run.stderr",
+    {
+      run_id: runId,
+      text: `${messagePrefix}: ${violations.map((item) => `${item.code}(${item.caseNos.join(",")})`).join("; ")}`
+    },
+    false
+  );
+  throw new Error(`BATCH_CASE_POLICY_VIOLATION ${violations.map((item) => item.code).join(",")}`);
 };
 
 type UploadArtifactsOptions = {
@@ -993,7 +1047,7 @@ export const handleTaskDispatch = async (
     downloadedInputs = await downloadInputs(config, message, runDir);
     writeJson(path.join(runDir, "input", "downloaded-inputs.json"), downloadedInputs);
     sendPhase(connection, runId, "prepare_guides", "建立執行索引", "解析 case manifest、rule index 與 BI UI helper guidance。");
-    const generatedGuides = await generateRunGuides(runDir, message, downloadedInputs);
+    const generatedGuides = await generateRunGuides(runId, runDir, message, downloadedInputs);
     sendPhase(
       connection,
       runId,
@@ -1143,6 +1197,13 @@ export const handleTaskDispatch = async (
       );
       throw new Error(`TOOL_BRIDGE_POLICY_VIOLATION ${policyViolations.map((item) => item.code).join(",")}`);
     }
+    enforceBatchCasePolicy(
+      connection,
+      runId,
+      runDir,
+      "batch-case-policy-violations.json",
+      "Batch case policy violation"
+    );
 
     if (diagnosticToolRequests.length > 0) {
       connection.send(
@@ -1253,6 +1314,8 @@ export const handleTaskDispatch = async (
             ? "CODEX_RUN_CANCELLED"
             : errorMessage.startsWith("TOOL_BRIDGE_POLICY_VIOLATION")
               ? "TOOL_BRIDGE_POLICY_VIOLATION"
+              : errorMessage.startsWith("BATCH_CASE_POLICY_VIOLATION")
+                ? "BATCH_CASE_POLICY_VIOLATION"
               : errorMessage.startsWith("TOOL_BRIDGE_SCHEMA_INVALID")
                 ? "TOOL_BRIDGE_SCHEMA_INVALID"
               : "AGENT_RUN_FAILED",
@@ -1466,6 +1529,13 @@ export const handleToolResponse = async (
       );
       throw new Error(`TOOL_BRIDGE_POLICY_VIOLATION ${policyViolations.map((item) => item.code).join(",")}`);
     }
+    enforceBatchCasePolicy(
+      connection,
+      runId,
+      runDir,
+      "batch-case-policy-violations-resume.json",
+      "Batch case policy violation during resume"
+    );
 
     if (diagnosticToolRequests.length > 0) {
       connection.send(
@@ -1575,6 +1645,8 @@ export const handleToolResponse = async (
             ? "CODEX_RUN_CANCELLED"
             : errorMessage.startsWith("TOOL_BRIDGE_POLICY_VIOLATION")
               ? "TOOL_BRIDGE_POLICY_VIOLATION"
+              : errorMessage.startsWith("BATCH_CASE_POLICY_VIOLATION")
+                ? "BATCH_CASE_POLICY_VIOLATION"
               : errorMessage.startsWith("TOOL_BRIDGE_SCHEMA_INVALID")
                 ? "TOOL_BRIDGE_SCHEMA_INVALID"
               : "AGENT_RUN_FAILED",

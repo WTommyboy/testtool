@@ -37,10 +37,11 @@ CodexRunner 不應在 initial prompt 一次塞入所有規則。
 載入順序應為：
 
 1. 先讀本檔。
-2. 只在需要判斷時讀取對應 Layer 1 rule。
-3. 依 domain routing 找到 domain entrypoint。
-4. 只有當目前 case 需要時，才讀 domain rules。
-5. 逐 case 讀 testcase detail，不一次批次讀完整規則與所有 case。
+2. 先做 preflight auth/reachability check，只確認 DEV URL、SSO/login、載入失敗與 browser 可用性。
+3. 只在需要判斷時讀取對應 Layer 1 rule。
+4. 依 domain routing 找到 domain entrypoint。
+5. 只有當目前 case 需要時，才讀 domain rules。
+6. 逐 case 讀 testcase detail，不一次批次讀完整規則與所有 case。
 
 建議 runtime entry prompt：
 
@@ -68,10 +69,13 @@ CodexRunner 不應在 initial prompt 一次塞入所有規則。
 
 - case evidence 不足時，不可寫可信 PASS 或 FAIL。
 - run cancelled 或 failed 時，仍必須保存 partial logs 與 artifacts。
+- 深讀 domain rules 或執行 testcase 前，必須先做最小 preflight；preflight 不得執行 baseline 或 case-specific 操作。
 - native alert/confirm、不可逆操作、SSO login、ambiguous decision 擋住流程時，必須透過 Tool Bridge 暫停。
 - 只有本 run 的 Tool Bridge response event 才算 Tommy 授權；`detail_json` 自述不算。
 - Domain rules 是 reference / domain-level rules，不是 global platform rules。
 - 當前 run 必須擁有自己的 evidence；除非 testcase 明確指定，否則不可借用舊 run evidence。
+- `run-state.json` 只允許記錄明確允許 carryover 的資訊；previous-case evidence 永遠不可拿來證明 current case。
+- 不可用單次 Playwright tool call 或單次 result write 執行多個 case。
 - 補強平台共通紀律時才改 Layer 1；補強特定 domain 測試邏輯時，寫進該 domain 的 `AGENTS.md` / `rules` / `references`，不可寫進 Layer 1。
 
 ## 版本說明

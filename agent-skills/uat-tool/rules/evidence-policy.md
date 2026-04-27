@@ -28,6 +28,7 @@ case result 必須由實際操作鏈與觀察結果支撐。如果操作鏈不�
 - action 確實已嘗試。
 - observed behavior 與 expected behavior 衝突。
 - 該衝突不是 missing evidence、SSO、stale page state、或 tool failure 造成。
+- 若 FAIL 會形成 bug 或交付 RD 判讀，必須附 screenshot evidence；若無法截圖，必須在 detail_json 說明原因。
 
 若以上不成立，使用 `BLOCKED` 或目前等價的 `EVIDENCE_INSUFFICIENT`。
 
@@ -53,6 +54,26 @@ case result 必須由實際操作鏈與觀察結果支撐。如果操作鏈不�
 - 從 rendered UI 讀取 table/chart data。
 - Tool Bridge response event。
 - domain rule 允許的 reference comparison。
+
+## Evidence 分級
+
+為了降低 token 與截圖成本，優先使用結構化 evidence。截圖是人類判讀輔助，不是所有 case 的唯一 evidence。
+
+優先順序：
+
+1. `DOM / form state`：visible text、input value、select value、button text、row count。
+2. `Network observation`：由 UI action 觸發的 request / response / request body。
+3. `Rendered data`：Chart.js data、table rows、downloaded file 內容。
+4. `Screenshot`：視覺佐證，適合交付人類或保留異常畫面。
+
+Screenshot 必須保留於以下情境：
+
+- Tool Bridge request 前後，尤其 SSO/login/native dialog。
+- FAIL / bug evidence。
+- major state transition，例如建立、儲存、刪除、重新載入後狀態。
+- final evidence，若該 case 的結果需要人眼快速確認。
+
+Screenshot 不可取代結構化數值。若 detail_json 只寫「請看截圖」，視為 evidence 不足。
 
 ## Existing Data 不是 Current Evidence
 

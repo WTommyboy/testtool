@@ -128,6 +128,20 @@ export const writeRuleIndex = (runDir: string, domain: string): string => {
   }
 
   addIfExists(entries, runDir, {
+    id: "preflight-auth-check",
+    scope: "input",
+    filePath: path.join(runDir, "input", "preflight-auth-check.md"),
+    loadWhen: ["before first browser action", "auth/reachability check", "SSO or login suspected"],
+    summary: "Minimal preflight contract. Check DEV URL reachability/login only before deep rule loading or testcase actions."
+  });
+  addIfExists(entries, runDir, {
+    id: "run-state",
+    scope: "input",
+    filePath: path.join(runDir, "input", "run-state.json"),
+    loadWhen: ["before current case execution", "carryover needed", "stale evidence concern"],
+    summary: "Allowed carryover and isolated evidence policy for this run. Previous-case evidence cannot prove later cases."
+  });
+  addIfExists(entries, runDir, {
     id: "case-manifest",
     scope: "input",
     filePath: path.join(runDir, "input", "case-manifest.json"),
@@ -155,6 +169,8 @@ export const writeRuleIndex = (runDir: string, domain: string): string => {
     entries,
     loadingPolicy: [
       "Read input/run-brief.md first.",
+      "Perform input/preflight-auth-check.md before deep domain rule loading or testcase actions.",
+      "Read input/run-state.json before using any carryover from prior case actions.",
       "Read input/current-case.json for the current case before the full workbook.",
       "Use this index to choose the smallest rule file that answers the current question.",
       "Do not read all BI rules before the first UI action unless a blocker requires exact policy text.",
