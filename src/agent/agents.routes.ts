@@ -1,4 +1,5 @@
 import { Router } from "express";
+import type { NextFunction, Request, Response } from "express";
 import { z } from "zod";
 import { createAgentToken, listAgentTokens, revokeAgentToken } from "./agent-tokens";
 import { agentRegistry } from "./agent-registry";
@@ -16,13 +17,41 @@ const createTokenSchema = z.object({
   deviceName: z.string().min(1).optional()
 });
 
+const getBootstrapSecret = (): string => {
+  return process.env.AGENT_BOOTSTRAP_SECRET
+    || process.env.MAC_AGENT_BOOTSTRAP_TOKEN
+    || (process.env.NODE_ENV === "production" ? "" : "dev-agent-token");
+};
+
+const getBootstrapToken = (req: Request): string => {
+  const headerToken = req.header("x-agent-bootstrap-token");
+  if (headerToken) return headerToken;
+
+  const authHeader = req.header("authorization") ?? "";
+  const bearerMatch = authHeader.match(/^Bearer\s+(.+)$/i);
+  return bearerMatch?.[1] ?? "";
+};
+
+const requireBootstrapToken = (req: Request, res: Response, next: NextFunction) => {
+  const expected = getBootstrapSecret();
+  if (!expected) {
+    return res.status(503).json({ error: "AGENT_BOOTSTRAP_SECRET_NOT_CONFIGURED" });
+  }
+
+  if (getBootstrapToken(req) !== expected) {
+    return res.status(401).json({ error: "UNAUTHORIZED_AGENT_BOOTSTRAP" });
+  }
+
+  return next();
+};
+
 router.get("/", (_req, res) => {
   res.json({
     items: agentRegistry.list()
   });
 });
 
-router.post("/tokens", (req, res) => {
+router.post("/tokens", requireBootstrapToken, (req, res) => {
   const parsed = createTokenSchema.safeParse(req.body ?? {});
   if (!parsed.success) {
     return res.status(400).json({
@@ -40,7 +69,7 @@ router.post("/tokens", (req, res) => {
   });
 });
 
-router.get("/tokens", (_req, res) => {
+router.get("/tokens", requireBootstrapToken, (_req, res) => {
   const onlineAgents = agentRegistry.list();
   const items = listAgentTokens().map((token) => ({
     ...token,
@@ -49,12 +78,13 @@ router.get("/tokens", (_req, res) => {
   return res.json({ items });
 });
 
-router.delete("/tokens/:id", (req, res) => {
-  const revoked = revokeAgentToken(req.params.id);
+router.delete("/tokens/:id", requireBootstrapToken, (req, res) => {
+  const tokenId = String(req.params.id);
+  const revoked = revokeAgentToken(tokenId);
   if (!revoked) {
     return res.status(404).json({ error: "AGENT_TOKEN_NOT_FOUND" });
   }
-  return res.json({ id: req.params.id, revoked: true });
+  return res.json({ id: tokenId, revoked: true });
 });
 
 router.get("/:id", (req, res) => {
