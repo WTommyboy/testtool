@@ -26,6 +26,7 @@ export const writeRunStateGuide = (runDir: string, runId: string, caseManifest: 
           groupName: currentCase.groupName
         }
       : null,
+    currentCaseSelection: caseManifest.currentCaseSelection,
     carryover: {
       baseline: {
         value: null,

@@ -409,12 +409,13 @@ Parser behavior:
 
 Purpose:
 
-- First/current case only.
+- Start/current case only.
 - Codex should read this before full workbook.
 
 Current limitation:
 
-- It is generated at run start for the first case.
+- It is generated at run start.
+- If startup instruction explicitly says to start/resume from a case, Agent selects that case instead of the workbook first case.
 - It does not yet automatically advance after each case.
 
 Next improvement:

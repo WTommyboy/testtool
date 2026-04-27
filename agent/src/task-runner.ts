@@ -12,6 +12,7 @@ import { writeRuleIndex } from "./rule-index";
 import { writePreflightGuidance } from "./preflight-guidance";
 import { writeRunStateGuide } from "./run-state-guide";
 import { scanBatchCasePolicyViolations } from "./batch-case-detector";
+import { detectStartCaseHint, type StartCaseHint } from "./start-case";
 
 const getRunId = (message: AgentMessage): string => {
   const runId = message.payload.run_id;
@@ -145,6 +146,10 @@ const writeRunBrief = (
     `- expected_result_xlsx: ${resultXlsxPath}`,
     `- case_manifest: ${guides.caseManifest.manifestPath ?? "(unavailable)"}`,
     `- current_case: ${guides.caseManifest.currentCasePath ?? "(unavailable)"}`,
+    `- current_case_no: ${guides.caseManifest.currentCaseNo ?? "(unavailable)"}`,
+    guides.caseManifest.currentCaseSelection
+      ? `- current_case_selection: ${guides.caseManifest.currentCaseSelection.reason}; requested=${guides.caseManifest.currentCaseSelection.requestedCaseNo ?? "(none)"}; source=${guides.caseManifest.currentCaseSelection.source ?? "(none)"}`
+      : "- current_case_selection: (unavailable)",
     `- rule_index: ${guides.ruleIndexPath}`,
     `- bi_ui_helper_guidance: ${guides.biUiHelperGuidancePath}`,
     `- preflight_auth_check: ${guides.preflightGuidancePath}`,
@@ -158,6 +163,9 @@ const writeRunBrief = (
     guides.caseManifest.currentCasePath
       ? `- current_case_file: ${guides.caseManifest.currentCasePath}`
       : "- current_case_file: (unavailable)",
+    guides.startCaseHint
+      ? `- startup_start_case_hint: ${guides.startCaseHint.caseNo} from ${guides.startCaseHint.source}`
+      : "- startup_start_case_hint: none",
     guides.caseManifest.warnings.length > 0
       ? `- manifest_warnings: ${guides.caseManifest.warnings.join(", ")}`
       : "- manifest_warnings: none",
@@ -165,7 +173,7 @@ const writeRunBrief = (
     "## Fast Path",
     "1. Confirm testcase workbook and startup instruction exist.",
     "2. Read `input/preflight-auth-check.md` and perform only the auth/reachability preflight before deep domain rule loading.",
-    "3. Read `input/current-case.json` and `input/run-state.json`. Use `input/case-manifest.json` only as a navigation index, not as permission to batch execute cases.",
+    "3. Read `input/current-case.json` and `input/run-state.json`. If startup instruction explicitly requested a starting case, Agent has already aligned current-case.json to that request.",
     "4. Read `input/rule-index.json` and load only the smallest rule file required for the current decision.",
     "5. For BI UI operations, read `input/bi-ui-helper-guidance.md` before exploring the page from scratch.",
     "6. Execute one case at a time, write evidence/result for that case, then move to the next case JSON if needed.",
@@ -212,6 +220,7 @@ type GeneratedRunGuides = {
   biUiHelperGuidancePath: string;
   preflightGuidancePath: string;
   runStatePath: string;
+  startCaseHint: StartCaseHint | null;
 };
 
 export type TaskDispatchHooks = {
@@ -356,7 +365,15 @@ const generateRunGuides = async (runId: string, runDir: string, message: AgentMe
   const inputDir = path.join(runDir, "input");
   const domain = getStringPayload(message, "domain") ?? "BI";
   const biUiHelperGuidancePath = writeBiUiHelperGuidance(runDir);
-  const caseManifest = await writeCaseManifest(inputs.xlsx, inputDir);
+  const startCaseHint = detectStartCaseHint({
+    startupInstructionText: getStringPayload(message, "startup_instruction"),
+    startupInstructionPath: inputs.startup_instruction,
+    fallbackMarkdownPath: inputs.md
+  });
+  const caseManifest = await writeCaseManifest(inputs.xlsx, inputDir, {
+    preferredStartCaseNo: startCaseHint?.caseNo,
+    preferredStartCaseSource: startCaseHint?.source
+  });
   const preflightGuidancePath = writePreflightGuidance(runDir, getStringPayload(message, "dev_url"));
   const runStatePath = writeRunStateGuide(runDir, runId, caseManifest);
   const ruleIndexPath = writeRuleIndex(runDir, domain);
@@ -366,9 +383,10 @@ const generateRunGuides = async (runId: string, runDir: string, message: AgentMe
     bi_ui_helper_guidance_path: biUiHelperGuidancePath,
     preflight_guidance_path: preflightGuidancePath,
     run_state_path: runStatePath,
+    start_case_hint: startCaseHint,
     generated_at: new Date().toISOString()
   });
-  return { caseManifest, ruleIndexPath, biUiHelperGuidancePath, preflightGuidancePath, runStatePath };
+  return { caseManifest, ruleIndexPath, biUiHelperGuidancePath, preflightGuidancePath, runStatePath, startCaseHint };
 };
 
 const getCodexGeneratedResultXlsx = (runDir: string): string | null => {
@@ -423,6 +441,7 @@ const buildPrompt = (
     "- Existing page data or old reports are not evidence that this run performed the action.",
     "- Execute and record one case at a time. `case-manifest.json` is only an index; it is not permission to batch multiple case flows.",
     "- After each case, write or update evidence/result for that case before reading the next case JSON.",
+    "- If startup instruction names a starting case, Agent resolves that into `current-case.json`; do not emit ambiguity merely because the workbook contains earlier cases.",
     "- Use only `input/run-state.json` allowed carryover. Prior workbook rows and previous-case evidence are stale/isolated unless the current testcase explicitly references same-run carryover.",
     "- Preferred evidence order: DOM/form state, network observation, chart/table data, then screenshot. Bugs and Tool Bridge/failure states must include screenshot evidence when possible.",
     "- Never trade correctness gates for speed. Keep evidence, Tool Bridge, stale-evidence and one-case-at-a-time gates intact.",
@@ -436,6 +455,10 @@ const buildPrompt = (
     `Copied context manifest: ${path.resolve(runDir, "input", "codex-context.json")}`,
     `Case manifest: ${guides.caseManifest.manifestPath ?? "(unavailable)"}`,
     `Current case JSON: ${guides.caseManifest.currentCasePath ?? "(unavailable)"}`,
+    `Current case no: ${guides.caseManifest.currentCaseNo ?? "(unavailable)"}`,
+    guides.caseManifest.currentCaseSelection
+      ? `Current case selection: ${guides.caseManifest.currentCaseSelection.reason}; requested=${guides.caseManifest.currentCaseSelection.requestedCaseNo ?? "(none)"}; source=${guides.caseManifest.currentCaseSelection.source ?? "(none)"}`
+      : "Current case selection: (unavailable)",
     `Preflight auth check: ${guides.preflightGuidancePath}`,
     `Run state / carryover: ${guides.runStatePath}`,
     `Rule index: ${guides.ruleIndexPath}`,

@@ -23,18 +23,34 @@ export type CaseManifest = {
   generatedAt: string;
   workbookPath: string;
   sheetName: string | null;
+  currentCaseNo: string | null;
+  currentCaseSelection: CaseManifestCurrentCaseSelection;
   totalCases: number;
   groups: Array<{ name: string; caseCount: number; caseNos: string[] }>;
   cases: CaseManifestCase[];
   warnings: string[];
 };
 
+export type CaseManifestCurrentCaseSelection = {
+  selectedCaseNo: string | null;
+  requestedCaseNo: string | null;
+  source: string | null;
+  reason: "first_case" | "startup_instruction" | "requested_case_not_found";
+};
+
 export type CaseManifestResult = {
   manifestPath: string | null;
   currentCasePath: string | null;
   casesDir: string | null;
+  currentCaseNo: string | null;
+  currentCaseSelection: CaseManifestCurrentCaseSelection | null;
   totalCases: number;
   warnings: string[];
+};
+
+export type CaseManifestOptions = {
+  preferredStartCaseNo?: string | null;
+  preferredStartCaseSource?: string | null;
 };
 
 type HeaderColumns = {
@@ -79,6 +95,14 @@ const nullable = (value: string): string | null => {
 const safeFilePart = (value: string): string => {
   const safe = value.replace(/[\\/:"*?<>|#%{}[\]^~`;\s]+/g, "_").replace(/^_+|_+$/g, "");
   return safe || "case";
+};
+
+const normalizeCaseNo = (value: string): string => value.trim().replace(/\s+/g, "").toUpperCase();
+
+const matchesPreferredCaseNo = (caseNo: string, preferred: string): boolean => {
+  const current = normalizeCaseNo(caseNo);
+  const target = normalizeCaseNo(preferred);
+  return current === target || current.replace(/^DEMO-/, "") === target || current === `DEMO-${target}`;
 };
 
 const aliases: Record<keyof HeaderColumns, string[]> = {
@@ -270,7 +294,8 @@ const writeManifestFiles = (
   outputDir: string,
   sheetName: string | null,
   cases: CaseManifestCase[],
-  warnings: string[]
+  warnings: string[],
+  options: CaseManifestOptions = {}
 ): CaseManifestResult => {
   const grouped = new Map<string, string[]>();
   for (const item of cases) {
@@ -278,10 +303,27 @@ const writeManifestFiles = (
     grouped.set(key, [...(grouped.get(key) ?? []), item.caseNo]);
   }
 
+  const requestedCaseNo = options.preferredStartCaseNo?.trim() ? normalizeCaseNo(options.preferredStartCaseNo) : null;
+  const requestedCase = requestedCaseNo
+    ? cases.find((item) => matchesPreferredCaseNo(item.caseNo, requestedCaseNo))
+    : null;
+  const selectedCase = requestedCase ?? cases[0] ?? null;
+  if (requestedCaseNo && !requestedCase) {
+    warnings.push(`START_CASE_NOT_FOUND:${requestedCaseNo}`);
+  }
+  const currentCaseSelection: CaseManifestCurrentCaseSelection = {
+    selectedCaseNo: selectedCase?.caseNo ?? null,
+    requestedCaseNo,
+    source: requestedCaseNo ? options.preferredStartCaseSource ?? "startup_instruction" : null,
+    reason: requestedCase ? "startup_instruction" : requestedCaseNo ? "requested_case_not_found" : "first_case"
+  };
+
   const manifest: CaseManifest = {
     generatedAt: new Date().toISOString(),
     workbookPath: xlsxPath,
     sheetName,
+    currentCaseNo: selectedCase?.caseNo ?? null,
+    currentCaseSelection,
     totalCases: cases.length,
     groups: [...grouped.entries()].map(([name, caseNos]) => ({ name, caseCount: caseNos.length, caseNos })),
     cases,
@@ -291,14 +333,16 @@ const writeManifestFiles = (
   const manifestPath = path.join(outputDir, "case-manifest.json");
   const currentCasePath = path.join(outputDir, "current-case.json");
   fs.writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
-  if (cases[0]) {
-    fs.writeFileSync(currentCasePath, `${JSON.stringify(cases[0], null, 2)}\n`);
+  if (selectedCase) {
+    fs.writeFileSync(currentCasePath, `${JSON.stringify(selectedCase, null, 2)}\n`);
   }
 
   return {
     manifestPath,
-    currentCasePath: cases[0] ? currentCasePath : null,
+    currentCasePath: selectedCase ? currentCasePath : null,
     casesDir: path.join(outputDir, "cases"),
+    currentCaseNo: selectedCase?.caseNo ?? null,
+    currentCaseSelection,
     totalCases: cases.length,
     warnings
   };
@@ -307,17 +351,18 @@ const writeManifestFiles = (
 const writeMinimalCaseManifest = async (
   xlsxPath: string,
   outputDir: string,
-  warnings: string[]
+  warnings: string[],
+  options: CaseManifestOptions = {}
 ): Promise<CaseManifestResult> => {
   const sheets = await loadMinimalXlsxSheets(xlsxPath);
   const sheet = sheets.find((item) => item.name === "測試案例") ?? sheets[0];
   if (!sheet) {
-    return { manifestPath: null, currentCasePath: null, casesDir: null, totalCases: 0, warnings: [...warnings, "XLSX_NO_WORKSHEET"] };
+    return { manifestPath: null, currentCasePath: null, casesDir: null, currentCaseNo: null, currentCaseSelection: null, totalCases: 0, warnings: [...warnings, "XLSX_NO_WORKSHEET"] };
   }
 
   const header = detectArrayHeader(sheet.rows);
   if (!header) {
-    return { manifestPath: null, currentCasePath: null, casesDir: null, totalCases: 0, warnings: [...warnings, "CASE_HEADER_NOT_FOUND"] };
+    return { manifestPath: null, currentCasePath: null, casesDir: null, currentCaseNo: null, currentCaseSelection: null, totalCases: 0, warnings: [...warnings, "CASE_HEADER_NOT_FOUND"] };
   }
 
   const casesDir = path.join(outputDir, "cases");
@@ -356,13 +401,17 @@ const writeMinimalCaseManifest = async (
     fs.writeFileSync(currentCaseFile, `${JSON.stringify(item, null, 2)}\n`);
   }
 
-  return writeManifestFiles(xlsxPath, outputDir, sheet.name, cases, warnings);
+  return writeManifestFiles(xlsxPath, outputDir, sheet.name, cases, warnings, options);
 };
 
-export const writeCaseManifest = async (xlsxPath: string | undefined, outputDir: string): Promise<CaseManifestResult> => {
+export const writeCaseManifest = async (
+  xlsxPath: string | undefined,
+  outputDir: string,
+  options: CaseManifestOptions = {}
+): Promise<CaseManifestResult> => {
   const warnings: string[] = [];
   if (!xlsxPath) {
-    return { manifestPath: null, currentCasePath: null, casesDir: null, totalCases: 0, warnings: ["XLSX_INPUT_MISSING"] };
+    return { manifestPath: null, currentCasePath: null, casesDir: null, currentCaseNo: null, currentCaseSelection: null, totalCases: 0, warnings: ["XLSX_INPUT_MISSING"] };
   }
 
   const workbook = new ExcelJS.Workbook();
@@ -370,14 +419,19 @@ export const writeCaseManifest = async (xlsxPath: string | undefined, outputDir:
     await workbook.xlsx.readFile(xlsxPath);
   } catch (error) {
     try {
-      return await writeMinimalCaseManifest(xlsxPath, outputDir, [
-        `EXCELJS_READ_FALLBACK:${error instanceof Error ? error.message : String(error)}`
-      ]);
+      return await writeMinimalCaseManifest(
+        xlsxPath,
+        outputDir,
+        [`EXCELJS_READ_FALLBACK:${error instanceof Error ? error.message : String(error)}`],
+        options
+      );
     } catch (fallbackError) {
       return {
         manifestPath: null,
         currentCasePath: null,
         casesDir: null,
+        currentCaseNo: null,
+        currentCaseSelection: null,
         totalCases: 0,
         warnings: [
           `XLSX_READ_FAILED:${error instanceof Error ? error.message : String(error)}`,
@@ -389,12 +443,12 @@ export const writeCaseManifest = async (xlsxPath: string | undefined, outputDir:
 
   const sheet = workbook.getWorksheet("測試案例") ?? workbook.worksheets[0];
   if (!sheet) {
-    return { manifestPath: null, currentCasePath: null, casesDir: null, totalCases: 0, warnings: ["XLSX_NO_WORKSHEET"] };
+    return { manifestPath: null, currentCasePath: null, casesDir: null, currentCaseNo: null, currentCaseSelection: null, totalCases: 0, warnings: ["XLSX_NO_WORKSHEET"] };
   }
 
   const header = detectHeader(sheet);
   if (!header) {
-    return { manifestPath: null, currentCasePath: null, casesDir: null, totalCases: 0, warnings: ["CASE_HEADER_NOT_FOUND"] };
+    return { manifestPath: null, currentCasePath: null, casesDir: null, currentCaseNo: null, currentCaseSelection: null, totalCases: 0, warnings: ["CASE_HEADER_NOT_FOUND"] };
   }
 
   if (!header.columns.groupName) warnings.push("GROUP_COLUMN_NOT_FOUND");
@@ -437,5 +491,5 @@ export const writeCaseManifest = async (xlsxPath: string | undefined, outputDir:
     fs.writeFileSync(currentCaseFile, `${JSON.stringify(item, null, 2)}\n`);
   }
 
-  return writeManifestFiles(xlsxPath, outputDir, sheet.name, cases, warnings);
+  return writeManifestFiles(xlsxPath, outputDir, sheet.name, cases, warnings, options);
 };
