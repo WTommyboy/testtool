@@ -182,6 +182,14 @@ class AgentRegistry {
         agent.currentRunId = typeof message.payload.run_id === "string" ? message.payload.run_id : agent.currentRunId;
       }
     }
+    if (message.type === "run.tool_request") {
+      const agent = this.agents.get(agentId);
+      if (agent) {
+        agent.status = "idle";
+        agent.lastSeenAt = new Date().toISOString();
+        agent.currentRunId = null;
+      }
+    }
     if (["run.completed", "run.failed", "run.rejected", "run.cancelled"].includes(message.type)) {
       const agent = this.agents.get(agentId);
       if (agent) {

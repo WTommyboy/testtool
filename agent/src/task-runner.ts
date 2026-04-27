@@ -4,6 +4,7 @@ import { CodexRunner } from "./codex-runner";
 import type { AgentConfig, AgentMessage } from "./types";
 import type { AgentConnection } from "./connection";
 import { readFirstInputCase, writeAgentResultXlsx } from "./result-writer";
+import { parseToolRequests } from "./tool-bridge";
 
 const getRunId = (message: AgentMessage): string => {
   const runId = message.payload.run_id;
@@ -230,6 +231,16 @@ const buildResultDetail = (
   stderrExcerpt: result.stderr.slice(0, 2000)
 });
 
+const extractToolRequests = (assistantText: string): ReturnType<typeof parseToolRequests> => {
+  return parseToolRequests(assistantText);
+};
+
+const getToolRequestId = (request: unknown): string | null => {
+  if (!request || typeof request !== "object" || Array.isArray(request)) return null;
+  const requestId = (request as { request_id?: unknown }).request_id;
+  return typeof requestId === "string" && requestId.trim() ? requestId : null;
+};
+
 const writeCombinedLog = (
   runDir: string,
   result: {
@@ -385,6 +396,56 @@ export const handleTaskDispatch = async (
         },
         false
       );
+    }
+
+    const toolRequestParse = extractToolRequests(result.assistantText);
+    const validToolRequests = toolRequestParse.requests.filter((request) => request.valid);
+    writeJson(path.join(runDir, "output", "tool-requests.json"), toolRequestParse);
+
+    const parseWarningCodes = [
+      ...toolRequestParse.warnings.map((warning) => warning.code),
+      ...toolRequestParse.requests.flatMap((request) => request.warnings.map((warning) => warning.code))
+    ];
+    if (parseWarningCodes.length > 0) {
+      connection.send(
+        "run.stderr",
+        {
+          run_id: runId,
+          text: `Tool Bridge parse warnings: ${parseWarningCodes.join(", ")}`
+        },
+        false
+      );
+    }
+
+    if (validToolRequests.length > 0) {
+      for (const request of validToolRequests) {
+        connection.send(
+          "run.tool_request",
+          {
+            run_id: runId,
+            request_id: getToolRequestId(request.data),
+            request: request.data,
+            raw: request.raw
+          },
+          true
+        );
+      }
+      writeJson(path.join(runDir, "state.json"), {
+        run_id: runId,
+        status: "waiting_user",
+        waiting_at: new Date().toISOString(),
+        tool_request_count: validToolRequests.length,
+        thread_id: result.threadId
+      });
+      connection.send(
+        "run.stdout",
+        {
+          run_id: runId,
+          text: `uat-agent paused for ${validToolRequests.length} Tool Bridge request(s).`
+        },
+        false
+      );
+      return;
     }
 
     const outputUrls = getOutputUrls(message);

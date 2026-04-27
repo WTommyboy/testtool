@@ -48,6 +48,54 @@ const insertRunLog = (
   });
 };
 
+const asString = (value: unknown): string | null => (typeof value === "string" && value.trim() ? value.trim() : null);
+
+const getToolRequest = (message: AgentMessage): Record<string, unknown> => {
+  const request = message.payload.request;
+  return request && typeof request === "object" && !Array.isArray(request) ? request as Record<string, unknown> : {};
+};
+
+const formatToolRequestReason = (message: AgentMessage): string => {
+  const request = getToolRequest(message);
+  const type = asString(request.type) ?? "tool_request";
+  const requestId = asString(request.request_id) ?? asString(message.payload.request_id) ?? "unknown";
+  const action = asString(request.action) ?? asString(request.proposed_action) ?? asString(request.context) ?? "PM action required";
+  const reason = asString(request.reason) ?? asString(request.error) ?? asString(request.recommendation);
+  return [
+    `TOOL_REQUEST ${type}: ${action}`,
+    `request_id: ${requestId}`,
+    reason ? `reason: ${reason}` : null
+  ].filter(Boolean).join("\n");
+};
+
+const insertToolRequestApproval = (runId: string, message: AgentMessage): void => {
+  const now = nowIso();
+  const request = getToolRequest(message);
+  const caseNo = asString(request.case) ?? "TOOL_REQUEST";
+  const requestId = asString(request.request_id) ?? asString(message.payload.request_id) ?? message.id;
+  const existing = db
+    .prepare("SELECT id FROM approvals WHERE run_id = ? AND reason LIKE ? AND status = 'PENDING'")
+    .get(runId, `%request_id: ${requestId}%`) as { id: string } | undefined;
+  if (existing) return;
+
+  db.prepare(
+    `
+      INSERT INTO approvals (
+        id, run_id, case_no, step_no, reason, status, snapshot_path, created_at
+      ) VALUES (
+        @id, @run_id, @case_no, @step_no, @reason, 'PENDING', NULL, @created_at
+      )
+    `
+  ).run({
+    id: randomUUID(),
+    run_id: runId,
+    case_no: caseNo,
+    step_no: 0,
+    reason: formatToolRequestReason(message),
+    created_at: now
+  });
+};
+
 const setRunStatus = (runId: string, status: string): void => {
   const now = nowIso();
   db.prepare("UPDATE runs SET status = ?, updated_at = ? WHERE id = ?").run(status, now, runId);
@@ -86,6 +134,7 @@ const handleAgentRunMessage = (agentId: string, message: AgentMessage): void => 
 
   if (message.type === "run.tool_request") {
     setRunStatus(runId, "WAITING_APPROVAL");
+    insertToolRequestApproval(runId, message);
     insertRunEvent(runId, "tool_request.created", { agentId, payload: message.payload }, message.seq);
     insertRunLog(runId, "WARN", "Agent requested PM action", { agentId, payload: message.payload });
     return;
