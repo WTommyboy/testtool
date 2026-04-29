@@ -75,26 +75,41 @@ const requestCdpTargetAction = async (endpoint: string, action: "activate" | "cl
   }
 };
 
+const isBrowserInternalTarget = (target: CdpTarget): boolean => {
+  const url = target.url ?? "";
+  return url.startsWith("chrome://") || url.startsWith("devtools://") || url.startsWith("chrome-extension://");
+};
+
+const isUserPageTarget = (target: CdpTarget): boolean => {
+  return target.type === "page" && Boolean(target.id) && !isBrowserInternalTarget(target);
+};
+
 const closeExistingPageTabs = async (endpoint: string): Promise<void> => {
-  const targets = await listCdpTargets(endpoint);
-  await Promise.all(
-    targets
-      .filter((target) => target.type === "page" && target.id)
-      .map((target) => requestCdpTargetAction(endpoint, "close", target.id as string))
-  );
+  const targets = (await listCdpTargets(endpoint)).filter(isUserPageTarget);
+  const targetIds = targets.map((target) => target.id as string);
+  for (const targetId of targetIds) {
+    await requestCdpTargetAction(endpoint, "close", targetId);
+  }
+
+  const deadline = Date.now() + 3000;
+  while (Date.now() < deadline) {
+    const remaining = (await listCdpTargets(endpoint)).filter((target) => target.id && targetIds.includes(target.id));
+    if (remaining.length === 0) return;
+    await new Promise((resolve) => setTimeout(resolve, 150));
+  }
 };
 
 const pickBestVisibleTarget = (targets: CdpTarget[]): CdpTarget | null => {
-  const pages = targets.filter((target) => target.type === "page" && target.id);
+  const pages = targets.filter(isUserPageTarget);
   return (
     pages.find((target) => target.url?.includes("/testview/edit")) ??
     pages.find((target) => target.url?.includes("/testview/home")) ??
-    pages.find((target) => !target.url?.startsWith("chrome://")) ??
+    pages[0] ??
     null
   );
 };
 
-const activateBestExistingTab = async (endpoint: string): Promise<void> => {
+export const activateBestExistingTab = async (endpoint: string): Promise<void> => {
   const target = pickBestVisibleTarget(await listCdpTargets(endpoint));
   if (target?.id) await requestCdpTargetAction(endpoint, "activate", target.id);
 };
@@ -156,7 +171,7 @@ export const ensureChromeDebugSession = async (
     "--no-default-browser-check",
     "--new-window"
   ];
-  if (initialUrl) args.push(initialUrl);
+  if (initialUrl && openInitialUrl && !options.resetTabs) args.push(initialUrl);
 
   const child = spawn(chromeExecutable, args, {
     detached: true,
@@ -165,6 +180,10 @@ export const ensureChromeDebugSession = async (
   child.unref();
 
   const ready = await waitForCdp(endpoint, 5000);
-  if (ready) await activateBestExistingTab(endpoint);
+  if (ready) {
+    if (options.resetTabs) await closeExistingPageTabs(endpoint);
+    if (initialUrl && openInitialUrl) await openCdpTab(endpoint, initialUrl);
+    else await activateBestExistingTab(endpoint);
+  }
   return ready ? endpoint : null;
 };

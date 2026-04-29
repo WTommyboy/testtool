@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { ensureChromeDebugSession } from "./browser-session";
+import { activateBestExistingTab, ensureChromeDebugSession } from "./browser-session";
 import { CodexRunner, type CodexJsonEvent, type CodexTurnResult } from "./codex-runner";
 import type { AgentConfig, AgentMessage } from "./types";
 import type { AgentConnection } from "./connection";
@@ -937,7 +937,16 @@ const createCodexRunner = (
   let lastProgress = "";
   let mcpToolCallCount = 0;
   let commandExecutionCount = 0;
+  let pendingBrowserActivation = false;
   const emittedPhases = new Set<string>();
+  const scheduleBrowserActivation = (): void => {
+    if (!chromeCdpEndpoint || pendingBrowserActivation) return;
+    pendingBrowserActivation = true;
+    setTimeout(() => {
+      pendingBrowserActivation = false;
+      void activateBestExistingTab(chromeCdpEndpoint);
+    }, 100);
+  };
   const emitOnce = (
     phase: string,
     title: string,
@@ -985,6 +994,9 @@ const createCodexRunner = (
         } else {
           emitOnce("browser_execution", "瀏覽器操作中", "Playwright MCP 已開始操作或讀取 Galaxy BI UI。");
         }
+      }
+      if (eventType === "item.completed" && itemType === "mcp_tool_call") {
+        scheduleBrowserActivation();
       }
       if (agentMessageText) {
         const caseNo = /\b((?:DEMO-)?[A-Z]+-\d{1,3})\b/i.exec(agentMessageText)?.[1]?.toUpperCase();

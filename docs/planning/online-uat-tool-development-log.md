@@ -510,3 +510,11 @@ Tommy 曾討論是否改成腳本。最後決策是採「半腳本化 / helper �
 - 修改檔案：`agent/src/browser-session.ts`、`agent/src/task-runner.ts`。
 - 驗證：`npm run typecheck --prefix agent`、`npm run build --prefix agent`、`npm run typecheck`、`npm run build` 均通過；compiled `agent/dist/browser-session.js` / `agent/dist/task-runner.js` 已包含 `resetTabs` 與 `openInitialUrl=false` resume 路徑。
 - 後續影響：目前正在跑的 OTTEST003 仍使用舊 Agent process，需取消該 run 並重啟 Mac Agent 後才能套用此修正。下一輪 E2E 需確認：(1) run 開始時 Chrome 只留下單一受控 Galaxy tab；(2) UI 操作在前景可見；(3) 儲存前才出現不可逆 Tool Bridge 授權卡；(4) 授權後 resume 不再新增 home tab，而是接續原 edit tab。
+
+### 2026-04-29 18:43 - 補強 Chrome spawn path 的 resetTabs 與 MCP 後置 activate
+
+- 背景：OTTEST004 run `ff2cf1c8-adae-4b57-8bf8-fbdbe8faf89b` 部署 `40305ff` 後仍出現「Log 已進入 UI 操作，但 Tommy 前景畫面沒動」。檢查本機 `mcp-output/session.md` 確認 Playwright 已成功點進 `拼貼test_001`、`+ 新增報表`、`+ 新增欄位`，並已選到 `新增帳號數` 與打開日期面板；同時 CDP `/json/list` 仍顯示兩個 Galaxy page target：一個 home、一個 edit。這代表前一版只修了「CDP 已存在」路徑，但 Chrome 首次 spawn 時仍會從 persistent profile 還原舊 tab，且 Playwright MCP 操作後沒有保證把受控 tab 拉回前景。
+- 決策：`ensureChromeDebugSession()` 在 Chrome 首次 spawn 且 `resetTabs=true` 時，不再把 DEV URL 直接塞進 Chrome args；改為等 CDP ready 後先關閉非 `chrome://` 的 user page targets、等待舊 target 消失，再用 `/json/new` 開唯一 DEV URL tab 並 activate。另在每次 `mcp_tool_call` completed 後排程呼叫 `activateBestExistingTab()`，優先 activate `/testview/edit`，其次 `/testview/home`，讓 Tommy 肉眼看到的 tab 與 Playwright 受控 tab 持續對齊。
+- 修改檔案：`agent/src/browser-session.ts`、`agent/src/task-runner.ts`。
+- 驗證：`npm run typecheck --prefix agent`、`npm run build --prefix agent`、`npm run typecheck`、`npm run build` 均通過。OTTEST004 目前仍是舊 Agent process / 舊 dist 已啟動中的 run，應取消後用新 Agent 重跑。
+- 後續影響：下一輪 E2E 應特別看三點：(1) run start 後 CDP user page target 只剩單一 Galaxy tab；(2) 點進 edit page 後 Chrome 前景立即跟著切到報表編輯器；(3) 儲存前才出現 Tool Bridge，不應再因看錯 tab 誤判「沒動」。
