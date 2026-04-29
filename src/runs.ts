@@ -137,6 +137,8 @@ const dispatchAgentSchema = z.object({
 
 const nowIso = (): string => new Date().toISOString();
 const TERMINAL_STATUSES = new Set(["SUCCEEDED", "FAILED", "CANCELLED"]);
+const DEFAULT_ACTIVITY_PAGE_SIZE = 500;
+const MAX_ACTIVITY_PAGE_SIZE = 1000;
 
 type RunInputPaths = {
   testcase_xlsx_path?: string | null;
@@ -148,6 +150,73 @@ type RunInputPaths = {
 type RunOutputPaths = {
   result_xlsx_path?: string | null;
   log_path?: string | null;
+};
+
+type RunLogRow = {
+  id: string;
+  run_id: string;
+  level: string;
+  message: string;
+  context_json: string | null;
+  created_at: string;
+};
+
+const parseActivityLimit = (value: unknown): number => {
+  const parsed = Number(value ?? DEFAULT_ACTIVITY_PAGE_SIZE);
+  if (!Number.isFinite(parsed) || parsed <= 0) return DEFAULT_ACTIVITY_PAGE_SIZE;
+  return Math.min(Math.floor(parsed), MAX_ACTIVITY_PAGE_SIZE);
+};
+
+const countRunRows = (table: "run_logs" | "run_events", runId: string): number => {
+  const row = db.prepare(`SELECT COUNT(1) AS count FROM ${table} WHERE run_id = ?`).get(runId) as { count: number };
+  return row.count;
+};
+
+const listRunLogsPage = (
+  runId: string,
+  limit: number,
+  afterId?: string
+): { items: RunLogRow[]; hasMore: boolean; total: number; nextAfterId: string | null } => {
+  const total = countRunRows("run_logs", runId);
+  const pageLimit = limit + 1;
+  const afterRow = afterId
+    ? db.prepare("SELECT rowid FROM run_logs WHERE run_id = ? AND id = ?").get(runId, afterId) as { rowid: number } | undefined
+    : undefined;
+  if (afterId && !afterRow) {
+    return { items: [], hasMore: false, total, nextAfterId: null };
+  }
+
+  const rows = afterRow
+    ? db
+        .prepare(
+          `
+            SELECT *
+            FROM run_logs
+            WHERE run_id = ? AND rowid > ?
+            ORDER BY rowid ASC
+            LIMIT ?
+          `
+        )
+        .all(runId, afterRow.rowid, pageLimit) as RunLogRow[]
+    : db
+        .prepare(
+          `
+            SELECT *
+            FROM run_logs
+            WHERE run_id = ?
+            ORDER BY rowid ASC
+            LIMIT ?
+          `
+        )
+        .all(runId, pageLimit) as RunLogRow[];
+
+  const items = rows.slice(0, limit);
+  return {
+    items,
+    hasMore: rows.length > limit,
+    total,
+    nextAfterId: items.at(-1)?.id ?? null
+  };
 };
 
 type MdRun = {
@@ -2036,11 +2105,10 @@ router.get("/:id/logs", (req, res) => {
     return res.status(404).json({ error: "RUN_NOT_FOUND" });
   }
 
-  const limit = Math.min(Number(req.query.limit ?? 200), 1000);
-  const items = db
-    .prepare("SELECT * FROM run_logs WHERE run_id = ? ORDER BY created_at ASC LIMIT ?")
-    .all(req.params.id, limit);
-  return res.json({ items });
+  const limit = parseActivityLimit(req.query.limit);
+  const afterId = typeof req.query.after_id === "string" ? req.query.after_id : undefined;
+  const page = listRunLogsPage(req.params.id, limit, afterId);
+  return res.json({ ...page, limit });
 });
 
 router.get("/:id/events", (req, res) => {
@@ -2049,9 +2117,11 @@ router.get("/:id/events", (req, res) => {
     return res.status(404).json({ error: "RUN_NOT_FOUND" });
   }
 
-  const limit = Math.min(Number(req.query.limit ?? 200), 1000);
+  const limit = parseActivityLimit(req.query.limit);
   const afterId = typeof req.query.after_id === "string" ? req.query.after_id : undefined;
-  const items = listRunEvents(req.params.id, limit, afterId).map((event) => {
+  const events = listRunEvents(req.params.id, limit + 1, afterId);
+  const visibleEvents = events.slice(0, limit);
+  const items = visibleEvents.map((event) => {
     let payload: unknown = null;
     try {
       payload = event.payload_json ? JSON.parse(event.payload_json) : null;
@@ -2060,7 +2130,13 @@ router.get("/:id/events", (req, res) => {
     }
     return { ...event, payload };
   });
-  return res.json({ items });
+  return res.json({
+    items,
+    hasMore: events.length > limit,
+    total: countRunRows("run_events", req.params.id),
+    nextAfterId: visibleEvents.at(-1)?.id ?? null,
+    limit
+  });
 });
 
 router.post("/:id/export-md", (req, res) => {

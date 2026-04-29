@@ -64,6 +64,24 @@ type RunEvent = {
   created_at: string;
 };
 
+type RunActivityTab = "timeline" | "logs" | "events";
+
+type RunActivityPage<T> = {
+  items: T[];
+  hasMore?: boolean;
+  total?: number;
+  nextAfterId?: string | null;
+  limit?: number;
+};
+
+type RunTimelineItem = {
+  id: string;
+  createdAt: string;
+  type: "event" | "log";
+  marker: string;
+  message: string;
+};
+
 type RunPhase = {
   id: string;
   phase: string;
@@ -166,6 +184,7 @@ const defaultRunLocation = "數據中心";
 const defaultRunFeatureMain = "BI工具";
 const defaultRunName = "Round 1";
 const defaultRunDevUrl = "https://galaxy.games.gamania.com/biapi-dev/testview/home?gameID=541";
+const runActivityPageSize = 500;
 
 const isTerminalRunStatus = (status?: string | null): boolean => {
   return Boolean(status && terminalRunStatuses.has(status));
@@ -215,6 +234,11 @@ const numberOf = (obj: Record<string, number> | undefined, key: string): number 
 const objectValue = (value: unknown): Record<string, unknown> | null => (
   value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null
 );
+const mergeById = <T extends { id: string },>(current: T[], incoming: T[], reset: boolean): T[] => {
+  if (reset) return incoming;
+  const seen = new Set(current.map((item) => item.id));
+  return [...current, ...incoming.filter((item) => !seen.has(item.id))];
+};
 
 const parseApprovalReason = (reason: string): ApprovalRequestInfo => {
   const lines = reason.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
@@ -282,6 +306,12 @@ function App() {
   const [summary, setSummary] = useState<Summary | null>(null);
   const [runEvents, setRunEvents] = useState<RunEvent[]>([]);
   const [runLogs, setRunLogs] = useState<RunLog[]>([]);
+  const [runActivityTab, setRunActivityTab] = useState<RunActivityTab>("timeline");
+  const [runEventsTotal, setRunEventsTotal] = useState(0);
+  const [runLogsTotal, setRunLogsTotal] = useState(0);
+  const [runEventsHasMore, setRunEventsHasMore] = useState(false);
+  const [runLogsHasMore, setRunLogsHasMore] = useState(false);
+  const [runActivityBusy, setRunActivityBusy] = useState(false);
   const [runCases, setRunCases] = useState<RunCase[]>([]);
   const [runBugs, setRunBugs] = useState<BugItem[]>([]);
   const [caseGroupFilter, setCaseGroupFilter] = useState("ALL");
@@ -300,6 +330,8 @@ function App() {
   const uploadXlsxInputRef = useRef<HTMLInputElement>(null);
   const uploadDocsInputRef = useRef<HTMLInputElement>(null);
   const uploadCsvInputRef = useRef<HTMLInputElement>(null);
+  const runEventsRef = useRef<RunEvent[]>([]);
+  const runLogsRef = useRef<RunLog[]>([]);
 
   const selectedConversation = conversations.find((x) => x.id === selectedConversationId) ?? null;
   const selectedRun = history.find((x) => x.id === selectedRunId) ?? null;
@@ -726,8 +758,7 @@ function App() {
   };
 
   const renderRunLogCard = (maxHeight: number) => {
-    const timeline = [
-      ...runEvents.filter((event) => event.event_type !== "run.progress" && event.event_type !== "run.phase").map((event) => {
+    const eventItems: RunTimelineItem[] = runEvents.map((event) => {
         let payloadText = event.payload_json || "";
         if (event.payload) {
           payloadText = typeof event.payload === "object" ? JSON.stringify(event.payload) : String(event.payload);
@@ -737,29 +768,55 @@ function App() {
           createdAt: event.created_at,
           type: "event",
           marker: event.event_type,
-          message: payloadText.slice(0, 260)
+          message: payloadText.slice(0, 600)
         };
-      }),
-      ...runLogs.map((log) => ({
+      });
+    const logItems: RunTimelineItem[] = runLogs.map((log) => ({
         id: `log-${log.id}`,
         createdAt: log.created_at,
         type: "log",
         marker: log.level,
         message: log.message
-      }))
+      }));
+    const timelineItems = [
+      ...eventItems.filter((event) => event.marker !== "run.progress" && event.marker !== "run.phase"),
+      ...logItems
     ].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+    const visibleItems = runActivityTab === "logs"
+      ? logItems
+      : runActivityTab === "events"
+        ? eventItems
+        : timelineItems;
+    const canLoadMore = runLogsHasMore || runEventsHasMore;
+    const loadedLabel = `Events ${runEvents.length}/${runEventsTotal || runEvents.length} / Logs ${runLogs.length}/${runLogsTotal || runLogs.length}`;
 
     return (
       <div className="card mb-16">
         <div className="card-header">
           <h2>即時執行 Log / Events</h2>
-          <span className="count">Events {runEvents.length} / Logs {runLogs.length}</span>
+          <span className="count">{loadedLabel}</span>
+        </div>
+        <div className="run-log-toolbar">
+          <div className="run-log-tabs" role="tablist" aria-label="Log view">
+            <button className={runActivityTab === "timeline" ? "active" : ""} onClick={() => setRunActivityTab("timeline")}>
+              Timeline
+            </button>
+            <button className={runActivityTab === "logs" ? "active" : ""} onClick={() => setRunActivityTab("logs")}>
+              Logs
+            </button>
+            <button className={runActivityTab === "events" ? "active" : ""} onClick={() => setRunActivityTab("events")}>
+              Events
+            </button>
+          </div>
+          <button className="btn sm" onClick={() => void loadMoreRunActivity()} disabled={!selectedRunId || !canLoadMore || runActivityBusy}>
+            {runActivityBusy ? "載入中" : canLoadMore ? "載入下一批" : "已載入全部"}
+          </button>
         </div>
         <div className="scroll-y run-log-list" style={{ maxHeight }}>
-          {timeline.length === 0 ? (
+          {visibleItems.length === 0 ? (
             <p className="muted" style={{ padding: 24, textAlign: "center" }}>尚未有執行事件</p>
           ) : (
-            timeline.map((item) => (
+            visibleItems.map((item) => (
               <div className={`log-entry ${item.type === "event" ? "event-entry" : ""}`} key={item.id}>
                 <span className="log-time">{new Date(item.createdAt).toLocaleTimeString("zh-TW", { hour12: false })}</span>
                 <span className={item.type === "event" ? "event-type" : `log-level ${item.marker}`}>{item.marker}</span>
@@ -866,19 +923,66 @@ function App() {
     }
   };
 
-  const loadRunDetail = async (runId: string) => {
+  const fetchRunActivity = async (
+    runId: string,
+    resetActivity: boolean
+  ): Promise<{ eventsData: RunActivityPage<RunEvent>; logsData: RunActivityPage<RunLog> }> => {
+    const buildActivityParams = (afterId?: string) => {
+      const params = new URLSearchParams({ limit: String(runActivityPageSize) });
+      if (afterId) params.set("after_id", afterId);
+      return params;
+    };
+    const eventAfterId = resetActivity ? undefined : runEventsRef.current.at(-1)?.id;
+    const logAfterId = resetActivity ? undefined : runLogsRef.current.at(-1)?.id;
+    const [eventsData, logsData] = await Promise.all([
+      api<RunActivityPage<RunEvent>>(`/api/runs/${runId}/events?${buildActivityParams(eventAfterId).toString()}`),
+      api<RunActivityPage<RunLog>>(`/api/runs/${runId}/logs?${buildActivityParams(logAfterId).toString()}`)
+    ]);
+    return { eventsData, logsData };
+  };
+
+  const applyRunActivity = (
+    resetActivity: boolean,
+    eventsData: RunActivityPage<RunEvent>,
+    logsData: RunActivityPage<RunLog>
+  ) => {
+    const nextEvents = mergeById(runEventsRef.current, eventsData.items, resetActivity);
+    const nextLogs = mergeById(runLogsRef.current, logsData.items, resetActivity);
+    runEventsRef.current = nextEvents;
+    runLogsRef.current = nextLogs;
+    setRunEvents(nextEvents);
+    setRunLogs(nextLogs);
+    setRunEventsHasMore(Boolean(eventsData.hasMore));
+    setRunLogsHasMore(Boolean(logsData.hasMore));
+    setRunEventsTotal(eventsData.total ?? nextEvents.length);
+    setRunLogsTotal(logsData.total ?? nextLogs.length);
+  };
+
+  const loadMoreRunActivity = async () => {
+    if (!selectedRunId || runActivityBusy) return;
+    setRunActivityBusy(true);
+    try {
+      const { eventsData, logsData } = await fetchRunActivity(selectedRunId, false);
+      applyRunActivity(false, eventsData, logsData);
+    } catch (error) {
+      setRunError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setRunActivityBusy(false);
+    }
+  };
+
+  const loadRunDetail = async (runId: string, options: { resetActivity?: boolean } = {}) => {
     if (!runId) return;
     try {
-      const [summaryData, eventsData, logsData, casesData, approvalsData] = await Promise.all([
+      const resetActivity = Boolean(options.resetActivity);
+      const [summaryData, activityData, casesData, approvalsData] = await Promise.all([
         api<Summary>(`/api/runs/${runId}/summary`),
-        api<{ items: RunEvent[] }>(`/api/runs/${runId}/events`),
-        api<{ items: RunLog[] }>(`/api/runs/${runId}/logs`),
+        fetchRunActivity(runId, resetActivity),
         api<{ items: RunCase[] }>(`/api/runs/${runId}/cases`),
         api<{ items: Approval[] }>(`/api/runs/${runId}/approvals`),
       ]);
       setSummary(summaryData);
-      setRunEvents(eventsData.items);
-      setRunLogs(logsData.items);
+      applyRunActivity(resetActivity, activityData.eventsData, activityData.logsData);
       setRunCases(casesData.items);
       setApprovals(approvalsData.items);
       try {
@@ -896,8 +1000,15 @@ function App() {
     setAutoSelectLatestRun(false);
     setSelectedRunId("");
     setSummary(null);
+    runEventsRef.current = [];
+    runLogsRef.current = [];
     setRunEvents([]);
     setRunLogs([]);
+    setRunEventsTotal(0);
+    setRunLogsTotal(0);
+    setRunEventsHasMore(false);
+    setRunLogsHasMore(false);
+    setRunActivityTab("timeline");
     setRunCases([]);
     setRunBugs([]);
     setApprovals([]);
@@ -933,7 +1044,7 @@ function App() {
   useEffect(() => {
     if (authStatus !== "authenticated") return;
     if (selectedRunId) {
-      void loadRunDetail(selectedRunId);
+      void loadRunDetail(selectedRunId, { resetActivity: true });
     }
   }, [authStatus, selectedRunId]);
 
@@ -942,7 +1053,7 @@ function App() {
     if (!selectedRunId) return;
     if (!(summary?.runStatus === "RUNNING" || summary?.runStatus === "WAITING_APPROVAL")) return;
     const timer = setInterval(() => {
-      void loadRunDetail(selectedRunId);
+      void loadRunDetail(selectedRunId, { resetActivity: false });
     }, 2500);
     return () => clearInterval(timer);
   }, [authStatus, selectedRunId, summary?.runStatus]);
@@ -1194,7 +1305,7 @@ function App() {
       setAutoSelectLatestRun(true);
       setSelectedRunId(created.id);
       await loadRuns();
-      await loadRunDetail(created.id);
+      await loadRunDetail(created.id, { resetActivity: true });
 
       try {
         if (runExecutionMode === "interactive") {

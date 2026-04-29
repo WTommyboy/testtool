@@ -839,6 +839,40 @@
 }
 
 /* ─── Log Entries (Tab B-1) ─── */
+.run-log-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+
+.run-log-tabs {
+  display: inline-flex;
+  gap: 4px;
+  padding: 3px;
+  background: var(--bg);
+  border: 1px solid var(--border-light);
+  border-radius: 8px;
+}
+
+.run-log-tabs button {
+  border: 0;
+  background: transparent;
+  color: var(--text-3);
+  padding: 4px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  font: 600 12px var(--font);
+}
+
+.run-log-tabs button.active {
+  background: var(--card);
+  color: var(--text);
+  box-shadow: var(--shadow);
+}
+
 .log-entry {
   display: flex;
   gap: 10px;

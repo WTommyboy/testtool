@@ -544,3 +544,11 @@ Tommy 曾討論是否改成腳本。最後決策是採「半腳本化 / helper �
 - 技術細節：新增 helper executor CLI `agent/dist/bi-ui-helper-executor.js`，走 Agent dedicated Chrome CDP，不直接打 BI API、不用內部 JS setter、不寫 result.xlsx、不判 PASS/FAIL。V1 已實作 `collage.openProject`、`collage.createReport`、`collage.configureMetric`（欄位輔助 + dateRange warning）、`collage.runPreviewAndCollectEvidence`、`collage.saveReport` 的 Tool Bridge gate；`reopen/delete/filter/group` 已註冊為模板，未完成的會回 `not_implemented` 或 `requires_approval`，不會靜默誤判。
 - 驗證：`npm run typecheck --prefix agent`、`npm run build --prefix agent`、`npm run typecheck`、`npm run build`、`npm run verify:helper-hints`、`npm run verify:package-consistency`、`npm run verify:result-evidence-gate` 已通過。手動 helper executor smoke：連續執行 `collage.openProject` → `collage.createReport` 成功進入 `報表編輯器` 並產生 DOM evidence + screenshot；`collage.saveReport` 未帶 approval 時回 `requires_approval`，沒有執行儲存；結束後 dedicated Chrome 關閉。
 - 後續影響：下一輪 E2E 應觀察 Codex 是否讀 `helper-execution-plan` 並使用 helper report 作 evidence。V1 不是全模板完成版；下一步 P1 是完成 `collage.configureMetric` 的靜態日期 UI 設定、`collage.reopenReport`、`collage.deleteTemporaryReport`、`filter.addAndPreview`、`group.addAndPreview` 的可執行實作，並把 helper report evidence key 納入 result/evidence gate 精準檢查。
+
+### 2026-04-29 20:18 - Run Log / Events 改為增量載入與頁籤檢視
+
+- 背景：Tommy 試跑時發現線上工具「即時執行 Log / Events」只顯示 200 筆，長 run 很快看不到後續。檢查後確認 server `/api/runs/:id/logs`、`/events` 預設 `limit=200`；前端每次 polling 都重抓同一批資料並覆蓋 state，導致超過上限後新資料不再可見。
+- 決策：把 run activity 改成可分頁 / 增量載入。後端 `/logs` 補 `after_id`、`hasMore`、`total`、`nextAfterId`，`/events` 也回同一組 pagination metadata；前端預設每批 500 筆，保留已載入資料並用最後一筆 id 往後追。UI 改成 `Timeline / Logs / Events` 三個頁籤，並提供「載入下一批」按鈕，避免混合視圖在長 run 中難以定位。
+- 修改檔案：`src/runs.ts`、`web/src/App.tsx`、`web/src/App.css`。
+- 驗證：`npm run typecheck`、`npm run build`、`npm run build --prefix web`、`npm run build --prefix agent` 均通過。
+- 後續影響：這次只修可觀測性，不改 UAT 執行策略。速度問題仍存在，下一步應聚焦 helper V1 補齊可執行模板，降低 Codex 逐步讀規則、找 locator、等待 MCP 回合的時間；特別是 `configureMetric` 日期設定、`reopenReport`、`deleteTemporaryReport`、`filter.addAndPreview`、`group.addAndPreview`。
