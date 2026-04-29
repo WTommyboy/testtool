@@ -518,3 +518,12 @@ Tommy 曾討論是否改成腳本。最後決策是採「半腳本化 / helper �
 - 修改檔案：`agent/src/browser-session.ts`、`agent/src/task-runner.ts`。
 - 驗證：`npm run typecheck --prefix agent`、`npm run build --prefix agent`、`npm run typecheck`、`npm run build` 均通過。OTTEST004 目前仍是舊 Agent process / 舊 dist 已啟動中的 run，應取消後用新 Agent 重跑。
 - 後續影響：下一輪 E2E 應特別看三點：(1) run start 後 CDP user page target 只剩單一 Galaxy tab；(2) 點進 edit page 後 Chrome 前景立即跟著切到報表編輯器；(3) 儲存前才出現 Tool Bridge，不應再因看錯 tab 誤判「沒動」。
+
+### 2026-04-29 18:58 - 將 Agent Chrome 改為 run-scoped 並強制單一 user tab
+
+- 背景：只做 tab activate 仍偏軟，若 run 結束後 dedicated Chrome 未關閉，下一輪仍可能從 `~/.uat-agent/chrome-profile` 還原舊 home/edit tabs，造成「Log 有動、前景畫面不同步」的再次發生。
+- 決策：把 Agent 管理的 Chrome 視為 run-scoped resource。每次 `task.dispatch` 開始前先關閉既有 dedicated Chrome process，再啟動新 Chrome；每次 run terminal 狀態（completed / failed / cancelled）後關閉 dedicated Chrome。唯一例外是 Tool Bridge waiting 狀態，因 SSO / 授權處理可能需要 Tommy 在同一個 persistent Chrome 中操作，等待期間保留 Chrome；若 waiting 狀態被取消，Agent 收到 `task.cancel` 且沒有 active runner 時也會關閉 Chrome。
+- 修改檔案：`agent/src/browser-session.ts`、`agent/src/task-runner.ts`、`agent/src/cli.ts`。
+- 技術細節：`closeChromeDebugSession()` 只匹配 `--remote-debugging-port=<port>` 且 `--user-data-dir=<chrome_profile_dir>` 的 dedicated Chrome process，不會關閉 Tommy 日常使用的 Chrome。`ensureSingleUserPageTab()` 會在每個 MCP tool call 後關閉多餘非 `chrome://` user tabs，只保留優先序最高的 `/testview/edit` 或 `/testview/home`。
+- 驗證：`npm run typecheck --prefix agent`、`npm run build --prefix agent`、`npm run typecheck`、`npm run build`、`git diff --check` 均通過。
+- 後續影響：下一輪 E2E 除了看畫面是否跟動，也要在 run 完成 / 取消後確認 `ps` 不再有 `--user-data-dir=/Users/tommy/.uat-agent/chrome-profile --remote-debugging-port=9222` 的 Chrome process。

@@ -1,6 +1,7 @@
-import { spawn } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
+import { promisify } from "node:util";
 import type { AgentConfig } from "./types";
 
 const defaultDebugPort = 9222;
@@ -22,6 +23,8 @@ const chromeExecutableCandidates = [
   "/Applications/Chromium.app/Contents/MacOS/Chromium",
   "/Applications/Google Chrome Canary.app/Contents/MacOS/Google Chrome Canary"
 ];
+
+const execFileAsync = promisify(execFile);
 
 const withTimeout = async <T>(promise: Promise<T>, ms: number): Promise<T> => {
   let timer: NodeJS.Timeout | null = null;
@@ -114,6 +117,21 @@ export const activateBestExistingTab = async (endpoint: string): Promise<void> =
   if (target?.id) await requestCdpTargetAction(endpoint, "activate", target.id);
 };
 
+export const ensureSingleUserPageTab = async (endpoint: string): Promise<void> => {
+  const targets = await listCdpTargets(endpoint);
+  const pages = targets.filter(isUserPageTarget);
+  const keep = pickBestVisibleTarget(targets);
+  if (!keep?.id) return;
+
+  for (const page of pages) {
+    if (page.id && page.id !== keep.id) {
+      await requestCdpTargetAction(endpoint, "close", page.id);
+    }
+  }
+
+  await requestCdpTargetAction(endpoint, "activate", keep.id);
+};
+
 const openCdpTab = async (endpoint: string, url: string): Promise<string | null> => {
   try {
     const response = await withTimeout(fetch(`${endpoint}/json/new?${encodeURIComponent(url)}`, { method: "PUT" }), 1000);
@@ -143,6 +161,78 @@ const waitForCdp = async (endpoint: string, timeoutMs: number): Promise<boolean>
 export const getChromeCdpEndpoint = (): string => {
   const port = Number(process.env.UAT_AGENT_CHROME_DEBUG_PORT || defaultDebugPort);
   return `http://127.0.0.1:${Number.isFinite(port) ? port : defaultDebugPort}`;
+};
+
+const getChromeDebugPort = (): string => {
+  const port = Number(process.env.UAT_AGENT_CHROME_DEBUG_PORT || defaultDebugPort);
+  return String(Number.isFinite(port) ? port : defaultDebugPort);
+};
+
+const processExists = (pid: number): boolean => {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+const waitForProcessesToExit = async (pids: number[], timeoutMs: number): Promise<boolean> => {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (pids.every((pid) => !processExists(pid))) return true;
+    await new Promise((resolve) => setTimeout(resolve, 150));
+  }
+  return pids.every((pid) => !processExists(pid));
+};
+
+const listDedicatedChromePids = async (config: AgentConfig): Promise<number[]> => {
+  const profileDir = path.resolve(config.chrome_profile_dir);
+  const port = getChromeDebugPort();
+  try {
+    const { stdout } = await execFileAsync("ps", ["-axo", "pid=,command="], { timeout: 1500 });
+    return stdout
+      .split(/\r?\n/)
+      .map((line) => /^\s*(\d+)\s+(.+)$/.exec(line))
+      .filter((match): match is RegExpExecArray => Boolean(match))
+      .filter((match) => {
+        const command = match[2];
+        return command.includes(`--remote-debugging-port=${port}`) && command.includes(`--user-data-dir=${profileDir}`);
+      })
+      .map((match) => Number(match[1]))
+      .filter((pid) => Number.isInteger(pid) && pid > 0);
+  } catch {
+    return [];
+  }
+};
+
+export const closeChromeDebugSession = async (config: AgentConfig): Promise<void> => {
+  const endpoint = getChromeCdpEndpoint();
+  if (await isCdpAvailable(endpoint)) {
+    await closeExistingPageTabs(endpoint);
+  }
+
+  const pids = await listDedicatedChromePids(config);
+  if (pids.length === 0) return;
+
+  for (const pid of pids) {
+    try {
+      process.kill(pid, "SIGTERM");
+    } catch {
+      // The process may have already exited.
+    }
+  }
+
+  if (await waitForProcessesToExit(pids, 3000)) return;
+
+  const remainingPids = await listDedicatedChromePids(config);
+  for (const pid of remainingPids) {
+    try {
+      process.kill(pid, "SIGKILL");
+    } catch {
+      // The process may have already exited.
+    }
+  }
 };
 
 export const ensureChromeDebugSession = async (

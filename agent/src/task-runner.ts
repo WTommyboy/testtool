@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { activateBestExistingTab, ensureChromeDebugSession } from "./browser-session";
+import { closeChromeDebugSession, ensureChromeDebugSession, ensureSingleUserPageTab } from "./browser-session";
 import { CodexRunner, type CodexJsonEvent, type CodexTurnResult } from "./codex-runner";
 import type { AgentConfig, AgentMessage } from "./types";
 import type { AgentConnection } from "./connection";
@@ -944,7 +944,7 @@ const createCodexRunner = (
     pendingBrowserActivation = true;
     setTimeout(() => {
       pendingBrowserActivation = false;
-      void activateBestExistingTab(chromeCdpEndpoint);
+      void ensureSingleUserPageTab(chromeCdpEndpoint);
     }, 100);
   };
   const emitOnce = (
@@ -1343,6 +1343,7 @@ export const handleTaskDispatch = async (
   let runner: CodexRunner | null = null;
   let lastResult: CodexTurnResult | null = null;
   let uploadedArtifacts: UploadedArtifacts | null = null;
+  let keepChromeOpenForToolBridge = false;
 
   try {
     sendPhase(connection, runId, "prepare_workspace", "準備 Agent 工作區", `workdir: ${runDir}`);
@@ -1374,7 +1375,8 @@ export const handleTaskDispatch = async (
       `已下載 ${Object.keys(downloadedInputs).length} 個輸入檔；run brief: ${runBriefPath}`,
       "done"
     );
-    sendPhase(connection, runId, "browser_start", "開啟持久化 Chrome", "準備 Playwright CDP 與 Galaxy SSO session。");
+    sendPhase(connection, runId, "browser_start", "重置專用 Chrome", "關閉前次 Agent Chrome，準備乾淨單一頁籤。");
+    await closeChromeDebugSession(config);
     const chromeCdpEndpoint = await ensureChromeDebugSession(config, getStringPayload(message, "dev_url"), {
       resetTabs: true,
       openInitialUrl: true
@@ -1529,6 +1531,7 @@ export const handleTaskDispatch = async (
     }
 
     if (validToolRequests.length > 0) {
+      keepChromeOpenForToolBridge = true;
       sendPhase(connection, runId, "waiting_user", "等待人工處理", "Codex 發出 Tool Bridge request，等待 Tommy 授權或處理。", "waiting");
       for (const request of validToolRequests) {
         connection.send(
@@ -1670,6 +1673,9 @@ export const handleTaskDispatch = async (
     );
   } finally {
     hooks.onCancelClear?.(runId);
+    if (!keepChromeOpenForToolBridge) {
+      await closeChromeDebugSession(config);
+    }
     connection.setRunState("idle", null);
   }
 };
@@ -1689,6 +1695,7 @@ export const handleToolResponse = async (
   let runner: CodexRunner | null = null;
   let lastResult: CodexTurnResult | null = null;
   let uploadedArtifacts: UploadedArtifacts | null = null;
+  let keepChromeOpenForToolBridge = false;
 
   try {
     sendPhase(connection, runId, "resuming", "收到人工回覆，準備續跑", "Agent 正在載入 paused thread 與原始 dispatch。");
@@ -1865,6 +1872,7 @@ export const handleToolResponse = async (
       );
     }
     if (validToolRequests.length > 0) {
+      keepChromeOpenForToolBridge = true;
       sendPhase(connection, runId, "waiting_user", "等待人工處理", "Codex 續跑後再次發出 Tool Bridge request。", "waiting");
       for (const request of validToolRequests) {
         connection.send(
@@ -2006,6 +2014,9 @@ export const handleToolResponse = async (
     );
   } finally {
     hooks.onCancelClear?.(runId);
+    if (!keepChromeOpenForToolBridge) {
+      await closeChromeDebugSession(config);
+    }
     connection.setRunState("idle", null);
   }
 };

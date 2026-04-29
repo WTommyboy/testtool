@@ -5,6 +5,7 @@ import { defaultAgentConfig, defaultConfigPath, ensureAgentDirectories, readConf
 import { runDoctor } from "./doctor";
 import { installLaunchd, uninstallLaunchd } from "./launchd";
 import { handleTaskDispatch, handleToolResponse } from "./task-runner";
+import { closeChromeDebugSession } from "./browser-session";
 
 const args = process.argv.slice(2);
 
@@ -137,6 +138,7 @@ const main = async (): Promise<void> => {
     let currentConnection: AgentConnection | null = null;
     const stop = (): void => {
       stopping = true;
+      void closeChromeDebugSession(config);
       currentConnection?.close();
     };
     process.once("SIGINT", stop);
@@ -162,6 +164,7 @@ const main = async (): Promise<void> => {
               activeTask.cancel(reason);
               printJson({ event: "task_cancelled", runId: activeTask.runId, reason });
             } else {
+              void closeChromeDebugSession(config);
               printJson({ event: "task_cancel_ignored", runId, reason, activeRunId: activeTask?.runId ?? null });
             }
             return;
