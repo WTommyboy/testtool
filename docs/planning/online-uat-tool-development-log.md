@@ -561,3 +561,11 @@ Tommy 曾討論是否改成腳本。最後決策是採「半腳本化 / helper �
 - 修改檔案：`agent/src/timing.ts`、`agent/src/helper-pre-runner.ts`、`agent/src/codex-runner.ts`、`agent/src/task-runner.ts`、`agent/src/bi-ui-helper-executor.ts`、`agent/src/helper-execution-plan.ts`、`agent/src/config.ts`、`agent/src/types.ts`、`agent/src/cli.ts`、`scripts/verify-agent-resume.ts`。
 - 驗證：本階段先跑 `npm run typecheck --prefix agent`、`npm run typecheck`、`npm run build --prefix agent`、`npm run build`、`npm run verify:agent-resume`、`npm run verify:helper-hints`、`npm run verify:package-consistency`、`npm run verify:result-evidence-gate`。下一輪 E2E 重點看 `timing-summary.json` 是否能明確指出耗時在 helper、Codex command、MCP tool call、artifact upload 或 Tool Bridge 等哪一段。
 - 後續影響：下一輪 E2E 後，應用 `timing-summary.json` 決定下一個優化點。若耗時仍在 Codex 規則讀取，繼續縮 prompt / rule index；若耗時在 helper action，優化 selector / wait strategy；若耗時在 MCP tool call，將該 action 下沉到 helper executor；若耗時在 upload/log polling，再優化 artifact pipeline。
+
+### 2026-04-30 05:24 - 確認 Railway production 已部署加速版本
+
+- 背景：`86f321c feat: add UAT timing and helper pre-run` 已推到 `refactor/mac-agent-mvp` 與 `codex/uat-tool-mvp` 後，初次查 `/version` 時 Railway 仍停在 `f47d094`；Tommy 要求推 Railway。
+- 決策：本機沒有 `railway` CLI，因此用 production `/version`、`/health` 與 Git remote branch 指向做部署確認。這次 Railway auto deploy 已自行追到最新 commit，不需手動 redeploy。
+- 修改檔案：本文件補記部署確認。
+- 驗證：`origin/refactor/mac-agent-mvp` 與 `origin/codex/uat-tool-mvp` 皆指向 `86f321cc26ee393a2bdefa18aa89f8ea1d321840`；Railway `/version` 回 `shortCommitSha=86f321c`、`branch=codex/uat-tool-mvp`、`deploymentId=969a406d-22da-4614-926b-34700f8c45b7`；Railway `/health` 為 healthy。
+- 後續影響：下一輪 E2E 可直接使用 production `86f321c` 與本機已重啟的 Mac Agent。觀察重點仍是 `output/timing-summary.json` 與 `output/helper-pre-run-summary.json`。
