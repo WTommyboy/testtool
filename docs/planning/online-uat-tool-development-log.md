@@ -569,3 +569,10 @@ Tommy 曾討論是否改成腳本。最後決策是採「半腳本化 / helper �
 - 修改檔案：本文件補記部署確認。
 - 驗證：`origin/refactor/mac-agent-mvp` 與 `origin/codex/uat-tool-mvp` 皆指向 `86f321cc26ee393a2bdefa18aa89f8ea1d321840`；Railway `/version` 回 `shortCommitSha=86f321c`、`branch=codex/uat-tool-mvp`、`deploymentId=969a406d-22da-4614-926b-34700f8c45b7`；Railway `/health` 為 healthy。
 - 後續影響：下一輪 E2E 可直接使用 production `86f321c` 與本機已重啟的 Mac Agent。觀察重點仍是 `output/timing-summary.json` 與 `output/helper-pre-run-summary.json`。
+
+### 2026-04-30 05:52 - 補 Helper actionability 紅線與 artifact 清理
+
+- 背景：Claude 追問 Helper 所在層級、evidence policy 與是否可能踩到「不可用內部 JS setter / 繞 UI」紅線。Tommy 接受三個答覆，並要求兩個立即補強：短期清掉非本題 helper artifacts；立刻移除 helper `force: true` click。
+- 決策：M2 前補正式 `agent-skills/uat-tool/rules/helper-protocol.md`，系統化定義 Helper protocol、職責邊界、hard rules、`helper-execution-plan` / `helper-pre-run-summary` / `helper-report` 契約；M2 再把 BI domain helper templates 搬到 `domains/BI/helpers/`，並把 helper artifact timestamp / caseId / action 驗證納入 hard gate。M0/M1 不搬架構。
+- 本次修改：helper plan safety 新增「不可使用 `force: true` 或繞過 browser actionability check」；`bi-ui-helper-executor` 移除 `clickByText()` 的 `force: true` fallback，點不到或 actionability 失敗改回 `blocked` report 並留下 reason / DOM / screenshot；Agent 在產生 current-case helper plan 前，會把 `output/helper-artifacts/` 中非 current case 的 artifact 與不符 current case 的 `helper-pre-run-summary.json` 移到 `output/helper-artifacts-archive/<timestamp>/`，避免 Codex 誤讀上題殘留。
+- 後續影響：Helper 仍只可收集 current-run evidence，不可判 PASS/FAIL、不寫 `result.xlsx`、不跑多題、不直接打 BI API、不用內部 JS setter。下一版 result evidence gate 需進一步解析 helper report 的 `caseId` / `action` / `startedAt` / `endedAt`，不能只靠 detail_json 文字命中 current-run evidence 關鍵字。

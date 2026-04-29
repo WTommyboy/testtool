@@ -35,6 +35,7 @@ export type HelperExecutionPlan = {
     helperMayRunMultipleCases: false;
     helperMayUseDirectBiApi: false;
     helperMayUseInternalJsSetter: false;
+    helperMayBypassActionabilityCheck: false;
     codexMustJudgeResult: true;
   };
   helperHints: {
@@ -252,6 +253,7 @@ export const buildHelperExecutionPlan = ({ runDir, currentCase, helperHints }: W
       "Helper plan is an execution aid, not a testcase result.",
       "Helper actions may operate the UI and collect evidence, but Codex must judge PASS/FAIL/BLOCKED.",
       "Helper actions must not write result.xlsx and must not run multiple cases.",
+      "Helper actions must not use force:true clicks or bypass browser actionability checks.",
       "Irreversible actions and native dialogs require Tool Bridge response in Agent mode."
     ],
     safety: {
@@ -260,6 +262,7 @@ export const buildHelperExecutionPlan = ({ runDir, currentCase, helperHints }: W
       helperMayRunMultipleCases: false,
       helperMayUseDirectBiApi: false,
       helperMayUseInternalJsSetter: false,
+      helperMayBypassActionabilityCheck: false,
       codexMustJudgeResult: true
     },
     helperHints: {
@@ -298,6 +301,7 @@ export const writeHelperExecutionPlan = (options: WriteHelperExecutionPlanOption
       "- helper 不可判 PASS/FAIL/BLOCKED。",
       "- helper 不可一次跑多題。",
       "- helper 不可直接打 BI API 或用內部 JS setter 設狀態。",
+      "- helper 不可使用 force: true click 或其他方式繞過 browser actionability check。",
       "- Codex 必須讀 helper evidence 後自行判斷與寫 detail_json。",
       "",
       "## Planned Actions",

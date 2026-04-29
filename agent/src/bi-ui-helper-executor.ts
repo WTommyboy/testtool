@@ -32,6 +32,21 @@ type HelperReport = {
   toolRequest?: Record<string, unknown>;
 };
 
+class HelperBlockedError extends Error {
+  readonly reason: string;
+
+  constructor(reason: string) {
+    super(reason);
+    this.name = "HelperBlockedError";
+    this.reason = reason;
+  }
+}
+
+const isActionabilityFailure = (error: unknown): boolean => {
+  const message = error instanceof Error ? error.message : String(error);
+  return /locator\.click|Timeout|not visible|not enabled|not stable|receives pointer events|outside of the viewport|strict mode violation/i.test(message);
+};
+
 const parseArgs = (): CliOptions => {
   const args = process.argv.slice(2);
   const get = (name: string): string | null => {
@@ -225,8 +240,12 @@ const clickByText = async (page: Page, text: string, timeout = 12000): Promise<v
     await page.waitForTimeout(300);
     try {
       await locator.click({ timeout: Math.min(timeout, 5000) });
-    } catch {
-      await locator.click({ timeout: Math.min(timeout, 5000), force: true });
+    } catch (retryError) {
+      const firstMessage = error instanceof Error ? error.message : String(error);
+      const retryMessage = retryError instanceof Error ? retryError.message : String(retryError);
+      throw new HelperBlockedError(
+        `VISIBLE_UI_CLICK_BLOCKED: text="${text}"; first=${firstMessage.slice(0, 500)}; retry=${retryMessage.slice(0, 500)}`
+      );
     }
   }
 };
@@ -372,10 +391,11 @@ const run = async (): Promise<void> => {
   if (!endpoint) throw new Error("CHROME_CDP_UNAVAILABLE");
 
   let browser: Browser | null = null;
+  let page: Page | null = null;
   let report: HelperReport;
   try {
     browser = await chromium.connectOverCDP(endpoint);
-    const page = await getGalaxyPage(browser);
+    page = await getGalaxyPage(browser);
     await page.bringToFront();
     await ensureSingleUserPageTab(endpoint, { closeNewTab: true });
     switch (options.action) {
@@ -411,9 +431,33 @@ const run = async (): Promise<void> => {
     writeReport(options, report);
     console.log(JSON.stringify(report, null, 2));
   } catch (error) {
-    report = createReport(options, "error", startedAt, {}, {}, [], {
-      error: error instanceof Error ? error.stack ?? error.message : String(error)
-    });
+    const isBlocked = error instanceof HelperBlockedError || isActionabilityFailure(error);
+    const shot = page ? await screenshot(options, page, isBlocked ? "blocked" : "error") : null;
+    const evidence: Record<string, unknown> = {
+      reason: error instanceof HelperBlockedError
+        ? error.reason
+        : isBlocked
+          ? `VISIBLE_UI_ACTION_BLOCKED: ${error instanceof Error ? error.message : String(error)}`
+          : error instanceof Error
+            ? error.message
+            : String(error)
+    };
+    if (page) {
+      evidence.domState = await readDomState(page).catch((domError) => ({
+        readError: domError instanceof Error ? domError.message : String(domError)
+      }));
+    }
+    report = createReport(
+      options,
+      isBlocked ? "blocked" : "error",
+      startedAt,
+      evidence,
+      shot ? { screenshot: shot } : {},
+      shot ? [] : ["SCREENSHOT_UNAVAILABLE"],
+      {
+        error: error instanceof Error ? error.stack ?? error.message : String(error)
+      }
+    );
     writeReport(options, report);
     console.error(JSON.stringify(report, null, 2));
     process.exitCode = 1;

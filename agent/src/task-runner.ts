@@ -378,6 +378,76 @@ const helperHintSourcePaths = (inputs: DownloadedInputs): string[] => {
 const currentCaseForManifest = (caseManifest: CaseManifestResult) =>
   caseManifest.cases.find((item) => item.caseNo === caseManifest.currentCaseNo) ?? null;
 
+const sanitizeArtifactName = (value: string): string => value.replace(/[^a-zA-Z0-9._-]+/g, "_").replace(/^_+|_+$/g, "") || "artifact";
+
+const uniqueArchiveTarget = (baseDir: string, name: string): string => {
+  let target = path.join(baseDir, name);
+  let suffix = 1;
+  while (fs.existsSync(target)) {
+    target = path.join(baseDir, `${name}-${suffix}`);
+    suffix += 1;
+  }
+  return target;
+};
+
+const archiveStaleHelperArtifacts = (runDir: string, currentCaseNo: string | null): string | null => {
+  const outputDir = path.join(runDir, "output");
+  const helperRoot = path.join(outputDir, "helper-artifacts");
+  const currentCaseDir = currentCaseNo ? sanitizeArtifactName(currentCaseNo) : null;
+  const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const archiveDir = path.join(outputDir, "helper-artifacts-archive", timestamp);
+  const archived: Array<{ from: string; to: string; reason: string }> = [];
+
+  if (fs.existsSync(helperRoot) && fs.statSync(helperRoot).isDirectory()) {
+    for (const entry of fs.readdirSync(helperRoot, { withFileTypes: true })) {
+      if (currentCaseDir && entry.name === currentCaseDir) continue;
+      const source = path.join(helperRoot, entry.name);
+      fs.mkdirSync(archiveDir, { recursive: true });
+      const target = uniqueArchiveTarget(archiveDir, entry.name);
+      fs.renameSync(source, target);
+      archived.push({
+        from: source,
+        to: target,
+        reason: currentCaseDir ? `not current case ${currentCaseDir}` : "current case unavailable"
+      });
+    }
+  }
+
+  const summaryPath = path.join(outputDir, "helper-pre-run-summary.json");
+  if (fs.existsSync(summaryPath)) {
+    let summaryCaseId: string | null = null;
+    try {
+      const summary = readJson<{ caseId?: unknown }>(summaryPath);
+      summaryCaseId = typeof summary.caseId === "string" && summary.caseId.trim() ? sanitizeArtifactName(summary.caseId) : null;
+    } catch {
+      summaryCaseId = null;
+    }
+    if (!currentCaseDir || summaryCaseId !== currentCaseDir) {
+      fs.mkdirSync(archiveDir, { recursive: true });
+      const target = uniqueArchiveTarget(archiveDir, "helper-pre-run-summary.json");
+      fs.renameSync(summaryPath, target);
+      archived.push({
+        from: summaryPath,
+        to: target,
+        reason: currentCaseDir ? `summary case ${summaryCaseId ?? "(unknown)"} is not current case ${currentCaseDir}` : "current case unavailable"
+      });
+    }
+  }
+
+  if (archived.length === 0) return null;
+  const reportPath = path.join(outputDir, "helper-artifacts-cleanup.json");
+  fs.mkdirSync(path.dirname(reportPath), { recursive: true });
+  writeJson(reportPath, {
+    schemaVersion: "helper-artifacts-cleanup-v1",
+    generatedAt: new Date().toISOString(),
+    currentCaseNo,
+    currentCaseDir,
+    archiveDir,
+    archived
+  });
+  return reportPath;
+};
+
 const downloadFile = async (url: string, filePath: string, token: string): Promise<void> => {
   const response = await fetch(url, {
     headers: token ? { Authorization: `Bearer ${token}` } : undefined
@@ -527,6 +597,10 @@ const generateRunGuides = async (runId: string, runDir: string, message: AgentMe
   const documentConsistencyPath = writeDocumentConsistency(runDir, caseManifest, startCaseHint, testPackageConsistency.issues);
   const currentCasePack = writeCurrentCasePack(runDir, caseManifest, documentConsistencyPath, helperHintSourcePaths(inputs));
   const currentCase = currentCaseForManifest(caseManifest);
+  const helperArtifactCleanupPath = archiveStaleHelperArtifacts(
+    runDir,
+    currentCase?.caseNo ?? currentCasePack.helperHints?.caseId ?? caseManifest.currentCaseNo
+  );
   const helperExecutionPlan = writeHelperExecutionPlan({
     runDir,
     currentCase,
@@ -573,6 +647,7 @@ const generateRunGuides = async (runId: string, runDir: string, message: AgentMe
     document_consistency_path: documentConsistencyPath,
     current_case_pack_json_path: currentCasePack.jsonPath,
     current_case_pack_markdown_path: currentCasePack.markdownPath,
+    helper_artifact_cleanup_path: helperArtifactCleanupPath,
     helper_execution_plan_json_path: helperExecutionPlan.jsonPath,
     helper_execution_plan_markdown_path: helperExecutionPlan.markdownPath,
     helper_hints_found: Boolean(currentCasePack.helperHints),
