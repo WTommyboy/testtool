@@ -13,6 +13,18 @@ type CdpTarget = {
   url?: string;
 };
 
+export type ChromeDebugSessionDiagnostics = {
+  endpoint: string;
+  available: boolean;
+  dedicatedPids: number[];
+  targetCount: number;
+  targets: CdpTarget[];
+  profileDir: string;
+  debugPort: string;
+  chromeExecutableFound: boolean;
+  error: string | null;
+};
+
 type ChromeSessionOptions = {
   resetTabs?: boolean;
   openInitialUrl?: boolean;
@@ -253,6 +265,36 @@ export const closeChromeDebugSession = async (config: AgentConfig): Promise<void
     } catch {
       // The process may have already exited.
     }
+  }
+};
+
+export const diagnoseChromeDebugSession = async (config: AgentConfig): Promise<ChromeDebugSessionDiagnostics> => {
+  const endpoint = getChromeCdpEndpoint();
+  try {
+    const targets = await listCdpTargets(endpoint);
+    return {
+      endpoint,
+      available: await isCdpAvailable(endpoint),
+      dedicatedPids: await listDedicatedChromePids(config),
+      targetCount: targets.length,
+      targets: targets.slice(0, 20),
+      profileDir: path.resolve(config.chrome_profile_dir),
+      debugPort: getChromeDebugPort(),
+      chromeExecutableFound: Boolean(findChromeExecutable()),
+      error: null
+    };
+  } catch (error) {
+    return {
+      endpoint,
+      available: false,
+      dedicatedPids: [],
+      targetCount: 0,
+      targets: [],
+      profileDir: path.resolve(config.chrome_profile_dir),
+      debugPort: getChromeDebugPort(),
+      chromeExecutableFound: Boolean(findChromeExecutable()),
+      error: error instanceof Error ? error.message : String(error)
+    };
   }
 };
 

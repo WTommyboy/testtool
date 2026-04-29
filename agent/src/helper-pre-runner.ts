@@ -53,8 +53,14 @@ const consistencyStatus = (runDir: string): "ok" | "warning" | "error" | "missin
   return worst;
 };
 
-const safeActions = (plan: HelperExecutionPlan): HelperPlanAction[] =>
-  plan.actions.filter((action) => !action.requiresToolBridge && !action.optional);
+const safeActions = (plan: HelperExecutionPlan): HelperPlanAction[] => {
+  const result: HelperPlanAction[] = [];
+  for (const action of plan.actions) {
+    if (action.requiresToolBridge || action.optional) break;
+    result.push(action);
+  }
+  return result;
+};
 
 const latestReportPath = (runDir: string, caseId: string | null, template: string): string => {
   const safeCase = (caseId ?? "unknown-case").replace(/[^a-zA-Z0-9._-]+/g, "_").replace(/^_+|_+$/g, "") || "unknown-case";

@@ -2,7 +2,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { chromium, type Browser, type Page, type Request, type Response } from "playwright";
-import { closeChromeDebugSession, ensureChromeDebugSession, ensureSingleUserPageTab } from "./browser-session";
+import { closeChromeDebugSession, diagnoseChromeDebugSession, ensureChromeDebugSession, ensureSingleUserPageTab } from "./browser-session";
 import { readConfig } from "./config";
 
 type CliOptions = {
@@ -163,6 +163,107 @@ const readDomState = async (page: Page): Promise<Record<string, unknown>> => {
   });
 };
 
+const normalizeDateText = (value: string): string => value.replace(/\s+/g, "").replaceAll("-", "/");
+
+const parseDateRange = (value: string | null): { startIso: string; endIso: string; display: string } | null => {
+  if (!value) return null;
+  const matches = [...value.matchAll(/(\d{4})[/-](\d{1,2})[/-](\d{1,2})/g)];
+  if (matches.length < 2) return null;
+  const toIso = (match: RegExpMatchArray): string => {
+    const [, year, month, day] = match;
+    return `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
+  };
+  const startIso = toIso(matches[0]);
+  const endIso = toIso(matches[1]);
+  return {
+    startIso,
+    endIso,
+    display: `${startIso.replaceAll("-", "/")} ~ ${endIso.replaceAll("-", "/")}`
+  };
+};
+
+const bodyContainsDateRange = async (page: Page, display: string): Promise<boolean> => {
+  const bodyText = await page.locator("body").innerText({ timeout: 5000 }).catch(() => "");
+  return normalizeDateText(bodyText).includes(normalizeDateText(display));
+};
+
+const clickFirstVisible = async (locators: Array<ReturnType<Page["locator"]>>, timeout = 5000): Promise<boolean> => {
+  for (const locator of locators) {
+    try {
+      const first = locator.first();
+      if ((await first.count()) === 0) continue;
+      await first.click({ timeout });
+      return true;
+    } catch {
+      // Try the next visible locator candidate.
+    }
+  }
+  return false;
+};
+
+const visibleInputIndexes = async (page: Page): Promise<Array<{ index: number; type: string; placeholder: string; value: string }>> => {
+  return page.evaluate(() => {
+    return Array.from(document.querySelectorAll("input")).flatMap((input, index) => {
+      const rect = input.getBoundingClientRect();
+      const style = window.getComputedStyle(input);
+      const visible = rect.width > 0 && rect.height > 0 && style.visibility !== "hidden" && style.display !== "none";
+      if (!visible || input.disabled || input.readOnly) return [];
+      return [{
+        index,
+        type: input.type,
+        placeholder: input.placeholder,
+        value: input.value
+      }];
+    });
+  });
+};
+
+const setDateRange = async (page: Page, dateRange: string): Promise<{ ok: boolean; warning?: string; observedAfter?: string; inputs?: unknown }> => {
+  const parsed = parseDateRange(dateRange);
+  if (!parsed) return { ok: false, warning: `DATE_RANGE_PARSE_FAILED:${dateRange}` };
+  if (await bodyContainsDateRange(page, parsed.display)) return { ok: true, observedAfter: parsed.display };
+
+  const opened = await clickFirstVisible([
+    page.locator("#dateRangeBtn"),
+    page.locator("button").filter({ hasText: /過去|最近|今日|昨日|本週|上週|本月|上月|\d{4}[/-]\d{1,2}[/-]\d{1,2}/ }),
+    page.getByText(/過去7天|最近7天|過去30天|最近30天|\d{4}[/-]\d{1,2}[/-]\d{1,2}/, { exact: false })
+  ], 8000);
+  if (!opened) return { ok: false, warning: "DATE_RANGE_CONTROL_NOT_CLICKABLE" };
+  await page.waitForTimeout(400);
+
+  await clickFirstVisible([page.getByText("靜態時間", { exact: true }), page.locator("button").filter({ hasText: "靜態時間" })], 5000);
+  await page.waitForTimeout(400);
+
+  const inputs = await visibleInputIndexes(page);
+  const dateInputs = inputs.filter((item) => item.type === "date");
+  const textInputs = inputs.filter((item) => item.type === "text" && !/報表名稱/.test(item.placeholder));
+  const targets = dateInputs.length >= 2 ? dateInputs.slice(0, 2) : textInputs.slice(0, 2);
+  if (targets.length < 2) {
+    return {
+      ok: false,
+      warning: "DATE_RANGE_INPUTS_NOT_FOUND",
+      inputs
+    };
+  }
+
+  const values = targets[0].type === "date"
+    ? [parsed.startIso, parsed.endIso]
+    : [parsed.startIso.replaceAll("-", "/"), parsed.endIso.replaceAll("-", "/")];
+  for (let i = 0; i < 2; i += 1) {
+    await page.locator("input").nth(targets[i].index).fill(values[i], { timeout: 5000 });
+  }
+  await clickFirstVisible([page.getByText("確認", { exact: true }), page.locator("button").filter({ hasText: "確認" })], 5000);
+  await page.waitForTimeout(800);
+
+  const ok = await bodyContainsDateRange(page, parsed.display);
+  return {
+    ok,
+    warning: ok ? undefined : "DATE_RANGE_VERIFY_FAILED_AFTER_UI_INPUT",
+    observedAfter: (await page.locator("body").innerText({ timeout: 5000 }).catch(() => "")).slice(0, 1000),
+    inputs
+  };
+};
+
 const readChartSummary = async (page: Page): Promise<Record<string, unknown> | null> => {
   try {
     return await page.evaluate(() => {
@@ -289,6 +390,7 @@ const configureMetric = async (options: CliOptions, page: Page, startedAt: strin
   const warnings: string[] = [];
   const field = stringParam(options.params, "field");
   const dateRange = stringParam(options.params, "dateRange");
+  let dateRangeEvidence: Record<string, unknown> | null = null;
   if (field) {
     const bodyText = await page.locator("body").innerText({ timeout: 5000 }).catch(() => "");
     if (!bodyText.includes(field)) {
@@ -299,10 +401,21 @@ const configureMetric = async (options: CliOptions, page: Page, startedAt: strin
     }
   }
   if (dateRange) {
-    warnings.push("DATE_RANGE_UI_SETTING_NOT_FULLY_AUTOMATED_V1: helper records current DOM state; Codex must verify or complete date setting if needed.");
+    const result = await setDateRange(page, dateRange);
+    dateRangeEvidence = result;
+    if (!result.ok) {
+      warnings.push(`DATE_RANGE_UI_SETTING_NOT_COMPLETED:${result.warning ?? "unknown"}`);
+    }
   }
   const shot = await screenshot(options, page, "configure-metric");
-  return createReport(options, "ok", startedAt, { domState: await readDomState(page), requestedDateRange: dateRange }, shot ? { screenshot: shot } : {}, shot ? warnings : [...warnings, "SCREENSHOT_UNAVAILABLE"]);
+  return createReport(
+    options,
+    warnings.some((warning) => warning.startsWith("DATE_RANGE_UI_SETTING_NOT_COMPLETED")) ? "blocked" : "ok",
+    startedAt,
+    { domState: await readDomState(page), requestedDateRange: dateRange, dateRangeEvidence },
+    shot ? { screenshot: shot } : {},
+    shot ? warnings : [...warnings, "SCREENSHOT_UNAVAILABLE"]
+  );
 };
 
 const runPreview = async (options: CliOptions, page: Page, startedAt: string): Promise<HelperReport> => {
@@ -384,16 +497,31 @@ const run = async (): Promise<void> => {
   const options = parseArgs();
   const startedAt = new Date().toISOString();
   const config = readConfig();
-  const endpoint = await ensureChromeDebugSession(config, null, {
-    resetTabs: false,
-    openInitialUrl: false
-  });
-  if (!endpoint) throw new Error("CHROME_CDP_UNAVAILABLE");
 
   let browser: Browser | null = null;
   let page: Page | null = null;
   let report: HelperReport;
   try {
+    const endpoint = await ensureChromeDebugSession(config, null, {
+      resetTabs: false,
+      openInitialUrl: false
+    });
+    if (!endpoint) {
+      const diagnostics = await diagnoseChromeDebugSession(config);
+      report = createReport(
+        options,
+        "error",
+        startedAt,
+        { reason: "CHROME_CDP_UNAVAILABLE", cdpDiagnostics: diagnostics },
+        {},
+        ["HELPER_CDP_DIAGNOSTICS_CAPTURED"],
+        { error: "CHROME_CDP_UNAVAILABLE" }
+      );
+      writeReport(options, report);
+      console.error(JSON.stringify(report, null, 2));
+      process.exitCode = 1;
+      return;
+    }
     browser = await chromium.connectOverCDP(endpoint);
     page = await getGalaxyPage(browser);
     await page.bringToFront();

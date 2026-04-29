@@ -79,6 +79,17 @@ native confirm/alert 與不可逆操作一律需要 Tool Bridge。
 - 離開含未儲存變更的頁面。
 - Clear stored run data。
 
+## Consecutive Native Dialog Guard
+
+同一個 save/delete/overwrite/native flow 中，如果已處理第一個 native alert/confirm，接著偵測到或合理推定還有第二個 native dialog：
+
+- 不要再嘗試用 Playwright accept/dismiss 第二個 dialog。
+- 不要用 repeated snapshot/read_page 去賭頁面是否已恢復，dialog chain 會讓這些操作 timeout。
+- 立即 emit `playwright_recovery` Tool Bridge request。
+- 由 Tommy 在 persistent Chrome 手動處理第二個 dialog，再按 UAT Tool 的 continue。
+
+目的：避免連續 native dialog 在 Playwright MCP 層 timeout，造成 60-120 秒無效等待。
+
 request 必須說明：
 
 - Operation。
