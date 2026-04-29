@@ -527,3 +527,11 @@ Tommy 曾討論是否改成腳本。最後決策是採「半腳本化 / helper �
 - 技術細節：`closeChromeDebugSession()` 只匹配 `--remote-debugging-port=<port>` 且 `--user-data-dir=<chrome_profile_dir>` 的 dedicated Chrome process，不會關閉 Tommy 日常使用的 Chrome。`ensureSingleUserPageTab()` 會在每個 MCP tool call 後關閉多餘非 `chrome://` user tabs，只保留優先序最高的 `/testview/edit` 或 `/testview/home`。
 - 驗證：`npm run typecheck --prefix agent`、`npm run build --prefix agent`、`npm run typecheck`、`npm run build`、`git diff --check` 均通過。
 - 後續影響：下一輪 E2E 除了看畫面是否跟動，也要在 run 完成 / 取消後確認 `ps` 不再有 `--user-data-dir=/Users/tommy/.uat-agent/chrome-profile --remote-debugging-port=9222` 的 Chrome process。
+
+### 2026-04-29 19:06 - 修正 `chrome://newtab/` 殘留與 OTTEST005 污染結論
+
+- 背景：OTTEST005 run `5536c8bc-c472-4a51-9a4a-282f335d847e` 套用 run-scoped Chrome 後，開場已會先關前次 Agent Chrome 並新開 dedicated Chrome；但 CDP target 仍可看到 `chrome://newtab/`，因前一版將所有 `chrome://` 視為內部 target 而不關閉。排查期間手動透過 CDP 關閉 `chrome://newtab/` 造成 page target 消失，該 run 因人工干預視為污染，不能當有效 UAT 結果。
+- 決策：把 `chrome://newtab/` 從不可關閉內部 target 中拆出，僅在已經有可保留的 Galaxy / app page target 時才自動關閉；`chrome://omnibox-popup`、`devtools://`、`chrome-extension://` 仍視為不可關閉內部 target。MCP tool call 後的對齊仍以 activate / 關閉多餘 app page 為主，不手動干預 live browser。
+- 修改檔案：`agent/src/browser-session.ts`。
+- 驗證：`npm run typecheck --prefix agent`、`npm run build --prefix agent` 通過；本機用 dedicated Chrome 做 lifecycle 驗證，啟動後 CDP targets 僅剩 1 個 Galaxy page，加上 omnibox popup internal targets，沒有 `chrome://newtab/`；驗證後 `closeChromeDebugSession()` 成功關閉 Chrome，`127.0.0.1:9222` 不可達。
+- 後續影響：下一輪 E2E 應重新從新 run 驗證，不沿用 OTTEST005。觀察點：(1) run 開始後使用者可見頁籤只有 Galaxy；(2) 操作畫面與 log 同步；(3) run cancelled / completed / failed 後 dedicated Chrome 完全關閉；(4) 真正到儲存步驟前才出現 Tool Bridge 授權。

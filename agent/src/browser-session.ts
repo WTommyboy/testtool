@@ -78,17 +78,31 @@ const requestCdpTargetAction = async (endpoint: string, action: "activate" | "cl
   }
 };
 
-const isBrowserInternalTarget = (target: CdpTarget): boolean => {
+const isChromeNewTabTarget = (target: CdpTarget): boolean => {
   const url = target.url ?? "";
-  return url.startsWith("chrome://") || url.startsWith("devtools://") || url.startsWith("chrome-extension://");
+  return url === "chrome://newtab/" || url.startsWith("chrome://new-tab-page");
 };
 
-const isUserPageTarget = (target: CdpTarget): boolean => {
-  return target.type === "page" && Boolean(target.id) && !isBrowserInternalTarget(target);
+const isUnclosableBrowserTarget = (target: CdpTarget): boolean => {
+  const url = target.url ?? "";
+  return (
+    url.startsWith("devtools://") ||
+    url.startsWith("chrome-extension://") ||
+    url.startsWith("chrome://omnibox-popup") ||
+    (url.startsWith("chrome://") && !isChromeNewTabTarget(target))
+  );
+};
+
+const isApplicationPageTarget = (target: CdpTarget): boolean => {
+  return target.type === "page" && Boolean(target.id) && !isChromeNewTabTarget(target) && !isUnclosableBrowserTarget(target);
+};
+
+const isClosableExtraPageTarget = (target: CdpTarget): boolean => {
+  return target.type === "page" && Boolean(target.id) && (isApplicationPageTarget(target) || isChromeNewTabTarget(target));
 };
 
 const closeExistingPageTabs = async (endpoint: string): Promise<void> => {
-  const targets = (await listCdpTargets(endpoint)).filter(isUserPageTarget);
+  const targets = (await listCdpTargets(endpoint)).filter(isApplicationPageTarget);
   const targetIds = targets.map((target) => target.id as string);
   for (const targetId of targetIds) {
     await requestCdpTargetAction(endpoint, "close", targetId);
@@ -103,7 +117,7 @@ const closeExistingPageTabs = async (endpoint: string): Promise<void> => {
 };
 
 const pickBestVisibleTarget = (targets: CdpTarget[]): CdpTarget | null => {
-  const pages = targets.filter(isUserPageTarget);
+  const pages = targets.filter(isApplicationPageTarget);
   return (
     pages.find((target) => target.url?.includes("/testview/edit")) ??
     pages.find((target) => target.url?.includes("/testview/home")) ??
@@ -117,11 +131,16 @@ export const activateBestExistingTab = async (endpoint: string): Promise<void> =
   if (target?.id) await requestCdpTargetAction(endpoint, "activate", target.id);
 };
 
-export const ensureSingleUserPageTab = async (endpoint: string): Promise<void> => {
+export const ensureSingleUserPageTab = async (endpoint: string, options: { closeNewTab?: boolean } = {}): Promise<void> => {
   const targets = await listCdpTargets(endpoint);
-  const pages = targets.filter(isUserPageTarget);
   const keep = pickBestVisibleTarget(targets);
   if (!keep?.id) return;
+
+  const pages = targets.filter((target) => {
+    if (!isClosableExtraPageTarget(target)) return false;
+    if (isChromeNewTabTarget(target)) return options.closeNewTab === true;
+    return true;
+  });
 
   for (const page of pages) {
     if (page.id && page.id !== keep.id) {
@@ -129,7 +148,9 @@ export const ensureSingleUserPageTab = async (endpoint: string): Promise<void> =
     }
   }
 
-  await requestCdpTargetAction(endpoint, "activate", keep.id);
+  const remainingTargets = await listCdpTargets(endpoint);
+  const remainingKeep = remainingTargets.find((target) => target.id === keep.id) ?? pickBestVisibleTarget(remainingTargets);
+  if (remainingKeep?.id) await requestCdpTargetAction(endpoint, "activate", remainingKeep.id);
 };
 
 const openCdpTab = async (endpoint: string, url: string): Promise<string | null> => {
@@ -244,8 +265,12 @@ export const ensureChromeDebugSession = async (
   const openInitialUrl = options.openInitialUrl ?? true;
   if (await isCdpAvailable(endpoint)) {
     if (options.resetTabs) await closeExistingPageTabs(endpoint);
-    if (initialUrl && openInitialUrl) await openCdpTab(endpoint, initialUrl);
-    else await activateBestExistingTab(endpoint);
+    if (initialUrl && openInitialUrl) {
+      await openCdpTab(endpoint, initialUrl);
+      await ensureSingleUserPageTab(endpoint, { closeNewTab: true });
+    } else {
+      await activateBestExistingTab(endpoint);
+    }
     return endpoint;
   }
 
@@ -272,8 +297,12 @@ export const ensureChromeDebugSession = async (
   const ready = await waitForCdp(endpoint, 5000);
   if (ready) {
     if (options.resetTabs) await closeExistingPageTabs(endpoint);
-    if (initialUrl && openInitialUrl) await openCdpTab(endpoint, initialUrl);
-    else await activateBestExistingTab(endpoint);
+    if (initialUrl && openInitialUrl) {
+      await openCdpTab(endpoint, initialUrl);
+      await ensureSingleUserPageTab(endpoint, { closeNewTab: true });
+    } else {
+      await activateBestExistingTab(endpoint);
+    }
   }
   return ready ? endpoint : null;
 };
