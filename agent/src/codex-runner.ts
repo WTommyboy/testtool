@@ -240,6 +240,17 @@ export class CodexRunner {
   }
 
   resume(threadId: string, prompt: string): Promise<CodexTurnResult> {
-    return this.run(["exec", "resume", "--json", threadId, prompt]);
+    return this.run(
+      [
+        "exec",
+        "--json",
+        "--sandbox",
+        "workspace-write",
+        "--skip-git-repo-check",
+        "resume",
+        threadId,
+        prompt
+      ]
+    );
   }
 }

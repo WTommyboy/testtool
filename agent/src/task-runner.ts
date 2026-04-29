@@ -1218,7 +1218,8 @@ const uploadRunArtifacts = async (options: UploadArtifactsOptions): Promise<Uplo
     sourceCase,
     status: effectiveFailCategory ? (missingRealUatResult ? "BLOCKED" : "FAIL") : "PASS",
     failCategory: effectiveFailCategory,
-    detailJson
+    detailJson,
+    fileName: "agent-fallback-result.xlsx"
   });
 
   writeJson(path.join(runDir, "output", "result-xlsx.json"), {
@@ -1230,7 +1231,26 @@ const uploadRunArtifacts = async (options: UploadArtifactsOptions): Promise<Uplo
   });
 
   let resultXlsxUploaded = false;
-  if (outputUrls.result_xlsx) {
+  if (outputUrls.result_xlsx && resultSource === "agent_fallback") {
+    writeJson(path.join(runDir, "output", "result-xlsx.json"), {
+      path: resultXlsxPath,
+      uploaded: false,
+      source: resultSource,
+      upload_metadata: resultUploadMetadata,
+      skipped_upload: true,
+      reason: "AGENT_FALLBACK_RESULT_NOT_UPLOADED",
+      message: "Agent fallback workbooks are local diagnostics only. Codex must create output/result.xlsx before the result can be uploaded."
+    });
+    sendBestEffort(
+      connection,
+      "run.stderr",
+      {
+        run_id: runId,
+        text: "uat-agent skipped uploading agent fallback result.xlsx; Codex did not create a trusted output/result.xlsx."
+      },
+      false
+    );
+  } else if (outputUrls.result_xlsx) {
     sendBestEffort(
       connection,
       "run.uploading_result",
@@ -1539,6 +1559,9 @@ export const handleTaskDispatch = async (
 
     if (result.exitCode !== 0) {
       throw new Error(`CODEX_RUN_FAILED exit=${result.exitCode} signal=${result.signal ?? "none"}`);
+    }
+    if (!uploadedArtifacts.usedCodexGeneratedResult) {
+      throw new Error("CODEX_NO_RESULT_XLSX");
     }
 
     writeJson(path.join(runDir, "state.json"), {
@@ -1870,6 +1893,9 @@ export const handleToolResponse = async (
 
     if (result.exitCode !== 0) {
       throw new Error(`CODEX_RUN_FAILED exit=${result.exitCode} signal=${result.signal ?? "none"}`);
+    }
+    if (!uploadedArtifacts.usedCodexGeneratedResult) {
+      throw new Error("CODEX_NO_RESULT_XLSX");
     }
 
     writeJson(path.join(runDir, "state.json"), {

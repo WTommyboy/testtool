@@ -478,3 +478,19 @@ Tommy 曾討論是否改成腳本。最後決策是採「半腳本化 / helper �
 - 修改檔案：本文件新增「目前 production 架構與部署分支」章節，明列 Vercel / Railway / Mac Agent / GitHub / Railway volume 的責任邊界與部署驗證命令。
 - 驗證：已確認遠端 `origin/refactor/mac-agent-mvp` 與 `origin/codex/uat-tool-mvp` 都指向 `8bed859`；`/health` 正常。`/version` 當時 deployment id 尚未變更，需用 Railway dashboard 確認 auto deploy 或手動 redeploy。
 - 後續影響：後續任何需要上線的 uat-tool 變更，完成 push 後都要確認部署分支與 Railway deployment 狀態，避免「已推 GitHub 但 production 未更新」。
+
+### 2026-04-29 17:18 - E2E 試跑發現前端清理與檔案選取狀態殘留
+
+- 背景：Tommy 在線上工具 E2E 試跑時，先前被 result/evidence gate 擋下的測試結果可被「清理」清空，但測試設定區未完整 reset；重新選擇 xlsx / 說明文件後，UI 上檔案 input 看似仍有檔名與「2 個檔案」，但底部未列出正確已選檔狀態，按「開始執行」仍顯示「請上傳 xlsx 和至少一份說明文件」。需重新整理網址才能解除。
+- 決策：先登記為 Web UI P1 bug，不在目前 E2E 驗證中追加新功能；修正方向應檢查清理動作是否同時 reset run/testcase form state、file input ref、selected file state、validation state 與 uploaded-doc list。
+- 修改檔案：暫無程式修改；本文件補記觀察。截圖來源：`/Users/tommy/Desktop/screenshot/截圖 2026-04-29 下午5.15.13.png`。
+- 驗證：未修；現象由 Tommy 截圖與操作描述確認。
+- 後續影響：後續修 UI 時需補測兩條流程：(1) gate failed / blocked 後按清理，設定與檔案區應回到乾淨初始狀態；(2) 清理後重新選 xlsx + 多份 md，selected files summary 與 submit validation 必須一致，不需刷新頁面。
+
+### 2026-04-29 17:38 - 修正 Tool Bridge 授權後 Codex resume 失敗與 fallback result 混淆
+
+- 背景：DEMO001 E2E run `98fb20cf-3c96-437c-b183-927885f34bb8` 在 DEMO-A-01 preview 後正確停在 Tool Bridge 不可逆操作授權；Tommy 按授權後，Chrome 只多開一個頁籤且沒有任何可見 UI 操作。檢查本機 run workspace 後確認 `codex-resume` 只跑約 2 秒即失敗，stderr 為 `Not inside a trusted directory and --skip-git-repo-check was not specified.`。Agent 接著產生 fallback `result.xlsx` 並嘗試上傳，導致 result/evidence gate 以 detail_json/evidence 不足擋下，反而遮蔽真正根因。
+- 決策：Mac Agent 的 `codex exec resume` 必須和首次 `codex exec` 一樣帶 `--json --sandbox workspace-write --skip-git-repo-check`，讓 `~/.uat-agent/runs/<runId>` 這類非 git workspace 可續跑。Agent 自產 fallback workbook 只可作本機診斷，不可寫成 `output/result.xlsx` 也不可上傳成可信 UAT 結果；若 Codex 未產 `output/result.xlsx`，run 應以 `CODEX_NO_RESULT_XLSX` 或原始 `CODEX_RUN_FAILED` 失敗。
+- 修改檔案：`agent/src/codex-runner.ts`、`agent/src/task-runner.ts`、`agent/src/result-writer.ts`、`scripts/verify-agent-resume.ts`、`package.json`。
+- 驗證：新增 `npm run verify:agent-resume`，用 fake Codex executable 驗證 resume argv 含 `--skip-git-repo-check` 且順序為 `codex exec --json --sandbox workspace-write --skip-git-repo-check resume <thread> <prompt>`。仍需重新部署後再跑一次線上 E2E 驗證實際 Tool Bridge 授權後會接續原 thread 操作 browser。
+- 後續影響：Web UI 仍應改善等待授權狀態與按鈕文案，避免「收集 Evidence」階段看似卡住；但此修正先處理 Agent resume 的硬阻塞與 fallback result 混淆。

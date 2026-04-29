@@ -9,6 +9,7 @@ type ResultWriterInput = {
   status: "PASS" | "FAIL" | "BLOCKED";
   failCategory?: string | null;
   detailJson: Record<string, unknown>;
+  fileName?: string;
 };
 
 export type AgentResultSourceCase = {
@@ -140,7 +141,7 @@ export const writeAgentResultXlsx = async (input: ResultWriterInput): Promise<st
   ];
   bugs.getRow(1).font = { bold: true };
 
-  const filePath = path.join(input.outputDir, "result.xlsx");
+  const filePath = path.join(input.outputDir, input.fileName ?? "agent-fallback-result.xlsx");
   await workbook.xlsx.writeFile(filePath);
   return filePath;
 };
