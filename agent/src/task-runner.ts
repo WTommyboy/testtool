@@ -126,6 +126,7 @@ const prepareCodexContext = (config: AgentConfig, runDir: string): void => {
     "- BI testing rulebooks are copied under `rules/BI_TEST_RULES/`.",
     "- BI metadata CSV, when available locally, is copied to `rules/BI_DATA/metadata.csv`.",
     "- Domain pack files downloaded from the API are in `input/`.",
+    "- Domain locator registry, when downloaded, is guidance only and must not bypass visible UI operation.",
     "",
     "Run rules:",
     "- Follow the downloaded input files in `input/`.",
@@ -173,6 +174,7 @@ const writeRunBrief = (
   const resultXlsxPath = path.join(runDir, "output", "result.xlsx");
   const biMetadataCsvPath = path.join(runDir, "rules", "BI_DATA", "metadata.csv");
   const biMetadataCsv = fs.existsSync(biMetadataCsvPath) ? biMetadataCsvPath : null;
+  const domainLocatorRegistry = inputs.domain_locator_registry ?? null;
   const inputLines = Object.entries(inputs).map(([key, filePath]) => `- ${key}: ${filePath}`);
   const briefPath = path.join(runDir, "input", "run-brief.md");
   const content = [
@@ -211,6 +213,7 @@ const writeRunBrief = (
     `- result_template: ${guides.resultTemplatePath}`,
     `- network_observation_guidance: ${guides.networkObservationGuidancePath}`,
     `- bi_metadata_csv: ${biMetadataCsv ?? "(not copied; use uploaded/reference docs only)"}`,
+    `- domain_locator_registry: ${domainLocatorRegistry ?? "(not downloaded; use visible UI exploration)"}`,
     "",
     "## Required Inputs",
     inputLines.length > 0 ? inputLines.join("\n") : "- none",
@@ -239,9 +242,12 @@ const writeRunBrief = (
     biMetadataCsv
       ? "9. If the current BI case needs metadata counts, use the copied `rules/BI_DATA/metadata.csv`; do not search the workspace for another metadata source first."
       : "9. If the current BI case needs metadata counts and no baseline/reference CSV is downloaded, use uploaded supporting docs before doing broad filesystem searches.",
-    "10. For BI UI operations, read `input/bi-ui-helper-guidance.md`; it includes operationTemplate guidance when the current case provides Helper hints.",
-    "11. Use `input/evidence-templates/index.json` and only the current-case template(s) when writing evidence/detail_json.",
-    "12. Execute one case at a time, write evidence/result for that case, then move to the next case JSON if needed.",
+    domainLocatorRegistry
+      ? `10. For BI UI locator hints, use ${domainLocatorRegistry}. It is guidance only; if a locator fails, fall back to visible UI exploration and record drift.`
+      : "10. No domain locator registry was downloaded; use visible UI exploration and helper guidance.",
+    "11. For BI UI operations, read `input/bi-ui-helper-guidance.md`; it includes operationTemplate guidance when the current case provides Helper hints.",
+    "12. Use `input/evidence-templates/index.json` and only the current-case template(s) when writing evidence/detail_json.",
+    "13. Execute one case at a time, write evidence/result for that case, then move to the next case JSON if needed.",
     "",
     "## Hard Gates",
     "- No trusted PASS/FAIL without current-run evidence.",
@@ -317,7 +323,8 @@ const inputFileNameByKey: Record<string, string> = {
   domain_rules: "domain_AGENTS.md",
   domain_schema: "domain_xlsx_schema.json",
   domain_result_adapter: "domain_result_parser_adapter.json",
-  domain_startup_template: "domain_startup_prompt_template.md"
+  domain_startup_template: "domain_startup_prompt_template.md",
+  domain_locator_registry: "domain_locator_registry.json"
 };
 
 const sanitizeInputFileName = (value: string, fallback: string): string => {
@@ -705,6 +712,7 @@ const buildPrompt = (
   const platformSkillPath = path.join(runDir, "agent-skills", "uat-tool", "SKILL.md");
   const biMetadataCsvPath = path.join(runDir, "rules", "BI_DATA", "metadata.csv");
   const biMetadataCsv = fs.existsSync(biMetadataCsvPath) ? biMetadataCsvPath : null;
+  const domainLocatorRegistry = inputs.domain_locator_registry ?? null;
 
   return [
     "You are executing a Galaxy UAT Tool run inside the Mac Agent.",
@@ -726,6 +734,9 @@ const buildPrompt = (
     `- Use the rule index to avoid loading unnecessary rules: ${guides.ruleIndexPath}`,
     `- Use evidence templates only as needed: ${guides.evidenceTemplates.indexPath}`,
     `- For BI UI recipes, use: ${guides.biUiHelperGuidancePath}`,
+    domainLocatorRegistry
+      ? `- For BI locator hints, use: ${domainLocatorRegistry}`
+      : "- BI locator registry was not downloaded; use visible UI exploration.",
     `- For network request observation, use: ${guides.networkObservationGuidancePath}`,
     `- Result workbook template reference: ${guides.resultTemplatePath}`,
     `- Full Layer 1 platform skill is available if needed: ${platformSkillPath}`,
@@ -788,6 +799,7 @@ const buildPrompt = (
     `Network observation guidance: ${guides.networkObservationGuidancePath}`,
     `Result template workbook: ${guides.resultTemplatePath}`,
     `BI metadata CSV: ${biMetadataCsv ?? "(not copied; use uploaded/reference docs only)"}`,
+    `BI locator registry: ${domainLocatorRegistry ?? "(not downloaded; use visible UI exploration)"}`,
     `Expected result workbook path: ${resultXlsxPath}`,
     "",
     "Downloaded input files:",
@@ -798,6 +810,7 @@ const buildPrompt = (
     `- startup instruction markdown: ${inputs.startup_instruction ?? inputs.md ?? "(missing)"}`,
     `- domain rules entrypoint: ${inputs.domain_rules ?? "rules/PROJECT_AGENTS_FULL.md"}`,
     `- domain startup template: ${inputs.domain_startup_template ?? "(missing)"}`,
+    `- domain locator registry: ${domainLocatorRegistry ?? "(none)"}`,
     `- baseline/reference csv: ${inputs.baseline ?? "(none)"}`,
     "",
     "Supporting documents:",

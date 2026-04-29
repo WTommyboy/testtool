@@ -38,7 +38,9 @@ export const writeReferenceIndex = ({ runDir, inputs, generated }: ReferenceInde
     role: key.startsWith("supporting_doc_")
       ? "supporting document"
       : key.startsWith("domain_")
-        ? "domain pack"
+        ? key === "domain_locator_registry"
+          ? "domain UI locator registry"
+          : "domain pack"
         : key,
     path: inputPath,
     exists: exists(inputPath)

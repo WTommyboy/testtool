@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { getDomainPack, listDomainPacks, readDomainPackFile } from "./domain-loader";
+import { getDomainPack, listDomainPacks, readDomainPackFile, readOptionalDomainPackFile } from "./domain-loader";
 
 const router = Router();
 
@@ -45,6 +45,14 @@ router.get("/:name/startup-template", (req, res) => {
   const content = readDomainPackFile(req.params.name, "startup_prompt_template.md");
   if (content === null) return res.status(409).json({ error: "DOMAIN_STARTUP_TEMPLATE_MISSING" });
   return res.type("text/markdown").send(content);
+});
+
+router.get("/:name/locator-registry", (req, res) => {
+  const pack = getDomainPack(req.params.name);
+  if (!pack) return res.status(404).json({ error: "DOMAIN_NOT_FOUND" });
+  const content = readOptionalDomainPackFile(req.params.name, "locators/demo001-locator-registry.json");
+  if (content === null) return res.status(404).json({ error: "DOMAIN_LOCATOR_REGISTRY_MISSING" });
+  return res.type("application/json").send(content);
 });
 
 export default router;

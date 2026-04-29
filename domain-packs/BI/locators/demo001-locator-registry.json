@@ -1,0 +1,211 @@
+{
+  "schemaVersion": "bi-locator-registry-v0.1",
+  "domain": "BI",
+  "scope": "DEMO001 baseline only",
+  "generatedAt": "2026-04-30T06:18:00+08:00",
+  "status": "draft_unverified",
+  "source": {
+    "cases": ["DEMO-A-01", "DEMO-B-01", "DEMO-C-01", "DEMO-D-01"],
+    "basis": "DEMO001 current_case_prompt summaries and prior helper executor patterns"
+  },
+  "policy": [
+    "This registry is locator guidance only. It does not prove PASS/FAIL/BLOCKED.",
+    "All candidates must operate visible UI through Playwright locators. Do not use direct BI API calls, internal JS setters, or force:true clicks.",
+    "If all candidates fail, fall back to visible UI exploration and record a drift item in output/locator-drift.log.",
+    "Do not edit this registry automatically during a run. Drift must be reviewed before registry updates.",
+    "Read-only DOM or Chart.js evaluation is allowed only for evidence after visible UI state has been set."
+  ],
+  "driftLog": "output/locator-drift.log",
+  "locators": [
+    {
+      "id": "BI.common.homeAppShell",
+      "description": "Galaxy BI DEV app shell after SSO/reachability preflight.",
+      "appliesTo": ["DEMO-A-01", "DEMO-B-01", "DEMO-C-01", "DEMO-D-01"],
+      "lastVerified": null,
+      "candidates": [
+        { "kind": "url", "value": "**/biapi-dev/testview/home?gameID=541" },
+        { "kind": "text", "value": "我的自訂" },
+        { "kind": "text", "value": "拼貼模式" },
+        { "kind": "text", "value": "明細模式" },
+        { "kind": "text", "value": "指標趨勢" }
+      ],
+      "verify": ["page.url contains /biapi-dev/testview/home", "body text contains at least one BI mode name"]
+    },
+    {
+      "id": "BI.common.customReportsNav",
+      "description": "Navigation entry for My Custom reports.",
+      "appliesTo": ["DEMO-A-01", "DEMO-B-01", "DEMO-C-01", "DEMO-D-01"],
+      "lastVerified": null,
+      "candidates": [
+        { "kind": "role", "role": "link", "name": "我的自訂" },
+        { "kind": "role", "role": "button", "name": "我的自訂" },
+        { "kind": "text", "value": "我的自訂" }
+      ],
+      "verify": ["after click, BI mode/project entries are visible"]
+    },
+    {
+      "id": "BI.common.modeEntryByName",
+      "description": "BI mode entry; parameter modeName should be 拼貼模式, 明細模式, or 指標趨勢.",
+      "appliesTo": ["DEMO-A-01", "DEMO-B-01", "DEMO-C-01", "DEMO-D-01"],
+      "params": ["modeName"],
+      "lastVerified": null,
+      "candidates": [
+        { "kind": "role", "role": "link", "nameParam": "modeName" },
+        { "kind": "role", "role": "button", "nameParam": "modeName" },
+        { "kind": "textParam", "name": "modeName" }
+      ],
+      "verify": ["project list for selected mode is visible"]
+    },
+    {
+      "id": "BI.common.projectCardByName",
+      "description": "Project card/list item; DEMO001 uses 拼貼test_001, 明細模式_test_tommy, 指標趨勢_test_tommy.",
+      "appliesTo": ["DEMO-A-01", "DEMO-B-01", "DEMO-C-01", "DEMO-D-01"],
+      "params": ["projectName"],
+      "lastVerified": null,
+      "candidates": [
+        { "kind": "role", "role": "link", "nameParam": "projectName" },
+        { "kind": "role", "role": "button", "nameParam": "projectName" },
+        { "kind": "textParam", "name": "projectName" }
+      ],
+      "verify": ["project report list is visible", "+ 新增報表 is visible"]
+    },
+    {
+      "id": "BI.common.addReportButton",
+      "description": "Create a new report in the selected project.",
+      "appliesTo": ["DEMO-A-01", "DEMO-B-01", "DEMO-C-01", "DEMO-D-01"],
+      "lastVerified": null,
+      "candidates": [
+        { "kind": "role", "role": "button", "name": "+ 新增報表" },
+        { "kind": "role", "role": "button", "name": "新增報表" },
+        { "kind": "text", "value": "+ 新增報表" }
+      ],
+      "verify": ["report editor/builder page is visible"]
+    },
+    {
+      "id": "BI.builder.sourceReportControl",
+      "description": "Source report control in collage builder; DEMO001 A/B uses 每日報表.",
+      "appliesTo": ["DEMO-A-01", "DEMO-B-01"],
+      "params": ["sourceReportName"],
+      "lastVerified": null,
+      "candidates": [
+        { "kind": "label", "name": "來源報表" },
+        { "kind": "text", "value": "來源報表" },
+        { "kind": "textParam", "name": "sourceReportName" }
+      ],
+      "verify": ["DOM/form state shows source report selected as sourceReportName"]
+    },
+    {
+      "id": "BI.builder.addFieldButton",
+      "description": "Open field picker / add selected field.",
+      "appliesTo": ["DEMO-A-01", "DEMO-B-01", "DEMO-C-01", "DEMO-D-01"],
+      "lastVerified": null,
+      "candidates": [
+        { "kind": "role", "role": "button", "name": "+ 新增欄位" },
+        { "kind": "role", "role": "button", "name": "新增欄位" },
+        { "kind": "text", "value": "+ 新增欄位" }
+      ],
+      "verify": ["field picker opens or field selection row changes"]
+    },
+    {
+      "id": "BI.builder.fieldOptionByName",
+      "description": "Field option in picker; DEMO001 uses 新增帳號數, 銀河帳號ID, 銀河帳號狀態, 綁定ID_Google.",
+      "appliesTo": ["DEMO-A-01", "DEMO-B-01", "DEMO-C-01", "DEMO-D-01"],
+      "params": ["fieldName"],
+      "lastVerified": null,
+      "candidates": [
+        { "kind": "role", "role": "option", "nameParam": "fieldName" },
+        { "kind": "role", "role": "button", "nameParam": "fieldName" },
+        { "kind": "textParam", "name": "fieldName" }
+      ],
+      "verify": ["selected field region contains fieldName after click"]
+    },
+    {
+      "id": "BI.builder.selectedFieldsRegion",
+      "description": "Selected fields/chips/table region used for state-cleanup verification.",
+      "appliesTo": ["DEMO-A-01", "DEMO-B-01", "DEMO-C-01", "DEMO-D-01"],
+      "lastVerified": null,
+      "candidates": [
+        { "kind": "css", "value": "#fieldSelectionContainer" },
+        { "kind": "css", "value": "[data-testid*='field']" },
+        { "kind": "text", "value": "新增欄位" }
+      ],
+      "verify": ["region text contains expected selected fields or shows no selected fields when cleanup requires empty"]
+    },
+    {
+      "id": "BI.builder.dateRangeControl",
+      "description": "Date range button/control; DEMO001 A/D expect 2026/03/01~2026/03/31.",
+      "appliesTo": ["DEMO-A-01", "DEMO-D-01"],
+      "params": ["dateRangeText"],
+      "lastVerified": null,
+      "candidates": [
+        { "kind": "css", "value": "#dateRangeBtn" },
+        { "kind": "role", "role": "button", "nameRegex": "\\d{4}/\\d{2}/\\d{2}|過去|天前|上月" },
+        { "kind": "textParam", "name": "dateRangeText" }
+      ],
+      "verify": ["visible button/control text equals dateRangeText after setting; no semantic substitution"]
+    },
+    {
+      "id": "BI.builder.displayModeControl",
+      "description": "Display mode selector; DEMO001 uses 每天 / 列表.",
+      "appliesTo": ["DEMO-A-01", "DEMO-C-01", "DEMO-D-01"],
+      "params": ["displayMode"],
+      "lastVerified": null,
+      "candidates": [
+        { "kind": "css", "value": "select[name='displayMode']" },
+        { "kind": "label", "name": "顯示" },
+        { "kind": "textParam", "name": "displayMode" }
+      ],
+      "verify": ["DOM/form state shows displayMode exactly"]
+    },
+    {
+      "id": "BI.builder.addGroupDimensionButton",
+      "description": "Open/add group dimension control; DEMO-D-01 uses 銀河帳號狀態.",
+      "appliesTo": ["DEMO-D-01"],
+      "params": ["groupFieldName"],
+      "lastVerified": null,
+      "candidates": [
+        { "kind": "css", "value": "#groupDimensionContainer" },
+        { "kind": "role", "role": "button", "nameRegex": "新增.*(分組|分群)|\\+ 新增" },
+        { "kind": "text", "value": "分組" }
+      ],
+      "verify": ["group dimension region contains groupFieldName after setting"]
+    },
+    {
+      "id": "BI.builder.executePreviewButton",
+      "description": "Execute preview; must trigger a new UI-driven preview POST.",
+      "appliesTo": ["DEMO-A-01", "DEMO-C-01", "DEMO-D-01"],
+      "lastVerified": null,
+      "candidates": [
+        { "kind": "role", "role": "button", "name": "執行" },
+        { "kind": "text", "value": "執行" }
+      ],
+      "verify": ["performance entries or network observer sees a new preview POST", "preview/chart/table state changes or renders"]
+    },
+    {
+      "id": "BI.collage.saveReportButton",
+      "description": "Save report in collage flow; native dialog/confirm still requires Tool Bridge in Agent mode.",
+      "appliesTo": ["DEMO-A-01"],
+      "params": ["reportName"],
+      "lastVerified": null,
+      "candidates": [
+        { "kind": "role", "role": "button", "name": "儲存報表" },
+        { "kind": "role", "role": "button", "name": "儲存" },
+        { "kind": "text", "value": "儲存報表" }
+      ],
+      "verify": ["Tool Bridge approval exists before native dialog acceptance", "after save, report list contains reportName"]
+    },
+    {
+      "id": "BI.collage.reportListRowByName",
+      "description": "Saved report row in project list after DEMO-A-01 save.",
+      "appliesTo": ["DEMO-A-01"],
+      "params": ["reportName"],
+      "lastVerified": null,
+      "candidates": [
+        { "kind": "role", "role": "row", "nameParam": "reportName" },
+        { "kind": "role", "role": "link", "nameParam": "reportName" },
+        { "kind": "textParam", "name": "reportName" }
+      ],
+      "verify": ["opening the row returns to report editor", "reopened editor restores expected source/date/field/reportName"]
+    }
+  ]
+}

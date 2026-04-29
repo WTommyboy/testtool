@@ -589,3 +589,11 @@ Tommy 曾討論是否改成腳本。最後決策是採「半腳本化 / helper �
   - 需要上線的程式 / runtime 行為變更，必須同步推 `codex/uat-tool-mvp`，並用 `/version`、`/health` 或 Railway deployment 狀態確認 production 是否真的更新。
   - 每次收尾回報必須列清楚：commit hash、已 push 分支、production commit/deployment 是否更新、本機 Mac Agent 是否需要或已完成重啟。
 - 後續影響：這條是 Codex 自身工作紀律，避免未來只把規則留在對話裡，造成 compact / 新 session 後遺忘。
+
+### 2026-04-30 06:18 - DEMO001 locator registry 與 diagnostic mode 規格
+
+- 背景：Tommy 與 Claude 採納速度優化 review，決定三件事並行：Tommy 跑 DEMO001 baseline；Codex 先做 DEMO001 會用到的 BI locator registry；Codex 補 diagnostic mode 規格。Claude 也補充：未來 helper 合併成大 action 時，helper internal 仍需逐 action log + artifact，保留中間步驟可見度。
+- 決策：locator registry 先放 BI Domain Pack，不放 Layer 1；Layer 1 只定 locator/diagnostic 的安全邊界。`domain-packs/BI/locators/demo001-locator-registry.json` 先收 15 個 DEMO001 draft locators，全部是 Playwright visible UI locator hints，不含 direct API、internal JS setter 或 `force: true`。runtime 派工時若該 domain pack 有 registry，Railway 會把 `domain_locator_registry` 加進 input URLs，Agent 下載為 `input/domain_locator_registry.json`，並在 run brief / prompt / reference index / rule-index 中列出。它是 guidance，不是 result evidence；locator 失敗要 fallback visible UI 並寫 drift。
+- Diagnostic mode：新增正式 spec `docs/refactor/UAT_Tool_Diagnostic_Mode_Spec_v0_1.md` 與 Layer 1 rule `agent-skills/uat-tool/rules/diagnostic-mode.md`。v0.1 僅定義非可信快速迭代模式：可跑單題部分 steps、產 `diagnostic-summary.json` / timing / helper artifacts / drift log，但不可寫可信 `output/result.xlsx`、不可更新 PASS/FAIL/BLOCKED、不可把 partial evidence promoted 成 trusted result。
+- 修改檔案：`domain-packs/BI/locators/demo001-locator-registry.json`、`domain-packs/BI/locators/README.md`、`domain-packs/BI/AGENTS.md`、`src/domain-loader.ts`、`src/domains.ts`、`src/runs.ts`、`agent/src/task-runner.ts`、`agent/src/reference-index.ts`、`agent/src/rule-index.ts`、`agent-skills/uat-tool/SKILL.md`、`agent-skills/uat-tool/rules/diagnostic-mode.md`、`docs/refactor/UAT_Tool_Diagnostic_Mode_Spec_v0_1.md`。
+- 後續影響：selector-map vs persistent helper session 的優先順序仍等 DEMO001 baseline `timing-summary.json` 判斷。若 selector drift 很重，優先強化 locator registry 與 drift review；若 helper spawn / MCP tool call 佔比高，再優先做 persistent helper session 或合併 helper action。

@@ -126,6 +126,7 @@ const buildCurrentCaseRecommendations = (runDir: string, entries: RuleIndexEntry
     }
     if (/前端呈現|前後端整合|功能流程/.test(testTarget)) {
       add(ids, "bi-project-agents-full");
+      add(ids, "bi-locator-registry");
     }
   } else {
     basedOn.push("current-case-pack.json=(unavailable)");
@@ -196,11 +197,25 @@ export const writeRuleIndex = (runDir: string, domain: string): string => {
     summary: "Run lifecycle, cancellation and resume rules."
   });
   addIfExists(entries, runDir, {
+    id: "diagnostic-mode",
+    scope: "platform",
+    filePath: path.join(skillRoot, "rules", "diagnostic-mode.md"),
+    loadWhen: ["diagnostic execution", "run only part of a case", "fast iteration without trusted result"],
+    summary: "Non-trusted fast iteration contract. Diagnostic artifacts cannot be uploaded as trusted UAT results."
+  });
+  addIfExists(entries, runDir, {
     id: "bi-domain-entrypoint",
     scope: "domain",
     filePath: path.join(runDir, "input", "domain_AGENTS.md"),
     loadWhen: [`domain=${domain}`, "BI feature behavior unclear", "BI hard rule needed"],
     summary: "Downloaded domain pack entrypoint for BI."
+  });
+  addIfExists(entries, runDir, {
+    id: "bi-locator-registry",
+    scope: "domain",
+    filePath: path.join(runDir, "input", "domain_locator_registry.json"),
+    loadWhen: ["BI UI operation", "selector exploration would be slow", "locator drift suspected"],
+    summary: "BI locator hints for current UI flows. Guidance only; failed locators require visible UI fallback and drift logging."
   });
   addIfExists(entries, runDir, {
     id: "bi-project-agents-full",

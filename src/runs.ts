@@ -23,6 +23,7 @@ import {
   ResultEvidenceGateError,
   type ResultEvidenceGateReport
 } from "./result-parser/result-evidence-gate";
+import { readOptionalDomainPackFile } from "./domain-loader";
 
 const router = Router();
 
@@ -491,12 +492,16 @@ const getRunInputUrls = (req: Request, runId: string, paths: RunInputPaths): Rec
 const getDomainInputUrls = (req: Request, domain: string): Record<string, string> => {
   const base = getRequestBaseUrl(req);
   const encodedDomain = encodeURIComponent(domain || "BI");
-  return {
+  const urls: Record<string, string> = {
     domain_rules: `${base}/api/domains/${encodedDomain}/rules`,
     domain_schema: `${base}/api/domains/${encodedDomain}/schema`,
     domain_result_adapter: `${base}/api/domains/${encodedDomain}/result-adapter`,
     domain_startup_template: `${base}/api/domains/${encodedDomain}/startup-template`
   };
+  if (readOptionalDomainPackFile(domain || "BI", "locators/demo001-locator-registry.json") !== null) {
+    urls.domain_locator_registry = `${base}/api/domains/${encodedDomain}/locator-registry`;
+  }
+  return urls;
 };
 
 const getRunOutputUrls = (req: Request, runId: string): Record<string, string> => {

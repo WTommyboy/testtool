@@ -64,6 +64,7 @@ CodexRunner 不應在 initial prompt 一次塞入所有規則。
 - `rules/domain-routing.md`：如何路由 `domain=BI` 與未來 domain。
 - `rules/codex-runtime.md`：CodexRunner prompt、stdout progress、MCP 使用與 runtime 限制。
 - `rules/agent-security.md`：Agent task 白名單、active run lock、token 範圍。
+- `rules/diagnostic-mode.md`：非可信快速迭代模式的邊界與輸出契約。
 
 ## 平台層硬規則
 

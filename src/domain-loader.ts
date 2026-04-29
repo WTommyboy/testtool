@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 const requiredFiles = ["AGENTS.md", "xlsx_schema.json", "result_parser_adapter.json", "startup_prompt_template.md"] as const;
+const optionalFiles = ["locators/demo001-locator-registry.json"] as const;
 
 export type DomainPackSummary = {
   name: string;
@@ -48,6 +49,14 @@ export const getDomainPack = (name: string): DomainPackSummary | null => {
 };
 
 export const readDomainPackFile = (name: string, fileName: typeof requiredFiles[number]): string | null => {
+  const pack = getDomainPack(name);
+  if (!pack) return null;
+  const filePath = path.join(pack.path, fileName);
+  if (!fs.existsSync(filePath)) return null;
+  return fs.readFileSync(filePath, "utf8");
+};
+
+export const readOptionalDomainPackFile = (name: string, fileName: typeof optionalFiles[number]): string | null => {
   const pack = getDomainPack(name);
   if (!pack) return null;
   const filePath = path.join(pack.path, fileName);
