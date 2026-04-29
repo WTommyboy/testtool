@@ -494,3 +494,11 @@ Tommy 曾討論是否改成腳本。最後決策是採「半腳本化 / helper �
 - 修改檔案：`agent/src/codex-runner.ts`、`agent/src/task-runner.ts`、`agent/src/result-writer.ts`、`scripts/verify-agent-resume.ts`、`package.json`。
 - 驗證：新增 `npm run verify:agent-resume`，用 fake Codex executable 驗證 resume argv 含 `--skip-git-repo-check` 且順序為 `codex exec --json --sandbox workspace-write --skip-git-repo-check resume <thread> <prompt>`。仍需重新部署後再跑一次線上 E2E 驗證實際 Tool Bridge 授權後會接續原 thread 操作 browser。
 - 後續影響：Web UI 仍應改善等待授權狀態與按鈕文案，避免「收集 Evidence」階段看似卡住；但此修正先處理 Agent resume 的硬阻塞與 fallback result 混淆。
+
+### 2026-04-29 18:00 - 修正 Web UI 清空草稿與不可逆操作授權 UX
+
+- 背景：Tommy 回報線上工具按「清空為新測試草稿」後，只清掉下方被 gate 擋下的結果，但上方測試設定與原生 file input 狀態殘留；重新選檔後 UI 仍可能顯示有 xlsx / 多份 md，但 submit validation 讀到的 React state 是空，必須刷新頁面才恢復。另外 Tool Bridge pending card 的主要按鈕仍是泛用「已處理，繼續執行」，不可逆操作沒有明確授權語意。
+- 決策：清空草稿改成同時 reset selected run detail、case/log/approval panels、測試設定欄位、React file state 與原生 file input value，並避免清空後 `loadRuns()` 又自動選回最新歷史 run。不可逆 Tool Bridge request 改成 explicit authorization card：顯示 type、request id、case、step、action、reason；必須勾選「只限這個 request id」後，`授權並繼續執行` 才可點；保留 `拒絕 / 跳過此 Case` 與 `取消整個 Run`。
+- 修改檔案：`web/src/App.tsx`、`web/src/App.css`。
+- 驗證：`npm run build --prefix web` 通過；`npm run lint --prefix web` 無 error，仍有既有 hooks dependency warning；`npm run typecheck` 通過。另以本機 API fixture 驗證 WAITING_APPROVAL 畫面：不可逆授權卡未勾選時按鈕 disabled，勾選後 enabled；按「清空為新測試草稿」後狀態回 DRAFT、approval/case/log 清空、file input 顯示未選檔。
+- 後續影響：此為前端 UX 修正，不改 Tool Bridge server protocol。之後若要更完整，後端 approvals table 可新增 structured request payload 欄位，避免 Web UI 從 reason 文字反解析 request id / action / reason。

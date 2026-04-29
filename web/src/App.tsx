@@ -138,6 +138,14 @@ type Approval = {
   snapshot_path?: string | null;
 };
 
+type ApprovalRequestInfo = {
+  isToolRequest: boolean;
+  type: string;
+  action: string;
+  requestId: string;
+  reason: string;
+};
+
 type AuthUser = {
   login: string;
   id: string;
@@ -154,6 +162,10 @@ type AuthMeResponse = {
 
 const terminalRunStatuses = new Set(["SUCCEEDED", "FAILED", "CANCELLED", "CANCELED"]);
 const cancellableRunStatuses = new Set(["READY", "RUNNING", "WAITING_APPROVAL", "VALIDATING"]);
+const defaultRunLocation = "數據中心";
+const defaultRunFeatureMain = "BI工具";
+const defaultRunName = "Round 1";
+const defaultRunDevUrl = "https://galaxy.games.gamania.com/biapi-dev/testview/home?gameID=541";
 
 const isTerminalRunStatus = (status?: string | null): boolean => {
   return Boolean(status && terminalRunStatuses.has(status));
@@ -204,6 +216,23 @@ const objectValue = (value: unknown): Record<string, unknown> | null => (
   value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null
 );
 
+const parseApprovalReason = (reason: string): ApprovalRequestInfo => {
+  const lines = reason.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  const firstLine = lines[0] ?? reason.trim();
+  const toolMatch = firstLine.match(/^TOOL_REQUEST\s+([^:]+):\s*(.*)$/i);
+  const lineValue = (prefix: string): string => {
+    const found = lines.find((line) => line.toLowerCase().startsWith(prefix.toLowerCase()));
+    return found ? found.slice(prefix.length).trim() : "";
+  };
+  return {
+    isToolRequest: Boolean(toolMatch),
+    type: toolMatch?.[1] ?? "manual_approval",
+    action: toolMatch?.[2] ?? firstLine,
+    requestId: lineValue("request_id:"),
+    reason: lineValue("reason:")
+  };
+};
+
 const getCaseGroupName = (c: RunCase): string => {
   if (c.group_name && c.group_name.trim()) return c.group_name.trim();
   const m = c.case_no.match(/^[A-Za-z]+/);
@@ -236,17 +265,18 @@ function App() {
   const [runRoundFilter, setRunRoundFilter] = useState("");
   const [sourceMode, setSourceMode] = useState<"upload" | "conversation">("upload");
   const [runExecutionMode, setRunExecutionMode] = useState<"interactive" | "offline">("interactive");
+  const [autoSelectLatestRun, setAutoSelectLatestRun] = useState(true);
   const [agents, setAgents] = useState<AgentItem[]>([]);
   const [selectedAgentId, setSelectedAgentId] = useState("");
   const [uploadXlsx, setUploadXlsx] = useState<File | null>(null);
   const [uploadDocs, setUploadDocs] = useState<File[]>([]);
   const [uploadCsv, setUploadCsv] = useState<File | null>(null);
   const [runRoundId, setRunRoundId] = useState("");
-  const [runLocation, setRunLocation] = useState("數據中心");
-  const [runFeatureMain, setRunFeatureMain] = useState("BI工具");
+  const [runLocation, setRunLocation] = useState(defaultRunLocation);
+  const [runFeatureMain, setRunFeatureMain] = useState(defaultRunFeatureMain);
   const [runFeatureSub, setRunFeatureSub] = useState("");
-  const [runName, setRunName] = useState("Round 1");
-  const [runDevUrl, setRunDevUrl] = useState("https://galaxy.games.gamania.com/biapi-dev/testview/home?gameID=541");
+  const [runName, setRunName] = useState(defaultRunName);
+  const [runDevUrl, setRunDevUrl] = useState(defaultRunDevUrl);
   const [runPage, setRunPage] = useState(1);
   const [runTotal, setRunTotal] = useState(0);
   const [summary, setSummary] = useState<Summary | null>(null);
@@ -264,7 +294,12 @@ function App() {
   const [startError, setStartError] = useState<string | null>(null);
   const [playwrightStatus, setPlaywrightStatus] = useState<PlaywrightHealthStatus>("checking");
   const [resolvedBy, setResolvedBy] = useState("tommy");
+  const [approvalConfirmations, setApprovalConfirmations] = useState<Record<string, boolean>>({});
+  const [approvalNotes, setApprovalNotes] = useState<Record<string, string>>({});
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const uploadXlsxInputRef = useRef<HTMLInputElement>(null);
+  const uploadDocsInputRef = useRef<HTMLInputElement>(null);
+  const uploadCsvInputRef = useRef<HTMLInputElement>(null);
 
   const selectedConversation = conversations.find((x) => x.id === selectedConversationId) ?? null;
   const selectedRun = history.find((x) => x.id === selectedRunId) ?? null;
@@ -359,6 +394,46 @@ function App() {
         message: "無法連線到 Playwright 服務，請確認服務已啟動。"
       };
     }
+  };
+
+  const clearXlsxSelection = () => {
+    setUploadXlsx(null);
+    if (uploadXlsxInputRef.current) uploadXlsxInputRef.current.value = "";
+  };
+
+  const clearDocsSelection = () => {
+    setUploadDocs([]);
+    if (uploadDocsInputRef.current) uploadDocsInputRef.current.value = "";
+  };
+
+  const clearCsvSelection = () => {
+    setUploadCsv(null);
+    if (uploadCsvInputRef.current) uploadCsvInputRef.current.value = "";
+  };
+
+  const clearUploadSelections = () => {
+    clearXlsxSelection();
+    clearDocsSelection();
+    clearCsvSelection();
+  };
+
+  const removeUploadDoc = (index: number) => {
+    setUploadDocs((current) => current.filter((_, currentIndex) => currentIndex !== index));
+    if (uploadDocsInputRef.current) uploadDocsInputRef.current.value = "";
+  };
+
+  const resetRunDraftForm = () => {
+    setSourceMode("upload");
+    setRunExecutionMode("interactive");
+    setRunRoundId("");
+    setRunLocation(defaultRunLocation);
+    setRunFeatureMain(defaultRunFeatureMain);
+    setRunFeatureSub("");
+    setRunName(defaultRunName);
+    setRunDevUrl(defaultRunDevUrl);
+    clearUploadSelections();
+    setRunError("");
+    setStartError(null);
   };
 
   const getCaseGroups = (): string[] => [...new Set(runCases.map((c) => getCaseGroupName(c)))];
@@ -504,6 +579,90 @@ function App() {
               );
             })
           )}
+        </div>
+      </div>
+    );
+  };
+
+  const renderApprovalCard = (approval: Approval) => {
+    const requestInfo = parseApprovalReason(approval.reason);
+    const isIrreversible = requestInfo.type === "irreversible_operation";
+    const confirmed = Boolean(approvalConfirmations[approval.id]);
+    const note = approvalNotes[approval.id] ?? "";
+    const continueDisabled = runBusy || isStarting || !resolvedBy.trim() || (isIrreversible && !confirmed);
+
+    return (
+      <div key={approval.id} className={`approval-card ${isIrreversible ? "irreversible" : ""}`}>
+        <div className="approval-title-row">
+          <span className={`badge ${isIrreversible ? "blocked" : "waiting"}`}>
+            {isIrreversible ? "不可逆操作授權" : requestInfo.type}
+          </span>
+          {requestInfo.requestId ? <span className="approval-request-id">{requestInfo.requestId}</span> : null}
+        </div>
+        <div className="approval-detail-grid">
+          <span>Case</span>
+          <strong>{approval.case_no}</strong>
+          <span>Step</span>
+          <strong>{approval.step_no}</strong>
+          <span>動作</span>
+          <strong>{requestInfo.action || approval.reason}</strong>
+          <span>原因</span>
+          <strong>{requestInfo.reason || approval.reason}</strong>
+        </div>
+        <div className="meta">暫停時間 {formatDate(approval.created_at)}</div>
+        {approval.snapshot_path ? <div className="screenshot">截圖：{approval.snapshot_path}</div> : null}
+
+        {isIrreversible ? (
+          <label className="approval-confirm">
+            <input
+              type="checkbox"
+              checked={confirmed}
+              onChange={(event) => {
+                setApprovalConfirmations((current) => ({
+                  ...current,
+                  [approval.id]: event.target.checked
+                }));
+              }}
+            />
+            <span>我確認授權上述不可逆操作，且只限這個 request id。</span>
+          </label>
+        ) : null}
+
+        <div className="form-group approval-note">
+          <label>授權備註（選填）</label>
+          <textarea
+            value={note}
+            rows={2}
+            placeholder={isIrreversible ? "例如：只允許儲存本次臨時測試報表" : "補充給 Agent 的處理說明"}
+            onChange={(event) => {
+              setApprovalNotes((current) => ({
+                ...current,
+                [approval.id]: event.target.value
+              }));
+            }}
+          />
+        </div>
+
+        <div className="approval-actions">
+          <button
+            className="btn success sm"
+            onClick={() => void handleResolveApproval(approval, "continue")}
+            disabled={continueDisabled}
+            title={isIrreversible && !confirmed ? "請先勾選明確授權" : undefined}
+          >
+            {isIrreversible ? "授權並繼續執行" : "繼續執行"}
+          </button>
+          <button className="btn sm" onClick={() => void handleResolveApproval(approval, "skip")} disabled={runBusy || isStarting}>
+            拒絕 / 跳過此 Case
+          </button>
+          <button
+            className="btn danger sm"
+            onClick={() => selectedRunId && void handleRunAction("cancel", selectedRunId)}
+            disabled={!selectedRunCanCancel || runBusy || isStarting}
+            title={!selectedRunCanCancel ? "此 Run 已結束，不能再取消" : undefined}
+          >
+            取消整個 Run
+          </button>
         </div>
       </div>
     );
@@ -684,7 +843,7 @@ function App() {
       const data = await api<{ items: RunItem[]; total: number }>(`/api/runs/history?${params.toString()}`);
       setHistory(data.items);
       setRunTotal(data.total);
-      if (!selectedRunId && data.items[0]) {
+      if (!selectedRunId && autoSelectLatestRun && data.items[0]) {
         setSelectedRunId(data.items[0].id);
       }
     } catch (error) {
@@ -734,6 +893,7 @@ function App() {
   };
 
   const clearSelectedRunDetail = () => {
+    setAutoSelectLatestRun(false);
     setSelectedRunId("");
     setSummary(null);
     setRunEvents([]);
@@ -741,8 +901,10 @@ function App() {
     setRunCases([]);
     setRunBugs([]);
     setApprovals([]);
+    setApprovalConfirmations({});
+    setApprovalNotes({});
     setExpandedCaseId(null);
-    setStartError(null);
+    resetRunDraftForm();
   };
 
   useEffect(() => {
@@ -1028,9 +1190,8 @@ function App() {
         body: formData
       });
 
-      setUploadXlsx(null);
-      setUploadDocs([]);
-      setUploadCsv(null);
+      clearUploadSelections();
+      setAutoSelectLatestRun(true);
       setSelectedRunId(created.id);
       await loadRuns();
       await loadRunDetail(created.id);
@@ -1060,6 +1221,17 @@ function App() {
 
   const handleResolveApproval = async (approval: Approval, action: "continue" | "skip") => {
     if (!selectedRunId) return;
+    const requestInfo = parseApprovalReason(approval.reason);
+    const requiresExplicitAuthorization = requestInfo.type === "irreversible_operation";
+    if (action === "continue" && requiresExplicitAuthorization && !approvalConfirmations[approval.id]) {
+      setRunError("不可逆操作必須先勾選明確授權，才能繼續執行。");
+      return;
+    }
+    const note = approvalNotes[approval.id]?.trim() || (
+      action === "continue" && requiresExplicitAuthorization
+        ? `UI explicit authorization for request_id=${requestInfo.requestId || "unknown"}`
+        : ""
+    );
     setRunBusy(true);
     setRunError("");
     try {
@@ -1071,7 +1243,18 @@ function App() {
           stepNo: approval.step_no,
           action,
           resolvedBy,
+          note,
         }),
+      });
+      setApprovalConfirmations((current) => {
+        const next = { ...current };
+        delete next[approval.id];
+        return next;
+      });
+      setApprovalNotes((current) => {
+        const next = { ...current };
+        delete next[approval.id];
+        return next;
       });
       await loadRuns();
       await loadRunDetail(selectedRunId);
@@ -1097,7 +1280,7 @@ function App() {
       const disposition = resp.headers.get("Content-Disposition") ?? "";
       const match = disposition.match(/filename="?([^"]+)"?/);
       const rawName = match?.[1] ? decodeURIComponent(match[1]) : `UAT_report_${selectedRunId}.md`;
-      const downloadName = rawName.replace(/[\/\\]/g, "_");
+      const downloadName = rawName.replace(/[/\\]/g, "_");
 
       const objectUrl = URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -1127,7 +1310,7 @@ function App() {
       const disposition = resp.headers.get("Content-Disposition") ?? "";
       const match = disposition.match(/filename="?([^"]+)"?/);
       const rawName = match?.[1] ? decodeURIComponent(match[1]) : `UAT_result_${selectedRunId}.xlsx`;
-      const downloadName = rawName.replace(/[\/\\]/g, "_");
+      const downloadName = rawName.replace(/[/\\]/g, "_");
 
       const objectUrl = URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -1157,7 +1340,7 @@ function App() {
       const disposition = resp.headers.get("Content-Disposition") ?? "";
       const match = disposition.match(/filename="?([^"]+)"?/);
       const rawName = match?.[1] ? decodeURIComponent(match[1]) : `UAT_agent_log_${selectedRunId}.log`;
-      const downloadName = rawName.replace(/[\/\\]/g, "_");
+      const downloadName = rawName.replace(/[/\\]/g, "_");
 
       const objectUrl = URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -1472,11 +1655,11 @@ function App() {
                       Testcase XLSX <span className="required">*</span>
                     </label>
                     <div className="file-input-wrap">
-                      <input type="file" accept=".xlsx,.xls" onChange={(e) => setUploadXlsx(e.target.files?.[0] || null)} />
+                      <input ref={uploadXlsxInputRef} type="file" accept=".xlsx,.xls" onChange={(e) => setUploadXlsx(e.target.files?.[0] || null)} />
                       {uploadXlsx ? (
                         <span className="file-name">
                           📊 {uploadXlsx.name}
-                          <button type="button" className="file-remove" onClick={() => setUploadXlsx(null)}>
+                          <button type="button" className="file-remove" onClick={clearXlsxSelection}>
                             ✕
                           </button>
                         </span>
@@ -1489,6 +1672,7 @@ function App() {
                     </label>
                     <div className="file-input-wrap">
                       <input
+                        ref={uploadDocsInputRef}
                         type="file"
                         accept=".md,.txt,.pdf"
                         multiple
@@ -1502,7 +1686,7 @@ function App() {
                               <button
                                 type="button"
                                 className="file-remove"
-                                onClick={() => setUploadDocs((current) => current.filter((_, currentIndex) => currentIndex !== index))}
+                                onClick={() => removeUploadDoc(index)}
                               >
                                 ✕
                               </button>
@@ -1563,11 +1747,11 @@ function App() {
               <div className="form-group">
                 <label>參考數據 CSV（選填）</label>
                 <div className="file-input-wrap">
-                  <input type="file" accept=".csv" onChange={(e) => setUploadCsv(e.target.files?.[0] || null)} />
+                  <input ref={uploadCsvInputRef} type="file" accept=".csv" onChange={(e) => setUploadCsv(e.target.files?.[0] || null)} />
                   {uploadCsv ? (
                     <span className="file-name">
                       📋 {uploadCsv.name}
-                      <button type="button" className="file-remove" onClick={() => setUploadCsv(null)}>
+                      <button type="button" className="file-remove" onClick={clearCsvSelection}>
                         ✕
                       </button>
                     </span>
@@ -1677,31 +1861,7 @@ function App() {
                 <input value={resolvedBy} onChange={(e) => setResolvedBy(e.target.value)} />
               </div>
               {pendingApprovals.length === 0 ? <p className="muted">目前沒有待處理 approval</p> : null}
-              {pendingApprovals.map((a) => (
-                <div key={a.id} className="approval-card">
-                  <div className="reason">{a.reason}</div>
-                  <div className="meta">
-                    Case {a.case_no} · Step {a.step_no} · 暫停時間 {formatDate(a.created_at)}
-                  </div>
-                  {a.snapshot_path ? <div className="screenshot">截圖：{a.snapshot_path}</div> : null}
-                  <div className="approval-actions">
-                    <button className="btn success sm" onClick={() => void handleResolveApproval(a, "continue")}>
-                      ✓ 已處理，繼續執行
-                    </button>
-                    <button className="btn sm" onClick={() => void handleResolveApproval(a, "skip")}>
-                      跳過此 Case
-                    </button>
-                    <button
-                      className="btn danger sm"
-                      onClick={() => selectedRunId && void handleRunAction("cancel", selectedRunId)}
-                      disabled={!selectedRunCanCancel || runBusy || isStarting}
-                      title={!selectedRunCanCancel ? "此 Run 已結束，不能再取消" : undefined}
-                    >
-                      取消整個 Run
-                    </button>
-                  </div>
-                </div>
-              ))}
+              {pendingApprovals.map((a) => renderApprovalCard(a))}
             </div>
 
             {renderCaseResultsCard(340)}
@@ -1762,7 +1922,10 @@ function App() {
                   <button
                     key={item.id}
                     className={`run-item ${selectedRunId === item.id ? "selected" : ""}`}
-                    onClick={() => setSelectedRunId(item.id)}
+                    onClick={() => {
+                      setAutoSelectLatestRun(true);
+                      setSelectedRunId(item.id);
+                    }}
                   >
                     <div className="run-info">
                       <div className="run-id">{item.round_id}</div>
