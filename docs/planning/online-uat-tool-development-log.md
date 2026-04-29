@@ -552,3 +552,12 @@ Tommy 曾討論是否改成腳本。最後決策是採「半腳本化 / helper �
 - 修改檔案：`src/runs.ts`、`web/src/App.tsx`、`web/src/App.css`。
 - 驗證：`npm run typecheck`、`npm run build`、`npm run build --prefix web`、`npm run build --prefix agent` 均通過。
 - 後續影響：這次只修可觀測性，不改 UAT 執行策略。速度問題仍存在，下一步應聚焦 helper V1 補齊可執行模板，降低 Codex 逐步讀規則、找 locator、等待 MCP 回合的時間；特別是 `configureMetric` 日期設定、`reopenReport`、`deleteTemporaryReport`、`filter.addAndPreview`、`group.addAndPreview`。
+
+### 2026-04-29 23:00 - 加入 timing summary、低 reasoning 與 safe helper pre-run
+
+- 背景：Tommy 回報畫面已會動但速度更慢，若直接重跑只能靠肉眼猜慢點。檢查後發現現有 `run.phase` 只能看大段流程，缺 Codex item / MCP tool call / helper action 的細粒度耗時；同時 Mac Agent 仍吃 Tommy 全域 Codex 設定 `model_reasoning_effort=xhigh`，對 UI 執行回合過重。
+- 決策：先做低風險量測與保守加速。Agent 每個 run 產出 `output/timing-summary.json`，記錄 agent phase、Codex turn、Codex command execution、Codex MCP tool call、helper action 的 startedAt / endedAt / durationMs；helper executor report 也新增 duration。CodexRunner 預設覆蓋 `model_reasoning_effort=low`，可用 `UAT_AGENT_CODEX_REASONING_EFFORT=medium|high|xhigh` 覆蓋。Codex 啟動前先執行 helper-execution-plan 中 `requiresToolBridge=false` 且非 optional 的 safe actions，產出 `output/helper-pre-run-summary.json` 與 `output/helper-artifacts/<case>/helper-report.jsonl`；Codex prompt 明確要求先讀 helper report，避免重複已完成 UI 步驟。
+- 安全邊界：helper pre-run 不寫 `result.xlsx`、不判 PASS/FAIL、不跑多 case、不直接打 BI API、不用內部 JS setter；`saveReport`、delete、overwrite、native confirm 等需要 Tool Bridge 的 action 不自動執行。若 helper 回報 `DATE_RANGE_UI_SETTING_NOT_FULLY_AUTOMATED_V1` 這類 warning，pre-run 會停止後續 action，讓 Codex 接手補齊狀態，不會用錯日期直接 preview。
+- 修改檔案：`agent/src/timing.ts`、`agent/src/helper-pre-runner.ts`、`agent/src/codex-runner.ts`、`agent/src/task-runner.ts`、`agent/src/bi-ui-helper-executor.ts`、`agent/src/helper-execution-plan.ts`、`agent/src/config.ts`、`agent/src/types.ts`、`agent/src/cli.ts`、`scripts/verify-agent-resume.ts`。
+- 驗證：本階段先跑 `npm run typecheck --prefix agent`、`npm run typecheck`、`npm run build --prefix agent`、`npm run build`、`npm run verify:agent-resume`、`npm run verify:helper-hints`、`npm run verify:package-consistency`、`npm run verify:result-evidence-gate`。下一輪 E2E 重點看 `timing-summary.json` 是否能明確指出耗時在 helper、Codex command、MCP tool call、artifact upload 或 Tool Bridge 等哪一段。
+- 後續影響：下一輪 E2E 後，應用 `timing-summary.json` 決定下一個優化點。若耗時仍在 Codex 規則讀取，繼續縮 prompt / rule index；若耗時在 helper action，優化 selector / wait strategy；若耗時在 MCP tool call，將該 action 下沉到 helper executor；若耗時在 upload/log polling，再優化 artifact pipeline。

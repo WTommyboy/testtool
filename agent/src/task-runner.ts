@@ -22,6 +22,8 @@ import { writeReferenceIndex } from "./reference-index";
 import { writeResultTemplate } from "./result-template";
 import { writeTestPackageConsistencyReport } from "./test-package-consistency";
 import { writeHelperExecutionPlan } from "./helper-execution-plan";
+import { runSafeHelperActions, summarizeHelperPreRun } from "./helper-pre-runner";
+import { formatDuration, RunTimingRecorder } from "./timing";
 
 const getRunId = (message: AgentMessage): string => {
   const runId = message.payload.run_id;
@@ -197,6 +199,8 @@ const writeRunBrief = (
     `- current_case_pack_json: ${guides.currentCasePackJsonPath}`,
     `- helper_execution_plan: ${guides.helperExecutionPlanMarkdownPath}`,
     `- helper_execution_plan_json: ${guides.helperExecutionPlanJsonPath}`,
+    `- safe_helper_pre_run_summary: ${path.join(runDir, "output", "helper-pre-run-summary.json")}`,
+    `- helper_evidence_report: ${path.join(runDir, "output", "helper-artifacts", guides.caseManifest.currentCaseNo ?? "unknown-case", "helper-report.jsonl")}`,
     `- rule_index: ${guides.ruleIndexPath}`,
     `- reference_index: ${guides.referenceIndexPath}`,
     `- supporting_docs_manifest: ${guides.supportingDocsManifestPath}`,
@@ -229,14 +233,15 @@ const writeRunBrief = (
     "3. Read `input/preflight-auth-check.md` and perform only the auth/reachability preflight before deep domain rule loading.",
     "4. Read `input/current-case-pack.md`, `input/current-case-pack.json`, and `input/run-state.json` before loading full testcase/supporting docs. If Helper hints are present, treat them as single-case UI guidance only.",
     "5. Read `input/helper-execution-plan.md` when present. Helper actions may operate UI and collect evidence, but cannot judge PASS/FAIL or write result.xlsx.",
-    "6. Read `input/reference-index.json` for exact paths; avoid broad filesystem search.",
-    "7. Read `input/rule-index.json` and load only the smallest rule file required for the current decision.",
+    "6. If `output/helper-pre-run-summary.json` exists, inspect helper reports before repeating UI actions. Reuse successful current-run helper evidence when sufficient; repeat only incomplete steps.",
+    "7. Read `input/reference-index.json` for exact paths; avoid broad filesystem search.",
+    "8. Read `input/rule-index.json` and load only the smallest rule file required for the current decision.",
     biMetadataCsv
-      ? "8. If the current BI case needs metadata counts, use the copied `rules/BI_DATA/metadata.csv`; do not search the workspace for another metadata source first."
-      : "8. If the current BI case needs metadata counts and no baseline/reference CSV is downloaded, use uploaded supporting docs before doing broad filesystem searches.",
-    "9. For BI UI operations, read `input/bi-ui-helper-guidance.md`; it includes operationTemplate guidance when the current case provides Helper hints.",
-    "10. Use `input/evidence-templates/index.json` and only the current-case template(s) when writing evidence/detail_json.",
-    "11. Execute one case at a time, write evidence/result for that case, then move to the next case JSON if needed.",
+      ? "9. If the current BI case needs metadata counts, use the copied `rules/BI_DATA/metadata.csv`; do not search the workspace for another metadata source first."
+      : "9. If the current BI case needs metadata counts and no baseline/reference CSV is downloaded, use uploaded supporting docs before doing broad filesystem searches.",
+    "10. For BI UI operations, read `input/bi-ui-helper-guidance.md`; it includes operationTemplate guidance when the current case provides Helper hints.",
+    "11. Use `input/evidence-templates/index.json` and only the current-case template(s) when writing evidence/detail_json.",
+    "12. Execute one case at a time, write evidence/result for that case, then move to the next case JSON if needed.",
     "",
     "## Hard Gates",
     "- No trusted PASS/FAIL without current-run evidence.",
@@ -247,6 +252,7 @@ const writeRunBrief = (
     "- If the real UAT cannot continue, do not create a fake PASS. Explain the blocker; the Agent fallback will mark the run as not trusted.",
     "- Speed optimizations must never merge multiple testcase executions into one tool call or one result write.",
     "- Helper actions are not testcase results. Codex must inspect helper evidence, compare against expected behavior, and write the final detail_json itself.",
+    "- Safe helper pre-run evidence is current-run evidence only if the helper report shows status=ok and the action matches the current case. Helper status never equals PASS.",
     "- `input/run-state.json` defines allowed carryover. Evidence from a previous case is isolated and cannot prove a later case.",
     "- Prefer structured evidence first: DOM read, network observation, chart/table data. Use screenshots for Tool Bridge, FAIL/bug, major state transitions, and final evidence.",
     "- If structured DOM/network evidence already proves the result and a screenshot times out, do not repeatedly retry full-page screenshots. Try at most one smaller screenshot; if that also fails, record screenshot_unavailable_reason and continue.",
@@ -637,6 +643,8 @@ const buildPrompt = (
     `- Structured current case pack: ${guides.currentCasePackJsonPath}`,
     `- Helper execution plan: ${guides.helperExecutionPlanMarkdownPath}`,
     `- Structured helper execution plan: ${guides.helperExecutionPlanJsonPath}`,
+    `- Safe helper pre-run summary, if available: ${path.join(runDir, "output", "helper-pre-run-summary.json")}`,
+    `- Helper action evidence report, if available: ${path.join(runDir, "output", "helper-artifacts", guides.caseManifest.currentCaseNo ?? "unknown-case", "helper-report.jsonl")}`,
     `- Raw current case row if needed: ${guides.caseManifest.currentCasePath ?? "(current-case unavailable; inspect workbook minimally)"}`,
     `- Read allowed carryover and isolation policy: ${guides.runStatePath}`,
     `- Use exact file paths from: ${guides.referenceIndexPath}`,
@@ -665,6 +673,7 @@ const buildPrompt = (
     "- Existing page data or old reports are not evidence that this run performed the action.",
     "- `input/current-case-pack.*` is a plan card, not a result. It reduces reading, but it never proves PASS/FAIL/BLOCKED.",
     "- `input/helper-execution-plan.*` may provide UI helper actions. Helper evidence can support judgment, but helper `status=ok` is never PASS.",
+    "- If `output/helper-pre-run-summary.json` exists, inspect it before repeating UI steps. Reuse successful helper evidence when it satisfies current-run evidence needs; only repeat actions when evidence is incomplete or state is not aligned.",
     "- Execute and record one case at a time. `case-manifest.json` is only an index; it is not permission to batch multiple case flows.",
     "- After each case, write or update evidence/result for that case before reading the next case JSON.",
     "- If startup instruction names a starting case, Agent resolves that into `current-case.json`; do not emit ambiguity merely because the workbook contains earlier cases.",
@@ -687,6 +696,8 @@ const buildPrompt = (
     `Current case pack JSON: ${guides.currentCasePackJsonPath}`,
     `Helper execution plan: ${guides.helperExecutionPlanMarkdownPath}`,
     `Helper execution plan JSON: ${guides.helperExecutionPlanJsonPath}`,
+    `Safe helper pre-run summary: ${path.join(runDir, "output", "helper-pre-run-summary.json")}`,
+    `Helper evidence report: ${path.join(runDir, "output", "helper-artifacts", guides.caseManifest.currentCaseNo ?? "unknown-case", "helper-report.jsonl")}`,
     `Current case JSON: ${guides.caseManifest.currentCasePath ?? "(unavailable)"}`,
     `Current case no: ${guides.caseManifest.currentCaseNo ?? "(unavailable)"}`,
     guides.caseManifest.currentCaseSelection
@@ -748,6 +759,9 @@ const buildResultDetail = (
     parseErrors: string[];
     events: unknown[];
     stderr: string;
+    startedAt?: string;
+    endedAt?: string;
+    durationMs?: number;
   }
 ): Record<string, unknown> => ({
   測試目的: "驗證 Mac Agent 可接收雲端派工、下載測試輸入、啟動 Codex CLI 並回傳結果 xlsx。",
@@ -762,6 +776,9 @@ const buildResultDetail = (
   codexThreadId: result.threadId,
   codexExitCode: result.exitCode,
   codexSignal: result.signal,
+  codexStartedAt: result.startedAt ?? null,
+  codexEndedAt: result.endedAt ?? null,
+  codexDurationMs: result.durationMs ?? null,
   codexParseErrorCount: result.parseErrors.length,
   codexEventCount: result.events.length,
   assistantTextExcerpt: result.assistantText.slice(0, 2000),
@@ -951,18 +968,72 @@ const sendBestEffort = (
   }
 };
 
+const phaseDoneDetail = (detail: string | undefined, durationMs: number | null | undefined): string | undefined => {
+  const suffix = durationMs === null || durationMs === undefined ? "" : ` (${formatDuration(durationMs)})`;
+  return detail ? `${detail}${suffix}` : suffix.trim() || undefined;
+};
+
+const timeAgentPhase = async <T>(
+  timing: RunTimingRecorder,
+  connection: AgentConnection,
+  runId: string,
+  phase: string,
+  title: string,
+  detail: string,
+  fn: () => Promise<T>
+): Promise<T> => {
+  const timingId = timing.start(phase, "agent_phase", { title, detail });
+  sendPhase(connection, runId, phase, title, detail);
+  try {
+    const result = await fn();
+    const entry = timing.end(timingId, "ok");
+    sendPhase(connection, runId, phase, title, phaseDoneDetail(detail, entry?.durationMs), "done", {
+      durationMs: entry?.durationMs ?? null
+    });
+    return result;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    const entry = timing.end(timingId, "failed", { error: message });
+    sendPhase(connection, runId, phase, title, phaseDoneDetail(message, entry?.durationMs), "failed", {
+      durationMs: entry?.durationMs ?? null
+    });
+    throw error;
+  }
+};
+
+const timeAgentStep = <T>(
+  timing: RunTimingRecorder,
+  name: string,
+  type: "agent_phase" | "artifact",
+  fn: () => T,
+  context?: Record<string, unknown>
+): T => {
+  const timingId = timing.start(name, type, context);
+  try {
+    const result = fn();
+    timing.end(timingId, "ok");
+    return result;
+  } catch (error) {
+    timing.end(timingId, "failed", { error: error instanceof Error ? error.message : String(error) });
+    throw error;
+  }
+};
+
 const createCodexRunner = (
   connection: AgentConnection,
   config: AgentConfig,
   runDir: string,
   runId: string,
-  chromeCdpEndpoint: string | null
+  chromeCdpEndpoint: string | null,
+  timing: RunTimingRecorder
 ): CodexRunner => {
   let lastProgress = "";
   let mcpToolCallCount = 0;
   let commandExecutionCount = 0;
   let pendingBrowserActivation = false;
   const emittedPhases = new Set<string>();
+  const activeCodexItems = new Map<string, string>();
+  let activeTurnTimingId: string | null = null;
   const scheduleBrowserActivation = (): void => {
     if (!chromeCdpEndpoint || pendingBrowserActivation) return;
     pendingBrowserActivation = true;
@@ -984,6 +1055,7 @@ const createCodexRunner = (
   return new CodexRunner({
     codexBin: config.codex_bin,
     cwd: runDir,
+    reasoningEffort: config.codex_reasoning_effort,
     playwrightCdpEndpoint: chromeCdpEndpoint,
     playwrightOutputDir: path.join(runDir, "mcp-output"),
     onJsonEvent: (event) => {
@@ -997,8 +1069,20 @@ const createCodexRunner = (
       if (eventType === "thread.started") {
         emitOnce("codex_running", "Codex 已啟動", "已建立 Codex thread，開始讀取 run brief 與必要輸入。");
       }
+      if (eventType === "turn.started") {
+        activeTurnTimingId = timing.start("codex.turn", "codex_turn");
+      }
+      if ((eventType === "turn.completed" || eventType === "turn.failed") && activeTurnTimingId) {
+        timing.end(activeTurnTimingId, eventType === "turn.completed" ? "ok" : "failed");
+        activeTurnTimingId = null;
+      }
       if (eventType === "item.started" && itemType === "command_execution") {
         commandExecutionCount += 1;
+        const itemId = textFromUnknown(item?.id) ?? `command-${commandExecutionCount}`;
+        activeCodexItems.set(itemId, timing.start("codex.command_execution", "codex_item", {
+          itemId,
+          command: textFromUnknown(item?.command)?.slice(0, 500) ?? null
+        }));
         emitOnce("context_loading", "讀取規則與測試檔", "Codex 正在讀 run brief、startup instruction、xlsx 結構或必要 domain rules。");
         if (commandExecutionCount === 1 || commandExecutionCount % 5 === 0) {
           sendProgress(connection, runId, `Codex command executions: ${commandExecutionCount}`, {
@@ -1007,8 +1091,25 @@ const createCodexRunner = (
           });
         }
       }
+      if (eventType === "item.completed" && itemType === "command_execution") {
+        const itemId = textFromUnknown(item?.id);
+        const timingId = itemId ? activeCodexItems.get(itemId) : null;
+        if (itemId && timingId) {
+          activeCodexItems.delete(itemId);
+          const exitCode = typeof item?.exit_code === "number" ? item.exit_code : null;
+          timing.end(timingId, exitCode === 0 || exitCode === null ? "ok" : "failed", {
+            exitCode,
+            status: textFromUnknown(item?.status) ?? null
+          });
+        }
+      }
       if (eventType === "item.started" && itemType === "mcp_tool_call") {
         mcpToolCallCount += 1;
+        const itemId = textFromUnknown(item?.id) ?? `mcp-${mcpToolCallCount}`;
+        activeCodexItems.set(itemId, timing.start("codex.mcp_tool_call", "codex_item", {
+          itemId,
+          toolName: textFromUnknown(item?.name) ?? textFromUnknown(item?.tool_name) ?? null
+        }));
         sendProgress(connection, runId, `Playwright/Tool calls: ${mcpToolCallCount}`, {
           commandExecutionCount,
           mcpToolCallCount
@@ -1020,6 +1121,16 @@ const createCodexRunner = (
         }
       }
       if (eventType === "item.completed" && itemType === "mcp_tool_call") {
+        const itemId = textFromUnknown(item?.id);
+        const timingId = itemId ? activeCodexItems.get(itemId) : null;
+        if (itemId && timingId) {
+          activeCodexItems.delete(itemId);
+          const status = textFromUnknown(item?.status);
+          timing.end(timingId, status === "failed" ? "failed" : "ok", {
+            status,
+            toolName: textFromUnknown(item?.name) ?? textFromUnknown(item?.tool_name) ?? null
+          });
+        }
         scheduleBrowserActivation();
       }
       if (agentMessageText) {
@@ -1053,6 +1164,9 @@ const persistCodexResult = (runDir: string, result: CodexTurnResult, label: "cod
     assistantText: result.assistantText,
     exitCode: result.exitCode,
     signal: result.signal,
+    startedAt: result.startedAt,
+    endedAt: result.endedAt,
+    durationMs: result.durationMs,
     stderr: result.stderr,
     parseErrors: result.parseErrors,
     eventCount: result.events.length
@@ -1067,7 +1181,10 @@ const makeSyntheticCodexResult = (errorMessage: string): CodexTurnResult => ({
   parseErrors: [],
   exitCode: null,
   signal: null,
-  stderr: errorMessage
+  stderr: errorMessage,
+  startedAt: new Date().toISOString(),
+  endedAt: new Date().toISOString(),
+  durationMs: 0
 });
 
 const findFiles = (dir: string, predicate: (filePath: string) => boolean): string[] => {
@@ -1361,7 +1478,8 @@ export const handleTaskDispatch = async (
 ): Promise<void> => {
   const runId = getRunId(message);
   const runDir = ensureRunWorkspace(config, runId);
-  prepareCodexContext(config, runDir);
+  const timing = new RunTimingRecorder(runDir, runId);
+  timeAgentStep(timing, "prepare_codex_context", "agent_phase", () => prepareCodexContext(config, runDir));
   connection.setRunState("busy", runId);
   let downloadedInputs: DownloadedInputs = {};
   let runner: CodexRunner | null = null;
@@ -1370,27 +1488,43 @@ export const handleTaskDispatch = async (
   let keepChromeOpenForToolBridge = false;
 
   try {
-    sendPhase(connection, runId, "prepare_workspace", "準備 Agent 工作區", `workdir: ${runDir}`);
-    writeJson(path.join(runDir, "input", "dispatch.json"), message);
-    writeJson(path.join(runDir, "state.json"), {
-      run_id: runId,
-      status: "started",
-      started_at: new Date().toISOString()
+    await timeAgentPhase(timing, connection, runId, "prepare_workspace", "準備 Agent 工作區", `workdir: ${runDir}`, async () => {
+      writeJson(path.join(runDir, "input", "dispatch.json"), message);
+      writeJson(path.join(runDir, "state.json"), {
+        run_id: runId,
+        status: "started",
+        started_at: new Date().toISOString()
+      });
     });
-    sendPhase(connection, runId, "download_inputs", "下載測試輸入", "下載 xlsx、md、startup instruction、domain pack。");
-    downloadedInputs = await downloadInputs(config, message, runDir);
-    writeJson(path.join(runDir, "input", "downloaded-inputs.json"), downloadedInputs);
-    sendPhase(connection, runId, "prepare_guides", "建立執行索引", "解析 case manifest、文件一致性、current-case-pack、rule/reference index。");
-    const generatedGuides = await generateRunGuides(runId, runDir, message, downloadedInputs);
-    sendPhase(
+    downloadedInputs = await timeAgentPhase(
+      timing,
+      connection,
+      runId,
+      "download_inputs",
+      "下載測試輸入",
+      "下載 xlsx、md、startup instruction、domain pack。",
+      async () => {
+        const inputs = await downloadInputs(config, message, runDir);
+        writeJson(path.join(runDir, "input", "downloaded-inputs.json"), inputs);
+        return inputs;
+      }
+    );
+    const generatedGuides = await timeAgentPhase(
+      timing,
       connection,
       runId,
       "prepare_guides",
-      "執行索引已建立",
-      `cases: ${generatedGuides.caseManifest.totalCases}; current case: ${generatedGuides.caseManifest.currentCaseNo ?? "(none)"}; reference index: ${generatedGuides.referenceIndexPath}`,
-      "done"
+      "建立執行索引",
+      "解析 case manifest、文件一致性、current-case-pack、rule/reference index。",
+      () => generateRunGuides(runId, runDir, message, downloadedInputs)
     );
-    const runBriefPath = writeRunBrief(runId, message, runDir, downloadedInputs, generatedGuides);
+    const runBriefPath = timeAgentStep(
+      timing,
+      "write_run_brief",
+      "agent_phase",
+      () => writeRunBrief(runId, message, runDir, downloadedInputs, generatedGuides),
+      { currentCaseNo: generatedGuides.caseManifest.currentCaseNo }
+    );
     sendPhase(
       connection,
       runId,
@@ -1399,19 +1533,20 @@ export const handleTaskDispatch = async (
       `已下載 ${Object.keys(downloadedInputs).length} 個輸入檔；run brief: ${runBriefPath}`,
       "done"
     );
-    sendPhase(connection, runId, "browser_start", "重置專用 Chrome", "關閉前次 Agent Chrome，準備乾淨單一頁籤。");
-    await closeChromeDebugSession(config);
-    const chromeCdpEndpoint = await ensureChromeDebugSession(config, getStringPayload(message, "dev_url"), {
-      resetTabs: true,
-      openInitialUrl: true
-    });
-    sendPhase(
+    const chromeCdpEndpoint = await timeAgentPhase(
+      timing,
       connection,
       runId,
       "browser_start",
-      chromeCdpEndpoint ? "Chrome CDP 已就緒" : "Chrome CDP 未取得，改用預設 Playwright",
-      chromeCdpEndpoint ?? "persistent Chrome CDP unavailable",
-      "done"
+      "重置專用 Chrome",
+      "關閉前次 Agent Chrome，準備乾淨單一頁籤。",
+      async () => {
+        await closeChromeDebugSession(config);
+        return ensureChromeDebugSession(config, getStringPayload(message, "dev_url"), {
+          resetTabs: true,
+          openInitialUrl: true
+        });
+      }
     );
 
     connection.send(
@@ -1436,7 +1571,20 @@ export const handleTaskDispatch = async (
       false
     );
 
-    runner = createCodexRunner(connection, config, runDir, runId, chromeCdpEndpoint);
+    const helperPreRunSummary = await timeAgentPhase(
+      timing,
+      connection,
+      runId,
+      "helper_pre_run",
+      "執行安全 Helper",
+      "先執行不需 Tool Bridge 的 helper action，收集 current-run evidence。",
+      () => runSafeHelperActions(runDir, timing)
+    );
+    sendProgress(connection, runId, summarizeHelperPreRun(helperPreRunSummary), {
+      helperPreRun: helperPreRunSummary
+    });
+
+    runner = createCodexRunner(connection, config, runDir, runId, chromeCdpEndpoint, timing);
     const activeRunner = runner;
     hooks.onCancelReady?.(runId, (reason = "cancelled_by_pm") => {
       activeRunner.cancel(reason);
@@ -1453,8 +1601,15 @@ export const handleTaskDispatch = async (
         // Cancellation must still kill Codex even if the WebSocket is already closing.
       }
     });
-    sendPhase(connection, runId, "codex_starting", "啟動 Codex CLI", "Codex 將先讀 compact run brief，再進入必要規則與 testcase。");
-    const result = await activeRunner.start(buildPrompt(runId, message, runDir, downloadedInputs, generatedGuides));
+    const result = await timeAgentPhase(
+      timing,
+      connection,
+      runId,
+      "codex_starting",
+      "啟動 Codex CLI",
+      `Codex 將用 reasoning=${config.codex_reasoning_effort} 讀取 helper evidence、判定結果並寫 workbook。`,
+      () => activeRunner.start(buildPrompt(runId, message, runDir, downloadedInputs, generatedGuides))
+    );
     lastResult = result;
     persistCodexResult(runDir, result, "codex");
     const cancelReason = activeRunner.getCancelReason();
@@ -1587,17 +1742,24 @@ export const handleTaskDispatch = async (
       return;
     }
 
-    sendPhase(connection, runId, "upload_result", "上傳結果與 Log", "Codex 已結束，Agent 正在上傳 output/result.xlsx 與 agent.log。");
-    uploadedArtifacts = await uploadRunArtifacts({
+    uploadedArtifacts = await timeAgentPhase(
+      timing,
       connection,
-      config,
-      message,
       runId,
-      runDir,
-      inputs: downloadedInputs,
-      result,
-      failCategory: result.exitCode === 0 ? null : "CODEX_RUN_FAILED"
-    });
+      "upload_result",
+      "上傳結果與 Log",
+      "Codex 已結束，Agent 正在上傳 output/result.xlsx 與 agent.log。",
+      () => uploadRunArtifacts({
+        connection,
+        config,
+        message,
+        runId,
+        runDir,
+        inputs: downloadedInputs,
+        result,
+        failCategory: result.exitCode === 0 ? null : "CODEX_RUN_FAILED"
+      })
+    );
 
     if (result.exitCode !== 0) {
       throw new Error(`CODEX_RUN_FAILED exit=${result.exitCode} signal=${result.signal ?? "none"}`);
@@ -1632,6 +1794,7 @@ export const handleTaskDispatch = async (
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     const cancelled = errorMessage.startsWith("CODEX_RUN_CANCELLED");
+    timing.failActive({ error: errorMessage });
     sendPhase(
       connection,
       runId,
@@ -1644,26 +1807,34 @@ export const handleTaskDispatch = async (
       const partialResult = lastResult ?? runner?.getPartialResult() ?? makeSyntheticCodexResult(errorMessage);
       try {
         persistCodexResult(runDir, partialResult, "codex");
-        uploadedArtifacts = await uploadRunArtifacts({
+        uploadedArtifacts = await timeAgentPhase(
+          timing,
           connection,
-          config,
-          message,
           runId,
-          runDir,
-          inputs: downloadedInputs,
-          result: partialResult,
-          failCategory: cancelled
-            ? "CODEX_RUN_CANCELLED"
-            : errorMessage.startsWith("TOOL_BRIDGE_POLICY_VIOLATION")
-              ? "TOOL_BRIDGE_POLICY_VIOLATION"
-              : errorMessage.startsWith("BATCH_CASE_POLICY_VIOLATION")
-                ? "BATCH_CASE_POLICY_VIOLATION"
-              : errorMessage.startsWith("TOOL_BRIDGE_SCHEMA_INVALID")
-                ? "TOOL_BRIDGE_SCHEMA_INVALID"
-              : "AGENT_RUN_FAILED",
-          preferCodexGeneratedResult: false,
-          throwOnResultUploadError: false
-        });
+          "upload_partial_artifacts",
+          "上傳 partial artifacts",
+          "Run 未正常完成，Agent 正在保存 partial log 與診斷 workbook。",
+          () => uploadRunArtifacts({
+            connection,
+            config,
+            message,
+            runId,
+            runDir,
+            inputs: downloadedInputs,
+            result: partialResult,
+            failCategory: cancelled
+              ? "CODEX_RUN_CANCELLED"
+              : errorMessage.startsWith("TOOL_BRIDGE_POLICY_VIOLATION")
+                ? "TOOL_BRIDGE_POLICY_VIOLATION"
+                : errorMessage.startsWith("BATCH_CASE_POLICY_VIOLATION")
+                  ? "BATCH_CASE_POLICY_VIOLATION"
+                : errorMessage.startsWith("TOOL_BRIDGE_SCHEMA_INVALID")
+                  ? "TOOL_BRIDGE_SCHEMA_INVALID"
+                : "AGENT_RUN_FAILED",
+            preferCodexGeneratedResult: false,
+            throwOnResultUploadError: false
+          })
+        );
         connection.send(
           "run.partial_artifacts",
           {
@@ -1697,6 +1868,7 @@ export const handleTaskDispatch = async (
     );
   } finally {
     hooks.onCancelClear?.(runId);
+    timing.write();
     if (!keepChromeOpenForToolBridge) {
       await closeChromeDebugSession(config);
     }
@@ -1712,7 +1884,8 @@ export const handleToolResponse = async (
 ): Promise<void> => {
   const runId = getRunId(message);
   const runDir = ensureRunWorkspace(config, runId);
-  prepareCodexContext(config, runDir);
+  const timing = new RunTimingRecorder(runDir, runId);
+  timeAgentStep(timing, "prepare_codex_context_resume", "agent_phase", () => prepareCodexContext(config, runDir));
   connection.setRunState("busy", runId);
   let downloadedInputs: DownloadedInputs = {};
   let originalDispatch: AgentMessage | null = null;
@@ -1722,13 +1895,21 @@ export const handleToolResponse = async (
   let keepChromeOpenForToolBridge = false;
 
   try {
-    sendPhase(connection, runId, "resuming", "收到人工回覆，準備續跑", "Agent 正在載入 paused thread 與原始 dispatch。");
     const statePath = path.join(runDir, "state.json");
-    if (!fs.existsSync(statePath)) {
-      throw new Error(`TOOL_RESPONSE_STATE_NOT_FOUND:${statePath}`);
-    }
-
-    const state = readJson<Record<string, unknown>>(statePath);
+    const state = await timeAgentPhase(
+      timing,
+      connection,
+      runId,
+      "resuming",
+      "收到人工回覆，準備續跑",
+      "Agent 正在載入 paused thread 與原始 dispatch。",
+      async () => {
+        if (!fs.existsSync(statePath)) {
+          throw new Error(`TOOL_RESPONSE_STATE_NOT_FOUND:${statePath}`);
+        }
+        return readJson<Record<string, unknown>>(statePath);
+      }
+    );
     const threadId = typeof state.thread_id === "string" && state.thread_id.trim() ? state.thread_id : null;
     if (!threadId) {
       throw new Error("TOOL_RESPONSE_THREAD_ID_MISSING");
@@ -1737,18 +1918,18 @@ export const handleToolResponse = async (
     const dispatchPath = path.join(runDir, "input", "dispatch.json");
     const inputsPath = path.join(runDir, "input", "downloaded-inputs.json");
     originalDispatch = readJson<AgentMessage>(dispatchPath);
+    const dispatch = originalDispatch;
     downloadedInputs = readJson<DownloadedInputs>(inputsPath);
-    sendPhase(connection, runId, "browser_start", "重新確認 Chrome CDP", "續跑前確認持久化 Chrome / Playwright CDP。");
-    const chromeCdpEndpoint = await ensureChromeDebugSession(config, getStringPayload(originalDispatch, "dev_url"), {
-      openInitialUrl: false
-    });
-    sendPhase(
+    const chromeCdpEndpoint = await timeAgentPhase(
+      timing,
       connection,
       runId,
       "browser_start",
-      chromeCdpEndpoint ? "Chrome CDP 已就緒" : "Chrome CDP 未取得，改用預設 Playwright",
-      chromeCdpEndpoint ?? "persistent Chrome CDP unavailable",
-      "done"
+      "重新確認 Chrome CDP",
+      "續跑前確認持久化 Chrome / Playwright CDP。",
+      () => ensureChromeDebugSession(config, getStringPayload(dispatch, "dev_url"), {
+        openInitialUrl: false
+      })
     );
 
     writeJson(path.join(runDir, "input", `tool-response-${getStringPayload(message, "request_id") ?? Date.now()}.json`), message);
@@ -1777,7 +1958,7 @@ export const handleToolResponse = async (
       false
     );
 
-    runner = createCodexRunner(connection, config, runDir, runId, chromeCdpEndpoint);
+    runner = createCodexRunner(connection, config, runDir, runId, chromeCdpEndpoint, timing);
     const activeRunner = runner;
     hooks.onCancelReady?.(runId, (reason = "cancelled_by_pm") => {
       activeRunner.cancel(reason);
@@ -1795,8 +1976,15 @@ export const handleToolResponse = async (
       }
     });
 
-    sendPhase(connection, runId, "codex_resuming", "續跑 Codex thread", `thread: ${threadId}`);
-    const result = await activeRunner.resume(threadId, buildToolResponsePrompt(runId, message));
+    const result = await timeAgentPhase(
+      timing,
+      connection,
+      runId,
+      "codex_resuming",
+      "續跑 Codex thread",
+      `thread: ${threadId}; reasoning=${config.codex_reasoning_effort}`,
+      () => activeRunner.resume(threadId, buildToolResponsePrompt(runId, message))
+    );
     lastResult = result;
     persistCodexResult(runDir, result, "codex-resume");
     const cancelReason = activeRunner.getCancelReason();
@@ -1928,17 +2116,24 @@ export const handleToolResponse = async (
       return;
     }
 
-    sendPhase(connection, runId, "upload_result", "上傳結果與 Log", "Codex 續跑已結束，Agent 正在上傳 output/result.xlsx 與 agent.log。");
-    uploadedArtifacts = await uploadRunArtifacts({
+    uploadedArtifacts = await timeAgentPhase(
+      timing,
       connection,
-      config,
-      message: originalDispatch,
       runId,
-      runDir,
-      inputs: downloadedInputs,
-      result,
-      failCategory: result.exitCode === 0 ? null : "CODEX_RUN_FAILED"
-    });
+      "upload_result",
+      "上傳結果與 Log",
+      "Codex 續跑已結束，Agent 正在上傳 output/result.xlsx 與 agent.log。",
+      () => uploadRunArtifacts({
+        connection,
+        config,
+        message: dispatch,
+        runId,
+        runDir,
+        inputs: downloadedInputs,
+        result,
+        failCategory: result.exitCode === 0 ? null : "CODEX_RUN_FAILED"
+      })
+    );
 
     if (result.exitCode !== 0) {
       throw new Error(`CODEX_RUN_FAILED exit=${result.exitCode} signal=${result.signal ?? "none"}`);
@@ -1982,29 +2177,38 @@ export const handleToolResponse = async (
       cancelled ? "done" : "failed"
     );
     if (!uploadedArtifacts && originalDispatch) {
+      const dispatch = originalDispatch;
       const partialResult = lastResult ?? runner?.getPartialResult() ?? makeSyntheticCodexResult(errorMessage);
       try {
         persistCodexResult(runDir, partialResult, "codex-resume");
-        uploadedArtifacts = await uploadRunArtifacts({
+        uploadedArtifacts = await timeAgentPhase(
+          timing,
           connection,
-          config,
-          message: originalDispatch,
           runId,
-          runDir,
-          inputs: downloadedInputs,
-          result: partialResult,
-          failCategory: cancelled
-            ? "CODEX_RUN_CANCELLED"
-            : errorMessage.startsWith("TOOL_BRIDGE_POLICY_VIOLATION")
-              ? "TOOL_BRIDGE_POLICY_VIOLATION"
-              : errorMessage.startsWith("BATCH_CASE_POLICY_VIOLATION")
-                ? "BATCH_CASE_POLICY_VIOLATION"
-              : errorMessage.startsWith("TOOL_BRIDGE_SCHEMA_INVALID")
-                ? "TOOL_BRIDGE_SCHEMA_INVALID"
-              : "AGENT_RUN_FAILED",
-          preferCodexGeneratedResult: false,
-          throwOnResultUploadError: false
-        });
+          "upload_partial_artifacts",
+          "上傳 partial artifacts",
+          "續跑未正常完成，Agent 正在保存 partial log 與診斷 workbook。",
+          () => uploadRunArtifacts({
+            connection,
+            config,
+            message: dispatch,
+            runId,
+            runDir,
+            inputs: downloadedInputs,
+            result: partialResult,
+            failCategory: cancelled
+              ? "CODEX_RUN_CANCELLED"
+              : errorMessage.startsWith("TOOL_BRIDGE_POLICY_VIOLATION")
+                ? "TOOL_BRIDGE_POLICY_VIOLATION"
+                : errorMessage.startsWith("BATCH_CASE_POLICY_VIOLATION")
+                  ? "BATCH_CASE_POLICY_VIOLATION"
+                : errorMessage.startsWith("TOOL_BRIDGE_SCHEMA_INVALID")
+                  ? "TOOL_BRIDGE_SCHEMA_INVALID"
+                : "AGENT_RUN_FAILED",
+            preferCodexGeneratedResult: false,
+            throwOnResultUploadError: false
+          })
+        );
         connection.send(
           "run.partial_artifacts",
           {
@@ -2038,6 +2242,7 @@ export const handleToolResponse = async (
     );
   } finally {
     hooks.onCancelClear?.(runId);
+    timing.write();
     if (!keepChromeOpenForToolBridge) {
       await closeChromeDebugSession(config);
     }

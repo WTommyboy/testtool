@@ -11,12 +11,16 @@ export type CodexTurnResult = {
   exitCode: number | null;
   signal: NodeJS.Signals | null;
   stderr: string;
+  startedAt: string;
+  endedAt: string;
+  durationMs: number;
 };
 
 export type CodexRunnerOptions = {
   codexBin: string;
   cwd: string;
   timeoutMs?: number;
+  reasoningEffort?: string | null;
   playwrightCdpEndpoint?: string | null;
   playwrightOutputDir?: string | null;
   onStdoutLine?: (line: string) => void;
@@ -99,7 +103,10 @@ export class CodexRunner {
       parseErrors,
       exitCode: null,
       signal: null,
-      stderr: this.rawStderr
+      stderr: this.rawStderr,
+      startedAt: new Date().toISOString(),
+      endedAt: new Date().toISOString(),
+      durationMs: 0
     };
   }
 
@@ -164,20 +171,28 @@ export class CodexRunner {
   }
 
   private configArgs(): string[] {
-    if (!this.options.playwrightCdpEndpoint) return [];
-    const playwrightArgs = [
-      "--cdp-endpoint",
-      this.options.playwrightCdpEndpoint,
-      "--shared-browser-context",
-      "--save-session",
-      "--output-dir",
-      this.options.playwrightOutputDir ?? "/tmp/playwright-mcp"
-    ];
-    return ["-c", `mcp_servers.playwright.args=${JSON.stringify(playwrightArgs)}`];
+    const args: string[] = [];
+    if (this.options.reasoningEffort) {
+      args.push("-c", `model_reasoning_effort=${JSON.stringify(this.options.reasoningEffort)}`);
+    }
+    if (this.options.playwrightCdpEndpoint) {
+      const playwrightArgs = [
+        "--cdp-endpoint",
+        this.options.playwrightCdpEndpoint,
+        "--shared-browser-context",
+        "--save-session",
+        "--output-dir",
+        this.options.playwrightOutputDir ?? "/tmp/playwright-mcp"
+      ];
+      args.push("-c", `mcp_servers.playwright.args=${JSON.stringify(playwrightArgs)}`);
+    }
+    return args;
   }
 
   private run(args: string[]): Promise<CodexTurnResult> {
     return new Promise((resolve, reject) => {
+      const startedAtMs = Date.now();
+      const startedAt = new Date(startedAtMs).toISOString();
       const child = spawn(this.options.codexBin, [...this.configArgs(), ...args], {
         cwd: this.options.cwd,
         env: { ...process.env, NO_COLOR: "1" },
@@ -206,6 +221,7 @@ export class CodexRunner {
         reject(error);
       });
       child.on("close", (exitCode, signal) => {
+        const endedAtMs = Date.now();
         clearTimeout(timer);
         this.child = null;
         this.flushLineBuffers();
@@ -218,7 +234,10 @@ export class CodexRunner {
           parseErrors,
           exitCode,
           signal,
-          stderr: this.rawStderr
+          stderr: this.rawStderr,
+          startedAt,
+          endedAt: new Date(endedAtMs).toISOString(),
+          durationMs: Math.max(0, endedAtMs - startedAtMs)
         });
       });
     });

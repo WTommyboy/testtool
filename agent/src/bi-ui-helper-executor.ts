@@ -17,6 +17,9 @@ type CliOptions = {
 type HelperReport = {
   schemaVersion: "bi-ui-helper-report-v1";
   generatedAt: string;
+  startedAt: string;
+  endedAt: string;
+  durationMs: number;
   caseId: string;
   action: string;
   status: "ok" | "blocked" | "requires_approval" | "not_implemented" | "error";
@@ -83,6 +86,7 @@ const stringParam = (params: Record<string, unknown>, key: string): string | nul
 const createReport = (
   options: CliOptions,
   status: HelperReport["status"],
+  startedAt: string,
   evidence: Record<string, unknown>,
   artifacts: Record<string, string>,
   warnings: string[] = [],
@@ -90,6 +94,9 @@ const createReport = (
 ): HelperReport => ({
   schemaVersion: "bi-ui-helper-report-v1",
   generatedAt: new Date().toISOString(),
+  startedAt,
+  endedAt: new Date().toISOString(),
+  durationMs: Math.max(0, Date.now() - Date.parse(startedAt)),
   caseId: options.caseId,
   action: options.action,
   status,
@@ -224,7 +231,7 @@ const clickByText = async (page: Page, text: string, timeout = 12000): Promise<v
   }
 };
 
-const openProject = async (options: CliOptions, page: Page): Promise<HelperReport> => {
+const openProject = async (options: CliOptions, page: Page, startedAt: string): Promise<HelperReport> => {
   const devUrl = stringParam(options.params, "devUrl");
   const projectName = stringParam(options.params, "projectName");
   if (devUrl && !page.url().includes("galaxy.games.gamania.com")) {
@@ -239,13 +246,14 @@ const openProject = async (options: CliOptions, page: Page): Promise<HelperRepor
   return createReport(
     options,
     "ok",
+    startedAt,
     { domState: await readDomState(page) },
     shot ? { screenshot: shot } : {},
     shot ? [] : ["SCREENSHOT_UNAVAILABLE"]
   );
 };
 
-const createCollageReport = async (options: CliOptions, page: Page): Promise<HelperReport> => {
+const createCollageReport = async (options: CliOptions, page: Page, startedAt: string): Promise<HelperReport> => {
   const projectName = stringParam(options.params, "projectName");
   const bodyText = await page.locator("body").innerText({ timeout: 5000 }).catch(() => "");
   if (!bodyText.includes("+ 新增報表") && projectName) {
@@ -255,10 +263,10 @@ const createCollageReport = async (options: CliOptions, page: Page): Promise<Hel
   await page.getByText("+ 新增報表", { exact: false }).first().click({ timeout: 15000 });
   await page.waitForTimeout(1200);
   const shot = await screenshot(options, page, "create-report");
-  return createReport(options, "ok", { domState: await readDomState(page) }, shot ? { screenshot: shot } : {}, shot ? [] : ["SCREENSHOT_UNAVAILABLE"]);
+  return createReport(options, "ok", startedAt, { domState: await readDomState(page) }, shot ? { screenshot: shot } : {}, shot ? [] : ["SCREENSHOT_UNAVAILABLE"]);
 };
 
-const configureMetric = async (options: CliOptions, page: Page): Promise<HelperReport> => {
+const configureMetric = async (options: CliOptions, page: Page, startedAt: string): Promise<HelperReport> => {
   const warnings: string[] = [];
   const field = stringParam(options.params, "field");
   const dateRange = stringParam(options.params, "dateRange");
@@ -275,10 +283,10 @@ const configureMetric = async (options: CliOptions, page: Page): Promise<HelperR
     warnings.push("DATE_RANGE_UI_SETTING_NOT_FULLY_AUTOMATED_V1: helper records current DOM state; Codex must verify or complete date setting if needed.");
   }
   const shot = await screenshot(options, page, "configure-metric");
-  return createReport(options, "ok", { domState: await readDomState(page), requestedDateRange: dateRange }, shot ? { screenshot: shot } : {}, shot ? warnings : [...warnings, "SCREENSHOT_UNAVAILABLE"]);
+  return createReport(options, "ok", startedAt, { domState: await readDomState(page), requestedDateRange: dateRange }, shot ? { screenshot: shot } : {}, shot ? warnings : [...warnings, "SCREENSHOT_UNAVAILABLE"]);
 };
 
-const runPreview = async (options: CliOptions, page: Page): Promise<HelperReport> => {
+const runPreview = async (options: CliOptions, page: Page, startedAt: string): Promise<HelperReport> => {
   const observed = await observeDuring(page, async () => {
     await page.getByText("執行", { exact: true }).first().click({ timeout: 15000 });
     await page.waitForTimeout(2500);
@@ -287,6 +295,7 @@ const runPreview = async (options: CliOptions, page: Page): Promise<HelperReport
   return createReport(
     options,
     "ok",
+    startedAt,
     {
       domState: await readDomState(page),
       network: { requests: observed.requests, responses: observed.responses },
@@ -297,11 +306,12 @@ const runPreview = async (options: CliOptions, page: Page): Promise<HelperReport
   );
 };
 
-const approvalRequired = (options: CliOptions, action: string): HelperReport => {
+const approvalRequired = (options: CliOptions, action: string, startedAt: string): HelperReport => {
   const requestId = `${options.caseId}-${sanitize(options.action)}`;
   return createReport(
     options,
     "requires_approval",
+    startedAt,
     {},
     {},
     ["TOOL_BRIDGE_RESPONSE_REQUIRED_BEFORE_HELPER_ACTION"],
@@ -318,8 +328,8 @@ const approvalRequired = (options: CliOptions, action: string): HelperReport => 
   );
 };
 
-const saveReport = async (options: CliOptions, page: Page): Promise<HelperReport> => {
-  if (!options.approvedToolRequestId) return approvalRequired(options, "save current temporary report");
+const saveReport = async (options: CliOptions, page: Page, startedAt: string): Promise<HelperReport> => {
+  if (!options.approvedToolRequestId) return approvalRequired(options, "save current temporary report", startedAt);
   const reportName = stringParam(options.params, "reportNamePattern")?.replace("<timestamp>", new Date().toISOString().replace(/[-:T.Z]/g, "").slice(0, 12));
   const dialogs: Record<string, unknown>[] = [];
   page.once("dialog", async (dialog) => {
@@ -332,17 +342,19 @@ const saveReport = async (options: CliOptions, page: Page): Promise<HelperReport
   return createReport(
     options,
     "ok",
+    startedAt,
     { domState: await readDomState(page), dialogs, approvedToolRequestId: options.approvedToolRequestId, reportName },
     shot ? { screenshot: shot } : {},
     shot ? [] : ["SCREENSHOT_UNAVAILABLE"]
   );
 };
 
-const notImplemented = async (options: CliOptions, page: Page, reason: string): Promise<HelperReport> => {
+const notImplemented = async (options: CliOptions, page: Page, reason: string, startedAt: string): Promise<HelperReport> => {
   const shot = await screenshot(options, page, sanitize(options.action));
   return createReport(
     options,
     "not_implemented",
+    startedAt,
     { domState: await readDomState(page), reason },
     shot ? { screenshot: shot } : {},
     ["HELPER_TEMPLATE_NOT_IMPLEMENTED_IN_V1"]
@@ -351,6 +363,7 @@ const notImplemented = async (options: CliOptions, page: Page, reason: string): 
 
 const run = async (): Promise<void> => {
   const options = parseArgs();
+  const startedAt = new Date().toISOString();
   const config = readConfig();
   const endpoint = await ensureChromeDebugSession(config, null, {
     resetTabs: false,
@@ -367,38 +380,38 @@ const run = async (): Promise<void> => {
     await ensureSingleUserPageTab(endpoint, { closeNewTab: true });
     switch (options.action) {
       case "collage.openProject":
-        report = await openProject(options, page);
+        report = await openProject(options, page, startedAt);
         break;
       case "collage.createReport":
-        report = await createCollageReport(options, page);
+        report = await createCollageReport(options, page, startedAt);
         break;
       case "collage.configureMetric":
-        report = await configureMetric(options, page);
+        report = await configureMetric(options, page, startedAt);
         break;
       case "collage.runPreviewAndCollectEvidence":
-        report = await runPreview(options, page);
+        report = await runPreview(options, page, startedAt);
         break;
       case "collage.saveReport":
-        report = await saveReport(options, page);
+        report = await saveReport(options, page, startedAt);
         break;
       case "collage.reopenReport":
-        report = await notImplemented(options, page, "Reopen report helper is planned for V1.1; Codex may perform visible UI steps manually and still use helper evidence capture.");
+        report = await notImplemented(options, page, "Reopen report helper is planned for V1.1; Codex may perform visible UI steps manually and still use helper evidence capture.", startedAt);
         break;
       case "collage.deleteTemporaryReport":
       case "filter.addAndPreview":
       case "group.addAndPreview":
         report = options.approvedToolRequestId
-          ? await notImplemented(options, page, "Template is registered but not implemented in this executor version.")
-          : approvalRequired(options, options.action);
+          ? await notImplemented(options, page, "Template is registered but not implemented in this executor version.", startedAt)
+          : approvalRequired(options, options.action, startedAt);
         break;
       default:
-        report = await notImplemented(options, page, `Unknown helper action: ${options.action}`);
+        report = await notImplemented(options, page, `Unknown helper action: ${options.action}`, startedAt);
         break;
     }
     writeReport(options, report);
     console.log(JSON.stringify(report, null, 2));
   } catch (error) {
-    report = createReport(options, "error", {}, {}, [], {
+    report = createReport(options, "error", startedAt, {}, {}, [], {
       error: error instanceof Error ? error.stack ?? error.message : String(error)
     });
     writeReport(options, report);

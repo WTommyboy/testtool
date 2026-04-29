@@ -229,7 +229,7 @@ const buildAvailableTemplates = (currentCase: CaseManifestCase | null, helperHin
   return available;
 };
 
-const executorPath = (): string => {
+export const helperExecutorPath = (): string => {
   const runtimeDir = path.basename(__dirname) === "src" ? path.resolve(__dirname, "../dist") : __dirname;
   return path.join(runtimeDir, "bi-ui-helper-executor.js");
 };
@@ -244,7 +244,7 @@ export const buildHelperExecutionPlan = ({ runDir, currentCase, helperHints }: W
     mode: "single_case_helper_assisted_uat",
     executor: {
       kind: "mac-agent-playwright-cdp",
-      command: `node ${executorPath()} --run-dir "${runDir}" --case "${caseId ?? ""}" --action <template> --params-json '<json>'`,
+      command: `node ${helperExecutorPath()} --run-dir "${runDir}" --case "${caseId ?? ""}" --action <template> --params-json '<json>'`,
       reportPath: path.join(artifactRoot, "helper-report.jsonl"),
       artifactRoot
     },

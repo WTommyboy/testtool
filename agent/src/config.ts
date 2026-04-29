@@ -24,6 +24,11 @@ export const defaultAgentConfig = (overrides: Partial<AgentConfig> = {}): AgentC
   token: "",
   device_name: os.hostname(),
   codex_bin: "codex",
+  codex_reasoning_effort: process.env.UAT_AGENT_CODEX_REASONING_EFFORT === "medium" ||
+    process.env.UAT_AGENT_CODEX_REASONING_EFFORT === "high" ||
+    process.env.UAT_AGENT_CODEX_REASONING_EFFORT === "xhigh"
+    ? process.env.UAT_AGENT_CODEX_REASONING_EFFORT
+    : "low",
   codex_workspace_root: detectWorkspaceRoot(),
   workdir_root: path.join(os.homedir(), ".uat-agent", "runs"),
   chrome_profile_dir: path.join(os.homedir(), ".uat-agent", "chrome-profile"),
