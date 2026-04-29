@@ -4,7 +4,7 @@
 
 本文件記錄「UAT Tool 線上派工 + Mac Agent」這條路徑的歷史決策、設計理由、目前架構與後續待辦。它的用途是跨聊天室、跨 session 交接，不取代 `AGENTS.md`、Layer rules、authoring spec 或實作 spec。
 
-每次修改線上工具的 run packet、Mac Agent、Tool Bridge、rule index、current case pack、result pipeline 或 evidence gate 時，請同步更新本文件。
+每次修改線上工具的 run packet、Mac Agent、Tool Bridge、rule index、current case pack、result pipeline、evidence gate、部署分支或 production 架構時，請同步更新本文件。
 
 ---
 
@@ -126,6 +126,62 @@ Codex 不可修改原始上傳 xlsx。線上模式輸出是 `output/result.xlsx`
 - Agent 不應自行跳到未派發 case，除非線上產品明確設計 queue runner 並提供 gate。
 
 這點要避免把本機 demo 的 ACTIVE runner 行為誤搬到線上 Agent。
+
+### 3.5 目前 production 架構與部署分支
+
+目前線上工具是前後端分離，再加上一個本機 Agent worker：
+
+```text
+Vercel Web UI
+  -> Railway API / WebSocket / SQLite / storage
+  -> Tommy Mac Agent
+  -> Codex CLI + Playwright MCP
+  -> Agent 上傳 result.xlsx / log 回 Railway
+  -> Railway parser / gate 入庫
+  -> Vercel Web UI 顯示結果
+```
+
+各層責任：
+
+- GitHub `WTommyboy/testtool`：程式碼來源，不保存正式 runtime DB 或 run artifacts。
+- Vercel：前端 Web UI production。
+- Railway `testtool` service：後端 API、WebSocket hub、result parser、result/evidence gate、SQLite、storage。
+- Railway persistent volume：production runtime data。
+  - SQLite：`/app/persist/uat.db`
+  - storage：`/app/persist/storage`
+  - volume：`testtool-volume`
+- Tommy Mac Agent：本機執行器，負責下載 run input、啟動 Codex CLI / Playwright、產生 `output/result.xlsx` 與 log，再上傳回 Railway。
+- Mac 本機 `~/.uat-agent/runs/<runId>/`：執行副本與除錯 artifacts，不是線上工具正式資料來源。
+
+目前分支紀律：
+
+- 開發 / 工作分支：`refactor/mac-agent-mvp`
+- production 部署分支：`codex/uat-tool-mvp`
+- Railway production 追蹤：`codex/uat-tool-mvp`
+- Vercel production 也依目前工程文件追蹤：`codex/uat-tool-mvp`
+
+因此只推：
+
+```bash
+git push origin refactor/mac-agent-mvp
+```
+
+不會保證 Railway 重新部署。涉及線上後端或前端 production 的變更，必須同步推部署分支：
+
+```bash
+git push origin refactor/mac-agent-mvp
+git push origin refactor/mac-agent-mvp:codex/uat-tool-mvp
+```
+
+推完後必查：
+
+```bash
+git ls-remote --heads origin codex/uat-tool-mvp refactor/mac-agent-mvp
+curl -s https://testtool-production.up.railway.app/version
+curl -s https://testtool-production.up.railway.app/health
+```
+
+注意：`/version` 目前可能只回 deployment id，不一定回 git commit / branch。若 deployment id 沒變，需到 Railway Deployments 檢查 auto deploy trigger、追蹤 branch，必要時手動 redeploy latest commit。
 
 ---
 
@@ -414,3 +470,11 @@ Tommy 曾討論是否改成腳本。最後決策是採「半腳本化 / helper �
 - 修改檔案：`uat-tool/src/result-parser/result-evidence-gate.ts`、`uat-tool/src/runs.ts`、`uat-tool/agent/src/task-runner.ts`、`uat-tool/agent/src/result-writer.ts`、`uat-tool/scripts/check-result-evidence-gate.ts`、`uat-tool/scripts/verify-result-evidence-gate.ts`、`uat-tool/package.json`。
 - 驗證：`npm run verify:result-evidence-gate` 已通過，涵蓋單題 current-run evidence 通過、多題 result、缺 evidence、agent fallback、缺 Tool Bridge response、invalid detail_json 會被擋；`npm run typecheck --prefix uat-tool`、`npm run typecheck --prefix uat-tool/agent`、`npm run build --prefix uat-tool`、`npm run build --prefix uat-tool/agent` 均通過。
 - 後續影響：線上工具現在具備第一層 result/evidence gate，但仍是最小版 heuristic。後續 P1 可把 Helper hints 的 `requiredEvidence` 與實際 detail_json evidence key 做更精準對照，並把 Tool Bridge request/response server-side 關聯納入報告。
+
+### 2026-04-29 11:33 - 補記部署分支與 production 架構
+
+- 背景：`8bed859 feat: add UAT package and result gates` 原先只推到 `refactor/mac-agent-mvp`，Tommy 在 Railway 沒看到部署；檢查後發現 Railway production 實際追蹤的是 `codex/uat-tool-mvp`。
+- 決策：線上工具變更若要觸發 production，必須把工作分支同步推到部署分支：`git push origin refactor/mac-agent-mvp:codex/uat-tool-mvp`。只推 `refactor/mac-agent-mvp` 只能代表 code review / 工作分支更新，不代表 Railway 會部署。
+- 修改檔案：本文件新增「目前 production 架構與部署分支」章節，明列 Vercel / Railway / Mac Agent / GitHub / Railway volume 的責任邊界與部署驗證命令。
+- 驗證：已確認遠端 `origin/refactor/mac-agent-mvp` 與 `origin/codex/uat-tool-mvp` 都指向 `8bed859`；`/health` 正常。`/version` 當時 deployment id 尚未變更，需用 Railway dashboard 確認 auto deploy 或手動 redeploy。
+- 後續影響：後續任何需要上線的 uat-tool 變更，完成 push 後都要確認部署分支與 Railway deployment 狀態，避免「已推 GitHub 但 production 未更新」。
