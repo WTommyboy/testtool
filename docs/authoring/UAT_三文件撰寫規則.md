@@ -26,7 +26,7 @@
 ```md
 ## 0. 執行模式與檔案位置
 
-本文件同時支援兩種執行模式。後續 case 步驟、前置條件、測試資料、預期結果、驗證方法共用；差異只在檔案讀取、結果輸出與人工授權方式。
+本文件同時支援兩種執行模式。後續 case 步驟、前置條件、測試資料、預期結果、驗證方法共用；差異只在檔案讀取、結果輸出、人工授權方式與逐題暫停方式。
 
 ### A. 本機手動 Codex 示範模式
 
@@ -55,10 +55,12 @@
 - 結果輸出: 不可修改原始 xlsx；必須產出 `output/result.xlsx`。
 - 人工授權: 只有 UAT Tool 的 Tool Bridge response 才算授權。startup instruction 或文件內寫「預先批准」不算授權。
 - 若遇到 SSO、載入失敗、native alert/confirm、刪除、覆蓋、不可逆操作或規格歧義，必須輸出 Tool Bridge request 並停在安全點。
+- 逐題暫停: 每次 run 以 `input/current-case.json` 為準。若要逐題暫停執行多題，由工具/PM 重新派發下一題；Agent 不會自動 dispatch 下一 case。
 
 ### 共通規則
 
 - 後續 case 步驟、前置條件、測試資料、預期結果、驗證方法兩種模式共用。
+- xlsx、指派文字、執行說明中的 `風險等級`、`測試標的`、`狀態清理` 必須使用同一套 canonical 值。
 - 不可直接打 BI API 取代 UI 操作。
 - 不可用內部 JS setter 設定測試狀態。
 - 不可把多個 case 混在一次 tool call 或一次結果寫入。
@@ -105,6 +107,7 @@ Agent 模式的對應寫法：
 - `Agent 上傳 result.xlsx 給 Railway`
 - `Railway 解析 result.xlsx 入庫`
 - `Tool Bridge response 是唯一有效授權`
+- `Agent 不會自動 dispatch 下一 case；若要逐題暫停，由工具/PM 重新派發下一題`
 
 ### 1.4 不可在文件內預先授權 Agent
 
@@ -135,6 +138,131 @@ Agent 模式的對應寫法：
 - `透過 read-only page.evaluate 讀取 Chart.js datasets`
 - `透過 DOM / performance entries 驗證 UI action 觸發 request`
 
+### 1.6 本機手動模式必須提供「快跑啟動提示詞」
+
+本機手動 Codex 示範模式的啟動提示詞必須以「快速進入 case 執行」為目標，不可把 Agent 模式的完整規則載入流程照搬到本機。
+
+禁止在本機啟動提示詞中要求：
+
+- `依序讀完以下所有文件`
+- `讀完 AGENTS.md 全文`
+- `讀完 BI_TEST_RULES 全文`
+- `每個 tool call 前都用一句話說明`
+- `讀完後等候開工指令`，除非真的要現場教學停等
+- 模糊路徑，例如只寫 `AGENTS.md`、`BI_TEST_RULES/...`，但沒有指定 cwd 或絕對路徑
+
+正確做法：
+
+- 明確指定 cwd：`/Users/tommy/Downloads/codex_galaxy`
+- 所有文件使用絕對路徑，或明確說「以下皆相對 cwd」
+- 先做 Playwright preflight，確認 DEV URL 可達與 SSO 狀態
+- 只讀本輪指派文字、執行說明與 xlsx current case row
+- 常駐規則只讀必要章節：例如本 case 需要 native dialog 才讀第 13 條，需要狀態清理才讀第 18 條，需要寫結果才讀第 22 條
+- BI_TEST_RULES 只按 case 類型讀相關章節，不全文讀
+- 進度回報用 phase-level，例如「preflight 完成」「current case 已讀」「開始 UI 操作」，不要每個 click 前都說明
+
+本機快跑提示詞建議模板：
+
+```md
+你現在在本機手動 Codex 示範模式。請以快跑模式執行，不要全文讀完所有規則文件。
+
+cwd: /Users/tommy/Downloads/codex_galaxy
+DEV URL: https://galaxy.games.gamania.com/biapi-dev/testview/home?gameID=541
+
+本輪文件:
+- 指派文字: /Users/tommy/Downloads/codex_galaxy/BI_UAT_ROUNDS/<輪次>/Codex_指派文字_<版本>.md
+- 執行說明: /Users/tommy/Downloads/codex_galaxy/BI_UAT_ROUNDS/<輪次>/<測試執行說明>.md
+- xlsx: /Users/tommy/Downloads/codex_galaxy/BI_UAT_ROUNDS/<輪次>/<測試案例>.xlsx
+
+請先做 Playwright preflight:
+1. 使用現有 Playwright page 或開一個 page 導到 DEV URL。
+2. 若 SSO / 載入失敗，停下回報。
+3. 若頁面可達，繼續。
+
+文件讀取規則:
+1. 只讀指派文字的「執行範圍與起始 case / Source of Truth / 暫停點」。
+2. 只讀執行說明中 current case 的章節。
+3. 只 dump xlsx current case row，不讀整本。
+4. AGENTS.md 與 BI_TEST_RULES 只在遇到該規則需要時按章節讀，不全文讀。
+
+授權規則:
+- 已授權本 case 的一般 UI 操作與 preview 執行。
+- native alert / confirm、儲存、刪除、覆蓋仍必須停下請求授權。
+
+回報規則:
+- 不要每個 tool call 前都解釋。
+- 只在 phase 完成或遇到 blocker 時回報。
+```
+
+### 1.7 授權語句要分清楚「一般 UI 操作」與「不可逆/原生對話」
+
+不要把所有按鈕都寫成需要授權，否則本機跑測會被安全層與提示詞雙重卡住。
+
+建議定義：
+
+- 一般 UI 操作：展開選單、選欄位、切日期、按 preview `執行`、讀 DOM、讀 network。這些在本 case 開始後視為已授權。
+- 高風險操作：儲存、刪除、覆蓋、離開未儲存頁面、native alert / confirm。這些必須逐次授權。
+
+若是本機現場示範，可在啟動提示詞中寫：
+
+```md
+Tommy 已授權本 case 內所有一般 UI 操作與 preview 執行；遇到 native alert/confirm、儲存、刪除、覆蓋時仍需停下請求授權。
+```
+
+### 1.8 半腳本化 / Helper 化原則
+
+UAT 測試包的撰寫目標是「讓 Codex 更快、更穩地執行」，不是把 UAT 變成整份固定 Playwright 腳本。
+
+本專案採用 **半腳本化 / helper 化**：
+
+#### 可以腳本化
+
+這些屬於機械處理，建議交給工具或 helper：
+
+- xlsx 解析、case queue 建立、ACTIVE prompt 產生。
+- 寫回結果、dump 讀回驗證、detail_json JSON schema 檢查。
+- metadata 清單讀取、命名正規化、欄位差異計算。
+- downloaded CSV 計算，例如 sum / avg / distinct / row count。
+- Chart.js datasets 唯讀抽取。
+- Playwright network request / response body 唯讀整理。
+
+#### 可以 helper 化
+
+這些仍必須透過真實 UI 操作，但可封裝成單一 case 內的 helper：
+
+- 導航到指定模式 / 專案 / 新增報表頁。
+- 清空欄位、篩選、分組。
+- 加欄位、選來源報表、選篩選欄位、選 operator、輸入值。
+- 設定日期區間、顯示方式。
+- 按 preview `執行`，並抓取本次 request body / response / chart data。
+
+helper 的邊界：
+
+- helper 只能處理**單一 case 的單一動作或動作片段**。
+- helper 不可跨 case 執行。
+- helper 不可直接判定 PASS / FAIL / BLOCKED。
+- helper 不可一次寫入多個 case 結果。
+- helper 不可用內部 JS setter 設定頁面狀態。
+
+#### 不可腳本化
+
+以下禁止寫成固定腳本：
+
+- 一支腳本跑完整份 testcase。
+- 一支腳本批次跑 D/E/F/G 整群篩選 case。
+- 一次產出多題 result row。
+- 腳本直接判定全部 PASS / FAIL / BLOCKED。
+- 腳本直接打 BI API 取代 UI 操作。
+- 腳本用 `page.evaluate(() => element.click())` 繞過 UI / 安全層限制。
+
+#### Authoring 原則
+
+testcase 仍維持人類可讀。不要要求文件作者撰寫 Playwright selector 或程式碼。
+
+若要支援 helper，應在 `測試執行說明_*.md` 每題加入「Helper hints」結構化區塊，而不是把 xlsx 變成腳本語言。
+
+核心 16 欄 xlsx 目前不新增強制欄位；helper 所需資訊先由 `測試執行說明_*.md` 提供。未來若工具穩定後，才考慮把 `操作模板 / 參數 JSON / 必要 evidence` 升級為 xlsx 可選欄位。
+
 ---
 
 ## 2. `測試案例.xlsx` 撰寫規則
@@ -149,7 +277,7 @@ Agent 模式的對應寫法：
 
 ### 2.2 `測試案例` 必備欄位
 
-最低欄位：
+必備欄位固定 16 欄，順序如下。三個執行控制欄位必須插在「測試項目」後、「前置條件」前，不可放在最後。
 
 | 欄位 | 規則 |
 |---|---|
@@ -158,6 +286,9 @@ Agent 模式的對應寫法：
 | 編號 | 必填，全域唯一，如 `DEMO-A-01` |
 | 測試類型 | 必填，如 `功能流程`、`資料確認(metadata 對照)`、`FAIL bug 重現` |
 | 測試項目 | 必填，描述 case 目的 |
+| 風險等級 | 必填，只能用 canonical 值：`🟢 觀察`、`🟡 建立`、`🟠 修改`、`🔴 刪除` |
+| 測試標的 | 必填，只能用 canonical 值：`後端功能`、`前端呈現`、`前後端整合`、`功能流程` |
+| 狀態清理 | 必填，固定 5 項格式：`欄位=...;篩選=...;分組=...;時間=...;顯示=...` |
 | 前置條件 | 必填，需機器可執行 |
 | 步驟 | 必填，一步一動作 |
 | 預期結果 | 必填，含可比對條件 |
@@ -167,7 +298,91 @@ Agent 模式的對應寫法：
 | 詳細紀錄JSON | 初始空白，除非真的已預先執行 |
 | 驗證方法 | 必填，寫 evidence 類型 |
 
-### 2.3 若 case 已預先執行，xlsx 必須真的反映
+建議欄位順序：
+
+```text
+輪次ID
+群組
+編號
+測試類型
+測試項目
+風險等級
+測試標的
+狀態清理
+前置條件
+步驟
+預期結果
+結果
+執行方式
+測試日
+詳細紀錄JSON
+驗證方法
+```
+
+### 2.3 三個執行控制欄位寫法
+
+#### 2.3.1 `風險等級`
+
+只能使用以下四個值，不可用 `Low / Medium / High`、自然語句或混合備註：
+
+| 值 | 用途 |
+|---|---|
+| `🟢 觀察` | 只讀取、比對、preview，不儲存、不修改既有資源 |
+| `🟡 建立` | 建立新報表、新資料、新暫存資源 |
+| `🟠 修改` | 修改既有報表、設定或資料 |
+| `🔴 刪除` | 刪除、覆蓋、永久清除或高風險不可逆操作 |
+
+若 case 會儲存一張新報表，即使是臨時報表，也應標 `🟡 建立`。若 case 只按 preview 查詢且不儲存，通常標 `🟢 觀察`。
+
+#### 2.3.2 `測試標的`
+
+只能使用以下四個值，不可寫長句：
+
+| 值 | 判定重點 |
+|---|---|
+| `後端功能` | 後端資料、計算、payload、response 是否正確 |
+| `前端呈現` | UI 文案、下拉清單、圖表呈現、DOM state 是否正確 |
+| `前後端整合` | UI 操作送出的 request 與後端 response 是否對齊 |
+| `功能流程` | 建立、執行、儲存、重開、下載等 end-to-end 流程 |
+
+若需要說明「雙標的」或更細的判定原因，寫在 `前置條件`、`驗證方法` 或執行說明內，不要寫進 `測試標的` 欄位。
+
+#### 2.3.3 `狀態清理`
+
+必須固定 5 項，以半形分號分隔，順序不可調換：
+
+```text
+欄位=...;篩選=...;分組=...;時間=...;顯示=...
+```
+
+每項值只能使用三類：
+
+| 類型 | 例子 |
+|---|---|
+| `空 / 0組` | `欄位=空`、`篩選=0組`、`分組=0組` |
+| `不影響` | 本 case 不依賴該狀態，Codex 可跳過比對 |
+| 具體目標值 | `欄位=新增帳號數`、`時間=2026/03/01~2026/03/31`、`顯示=每天` |
+
+不要把備註寫進 `狀態清理` 欄位。以下都應移到 `前置條件` 或 `步驟`：
+
+- `預設「過去7天」本 case 將切換為...`
+- `不手動設定，讓 UI 自動處理`
+- `⚠️ 注意不可語意解讀`
+- `拼貼模式無篩選`
+
+好寫法：
+
+```text
+欄位=新增帳號數;篩選=不影響;分組=不影響;時間=2026/03/01~2026/03/31;顯示=每天
+```
+
+壞寫法：
+
+```text
+欄位=空;篩選=不適用(拼貼模式無篩選);分組=不適用;時間=預設「過去7天」(本 case 將切換為 2026/03/01~03/31);顯示=每天
+```
+
+### 2.4 若 case 已預先執行，xlsx 必須真的反映
 
 如果 md 寫 `DEMO-A-01 已由 Tommy 預先執行`，xlsx 對應 row 必須：
 
@@ -178,7 +393,7 @@ Agent 模式的對應寫法：
 
 如果 xlsx row 結果仍空白，就不得在 md 宣稱該 case 已執行。
 
-### 2.4 前置條件寫法
+### 2.5 前置條件寫法
 
 前置條件應使用固定欄位式語法，避免只寫自然語言。
 
@@ -188,17 +403,14 @@ Agent 模式的對應寫法：
 起始頁面: DEV URL 首頁 / 編輯頁 / 專案頁
 導航路徑: 我的自訂 > 拼貼模式 > <專案名> > +新增報表
 建構模式: 拼貼 / 明細 / 指標趨勢
-狀態清理:
-- 欄位: 空 / 新增帳號數 / 不影響
-- 篩選: 空 / <指定篩選> / 不影響
-- 分組: 空 / 銀河帳號狀態 / 不適用
-- 時間: 2026/03/01~2026/03/31 / 不影響
-- 顯示: 每天 / 不影響
 參考資料: metadata v1.2.5, 來源報表=每日報表
 授權需求: 無 / 儲存時 Tool Bridge / 刪除時 Tool Bridge
+備註: 狀態清理欄未能表達的背景，例如「頁面預設是過去7天，但本 case 目標時間為 2026/03/01~2026/03/31」
 ```
 
-### 2.5 步驟寫法
+`狀態清理` 不要在前置條件重複成另一套 checklist，避免和 xlsx 獨立欄位衝突。若需補充背景，放在 `備註`。
+
+### 2.6 步驟寫法
 
 步驟必須一行一個 UI action，並能被 Playwright 執行。
 
@@ -223,7 +435,7 @@ Agent 模式的對應寫法：
 進入拼貼新增報表頁後確認欄位都正確。
 ```
 
-### 2.6 驗證方法必須列 evidence 類型
+### 2.7 驗證方法必須列 evidence 類型
 
 建議用這些詞：
 
@@ -242,7 +454,7 @@ Agent 模式的對應寫法：
 - `截圖佐證`
 - `看起來正常`
 
-### 2.7 Bug sheet 規則
+### 2.8 Bug sheet 規則
 
 若 bug 是預期重現：
 
@@ -250,6 +462,33 @@ Agent 模式的對應寫法：
 - 但要寫清楚 Agent 模式只需在 `output/result.xlsx` 的 Bug sheet 產出結果，不必修改原始 xlsx。
 
 若本機手動模式需要更新原 xlsx，才提 `update_bug_row.mjs`。
+
+### 2.9 Helper 化資訊不要塞進 xlsx 必備欄位
+
+`測試案例.xlsx` 的 16 欄是測試語意與結果契約，不是 Playwright 腳本規格。
+
+因此：
+
+- 不要在 `步驟` 欄寫 selector，例如 `#dateRangeBtn`、`.filter-row:nth-child(2)`。
+- 不要在 `步驟` 欄寫程式碼，例如 `await page.locator(...).click()`。
+- 不要在 `前置條件` 欄塞 JSON 大物件。
+- 不要把多個 helper 名稱串成「腳本流程」。
+
+可接受的 xlsx 寫法：
+
+```text
+步驟:
+1. 點「+ 新增篩選」
+   驗證: DOM read 看到新增 1 組篩選列
+2. 欄位選「商品單價」
+   驗證: DOM read 篩選欄位 value = 商品單價
+3. operator 選「大於」
+   驗證: DOM read operator value = 大於
+4. 輸入 100 並按執行
+   驗證: network request body filters 帶 商品單價 > 100
+```
+
+helper 對應資訊應寫在 `測試執行說明_*.md` 的 `Helper hints` 區塊，讓工具讀取。
 
 ---
 
@@ -293,6 +532,8 @@ Agent 模式的對應寫法：
 - 本輪 Codex 執行順序: DEMO-A-01 → DEMO-B-01 → DEMO-C-01 → DEMO-D-01
 - 跳過 case: 無
 ```
+
+Case 清單或 summary 表格中的 `風險等級`、`測試標的` 必須和 xlsx 使用同一套 canonical 值，不可在 summary 表回退成 `Low / Medium` 或自由文字。
 
 如果要跳過：
 
@@ -397,9 +638,14 @@ Agent 模式必須走 Tool Bridge。
 前置條件:
 - 起始頁面:
 - 導航路徑:
-- 狀態清理:
 - 參考資料:
 - 授權需求:
+
+風險等級:
+
+測試標的:
+
+狀態清理:
 
 步驟:
 1. <UI action>
@@ -423,6 +669,8 @@ detail_json 要點:
 暫停點:
 - 無 / 跑完本 case 後暫停 / Tool Bridge 條件
 ```
+
+其中 `風險等級`、`測試標的`、`狀態清理` 必須逐字對齊 xlsx。執行說明可以補充背景，但不可在這三個欄位改寫成另一套值。
 
 ### 4.5 Network / Console 類取證寫法
 
@@ -450,6 +698,102 @@ Screenshot 是人類佐證，不取代 DOM/network/chart data。
 若 DOM/network/chart data 已足以判定，且 screenshot timeout，最多改試一次小截圖；仍失敗時，在 detail_json 寫 screenshot_unavailable_reason，不可反覆重試。
 ```
 
+### 4.7 Helper hints 結構化區塊
+
+`測試執行說明_*.md` 可在每題加入 `Helper hints`，讓工具判斷哪些動作可 helper 化。
+
+此區塊是**提示工具加速**，不是 PASS / FAIL 判定來源。若 Helper hints 與 xlsx 步驟衝突，以 xlsx 步驟與預期結果為準。
+
+建議格式：
+
+````md
+Helper hints:
+```json
+{
+  "caseId": "DEMO-X-01",
+  "automationLevel": "helper",
+  "operationTemplate": "metric_filter_operator",
+  "params": {
+    "mode": "指標趨勢",
+    "field": "商品單價",
+    "operator": "大於",
+    "value": 100,
+    "dateRange": {
+      "start": "2026-03-01",
+      "end": "2026-03-31"
+    },
+    "display": "每天"
+  },
+  "requiredEvidence": [
+    "dom.state",
+    "network.requestBody",
+    "chart.datasets"
+  ],
+  "forbiddenAutomation": [
+    "direct_bi_api",
+    "internal_js_setter",
+    "multi_case_batch"
+  ],
+  "aiDecisionRequired": true
+}
+```
+````
+
+#### `automationLevel`
+
+只能使用以下值：
+
+| 值 | 意義 |
+|---|---|
+| `script_safe` | 純本地或唯讀機械處理，可腳本化。例如 metadata 比對、CSV 計算、xlsx 寫回 |
+| `helper` | 可用單 case UI helper 加速，但仍須透過真實 UI |
+| `manual_ai` | 需要 Codex 判斷、延伸驗證或處理 UI 異常，不應固定腳本化 |
+| `blocked_if_no_helper` | 若缺少對應 helper，應先回報，不要臨時硬寫腳本 |
+
+#### 常用 `operationTemplate`
+
+`operationTemplate` 不是程式碼，只是讓工具知道可套哪類 helper。建議先使用以下 canonical 值：
+
+| Template | 用途 |
+|---|---|
+| `metadata_dropdown_compare` | 展開下拉清單並與 metadata 對照 |
+| `collage_build_preview_save_reopen` | 拼貼建立、preview、儲存、重開驗證 |
+| `record_static_fields_date_payload` | 明細靜態欄位與 dateRange payload 檢查 |
+| `metric_date_display_preview` | 指標趨勢時間區間 / 顯示方式 preview |
+| `metric_filter_operator` | 指標趨勢篩選欄位 + operator + value |
+| `metric_group_series` | 指標趨勢分組與多 series 驗證 |
+| `chart_csv_consistency` | Chart.js 與 downloaded CSV 數值一致性 |
+| `download_csv_verify` | 下載檔名、表頭、row count 驗證 |
+| `save_load_flow` | 儲存、清單出現、重開還原驗證 |
+
+若找不到合適 template，使用 `manual_ai`，不要臨時創自由文字 template。
+
+#### `requiredEvidence`
+
+只能使用以下 evidence 類型或其子類：
+
+- `dom.state`
+- `dom.list`
+- `network.requestBody`
+- `network.responseBody`
+- `chart.datasets`
+- `csv.rows`
+- `csv.aggregate`
+- `screenshot`
+- `toolBridge.response`
+- `xlsx.readback`
+
+#### 禁止事項
+
+Helper hints 不可包含：
+
+- Playwright selector。
+- 可執行程式碼。
+- 多個 case 的 queue。
+- 直接 API URL。
+- 要求 helper 判 PASS / FAIL。
+- 要求 helper 寫多題結果。
+
 ---
 
 ## 5. 三文件一致性檢查表
@@ -464,6 +808,10 @@ Claude 產出三文件後，必須逐項檢查：
 | 執行順序 | 三份一致 |
 | 跳過 case | 三份一致，且 xlsx 已填結果 |
 | A/B/C/D 群組命名 | 三份一致 |
+| xlsx 欄位結構 | `測試案例` sheet 必須是 16 欄，且三個控制欄位位於 `測試項目` 後 |
+| 風險等級 | 三份一致，且只用 `🟢 觀察 / 🟡 建立 / 🟠 修改 / 🔴 刪除` |
+| 測試標的 | 三份一致，且只用 `後端功能 / 前端呈現 / 前後端整合 / 功能流程` |
+| 狀態清理 | 三份一致，且固定 `欄位=...;篩選=...;分組=...;時間=...;顯示=...` |
 | metadata 版本 | 三份一致 |
 | 日期區間 | 三份一致 |
 | baseline 數值 | 三份一致或明確說明不用 |
@@ -471,6 +819,8 @@ Claude 產出三文件後，必須逐項檢查：
 | 結果輸出 | 本機模式 vs Agent 模式分清楚 |
 | 授權方式 | 本機 chat 授權 vs Agent Tool Bridge 分清楚 |
 | DevTools 語句 | 不可要求操作 DevTools UI |
+| Helper hints | 若有填寫，必須是單一 case、canonical template、不得含 selector / 程式碼 / 多題 queue |
+| Helper evidence | `requiredEvidence` 必須和 xlsx `驗證方法` 不衝突 |
 
 ---
 
@@ -492,9 +842,18 @@ Claude 產出三文件後，必須逐項檢查：
 - 若要跳過任何 case，xlsx 該 case 必須已填結果、測試日、detail_json；否則不得寫跳過。
 - Agent 模式不可直接修改原始 xlsx，只能輸出 `output/result.xlsx`。
 - Agent 模式的人工授權只能走 Tool Bridge，不可在文件內預先批准 alert/confirm。
+- xlsx 必須使用 16 欄格式，且在「測試項目」後插入「風險等級」「測試標的」「狀態清理」三欄。
+- 「風險等級」只能用 `🟢 觀察 / 🟡 建立 / 🟠 修改 / 🔴 刪除`。
+- 「測試標的」只能用 `後端功能 / 前端呈現 / 前後端整合 / 功能流程`。
+- 「狀態清理」只能用固定 5 項格式：`欄位=...;篩選=...;分組=...;時間=...;顯示=...`，備註不得混入此欄。
+- 指派文字與執行說明的 case summary 表也要使用相同 canonical 值，不可回退成 Low / Medium 或自由文字。
+- Agent 模式不會自動 dispatch 下一 case；若要逐題暫停，文件需寫明由工具/PM 重新派發下一題。
 - 前置條件與步驟必須機器可執行：一行一個 UI action，每步列驗證方式與 evidence 類型。
 - 不可要求 Codex 操作 DevTools UI；Network / Console 取證需寫成 Playwright network observation 或 read-only page.evaluate。
 - Screenshot 是輔助 evidence，DOM/network/chart data 優先。
+- 採半腳本化 / helper 化原則：可腳本化 xlsx 解析、ACTIVE prompt、寫回、dump、CSV 計算、Chart.js 抽取、metadata 比對；可 helper 化單一 case 內的 UI 動作；不可把整份 testcase 或整群 case 寫成固定 Playwright 腳本。
+- 若某題適合 helper 化，請在 `測試執行說明_*.md` 該題加入 `Helper hints` JSON 區塊，使用 canonical `automationLevel`、`operationTemplate`、`requiredEvidence`。不要在 xlsx 寫 selector 或程式碼。
+- Helper hints 只能描述單一 case，不可包含多題 queue，不可要求 helper 判 PASS / FAIL，不可要求 helper 一次寫多題結果。
 
 產出後請附一份「三文件一致性檢查表」，逐項確認是否通過。
 ```

@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { CaseManifestCase, CaseManifestResult } from "./case-manifest";
+import { findHelperHints, type HelperHints } from "./helper-hints";
 
 type EvidenceTemplateId =
   | "metadata-dropdown"
@@ -87,6 +88,38 @@ const inferRequiredEvidence = (templates: EvidenceTemplateId[]): string[] => {
   return [...evidence];
 };
 
+const unique = (values: string[]): string[] => [...new Set(values.filter(Boolean))];
+
+const inferRuleKeys = (
+  item: CaseManifestCase | null,
+  helperHints: HelperHints | null,
+  requiredEvidence: string[]
+): string[] => {
+  const keys = new Set<string>([
+    "document-consistency",
+    "preflight-auth-check",
+    "current-case",
+    "current-case-pack",
+    "current-case-pack-json",
+    "run-state",
+    "evidence-policy",
+    "codex-runtime",
+    "artifacts-and-results"
+  ]);
+
+  const riskLevel = item?.riskLevel ?? "";
+  const testTarget = item?.testTarget ?? "";
+  const operationTemplate = helperHints?.operationTemplate ?? "";
+  if (helperHints) keys.add("bi-ui-helper-guidance");
+  if (requiredEvidence.some((evidence) => evidence.startsWith("network."))) keys.add("network-observation-guidance");
+  if (requiredEvidence.includes("toolBridge.response") || /刪除|修改|建立/.test(riskLevel)) keys.add("tool-bridge");
+  if (/metadata|dropdown/i.test(operationTemplate) || /metadata|欄位清單|可選欄位/.test(textBlob(item ?? ({} as CaseManifestCase)))) {
+    keys.add("bi-rule-BI系統_metadata摘要");
+  }
+  if (/前端呈現|前後端整合|功能流程/.test(testTarget)) keys.add("bi-project-agents-full");
+  return [...keys];
+};
+
 const readCurrentCase = (caseManifest: CaseManifestResult): CaseManifestCase | null => {
   if (!caseManifest.currentCasePath || !fs.existsSync(caseManifest.currentCasePath)) return null;
   try {
@@ -99,12 +132,20 @@ const readCurrentCase = (caseManifest: CaseManifestResult): CaseManifestCase | n
 export const writeCurrentCasePack = (
   runDir: string,
   caseManifest: CaseManifestResult,
-  documentConsistencyPath: string
-): { jsonPath: string; markdownPath: string } => {
+  documentConsistencyPath: string,
+  helperHintSourcePaths: string[] = []
+): { jsonPath: string; markdownPath: string; helperHints: HelperHints | null; helperWarnings: string[] } => {
   const currentCase = readCurrentCase(caseManifest);
   const templates = currentCase ? inferEvidenceTemplates(currentCase) : [];
-  const requiredEvidence = currentCase ? inferRequiredEvidence(templates) : [];
+  const inferredRequiredEvidence = currentCase ? inferRequiredEvidence(templates) : [];
+  const helperSearch = currentCase
+    ? findHelperHints(helperHintSourcePaths, currentCase.caseNo, runDir)
+    : { helperHints: null, searchedPaths: [], warnings: [] };
+  const helperHints = helperSearch.helperHints;
+  const explicitRequiredEvidence = helperHints?.requiredEvidence ?? [];
+  const requiredEvidence = unique([...inferredRequiredEvidence, ...explicitRequiredEvidence]);
   const screenshotPolicy = currentCase ? inferScreenshotPolicy(templates, currentCase) : "unavailable";
+  const recommendedRuleKeys = inferRuleKeys(currentCase, helperHints, requiredEvidence);
   const jsonPath = path.join(runDir, "input", "current-case-pack.json");
   const markdownPath = path.join(runDir, "input", "current-case-pack.md");
 
@@ -119,12 +160,64 @@ export const writeCurrentCasePack = (
     ],
     documentConsistencyPath,
     currentCase,
+    helperHints: helperHints
+      ? {
+          found: true,
+          sourcePath: helperHints.sourceRelativePath ?? helperHints.sourcePath,
+          caseId: helperHints.caseId,
+          automationLevel: helperHints.automationLevel,
+          operationTemplate: helperHints.operationTemplate,
+          params: helperHints.params,
+          requiredEvidence: helperHints.requiredEvidence,
+          forbiddenAutomation: helperHints.forbiddenAutomation,
+          aiDecisionRequired: helperHints.aiDecisionRequired,
+          warnings: helperHints.warnings
+        }
+      : {
+          found: false,
+          searchedPaths: helperSearch.searchedPaths.map((item) => path.relative(runDir, item).replaceAll(path.sep, "/")),
+          warnings: helperSearch.warnings
+        },
     evidenceTemplates: templates,
+    inferredRequiredEvidence,
+    explicitRequiredEvidence,
     requiredEvidence,
     screenshotPolicy,
+    recommendedRuleKeys,
     executionRequirement:
       "Plan 完成不代表 case 完成。必須執行所有 required action 並 capture 對應 required evidence，結果與 expected 比對後才能寫 result。"
   };
+
+  const helperHintMarkdown = helperHints
+    ? [
+        "## Helper Hints",
+        "",
+        "Helper hints 是單題 UI 操作輔助，不是授權、不是 PASS/FAIL 判定來源；若與 xlsx 步驟或預期衝突，以 xlsx 為準。",
+        "",
+        `- source: ${helperHints.sourceRelativePath ?? helperHints.sourcePath}`,
+        `- automationLevel: ${helperHints.automationLevel ?? "(missing)"}`,
+        `- operationTemplate: ${helperHints.operationTemplate ?? "(missing)"}`,
+        `- aiDecisionRequired: ${helperHints.aiDecisionRequired === null ? "(missing)" : String(helperHints.aiDecisionRequired)}`,
+        helperHints.warnings.length > 0 ? `- warnings: ${helperHints.warnings.join(", ")}` : "- warnings: none",
+        "",
+        "### Params",
+        "",
+        "```json",
+        JSON.stringify(helperHints.params ?? {}, null, 2),
+        "```",
+        "",
+        "### Explicit Required Evidence",
+        "",
+        explicitRequiredEvidence.length > 0 ? explicitRequiredEvidence.map((item) => `- ${item}`).join("\n") : "- (none)",
+        ""
+      ].join("\n")
+    : [
+        "## Helper Hints",
+        "",
+        "未找到本題 Helper hints；本 pack 使用 xlsx row 與關鍵字推斷 evidence templates。不得因此臨時改寫成批次腳本。",
+        helperSearch.warnings.length > 0 ? `\nWarnings: ${helperSearch.warnings.join(", ")}` : "",
+        ""
+      ].join("\n");
 
   fs.writeFileSync(jsonPath, `${JSON.stringify(pack, null, 2)}\n`);
   fs.writeFileSync(
@@ -151,9 +244,15 @@ export const writeCurrentCasePack = (
       "",
       currentCase?.expected ?? "(missing)",
       "",
+      helperHintMarkdown,
+      "",
       "## Required Evidence",
       "",
       requiredEvidence.length > 0 ? requiredEvidence.map((item) => `- ${item}`).join("\n") : "- (unavailable)",
+      "",
+      "## Recommended Rule Keys",
+      "",
+      recommendedRuleKeys.map((item) => `- ${item}`).join("\n"),
       "",
       "## Execution Requirement",
       "",
@@ -162,5 +261,5 @@ export const writeCurrentCasePack = (
     ].join("\n")
   );
 
-  return { jsonPath, markdownPath };
+  return { jsonPath, markdownPath, helperHints, helperWarnings: [...helperSearch.warnings, ...(helperHints?.warnings ?? [])] };
 };

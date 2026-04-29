@@ -18,6 +18,11 @@ import {
   type ParsedBug,
   type ParsedResultCase
 } from "./result-parser/result-xlsx-parser";
+import {
+  evaluateResultEvidenceGate,
+  ResultEvidenceGateError,
+  type ResultEvidenceGateReport
+} from "./result-parser/result-evidence-gate";
 
 const router = Router();
 
@@ -433,6 +438,29 @@ const getRunOutputUrls = (req: Request, runId: string): Record<string, string> =
   };
 };
 
+const stringBodyField = (req: Request, key: string): string | null => {
+  const value = (req.body as Record<string, unknown> | undefined)?.[key];
+  if (typeof value === "string" && value.trim()) return value.trim();
+  return null;
+};
+
+const stringArrayBodyField = (req: Request, key: string): string[] => {
+  const value = (req.body as Record<string, unknown> | undefined)?.[key];
+  if (Array.isArray(value)) {
+    return value.filter((item): item is string => typeof item === "string").map((item) => item.trim()).filter(Boolean);
+  }
+  if (typeof value !== "string" || !value.trim()) return [];
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    if (Array.isArray(parsed)) {
+      return parsed.filter((item): item is string => typeof item === "string").map((item) => item.trim()).filter(Boolean);
+    }
+  } catch {
+    // Fall through to comma-separated parsing for simple manual requests.
+  }
+  return value.split(",").map((item) => item.trim()).filter(Boolean);
+};
+
 const parseJsonObject = (value: unknown): Record<string, unknown> | null => {
   if (typeof value !== "string" || !value.trim()) return null;
   try {
@@ -763,11 +791,85 @@ const formatParsedBugDescription = (bug: ParsedBug): string => {
   return parts.filter(Boolean).join("\n");
 };
 
+type ResultIngestOptions = {
+  resultSource?: string | null;
+  currentCaseNo?: string | null;
+  expectedCaseNos?: string[];
+};
+
+const normalizeCaseNoForGate = (value: string): string =>
+  value
+    .trim()
+    .replace(/\s+/g, "")
+    .replace(/^DEMO-/i, "")
+    .toUpperCase();
+
+const uniqueCaseNosForGate = (values: Array<string | null | undefined>): string[] => {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const value of values) {
+    const trimmed = value?.trim();
+    if (!trimmed) continue;
+    const key = normalizeCaseNoForGate(trimmed);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push(trimmed);
+  }
+  return result;
+};
+
+const expectedCaseNosForRun = (runId: string): string[] => {
+  const rows = db
+    .prepare("SELECT case_no FROM run_cases WHERE run_id = ? ORDER BY created_at ASC, case_no ASC")
+    .all(runId) as Array<{ case_no: string }>;
+  return uniqueCaseNosForGate(rows.map((item) => item.case_no));
+};
+
+const writeResultEvidenceGateReport = (filePath: string, report: ResultEvidenceGateReport): string => {
+  const reportPath = `${filePath}.result-evidence-gate.json`;
+  fs.writeFileSync(reportPath, `${JSON.stringify(report, null, 2)}\n`);
+  return reportPath;
+};
+
 const ingestResultXlsx = async (
   runId: string,
-  filePath: string
-): Promise<{ cases: number; bugs: number; parserVersion: string; runStatus: string }> => {
+  filePath: string,
+  options: ResultIngestOptions = {}
+): Promise<{
+  cases: number;
+  bugs: number;
+  parserVersion: string;
+  runStatus: string;
+  resultEvidenceGate: { status: string; issueCount: number; reportPath: string };
+}> => {
   const parsed = await parseResultXlsx(filePath);
+  const expectedCaseNos = uniqueCaseNosForGate([
+    ...expectedCaseNosForRun(runId),
+    ...(options.expectedCaseNos ?? [])
+  ]);
+  const report = evaluateResultEvidenceGate({
+    parsed,
+    resultSource: options.resultSource,
+    currentCaseNo: options.currentCaseNo,
+    expectedCaseNos,
+    requireSingleCase: true
+  });
+  const reportPath = writeResultEvidenceGateReport(filePath, report);
+  insertRunEvent(runId, "result.evidence_gate_checked", {
+    status: report.status,
+    issueCount: report.issues.length,
+    errorCodes: report.issues.filter((item) => item.severity === "error").map((item) => item.code),
+    warningCodes: report.issues.filter((item) => item.severity === "warning").map((item) => item.code),
+    reportPath
+  });
+  if (report.status === "error") {
+    insertRunEvent(runId, "result.evidence_gate_failed", {
+      issueCount: report.issues.length,
+      errorCodes: report.issues.filter((item) => item.severity === "error").map((item) => item.code),
+      reportPath
+    });
+    throw new ResultEvidenceGateError(report);
+  }
   const now = nowIso();
   const terminalStatus = resultHasFailedOutcome(parsed.cases) ? "FAILED" : "SUCCEEDED";
 
@@ -867,7 +969,12 @@ const ingestResultXlsx = async (
     cases: parsed.cases.length,
     bugs: parsed.bugs.length,
     parserVersion: parsed.parserVersion,
-    runStatus: terminalStatus
+    runStatus: terminalStatus,
+    resultEvidenceGate: {
+      status: report.status,
+      issueCount: report.issues.length,
+      reportPath
+    }
   };
 };
 
@@ -1706,8 +1813,13 @@ router.post("/:id/output/result-xlsx", resultUpload.single("resultXlsx"), async 
   });
 
   try {
-    insertRunEvent(runId, "result.ingest_started", { filePath: req.file.path });
-    const result = await ingestResultXlsx(runId, req.file.path);
+    const ingestOptions = {
+      resultSource: stringBodyField(req, "resultSource"),
+      currentCaseNo: stringBodyField(req, "currentCaseNo"),
+      expectedCaseNos: stringArrayBodyField(req, "expectedCaseNos")
+    };
+    insertRunEvent(runId, "result.ingest_started", { filePath: req.file.path, ...ingestOptions });
+    const result = await ingestResultXlsx(runId, req.file.path, ingestOptions);
     insertRunEvent(runId, "result.ingested", result);
     insertRunLog(runId, "INFO", "Agent result xlsx ingested", result);
     return res.status(201).json({
@@ -1719,15 +1831,18 @@ router.post("/:id/output/result-xlsx", resultUpload.single("resultXlsx"), async 
     setRunStatusWithMeta(runId, "FAILED");
     insertRunEvent(runId, "result.ingest_failed", {
       filePath: req.file.path,
-      error: error instanceof Error ? error.message : String(error)
+      error: error instanceof Error ? error.message : String(error),
+      ...(error instanceof ResultEvidenceGateError ? { resultEvidenceGate: error.report } : {})
     });
     insertRunLog(runId, "ERROR", "Agent result xlsx ingest failed", {
       filePath: req.file.path,
-      error: error instanceof Error ? error.message : String(error)
+      error: error instanceof Error ? error.message : String(error),
+      ...(error instanceof ResultEvidenceGateError ? { resultEvidenceGate: error.report } : {})
     });
-    return res.status(400).json({
-      error: "RESULT_XLSX_INGEST_FAILED",
-      message: error instanceof Error ? error.message : String(error)
+    return res.status(error instanceof ResultEvidenceGateError ? 422 : 400).json({
+      error: error instanceof ResultEvidenceGateError ? "RESULT_EVIDENCE_GATE_FAILED" : "RESULT_XLSX_INGEST_FAILED",
+      message: error instanceof Error ? error.message : String(error),
+      ...(error instanceof ResultEvidenceGateError ? { report: error.report } : {})
     });
   }
 });
@@ -1757,15 +1872,18 @@ router.post("/:id/ingest-result", async (req, res) => {
     insertRunEvent(runId, "result.ingest_failed", {
       filePath: run.result_xlsx_path,
       source: "manual",
-      error: error instanceof Error ? error.message : String(error)
+      error: error instanceof Error ? error.message : String(error),
+      ...(error instanceof ResultEvidenceGateError ? { resultEvidenceGate: error.report } : {})
     });
     insertRunLog(runId, "ERROR", "Result xlsx manual ingest failed", {
       filePath: run.result_xlsx_path,
-      error: error instanceof Error ? error.message : String(error)
+      error: error instanceof Error ? error.message : String(error),
+      ...(error instanceof ResultEvidenceGateError ? { resultEvidenceGate: error.report } : {})
     });
-    return res.status(400).json({
-      error: "RESULT_XLSX_INGEST_FAILED",
-      message: error instanceof Error ? error.message : String(error)
+    return res.status(error instanceof ResultEvidenceGateError ? 422 : 400).json({
+      error: error instanceof ResultEvidenceGateError ? "RESULT_EVIDENCE_GATE_FAILED" : "RESULT_XLSX_INGEST_FAILED",
+      message: error instanceof Error ? error.message : String(error),
+      ...(error instanceof ResultEvidenceGateError ? { report: error.report } : {})
     });
   }
 });

@@ -59,6 +59,7 @@ class CaseExecutionError extends Error {
 }
 
 const activeRuns = new Map<string, ActiveRun>();
+const pausedRuns = new Map<string, ActiveRun>();
 
 const nowIso = (): string => new Date().toISOString();
 const TERMINAL_STATUSES = new Set(["SUCCEEDED", "FAILED", "CANCELLED"]);
@@ -279,6 +280,54 @@ const createApproval = (runId: string, caseNo: string, stepNo: number, reason: s
   });
 };
 
+const isVisibleText = async (page: Page, text: string): Promise<boolean> => {
+  const locator = page.getByText(text, { exact: false }).first();
+  const count = await locator.count().catch(() => 0);
+  if (count === 0) return false;
+  return locator.isVisible().catch(() => false);
+};
+
+const captureScreenshot = async (page: Page, shotPath: string): Promise<string | null> => {
+  try {
+    await page.screenshot({ path: shotPath, fullPage: true });
+    return shotPath;
+  } catch {
+    return null;
+  }
+};
+
+const pauseForLoginRequired = async (
+  runId: string,
+  caseNo: string,
+  stepNo: number,
+  page: Page,
+  artifactsDir: string,
+  detail: DetailCollector
+): Promise<never> => {
+  const shotPath = path.join(artifactsDir, `${caseNo}_step${stepNo}_login_required.png`);
+  await page.screenshot({ path: shotPath, fullPage: true }).catch(() => undefined);
+
+  db.prepare(
+    "UPDATE run_case_steps SET status = 'WAITING_APPROVAL', actual_json = ?, updated_at = ? WHERE run_id = ? AND case_no = ? AND step_no = ?"
+  ).run(JSON.stringify({ reason: "LOGIN_REQUIRED", screenshot: shotPath }), nowIso(), runId, caseNo, stepNo);
+
+  const reason = "LOGIN_REQUIRED: 偵測到頁面顯示「載入失敗」，請先完成 SSO 登入後按 Continue";
+  createApproval(runId, caseNo, stepNo, reason, shotPath);
+
+  detail.實際行為 = "偵測到「載入失敗」，已暫停等待人工登入";
+  detail.BLOCKED原因 = "LOGIN_REQUIRED";
+  detail.錯誤原因 = reason;
+  detail.截圖路徑 = shotPath;
+
+  setCaseResult(runId, caseNo, "BLOCKED", "ENV_BLOCKED", {
+    ...detail,
+    reason: "LOGIN_REQUIRED",
+    stepNo
+  });
+
+  throw new CaseExecutionError(`MANUAL_CHECK_REQUIRED@${stepNo}`, detail);
+};
+
 const isRunCancelled = (runId: string): boolean => {
   const row = db.prepare("SELECT status FROM runs WHERE id = ?").get(runId) as { status: string } | undefined;
   return row?.status === "CANCELLED";
@@ -344,9 +393,23 @@ const closeBrowser = async (state: ActiveRun): Promise<void> => {
 };
 
 const launchBrowser = async (interactiveMode: boolean): Promise<{ browser: Browser; context: BrowserContext; page: Page }> => {
+  if (interactiveMode) {
+    fs.mkdirSync(path.resolve(config.playwrightProfileDir), { recursive: true });
+    const context = await chromium.launchPersistentContext(path.resolve(config.playwrightProfileDir), {
+      headless: false,
+      slowMo: Math.max(config.playwrightSlowMoMs, 200)
+    });
+    const page = context.pages()[0] ?? (await context.newPage());
+    const browser = context.browser();
+    if (!browser) {
+      throw new Error("PERSISTENT_BROWSER_NOT_AVAILABLE");
+    }
+    return { browser, context, page };
+  }
+
   const browser = await chromium.launch({
-    headless: interactiveMode ? false : config.playwrightHeadless,
-    slowMo: interactiveMode ? Math.max(config.playwrightSlowMoMs, 200) : config.playwrightSlowMoMs
+    headless: config.playwrightHeadless,
+    slowMo: config.playwrightSlowMoMs
   });
   const context = await browser.newContext();
   const page = await context.newPage();
@@ -404,7 +467,21 @@ const tryClickVisibleText = async (page: Page, candidates: string[], timeoutMs: 
 
 const ensureInteractiveEntry = async (runId: string, run: RunRow, page: Page): Promise<void> => {
   await page.goto(run.dev_url, { waitUntil: "domcontentloaded", timeout: config.playwrightTimeoutMs });
-  await page.waitForTimeout(600);
+  insertRunLog(runId, "INFO", "Waiting for interactive login/session", { timeoutMs: config.playwrightInteractiveLoginWaitMs });
+  const deadline = Date.now() + config.playwrightInteractiveLoginWaitMs;
+  let interactiveReady = false;
+  while (Date.now() < deadline) {
+    const current = page.url();
+    if (/galaxy\.games\.gamania\.com\/biapi-dev\/testview\//i.test(current)) {
+      interactiveReady = true;
+      break;
+    }
+    await page.waitForTimeout(1000);
+  }
+  if (!interactiveReady) {
+    throw new Error("INTERACTIVE_LOGIN_TIMEOUT");
+  }
+  await page.waitForTimeout(500);
 
   if (/\/edit\b/i.test(page.url())) {
     insertRunLog(runId, "INFO", "Interactive entry ready", { url: page.url(), source: "dev_url" });
@@ -836,6 +913,11 @@ const processCase = async (
     const targetType = (step.target_type ?? "").toLowerCase();
 
     try {
+      const loadFailedVisible = await isVisibleText(page, "載入失敗");
+      if (loadFailedVisible) {
+        await pauseForLoginRequired(run.id, item.case_no, step.step_no, page, artifactsDir, detail);
+      }
+
       if (step.require_approval) {
         const shotPath = path.join(artifactsDir, `${item.case_no}_step${step.step_no}_approval.png`);
         await page.screenshot({ path: shotPath, fullPage: true });
@@ -859,6 +941,12 @@ const processCase = async (
       const tryCount = Math.max(0, step.retry) + 1;
       let lastError = "";
       let passed = false;
+      let stepBeforeShotPath: string | null = null;
+
+      if (options.interactiveMode) {
+        const beforePath = path.join(artifactsDir, `${item.case_no}_step${step.step_no}_before.png`);
+        stepBeforeShotPath = await captureScreenshot(page, beforePath);
+      }
 
       for (let attempt = 1; attempt <= tryCount; attempt += 1) {
         try {
@@ -1036,10 +1124,28 @@ const processCase = async (
             const data = result as { screenshot?: string };
             if (data.screenshot) detail.截圖路徑 = data.screenshot;
           }
+          if (await isVisibleText(page, "載入失敗")) {
+            await pauseForLoginRequired(run.id, item.case_no, step.step_no, page, artifactsDir, detail);
+          }
+          let stepAfterShotPath: string | null = null;
+          if (options.interactiveMode) {
+            const afterPath = path.join(artifactsDir, `${item.case_no}_step${step.step_no}_after.png`);
+            stepAfterShotPath = await captureScreenshot(page, afterPath);
+          }
           setStepResult(run.id, item.case_no, step.step_no, "PASS", {
             attempt,
-            result
+            result,
+            evidence: {
+              before: stepBeforeShotPath,
+              after: stepAfterShotPath
+            }
           });
+          if (stepBeforeShotPath) {
+            detail[`步驟${step.step_no}前截圖`] = stepBeforeShotPath;
+          }
+          if (stepAfterShotPath) {
+            detail[`步驟${step.step_no}後截圖`] = stepAfterShotPath;
+          }
           passed = true;
           break;
         } catch (error) {
@@ -1066,7 +1172,19 @@ const processCase = async (
         detail.實際行為 = `步驟 ${step.step_no} 失敗`;
         detail.錯誤原因 = lastError || `STEP_FAILED@${step.step_no}`;
         if (failShotPath) detail.截圖路徑 = failShotPath;
-        setStepResult(run.id, item.case_no, step.step_no, "FAIL", undefined, lastError);
+        setStepResult(
+          run.id,
+          item.case_no,
+          step.step_no,
+          "FAIL",
+          {
+            evidence: {
+              before: stepBeforeShotPath,
+              fail: failShotPath || null
+            }
+          },
+          lastError
+        );
         page.off("request", reqHandler);
         page.off("response", respHandler);
         throw new CaseExecutionError(lastError || `STEP_FAILED@${step.step_no}`, detail);
@@ -1182,6 +1300,7 @@ const runJob = async (runId: string): Promise<void> => {
   }
 
   const interactiveMode = (run.execution_mode ?? "offline") === "interactive";
+  let preserveSessionForApproval = false;
 
   const cases = db
     .prepare(
@@ -1194,21 +1313,42 @@ const runJob = async (runId: string): Promise<void> => {
     return;
   }
 
-  const state: ActiveRun = { startedAt: Date.now(), cancelRequested: false };
+  const resumedState = pausedRuns.get(runId);
+  if (resumedState) {
+    pausedRuns.delete(runId);
+  }
+  const state: ActiveRun = resumedState
+    ? { ...resumedState, startedAt: Date.now(), cancelRequested: false }
+    : { startedAt: Date.now(), cancelRequested: false };
   activeRuns.set(runId, state);
   setRunStatus(runId, "RUNNING");
-  insertRunLog(runId, "INFO", "Run started", { totalCases: cases.length, executionMode: run.execution_mode ?? "offline" });
+  insertRunLog(runId, "INFO", "Run started", {
+    totalCases: cases.length,
+    executionMode: run.execution_mode ?? "offline",
+    resumed: Boolean(resumedState)
+  });
 
   const artifactsDir = ensureArtifactsDir(runId);
   const stopHeartbeat = startHeartbeat(runId, state);
   let crashCount = 0;
 
   try {
-    const launched = await launchBrowser(interactiveMode);
-    state.browser = launched.browser;
-    state.context = launched.context;
-    state.page = launched.page;
-    if (interactiveMode) {
+    const shouldRelaunch =
+      !state.browser ||
+      !state.context ||
+      !state.page ||
+      !state.browser.isConnected() ||
+      state.page.isClosed();
+    if (shouldRelaunch) {
+      const launched = await launchBrowser(interactiveMode);
+      state.browser = launched.browser;
+      state.context = launched.context;
+      state.page = launched.page;
+    }
+    if (!state.page) {
+      throw new Error("PAGE_NOT_INITIALIZED_AFTER_LAUNCH");
+    }
+    if (interactiveMode && shouldRelaunch) {
       await ensureInteractiveEntry(runId, run, state.page);
     }
 
@@ -1264,6 +1404,9 @@ const runJob = async (runId: string): Promise<void> => {
         } else {
           setRunStatus(runId, "WAITING_APPROVAL");
           insertRunLog(runId, "WARN", "Run paused for manual approval", { caseNo: item.case_no, message });
+          if (interactiveMode) {
+            preserveSessionForApproval = true;
+          }
           return;
         }
         insertRunLog(runId, "ERROR", "Case execution failed", { caseNo: item.case_no, category, message });
@@ -1306,6 +1449,9 @@ const runJob = async (runId: string): Promise<void> => {
         unresolved: unresolved.count,
         pendingApprovals: pendingApprovals.count
       });
+      if (interactiveMode && pendingApprovals.count > 0) {
+        preserveSessionForApproval = true;
+      }
     } else if (blockedOrFail.count > 0) {
       setRunStatus(runId, "FAILED");
       insertRunLog(runId, "ERROR", "Run finished with blocked/failed cases", {
@@ -1327,7 +1473,12 @@ const runJob = async (runId: string): Promise<void> => {
     });
   } finally {
     stopHeartbeat();
-    await closeBrowser(state);
+    if (preserveSessionForApproval) {
+      pausedRuns.set(runId, state);
+    } else {
+      await closeBrowser(state);
+      pausedRuns.delete(runId);
+    }
     activeRuns.delete(runId);
   }
 };
@@ -1345,10 +1496,20 @@ export const startRun = (runId: string): { accepted: boolean; reason?: string } 
 export const requestRunCancel = (runId: string): void => {
   const active = activeRuns.get(runId);
   if (active) active.cancelRequested = true;
+  const paused = pausedRuns.get(runId);
+  if (paused) {
+    pausedRuns.delete(runId);
+    void closeBrowser(paused);
+  }
 };
 
 export const hasConnectedPlaywrightBrowser = (): boolean => {
   for (const state of activeRuns.values()) {
+    if (state.browser?.isConnected()) {
+      return true;
+    }
+  }
+  for (const state of pausedRuns.values()) {
     if (state.browser?.isConnected()) {
       return true;
     }

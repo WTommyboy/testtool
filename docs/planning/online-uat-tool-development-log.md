@@ -1,0 +1,416 @@
+# 線上 UAT Tool 開發與規劃日誌
+
+最後更新：2026-04-29
+
+本文件記錄「UAT Tool 線上派工 + Mac Agent」這條路徑的歷史決策、設計理由、目前架構與後續待辦。它的用途是跨聊天室、跨 session 交接，不取代 `AGENTS.md`、Layer rules、authoring spec 或實作 spec。
+
+每次修改線上工具的 run packet、Mac Agent、Tool Bridge、rule index、current case pack、result pipeline 或 evidence gate 時，請同步更新本文件。
+
+---
+
+## 1. 範圍
+
+本文件涵蓋線上工具端：
+
+- Tommy 從 UAT Tool Web UI 建立 run。
+- 上傳 xlsx / 指派文字 / 測試執行說明 / reference files。
+- Railway backend 建立 run 並派工。
+- Tommy Mac Agent 下載 run workspace。
+- Codex 在 `~/.uat-agent/runs/<runId>/` 讀取 `input/` 內的執行包。
+- 結果產生到 `output/result.xlsx`，由 Agent 上傳回 Railway。
+
+不涵蓋：
+
+- Tommy 直接在 `/Users/tommy/Downloads/codex_galaxy` 開 Codex 跑本機 xlsx。
+- 本機 `outputs/update_case_result.mjs` 直接寫原始 xlsx。
+- 本機 ACTIVE runner 的實際操作流程。
+
+本機手動端請看：
+
+- `/Users/tommy/Downloads/codex_galaxy/uat-tool/docs/planning/local-manual-device-development-log.md`
+
+---
+
+## 2. 為什麼需要這份日誌
+
+線上工具的目標不是只把本機手動流程搬上 Web，而是建立更穩定的派工與 evidence pipeline。
+
+過去本機端累積的問題：
+
+- Codex 每次全文讀規則，速度慢且容易混入舊上下文。
+- 長對話會 compact，甚至遇到 remote compact stream disconnect。
+- 憑聊天記憶維持規則，容易漏掉決策理由。
+- testcase 由 Claude 依記憶產生，缺少穩定 authoring spec。
+- evidence 與 result 寫回過度依賴 Codex 自律。
+
+線上工具要解決的是：
+
+- 讓 Codex 讀「編譯後的當前題執行包」，而不是全文讀所有規則。
+- 讓 backend / Agent 產生必要上下文與安全邊界。
+- 讓工具層做 gate，例如缺 evidence、不合法授權、多題混跑、stale evidence 都要 reject。
+- 讓本機 demo 與線上 Agent 使用同一套概念：current case、rule index、helper guidance、result evidence。
+
+---
+
+## 3. 核心架構決策
+
+### 3.1 Rules 仍是 source of truth，但執行時讀 run packet
+
+Tommy 曾問：以後是不是不讀 agent 和 rules？
+
+決策是：不是不用 rules，而是不讓 Codex 每次全文讀 rules。
+
+正確架構：
+
+- `AGENTS.md`、`BI_TEST_RULES/`、Layer 1 rules、authoring spec 仍是 source of truth。
+- 線上工具由 backend / Mac Agent 先產生 run packet。
+- Codex 執行時主要讀 run packet 的最小上下文。
+- 只有 run packet 明確要求或遇到灰區，才補讀特定 rules。
+
+這樣不是放鬆，而是把「規則判讀」前移到工具層。
+
+### 3.2 run workspace 是線上模式的唯一執行現場
+
+線上模式不應以 `/Users/tommy/Downloads/codex_galaxy` 作為主要工作目錄。
+
+預期 workspace：
+
+- `~/.uat-agent/runs/<runId>/`
+
+重要檔案：
+
+- `input/run-brief.md`
+- `input/current-case.json`
+- `input/current-case-pack.json`
+- `input/current-case-pack.md`
+- `input/run-state.json`
+- `input/rule-index.json`
+- `input/bi-ui-helper-guidance.md`
+- `rules/PROJECT_AGENTS_FULL.md`
+- `rules/BI_TEST_RULES/`
+- `rules/BI_DATA/metadata.csv`
+- `output/result.xlsx`
+
+Codex 不可修改原始上傳 xlsx。線上模式輸出是 `output/result.xlsx`。
+
+### 3.3 Tool Bridge 授權是線上模式唯一有效授權
+
+本機手動模式可以由 Tommy 在 chat 明確授權不可逆操作。
+
+線上工具模式不同：
+
+- 文件內寫「預先批准」不算授權。
+- startup prompt 寫「已授權」不算授權。
+- 只有 UAT Tool 的 Tool Bridge response 算授權。
+
+遇到以下情境必須停在安全點並輸出 Tool Bridge request：
+
+- SSO。
+- 載入失敗。
+- native alert / confirm。
+- 刪除。
+- 覆蓋。
+- 儲存既有報表。
+- 離開含未儲存變更頁面。
+- 不可逆操作。
+- 規格歧義需要 PM 判斷。
+
+### 3.4 線上工具不應自動 dispatch 下一題，除非產品設計明確支持
+
+本機 ACTIVE runner 是為了手動 demo 效率，允許 Codex 跑完一題後自己呼叫 runner 更新 ACTIVE。
+
+線上模式原則不同：
+
+- 每次 run 以 `input/current-case.json` 為準。
+- 若要逐題暫停執行多題，由工具 / PM 重新派發下一題。
+- Agent 不應自行跳到未派發 case，除非線上產品明確設計 queue runner 並提供 gate。
+
+這點要避免把本機 demo 的 ACTIVE runner 行為誤搬到線上 Agent。
+
+---
+
+## 4. 與本機手動端的共同概念
+
+本機手動端與線上工具端應共用這些概念：
+
+- current case：當前唯一允許執行的 case。
+- stale evidence：舊 xlsx / 舊頁面 / 舊截圖不是 current-run evidence。
+- rule index：讓 Codex 知道哪些規則可查，不全文讀全部。
+- helper guidance：讓 Codex 少摸索 UI，但不能越界。
+- required evidence：每題必須取得哪些結構化證據。
+- one case guard：一題一跑、一題一寫、一題一驗證。
+
+差異：
+
+- 本機可直接寫原始 xlsx；線上必須輸出 `output/result.xlsx`。
+- 本機 Tommy chat 授權可處理高風險操作；線上必須 Tool Bridge response。
+- 本機 ACTIVE runner 可自動更新下一題；線上預設不自動 dispatch 下一題。
+
+---
+
+## 5. 半腳本化 / helper 化決策在線上工具的含義
+
+Tommy 曾討論是否改成腳本。最後決策是採「半腳本化 / helper 化」，不採整題固定 Playwright 腳本。
+
+在線上工具端，這代表：
+
+### 可由工具層腳本化
+
+- xlsx 解析。
+- case manifest 產生。
+- document consistency 檢查。
+- run brief 產生。
+- rule index 產生。
+- current case pack 產生。
+- helper guidance 產生。
+- result schema 檢查。
+- result.xlsx 產生 / 合併。
+- evidence presence gate。
+- Tool Bridge request / response 對帳。
+
+### 可由 helper guidance 輔助
+
+- 指示 Codex 如何用真實 UI 清空篩選。
+- 指示 Codex 如何選欄位、選 operator、輸入值。
+- 指示 Codex 如何設定時間與顯示方式。
+- 指示 Codex 如何按執行後驗證 network / chart / DOM 變化。
+- 指示 Codex 如何讀 Chart.js data 或 DOM list。
+
+### 禁止變成腳本平台
+
+- 不可讓 helper 直接跑完整份 testcase。
+- 不可讓 helper 一次跑多題。
+- 不可讓 helper 直接判 PASS/FAIL。
+- 不可直接打 BI API 取代 UI。
+- 不可用 JS setter 設定測試狀態。
+- 不可用 `browser_evaluate` 觸發狀態變更繞 UI。
+
+---
+
+## 6. Authoring spec 的角色
+
+原本 testcase 多由 Claude 靠記憶與前次成功樣板產生，缺少明確 authoring rules。
+
+後來決定：
+
+- 不另起一套新規範。
+- 直接升級 `/Users/tommy/Downloads/codex_galaxy/uat-tool/docs/authoring/UAT_三文件撰寫規則.md` 成唯一 authoring spec。
+
+已更新的方向：
+
+- 明定本專案採半腳本化 / helper 化。
+- 維持 xlsx 核心 16 欄，不先強制新增欄位。
+- 在 `測試執行說明_*.md` 每題底下新增 Helper hints。
+- Helper hints 可包含：
+  - `automationLevel`
+  - `operationTemplate`
+  - `params`
+  - `requiredEvidence`
+- Claude 產檔 prompt 與一致性檢查表要同步補上 helper/script 邊界。
+
+線上工具後續應讀取 Helper hints，將其納入 `current-case-pack` 或 `bi-ui-helper-guidance`，而不是只靠關鍵字推斷。
+
+---
+
+## 7. 目前線上工具相關檔案
+
+目前已存在的關鍵檔案：
+
+- `/Users/tommy/Downloads/codex_galaxy/uat-tool/agent/src/current-case-pack.ts`
+- `/Users/tommy/Downloads/codex_galaxy/uat-tool/agent/src/rule-index.ts`
+- `/Users/tommy/Downloads/codex_galaxy/uat-tool/agent/src/bi-ui-helper-guidance.ts`
+
+### `current-case-pack.ts`
+
+目前功能：
+
+- 讀取 current case。
+- 依 case 文字推斷 evidence templates，例如：
+  - metadata dropdown。
+  - network request。
+  - chart datasets。
+  - UI workflow。
+- 產生 `current-case-pack.json` 與 `current-case-pack.md`。
+- 明確聲明 pack 是 plan card，不是 result。
+- 要求 current-run evidence 後才能寫 result。
+
+後續方向：
+
+- 接入 authoring spec 的 Helper hints。
+- 將 inferred templates 與 explicit helper hints 合併。
+- 若 explicit helper hints 與 inferred templates 衝突，標示 warning，不要靜默覆蓋。
+
+### `rule-index.ts`
+
+目前定位：
+
+- 應產生可查詢的 rule index。
+- 讓 Codex 不必全文讀所有 rules。
+- 將規則切成可引用章節或摘要。
+
+後續方向：
+
+- 針對當前 case 的 `riskLevel`、`testTarget`、`cleanupChecklist`、`operationTemplate`，標出必讀 rule keys。
+- 保留 source path 與章節引用，避免摘要失真。
+
+### `bi-ui-helper-guidance.ts`
+
+目前功能：
+
+- 產生 `input/bi-ui-helper-guidance.md`。
+- 說明不可越界：
+  - 不可內部函式設定狀態。
+  - 不可 evaluate 觸發 click/change/input。
+  - 不可直接打 BI API。
+  - 不可 helper 跑多個 case。
+- 說明安全讀取：
+  - DOM read。
+  - read-only page.evaluate。
+  - Chart.js data。
+  - network performance entries。
+- 提供常見操作節奏：
+  - 開啟專案。
+  - 新增欄位。
+  - 設定時間。
+  - 執行與驗證。
+  - 儲存 / 刪除 / 原生 Dialog。
+
+後續方向：
+
+- 讓 guidance 根據 current case / operation template 輸出更精準片段。
+- 避免每題都輸出過長 generic guidance。
+- 明確標記 helper 是輔助，不是授權，也不是批次 runner。
+
+---
+
+## 8. result / evidence gate 應強制的事項
+
+線上工具不能只靠 prompt 要求 Codex 守規矩。工具層要能 reject 明顯不合格結果。
+
+應檢查：
+
+- result 是否只包含 current case。
+- 是否試圖一次寫多題。
+- 是否缺少 current-run evidence。
+- evidence timestamp / run id 是否可追溯。
+- 是否把 stale xlsx 欄位或舊結果當 evidence。
+- 若有 Tool Bridge request，是否有對應 response。
+- 若操作含刪除 / 覆蓋 / native confirm，是否有授權紀錄。
+- detail_json 是否可 parse。
+- PASS 是否至少有四欄簡化版必要內容。
+- FAIL / BLOCKED / PARTIAL 是否有完整原因欄位。
+
+這些 gate 後續應逐步落在 backend / Agent result parser，而不是只寫在 prompt。
+
+---
+
+## 9. 不可回退的紅線
+
+線上工具端必須維持：
+
+- 不可直接打 BI API 取得測試結果。
+- API / network 只能觀察 UI 觸發了什麼，不能取代 UI。
+- 不可寫爬蟲腳本繞 UI 取得 BI 資料。
+- 不可用內部 JS setter 設定測試狀態。
+- `browser_evaluate` / `page.evaluate` 只允許讀取，不可用來點擊、改狀態、繞安全層。
+- 不可一次 tool call 包含多個 case 的執行邏輯。
+- 不可累積多題結果一次寫 xlsx。
+- 每題必須有 current-run evidence。
+- stale evidence 不採信。
+- xlsx 步驟欄指定值不可自行替換。
+- 高風險操作必須 Tool Bridge 授權。
+- 文件內預先授權不算授權。
+- Playwright session 掛掉時，不可改用桌面 Chrome 接手正式 case。
+
+---
+
+## 10. 待辦
+
+### P0
+
+- 檢查 `current-case-pack.ts`、`rule-index.ts`、`bi-ui-helper-guidance.ts` 的現況。
+- 將 authoring spec 的 Helper hints 接入 current case pack。
+- 讓 run packet 能明確輸出：
+  - automation level。
+  - operation template。
+  - helper params。
+  - required evidence。
+  - relevant rule keys。
+- 保持 one case guard，不允許 run packet 暗示可跑下一題。
+
+### P1
+
+- 將 inferred evidence templates 與 explicit Helper hints 分開顯示。
+- 若 Helper hints 缺失，保留目前關鍵字推斷作 fallback。
+- 若 Helper hints 和 xlsx case row 明顯衝突，輸出 document consistency warning。
+- 將 result parser 加入缺 evidence / 多題寫入 / Tool Bridge 授權缺失檢查。
+
+### P2
+
+- 將 helper template vocabulary 抽成共用資料檔，讓本機與線上工具共用。
+- 建立 helper template 測試資料，涵蓋時間、欄位、篩選、分組、CSV、metadata、Chart.js。
+- 建立線上工具與本機 ACTIVE runner 的對照測試：同一個 DEMO case 產出相同概念的 guidance。
+
+---
+
+## 11. 日誌更新格式
+
+後續每次更新線上工具流程，請在本節下方追加：
+
+```md
+### YYYY-MM-DD HH:mm - 標題
+
+- 背景：
+- 決策：
+- 修改檔案：
+- 驗證：
+- 後續影響：
+```
+
+### 2026-04-29 - 建立線上 UAT Tool 開發與規劃日誌
+
+- 背景：原聊天歷史過長且 compact 失敗，不能再靠聊天上下文交接。
+- 決策：將線上工具端與本機手動端拆成兩份 planning log，長期維護。
+- 修改檔案：新增本文件。
+- 驗證：文件建立後應可作為新聊天室交接來源。
+- 後續影響：後續修改 run packet、Mac Agent、Tool Bridge、rule index、current case pack、helper guidance 時都要更新本文件。
+
+### 2026-04-29 07:56 - Run packet 輸出 Helper guidance
+
+- 背景：線上端 `current-case-pack` 只靠關鍵字推斷 evidence，`bi-ui-helper-guidance` 也只有 generic recipe，尚未讀取 authoring spec 的 Helper hints。
+- 決策：新增 Helper hints parser，從已下載的 md / supporting doc 中抓當前 case 的 `Helper hints` JSON；將 explicit hints 與 inferred evidence 分開呈現，再合併成本題 required evidence。
+- 修改檔案：`uat-tool/agent/src/helper-hints.ts`、`current-case-pack.ts`、`bi-ui-helper-guidance.ts`、`rule-index.ts`、`task-runner.ts`。
+- 驗證：`npm run typecheck --prefix uat-tool/agent`、`npm run build --prefix uat-tool/agent` 通過；以 `tsx` inline sample 驗證 parser 可讀出 `automationLevel`、`operationTemplate`、`params`、`requiredEvidence`。
+- 後續影響：run packet 會輸出 case-specific helper guidance 與 recommended rule keys；Helper hints 仍不是授權、不是批次 runner、不能判 PASS/FAIL。
+
+### 2026-04-29 08:06 - Helper hints 子類與未落地 gate 風險登記
+
+- 背景：authoring spec 允許 `requiredEvidence` 使用類型或子類；同時 Helper hints 接線完成不代表 document-consistency / result evidence gate 已完成。
+- 決策：Agent parser 放寬 `requiredEvidence` 子類判定，例如 `network.requestBody.dateRange` 視為 `network.requestBody` 的合法子類；將 Helper hints vs xlsx 衝突、result/evidence gate、fallback source case 風險保留為後續 gate 工作。
+- 修改檔案：`uat-tool/agent/src/helper-hints.ts`；本次也同步更新本機 parser，避免本機/線上立即分歧。
+- 驗證：待本次 typecheck/build 一併跑。
+- 後續影響：P1/P0 待辦仍包含：(1) `document-consistency.ts` 檢查 Helper hints vs xlsx row 衝突並輸出 warning；(2) result parser/evidence gate reject 多題寫入、缺 current-run evidence、缺 Tool Bridge response；(3) `result-writer.readFirstInputCase` fallback 不應在 B-01/C-01 起跑時誤標 workbook 第一題；(4) 中期抽共用 helper vocabulary/fixture，避免本機與 Agent parser drift。
+
+### 2026-04-29 08:14 - 新增 Helper hints run packet fixture
+
+- 背景：需要用 temporary fixture 驗證 Helper hints 可一路流到線上 Agent run packet，而不是只靠 parser unit sample。
+- 決策：新增 `npm run verify:helper-hints`，同一個暫存 fixture 同時驗本機 prompt / ACTIVE prompt 與 Agent `current-case-pack`、`bi-ui-helper-guidance`、`rule-index`。
+- 修改檔案：`uat-tool/scripts/verify-helper-hints-fixture.ts`、`uat-tool/package.json`。
+- 驗證：`npm run verify:helper-hints` 已通過，確認 `current-case-pack.json helperHints.found=true`、`operationTemplate=metric_filter_operator`、`params` 完整、`requiredEvidence` 含子類；`current-case-pack.md` 有 Helper Hints；`bi-ui-helper-guidance.md` 有 Template Notes；`rule-index.json currentCaseRecommendations.ruleIds` 含 `bi-ui-helper-guidance` 與 `network-observation-guidance`。
+- 後續影響：fixture 不做 result/evidence gate；後續 gate 工作仍獨立排程。
+
+### 2026-04-29 08:29 - 三文件與 Helper hints consistency checker
+
+- 背景：線上派工前應先擋測試包設計矛盾，而不是等 Codex 執行後才由 result/evidence gate 發現。
+- 決策：新增 `test-package-consistency` report，重用 `case-manifest.ts` 解析 xlsx，檢查 xlsx、Codex 指派文字、測試執行說明、Helper hints 的起始 case、執行順序、風險等級、測試標的、狀態清理、helper caseId / vocabulary / evidence 對齊。error 併入 `document-consistency.json` 以阻擋 browser execution；warning 只提醒。
+- 修改檔案：`uat-tool/agent/src/test-package-consistency.ts`、`document-consistency.ts`、`task-runner.ts`、`rule-index.ts`、`reference-index.ts`、`uat-tool/scripts/check-test-package-consistency.ts`、`uat-tool/scripts/verify-package-consistency-fixture.ts`、`uat-tool/package.json`。
+- 驗證：`npm run verify:package-consistency` 已通過，涵蓋好 fixture status=ok、風險等級衝突 blocking error、DEMO001 v1_4 無 blocking error；`npm run typecheck --prefix uat-tool/agent`、`npm run typecheck --prefix uat-tool`、`npm run build --prefix uat-tool/agent` 均通過。
+- 後續影響：run packet 會包含 `input/test-package-consistency.json`，run brief / reference index / rule index 都會標出它。這一步只擋測試包設計矛盾，不做 result/evidence gate。
+
+### 2026-04-29 10:35 - Result/evidence gate 接入 result.xlsx ingest
+
+- 背景：測試包設計矛盾已先擋住；下一層要防止 Codex 執行結果不合格仍被線上工具入庫，特別是多題寫入、缺 current-run evidence、缺 Tool Bridge response、Agent fallback result 誤當可信 UAT 結果。
+- 決策：在 server `result.xlsx` ingest 前加入 `result-evidence-gate`，重用既有 `parseResultXlsx`，產出 `*.result-evidence-gate.json` report；blocking error 回 422 並不寫入 run_cases/bugs。Mac Agent 上傳時帶 `resultSource`、`currentCaseNo`、`expectedCaseNos`，fallback workbook 會被 gate 擋下；fallback source case 也優先用 current case metadata，不再只取 workbook 第一題。
+- 修改檔案：`uat-tool/src/result-parser/result-evidence-gate.ts`、`uat-tool/src/runs.ts`、`uat-tool/agent/src/task-runner.ts`、`uat-tool/agent/src/result-writer.ts`、`uat-tool/scripts/check-result-evidence-gate.ts`、`uat-tool/scripts/verify-result-evidence-gate.ts`、`uat-tool/package.json`。
+- 驗證：`npm run verify:result-evidence-gate` 已通過，涵蓋單題 current-run evidence 通過、多題 result、缺 evidence、agent fallback、缺 Tool Bridge response、invalid detail_json 會被擋；`npm run typecheck --prefix uat-tool`、`npm run typecheck --prefix uat-tool/agent`、`npm run build --prefix uat-tool`、`npm run build --prefix uat-tool/agent` 均通過。
+- 後續影響：線上工具現在具備第一層 result/evidence gate，但仍是最小版 heuristic。後續 P1 可把 Helper hints 的 `requiredEvidence` 與實際 detail_json evidence key 做更精準對照，並把 Tool Bridge request/response server-side 關聯納入報告。

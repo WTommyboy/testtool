@@ -18,6 +18,7 @@ export const config = {
   port: parseNumber(process.env.PORT, 3000),
   dbPath: process.env.DB_PATH ?? "./data/uat.db",
   storageRoot: process.env.STORAGE_ROOT ?? "./storage",
+  playwrightProfileDir: process.env.PLAYWRIGHT_PROFILE_DIR ?? "./storage/playwright-profile",
   defaultTimezone: process.env.DEFAULT_TIMEZONE ?? "Asia/Taipei",
   anthropicApiKey: process.env.ANTHROPIC_API_KEY ?? "",
   claudeModel: process.env.CLAUDE_MODEL ?? "claude-sonnet-4-20250514",
@@ -30,6 +31,7 @@ export const config = {
   playwrightTimeoutMs: parseNumber(process.env.PLAYWRIGHT_TIMEOUT_MS, 30000),
   playwrightHeartbeatIntervalMs: parseNumber(process.env.PLAYWRIGHT_HEARTBEAT_INTERVAL_MS, 15000),
   playwrightHealthcheckTimeoutMs: parseNumber(process.env.PLAYWRIGHT_HEALTHCHECK_TIMEOUT_MS, 5000),
+  playwrightInteractiveLoginWaitMs: parseNumber(process.env.PLAYWRIGHT_INTERACTIVE_LOGIN_WAIT_MS, 120000),
   playwrightCrashDownMs: parseNumber(process.env.PLAYWRIGHT_CRASH_DOWN_MS, 30000),
   playwrightCrashConsecutiveThreshold: parseNumber(process.env.PLAYWRIGHT_CRASH_CONSECUTIVE_THRESHOLD, 3)
 };

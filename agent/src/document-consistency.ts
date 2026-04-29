@@ -23,9 +23,10 @@ const writeJson = (filePath: string, value: unknown): void => {
 export const writeDocumentConsistency = (
   runDir: string,
   caseManifest: CaseManifestResult,
-  startCaseHint: StartCaseHint | null
+  startCaseHint: StartCaseHint | null,
+  externalIssues: DocumentConsistencyIssue[] = []
 ): string => {
-  const issues: DocumentConsistencyIssue[] = [];
+  const issues: DocumentConsistencyIssue[] = [...externalIssues];
   const selectedCaseNo = caseManifest.currentCaseNo;
   const requestedCaseNo = startCaseHint?.caseNo ?? caseManifest.currentCaseSelection?.requestedCaseNo ?? null;
   const selectedCase = caseManifest.cases.find((item) => item.caseNo === selectedCaseNo) ?? null;
@@ -83,6 +84,7 @@ export const writeDocumentConsistency = (
     currentCaseSelection: caseManifest.currentCaseSelection,
     checks: [
       "If status=error, Codex must not touch the browser.",
+      "test-package-consistency errors are included here and must block browser execution.",
       "If startup instruction skips earlier workbook cases that are not marked completed in the workbook, emit Tool Bridge ambiguity_decision.",
       "Workbook rows from previous runs are stale evidence unless this run packet explicitly allows same-run carryover."
     ],

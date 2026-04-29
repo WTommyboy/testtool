@@ -20,6 +20,7 @@ import { writeEvidenceTemplates, type EvidenceTemplateFiles } from "./evidence-t
 import { writeNetworkObservationGuidance } from "./network-observation-guidance";
 import { writeReferenceIndex } from "./reference-index";
 import { writeResultTemplate } from "./result-template";
+import { writeTestPackageConsistencyReport } from "./test-package-consistency";
 
 const getRunId = (message: AgentMessage): string => {
   const runId = message.payload.run_id;
@@ -189,6 +190,7 @@ const writeRunBrief = (
     guides.caseManifest.currentCaseSelection
       ? `- current_case_selection: ${guides.caseManifest.currentCaseSelection.reason}; requested=${guides.caseManifest.currentCaseSelection.requestedCaseNo ?? "(none)"}; source=${guides.caseManifest.currentCaseSelection.source ?? "(none)"}`
       : "- current_case_selection: (unavailable)",
+    `- test_package_consistency: ${guides.testPackageConsistencyPath}`,
     `- document_consistency: ${guides.documentConsistencyPath}`,
     `- current_case_pack: ${guides.currentCasePackMarkdownPath}`,
     `- current_case_pack_json: ${guides.currentCasePackJsonPath}`,
@@ -220,20 +222,21 @@ const writeRunBrief = (
     "",
     "## Fast Path",
     "1. Confirm testcase workbook and startup instruction exist.",
-    "2. Read `input/document-consistency.json`. If status=error, do not touch the browser; emit Tool Bridge ambiguity_decision.",
+    "2. Read `input/test-package-consistency.json` and `input/document-consistency.json`. If either status=error, do not touch the browser; emit Tool Bridge ambiguity_decision.",
     "3. Read `input/preflight-auth-check.md` and perform only the auth/reachability preflight before deep domain rule loading.",
-    "4. Read `input/current-case-pack.md`, `input/current-case-pack.json`, and `input/run-state.json` before loading full testcase/supporting docs.",
+    "4. Read `input/current-case-pack.md`, `input/current-case-pack.json`, and `input/run-state.json` before loading full testcase/supporting docs. If Helper hints are present, treat them as single-case UI guidance only.",
     "5. Read `input/reference-index.json` for exact paths; avoid broad filesystem search.",
     "6. Read `input/rule-index.json` and load only the smallest rule file required for the current decision.",
     biMetadataCsv
       ? "7. If the current BI case needs metadata counts, use the copied `rules/BI_DATA/metadata.csv`; do not search the workspace for another metadata source first."
       : "7. If the current BI case needs metadata counts and no baseline/reference CSV is downloaded, use uploaded supporting docs before doing broad filesystem searches.",
-    "8. For BI UI operations, read `input/bi-ui-helper-guidance.md` before exploring the page from scratch.",
+    "8. For BI UI operations, read `input/bi-ui-helper-guidance.md`; it includes operationTemplate guidance when the current case provides Helper hints.",
     "9. Use `input/evidence-templates/index.json` and only the current-case template(s) when writing evidence/detail_json.",
     "10. Execute one case at a time, write evidence/result for that case, then move to the next case JSON if needed.",
     "",
     "## Hard Gates",
     "- No trusted PASS/FAIL without current-run evidence.",
+    "- A test-package-consistency error is a testcase design blocker. Do not open Playwright before PM resolves it.",
     "- Old workbook rows, existing reports, and previous run artifacts are stale unless the testcase explicitly says to reuse them.",
     "- If SSO, native alert/confirm, irreversible operation, or ambiguity blocks progress, stop and emit a Tool Bridge request.",
     "- A document-consistency error is an ambiguity blocker. Do not open Playwright before PM resolves it.",
@@ -277,6 +280,7 @@ type GeneratedRunGuides = {
   preflightGuidancePath: string;
   runStatePath: string;
   supportingDocsManifestPath: string;
+  testPackageConsistencyPath: string;
   documentConsistencyPath: string;
   currentCasePackJsonPath: string;
   currentCasePackMarkdownPath: string;
@@ -345,6 +349,22 @@ const getOutputUrls = (message: AgentMessage): Record<string, string> => {
   return urls;
 };
 
+const helperHintSourcePaths = (inputs: DownloadedInputs): string[] => {
+  const candidates = Object.entries(inputs).filter(([, filePath]) => /\.(?:md|markdown)$/i.test(filePath));
+  const priority = ([key, filePath]: [string, string]): number => {
+    const base = path.basename(filePath);
+    if (key === "md") return 0;
+    if (/測試執行說明|execution|instruction|testcase/i.test(base)) return 1;
+    if (key.startsWith("supporting_doc_")) return 2;
+    if (key === "startup_instruction") return 3;
+    return 4;
+  };
+  return candidates.sort((a, b) => priority(a) - priority(b)).map(([, filePath]) => filePath);
+};
+
+const currentCaseForManifest = (caseManifest: CaseManifestResult) =>
+  caseManifest.cases.find((item) => item.caseNo === caseManifest.currentCaseNo) ?? null;
+
 const downloadFile = async (url: string, filePath: string, token: string): Promise<void> => {
   const response = await fetch(url, {
     headers: token ? { Authorization: `Bearer ${token}` } : undefined
@@ -357,10 +377,51 @@ const downloadFile = async (url: string, filePath: string, token: string): Promi
   fs.writeFileSync(filePath, bytes);
 };
 
-const uploadResultXlsx = async (url: string, filePath: string, token: string): Promise<unknown> => {
+type ResultUploadMetadata = {
+  resultSource: "codex_generated" | "agent_fallback";
+  currentCaseNo: string | null;
+  expectedCaseNos: string[];
+};
+
+const readResultUploadMetadata = (runDir: string, resultSource: ResultUploadMetadata["resultSource"]): ResultUploadMetadata => {
+  const metadata: ResultUploadMetadata = {
+    resultSource,
+    currentCaseNo: null,
+    expectedCaseNos: []
+  };
+
+  const generatedGuidesPath = path.join(runDir, "input", "generated-guides.json");
+  if (!fs.existsSync(generatedGuidesPath)) return metadata;
+  try {
+    const generated = readJson<Record<string, unknown>>(generatedGuidesPath);
+    const manifest = generated.case_manifest;
+    if (!manifest || typeof manifest !== "object" || Array.isArray(manifest)) return metadata;
+    const currentCaseNo = (manifest as { currentCaseNo?: unknown }).currentCaseNo;
+    if (typeof currentCaseNo === "string" && currentCaseNo.trim()) {
+      metadata.currentCaseNo = currentCaseNo.trim();
+      metadata.expectedCaseNos = [currentCaseNo.trim()];
+    }
+  } catch {
+    // Upload still proceeds; the server gate can fall back to run DB checks.
+  }
+
+  return metadata;
+};
+
+const uploadResultXlsx = async (
+  url: string,
+  filePath: string,
+  token: string,
+  metadata: ResultUploadMetadata
+): Promise<unknown> => {
   const form = new FormData();
   const bytes = fs.readFileSync(filePath);
   form.append("resultXlsx", new Blob([new Uint8Array(bytes)]), "result.xlsx");
+  form.append("resultSource", metadata.resultSource);
+  if (metadata.currentCaseNo) form.append("currentCaseNo", metadata.currentCaseNo);
+  if (metadata.expectedCaseNos.length > 0) {
+    form.append("expectedCaseNos", JSON.stringify(metadata.expectedCaseNos));
+  }
 
   const response = await fetch(url, {
     method: "POST",
@@ -428,7 +489,6 @@ const downloadInputs = async (config: AgentConfig, message: AgentMessage, runDir
 const generateRunGuides = async (runId: string, runDir: string, message: AgentMessage, inputs: DownloadedInputs): Promise<GeneratedRunGuides> => {
   const inputDir = path.join(runDir, "input");
   const domain = getStringPayload(message, "domain") ?? "BI";
-  const biUiHelperGuidancePath = writeBiUiHelperGuidance(runDir);
   const startCaseHint = detectStartCaseHint({
     startupInstructionText: getStringPayload(message, "startup_instruction"),
     startupInstructionPath: inputs.startup_instruction,
@@ -441,8 +501,22 @@ const generateRunGuides = async (runId: string, runDir: string, message: AgentMe
   const preflightGuidancePath = writePreflightGuidance(runDir, getStringPayload(message, "dev_url"));
   const runStatePath = writeRunStateGuide(runDir, runId, caseManifest);
   const supportingDocsManifestPath = writeSupportingDocsManifest(runDir, inputs);
-  const documentConsistencyPath = writeDocumentConsistency(runDir, caseManifest, startCaseHint);
-  const currentCasePack = writeCurrentCasePack(runDir, caseManifest, documentConsistencyPath);
+  const testPackageConsistencyPath = path.join(inputDir, "test-package-consistency.json");
+  const testPackageConsistency = writeTestPackageConsistencyReport(testPackageConsistencyPath, {
+    caseManifest,
+    assignmentPath: inputs.startup_instruction,
+    instructionPath: inputs.md,
+    helperHintSourcePaths: helperHintSourcePaths(inputs),
+    startCaseHint,
+    xlsxPath: inputs.xlsx,
+    baseDir: runDir
+  });
+  const documentConsistencyPath = writeDocumentConsistency(runDir, caseManifest, startCaseHint, testPackageConsistency.issues);
+  const currentCasePack = writeCurrentCasePack(runDir, caseManifest, documentConsistencyPath, helperHintSourcePaths(inputs));
+  const biUiHelperGuidancePath = writeBiUiHelperGuidance(runDir, {
+    currentCase: currentCaseForManifest(caseManifest),
+    helperHints: currentCasePack.helperHints
+  });
   const evidenceTemplates = writeEvidenceTemplates(runDir);
   const resultTemplatePath = await writeResultTemplate(runDir);
   const networkObservationGuidancePath = writeNetworkObservationGuidance(runDir);
@@ -452,6 +526,7 @@ const generateRunGuides = async (runId: string, runDir: string, message: AgentMe
     inputs,
     generated: {
       runBrief: path.join(inputDir, "run-brief.md"),
+      testPackageConsistency: testPackageConsistencyPath,
       documentConsistency: documentConsistencyPath,
       currentCasePack: currentCasePack.markdownPath,
       currentCasePackJson: currentCasePack.jsonPath,
@@ -473,9 +548,12 @@ const generateRunGuides = async (runId: string, runDir: string, message: AgentMe
     preflight_guidance_path: preflightGuidancePath,
     run_state_path: runStatePath,
     supporting_docs_manifest_path: supportingDocsManifestPath,
+    test_package_consistency_path: testPackageConsistencyPath,
     document_consistency_path: documentConsistencyPath,
     current_case_pack_json_path: currentCasePack.jsonPath,
     current_case_pack_markdown_path: currentCasePack.markdownPath,
+    helper_hints_found: Boolean(currentCasePack.helperHints),
+    helper_hints_warnings: currentCasePack.helperWarnings,
     evidence_templates: evidenceTemplates,
     result_template_path: resultTemplatePath,
     network_observation_guidance_path: networkObservationGuidancePath,
@@ -490,6 +568,7 @@ const generateRunGuides = async (runId: string, runDir: string, message: AgentMe
     preflightGuidancePath,
     runStatePath,
     supportingDocsManifestPath,
+    testPackageConsistencyPath,
     documentConsistencyPath,
     currentCasePackJsonPath: currentCasePack.jsonPath,
     currentCasePackMarkdownPath: currentCasePack.markdownPath,
@@ -532,6 +611,7 @@ const buildPrompt = (
     "",
     "Start here:",
     `- Read the compact run brief first: ${runBriefPath}`,
+    `- Read the test package consistency report before browser execution: ${guides.testPackageConsistencyPath}`,
     `- Read the document consistency gate before browser execution: ${guides.documentConsistencyPath}`,
     `- Perform preflight before deep rule loading or testcase action: ${guides.preflightGuidancePath}`,
     `- Read the current case execution card first: ${guides.currentCasePackMarkdownPath}`,
@@ -550,6 +630,7 @@ const buildPrompt = (
     "- Use `agent-skills/uat-tool/rules/domain-routing.md` to route domain-specific rules.",
     "- Treat `rules/PROJECT_AGENTS_FULL.md` and `rules/BI_TEST_RULES/` as BI domain references, not platform rules.",
     "- If `input/document-consistency.json` has status=error, do not touch the browser. Emit a Tool Bridge ambiguity_decision with the conflict and wait.",
+    "- If `input/test-package-consistency.json` has status=error, treat it as a testcase package design conflict and do not touch the browser.",
     "- The first browser MCP action must be preflight only: open DEV URL, verify auth/reachability, detect SSO/login/載入失敗/401/403/blank blocker.",
     "- Preflight must not run testcase steps, capture baseline, change date/filter/field/group state, save/delete, or inspect deep BI behavior.",
     "",
@@ -578,6 +659,7 @@ const buildPrompt = (
     `Agent workdir: ${runDir}`,
     `Copied context manifest: ${path.resolve(runDir, "input", "codex-context.json")}`,
     `Case manifest: ${guides.caseManifest.manifestPath ?? "(unavailable)"}`,
+    `Test package consistency: ${guides.testPackageConsistencyPath}`,
     `Document consistency: ${guides.documentConsistencyPath}`,
     `Current case pack: ${guides.currentCasePackMarkdownPath}`,
     `Current case pack JSON: ${guides.currentCasePackJsonPath}`,
@@ -1106,7 +1188,11 @@ const uploadRunArtifacts = async (options: UploadArtifactsOptions): Promise<Uplo
   }
 
   const codexGeneratedResultXlsx = preferCodexGeneratedResult ? getCodexGeneratedResultXlsx(runDir) : null;
-  const sourceCase = codexGeneratedResultXlsx ? null : await readFirstInputCase(inputs.xlsx);
+  const resultSource = codexGeneratedResultXlsx ? "codex_generated" : "agent_fallback";
+  const resultUploadMetadata = readResultUploadMetadata(runDir, resultSource);
+  const sourceCase = codexGeneratedResultXlsx
+    ? null
+    : await readFirstInputCase(inputs.xlsx, resultUploadMetadata.currentCaseNo);
   const missingRealUatResult = !codexGeneratedResultXlsx && Boolean(sourceCase) && !failCategory && result.exitCode === 0;
   const effectiveFailCategory = failCategory
     ?? (result.exitCode !== 0 ? "CODEX_RUN_FAILED" : null)
@@ -1138,7 +1224,8 @@ const uploadRunArtifacts = async (options: UploadArtifactsOptions): Promise<Uplo
   writeJson(path.join(runDir, "output", "result-xlsx.json"), {
     path: resultXlsxPath,
     uploaded: false,
-    source: codexGeneratedResultXlsx ? "codex_generated" : "agent_fallback",
+    source: resultSource,
+    upload_metadata: resultUploadMetadata,
     output_url_keys: Object.keys(outputUrls)
   });
 
@@ -1154,12 +1241,13 @@ const uploadRunArtifacts = async (options: UploadArtifactsOptions): Promise<Uplo
       true
     );
     try {
-      const uploadResponse = await uploadResultXlsx(outputUrls.result_xlsx, resultXlsxPath, config.token);
+      const uploadResponse = await uploadResultXlsx(outputUrls.result_xlsx, resultXlsxPath, config.token, resultUploadMetadata);
       resultXlsxUploaded = true;
       writeJson(path.join(runDir, "output", "result-xlsx.json"), {
         path: resultXlsxPath,
         uploaded: true,
-        source: codexGeneratedResultXlsx ? "codex_generated" : "agent_fallback",
+        source: resultSource,
+        upload_metadata: resultUploadMetadata,
         upload_response: uploadResponse
       });
       sendBestEffort(
@@ -1175,7 +1263,8 @@ const uploadRunArtifacts = async (options: UploadArtifactsOptions): Promise<Uplo
       writeJson(path.join(runDir, "output", "result-xlsx.json"), {
         path: resultXlsxPath,
         uploaded: false,
-        source: codexGeneratedResultXlsx ? "codex_generated" : "agent_fallback",
+        source: resultSource,
+        upload_metadata: resultUploadMetadata,
         error: error instanceof Error ? error.message : String(error)
       });
       sendBestEffort(

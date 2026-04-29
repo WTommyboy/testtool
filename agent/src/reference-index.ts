@@ -13,6 +13,7 @@ const exists = (filePath: string | null | undefined): boolean =>
 const roleForGeneratedKey = (key: string): string => {
   const roles: Record<string, string> = {
     runBrief: "compact run entrypoint",
+    testPackageConsistency: "test package design consistency report",
     documentConsistency: "document conflict gate",
     currentCasePack: "current case execution card",
     currentCasePackJson: "current case structured execution card",

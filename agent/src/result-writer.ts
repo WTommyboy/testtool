@@ -43,7 +43,15 @@ const findColumn = (row: ExcelJS.Row, names: string[]): number | null => {
 
 const nullable = (value: string): string | null => (value ? value : null);
 
-export const readFirstInputCase = async (xlsxPath: string | undefined): Promise<AgentResultSourceCase | null> => {
+const normalizeCaseNo = (value: string): string =>
+  value.trim().replace(/\s+/g, "").replace(/^DEMO-/i, "").toUpperCase();
+
+const sameCaseNo = (a: string, b: string): boolean => normalizeCaseNo(a) === normalizeCaseNo(b);
+
+export const readFirstInputCase = async (
+  xlsxPath: string | undefined,
+  preferredCaseNo?: string | null
+): Promise<AgentResultSourceCase | null> => {
   if (!xlsxPath) return null;
   const workbook = new ExcelJS.Workbook();
   try {
@@ -64,20 +72,23 @@ export const readFirstInputCase = async (xlsxPath: string | undefined): Promise<
   };
   if (!columns.caseNo) return null;
 
+  let firstCase: AgentResultSourceCase | null = null;
   for (let rowNo = 2; rowNo <= sheet.rowCount; rowNo += 1) {
     const row = sheet.getRow(rowNo);
     const caseNo = cellText(row.getCell(columns.caseNo).value);
     if (!caseNo) continue;
-    return {
+    const sourceCase = {
       groupName: columns.groupName ? nullable(cellText(row.getCell(columns.groupName).value)) : null,
       caseNo,
       caseTitle: columns.caseTitle ? nullable(cellText(row.getCell(columns.caseTitle).value)) : null,
       testType: columns.testType ? nullable(cellText(row.getCell(columns.testType).value)) : null,
       executionMethod: columns.executionMethod ? nullable(cellText(row.getCell(columns.executionMethod).value)) : null
     };
+    if (!firstCase) firstCase = sourceCase;
+    if (preferredCaseNo && sameCaseNo(caseNo, preferredCaseNo)) return sourceCase;
   }
 
-  return null;
+  return firstCase;
 };
 
 export const writeAgentResultXlsx = async (input: ResultWriterInput): Promise<string> => {
