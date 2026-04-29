@@ -476,3 +476,11 @@ DEMO round：
 - 修改檔案：`uat-tool/src/result-parser/result-evidence-gate.ts`、`uat-tool/scripts/check-result-evidence-gate.ts`、`uat-tool/scripts/verify-result-evidence-gate.ts`、`uat-tool/package.json`。
 - 驗證：`npm run verify:result-evidence-gate` 已通過，涵蓋單題 current-run evidence 通過、多題 result、缺 evidence、agent fallback、缺 Tool Bridge response、invalid detail_json 會被擋；`npm run typecheck --prefix uat-tool`、`npm run build --prefix uat-tool` 均通過。
 - 後續影響：本機若要檢查某個 result.xlsx，可跑 `npm run check:result-evidence -- --xlsx <result.xlsx> --current-case <caseNo>`；這仍是最小 gate，後續可再把 requiredEvidence vocabulary 與 Helper hints 模板做更細對照。
+
+### 2026-04-29 19:35 - 本機 current_case_prompt 新增 Helper Execution Plan
+
+- 背景：Tommy 決定採用 helper-assisted UAT：helper 負責穩定 UI 操作與 evidence 收集，Codex 保留 PASS/FAIL/BLOCKED 判定與 detail_json 寫作。需要讓本機 prompt 產生器也能把 testcase row 切成「文字單題卡 + helper execution plan」。
+- 決策：`generate_current_case_prompt.mjs` 在 Helper Hints 後新增 `Helper Execution Plan` 區塊，依當前 case row 推斷建議 helper actions、required evidence、Tool Bridge flags 與 optional templates。helper plan 明確標示不可寫 result.xlsx、不可判結果、不可多題批次、不可 direct BI API、不可 JS setter。
+- 修改檔案：`outputs/generate_current_case_prompt.mjs`；重新產生 `BI_UAT_ROUNDS/DEMO001_工程團隊示範/current_case_prompt_DEMO-A-01.md`。
+- 驗證：`node --check outputs/generate_current_case_prompt.mjs`、`node --check outputs/generate_active_case_prompt.mjs` 通過；重產 DEMO-A-01 後確認 prompt 包含 `Helper Execution Plan`、`collage.openProject`、`filter.addAndPreview` 等區塊。
+- 後續影響：本機 ACTIVE runner 仍維持單題 prompt 固定入口；helper execution plan 是執行輔助，不代表 helper 已完成所有模板實作。Codex 仍須逐 case 寫回 xlsx 並 dump 驗證。

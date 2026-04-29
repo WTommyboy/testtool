@@ -535,3 +535,12 @@ Tommy 曾討論是否改成腳本。最後決策是採「半腳本化 / helper �
 - 修改檔案：`agent/src/browser-session.ts`。
 - 驗證：`npm run typecheck --prefix agent`、`npm run build --prefix agent` 通過；本機用 dedicated Chrome 做 lifecycle 驗證，啟動後 CDP targets 僅剩 1 個 Galaxy page，加上 omnibox popup internal targets，沒有 `chrome://newtab/`；驗證後 `closeChromeDebugSession()` 成功關閉 Chrome，`127.0.0.1:9222` 不可達。
 - 後續影響：下一輪 E2E 應重新從新 run 驗證，不沿用 OTTEST005。觀察點：(1) run 開始後使用者可見頁籤只有 Galaxy；(2) 操作畫面與 log 同步；(3) run cancelled / completed / failed 後 dedicated Chrome 完全關閉；(4) 真正到儲存步驟前才出現 Tool Bridge 授權。
+
+### 2026-04-29 19:36 - Helper-assisted UAT V1 execution layer
+
+- 背景：繼續讓 Codex click-by-click 直接操作 MCP，仍會遇到 locator 探索慢、MCP safety layer 擋可逆 click、UI 重畫 ref 失效、console/network/chart evidence 分散等問題。Tommy 決定改為 helper-assisted UAT：Mac Agent helper 做穩定 UI 操作與 evidence 收集，Codex 做判斷與結果撰寫。
+- 決策：新增 `helper-execution-plan` run packet。線上派工時，檔案仍先下載到 `~/.uat-agent/runs/<runId>/input/` 作地端備份；Agent 產生 `current-case-pack` 後，同步產生 `input/helper-execution-plan.json` / `.md`，列出單題 helper actions、required evidence、artifact root、Tool Bridge flags 與安全邊界。helper `status=ok` 只代表該 UI 操作完成並有 evidence，不代表 PASS。
+- 修改檔案：`agent/src/helper-execution-plan.ts`、`agent/src/bi-ui-helper-executor.ts`、`agent/src/task-runner.ts`、`agent/src/reference-index.ts`、`agent/src/rule-index.ts`、`scripts/verify-helper-hints-fixture.ts`。
+- 技術細節：新增 helper executor CLI `agent/dist/bi-ui-helper-executor.js`，走 Agent dedicated Chrome CDP，不直接打 BI API、不用內部 JS setter、不寫 result.xlsx、不判 PASS/FAIL。V1 已實作 `collage.openProject`、`collage.createReport`、`collage.configureMetric`（欄位輔助 + dateRange warning）、`collage.runPreviewAndCollectEvidence`、`collage.saveReport` 的 Tool Bridge gate；`reopen/delete/filter/group` 已註冊為模板，未完成的會回 `not_implemented` 或 `requires_approval`，不會靜默誤判。
+- 驗證：`npm run typecheck --prefix agent`、`npm run build --prefix agent`、`npm run typecheck`、`npm run build`、`npm run verify:helper-hints`、`npm run verify:package-consistency`、`npm run verify:result-evidence-gate` 已通過。手動 helper executor smoke：連續執行 `collage.openProject` → `collage.createReport` 成功進入 `報表編輯器` 並產生 DOM evidence + screenshot；`collage.saveReport` 未帶 approval 時回 `requires_approval`，沒有執行儲存；結束後 dedicated Chrome 關閉。
+- 後續影響：下一輪 E2E 應觀察 Codex 是否讀 `helper-execution-plan` 並使用 helper report 作 evidence。V1 不是全模板完成版；下一步 P1 是完成 `collage.configureMetric` 的靜態日期 UI 設定、`collage.reopenReport`、`collage.deleteTemporaryReport`、`filter.addAndPreview`、`group.addAndPreview` 的可執行實作，並把 helper report evidence key 納入 result/evidence gate 精準檢查。

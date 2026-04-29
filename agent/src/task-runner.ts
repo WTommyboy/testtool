@@ -21,6 +21,7 @@ import { writeNetworkObservationGuidance } from "./network-observation-guidance"
 import { writeReferenceIndex } from "./reference-index";
 import { writeResultTemplate } from "./result-template";
 import { writeTestPackageConsistencyReport } from "./test-package-consistency";
+import { writeHelperExecutionPlan } from "./helper-execution-plan";
 
 const getRunId = (message: AgentMessage): string => {
   const runId = message.payload.run_id;
@@ -194,6 +195,8 @@ const writeRunBrief = (
     `- document_consistency: ${guides.documentConsistencyPath}`,
     `- current_case_pack: ${guides.currentCasePackMarkdownPath}`,
     `- current_case_pack_json: ${guides.currentCasePackJsonPath}`,
+    `- helper_execution_plan: ${guides.helperExecutionPlanMarkdownPath}`,
+    `- helper_execution_plan_json: ${guides.helperExecutionPlanJsonPath}`,
     `- rule_index: ${guides.ruleIndexPath}`,
     `- reference_index: ${guides.referenceIndexPath}`,
     `- supporting_docs_manifest: ${guides.supportingDocsManifestPath}`,
@@ -225,14 +228,15 @@ const writeRunBrief = (
     "2. Read `input/test-package-consistency.json` and `input/document-consistency.json`. If either status=error, do not touch the browser; emit Tool Bridge ambiguity_decision.",
     "3. Read `input/preflight-auth-check.md` and perform only the auth/reachability preflight before deep domain rule loading.",
     "4. Read `input/current-case-pack.md`, `input/current-case-pack.json`, and `input/run-state.json` before loading full testcase/supporting docs. If Helper hints are present, treat them as single-case UI guidance only.",
-    "5. Read `input/reference-index.json` for exact paths; avoid broad filesystem search.",
-    "6. Read `input/rule-index.json` and load only the smallest rule file required for the current decision.",
+    "5. Read `input/helper-execution-plan.md` when present. Helper actions may operate UI and collect evidence, but cannot judge PASS/FAIL or write result.xlsx.",
+    "6. Read `input/reference-index.json` for exact paths; avoid broad filesystem search.",
+    "7. Read `input/rule-index.json` and load only the smallest rule file required for the current decision.",
     biMetadataCsv
-      ? "7. If the current BI case needs metadata counts, use the copied `rules/BI_DATA/metadata.csv`; do not search the workspace for another metadata source first."
-      : "7. If the current BI case needs metadata counts and no baseline/reference CSV is downloaded, use uploaded supporting docs before doing broad filesystem searches.",
-    "8. For BI UI operations, read `input/bi-ui-helper-guidance.md`; it includes operationTemplate guidance when the current case provides Helper hints.",
-    "9. Use `input/evidence-templates/index.json` and only the current-case template(s) when writing evidence/detail_json.",
-    "10. Execute one case at a time, write evidence/result for that case, then move to the next case JSON if needed.",
+      ? "8. If the current BI case needs metadata counts, use the copied `rules/BI_DATA/metadata.csv`; do not search the workspace for another metadata source first."
+      : "8. If the current BI case needs metadata counts and no baseline/reference CSV is downloaded, use uploaded supporting docs before doing broad filesystem searches.",
+    "9. For BI UI operations, read `input/bi-ui-helper-guidance.md`; it includes operationTemplate guidance when the current case provides Helper hints.",
+    "10. Use `input/evidence-templates/index.json` and only the current-case template(s) when writing evidence/detail_json.",
+    "11. Execute one case at a time, write evidence/result for that case, then move to the next case JSON if needed.",
     "",
     "## Hard Gates",
     "- No trusted PASS/FAIL without current-run evidence.",
@@ -242,6 +246,7 @@ const writeRunBrief = (
     "- A document-consistency error is an ambiguity blocker. Do not open Playwright before PM resolves it.",
     "- If the real UAT cannot continue, do not create a fake PASS. Explain the blocker; the Agent fallback will mark the run as not trusted.",
     "- Speed optimizations must never merge multiple testcase executions into one tool call or one result write.",
+    "- Helper actions are not testcase results. Codex must inspect helper evidence, compare against expected behavior, and write the final detail_json itself.",
     "- `input/run-state.json` defines allowed carryover. Evidence from a previous case is isolated and cannot prove a later case.",
     "- Prefer structured evidence first: DOM read, network observation, chart/table data. Use screenshots for Tool Bridge, FAIL/bug, major state transitions, and final evidence.",
     "- If structured DOM/network evidence already proves the result and a screenshot times out, do not repeatedly retry full-page screenshots. Try at most one smaller screenshot; if that also fails, record screenshot_unavailable_reason and continue.",
@@ -284,6 +289,8 @@ type GeneratedRunGuides = {
   documentConsistencyPath: string;
   currentCasePackJsonPath: string;
   currentCasePackMarkdownPath: string;
+  helperExecutionPlanJsonPath: string;
+  helperExecutionPlanMarkdownPath: string;
   evidenceTemplates: EvidenceTemplateFiles;
   resultTemplatePath: string;
   networkObservationGuidancePath: string;
@@ -513,8 +520,14 @@ const generateRunGuides = async (runId: string, runDir: string, message: AgentMe
   });
   const documentConsistencyPath = writeDocumentConsistency(runDir, caseManifest, startCaseHint, testPackageConsistency.issues);
   const currentCasePack = writeCurrentCasePack(runDir, caseManifest, documentConsistencyPath, helperHintSourcePaths(inputs));
+  const currentCase = currentCaseForManifest(caseManifest);
+  const helperExecutionPlan = writeHelperExecutionPlan({
+    runDir,
+    currentCase,
+    helperHints: currentCasePack.helperHints
+  });
   const biUiHelperGuidancePath = writeBiUiHelperGuidance(runDir, {
-    currentCase: currentCaseForManifest(caseManifest),
+    currentCase,
     helperHints: currentCasePack.helperHints
   });
   const evidenceTemplates = writeEvidenceTemplates(runDir);
@@ -530,6 +543,8 @@ const generateRunGuides = async (runId: string, runDir: string, message: AgentMe
       documentConsistency: documentConsistencyPath,
       currentCasePack: currentCasePack.markdownPath,
       currentCasePackJson: currentCasePack.jsonPath,
+      helperExecutionPlan: helperExecutionPlan.markdownPath,
+      helperExecutionPlanJson: helperExecutionPlan.jsonPath,
       ruleIndex: plannedRuleIndexPath,
       supportingDocsManifest: supportingDocsManifestPath,
       evidenceTemplateIndex: evidenceTemplates.indexPath,
@@ -552,6 +567,8 @@ const generateRunGuides = async (runId: string, runDir: string, message: AgentMe
     document_consistency_path: documentConsistencyPath,
     current_case_pack_json_path: currentCasePack.jsonPath,
     current_case_pack_markdown_path: currentCasePack.markdownPath,
+    helper_execution_plan_json_path: helperExecutionPlan.jsonPath,
+    helper_execution_plan_markdown_path: helperExecutionPlan.markdownPath,
     helper_hints_found: Boolean(currentCasePack.helperHints),
     helper_hints_warnings: currentCasePack.helperWarnings,
     evidence_templates: evidenceTemplates,
@@ -572,6 +589,8 @@ const generateRunGuides = async (runId: string, runDir: string, message: AgentMe
     documentConsistencyPath,
     currentCasePackJsonPath: currentCasePack.jsonPath,
     currentCasePackMarkdownPath: currentCasePack.markdownPath,
+    helperExecutionPlanJsonPath: helperExecutionPlan.jsonPath,
+    helperExecutionPlanMarkdownPath: helperExecutionPlan.markdownPath,
     evidenceTemplates,
     resultTemplatePath,
     networkObservationGuidancePath,
@@ -616,6 +635,8 @@ const buildPrompt = (
     `- Perform preflight before deep rule loading or testcase action: ${guides.preflightGuidancePath}`,
     `- Read the current case execution card first: ${guides.currentCasePackMarkdownPath}`,
     `- Structured current case pack: ${guides.currentCasePackJsonPath}`,
+    `- Helper execution plan: ${guides.helperExecutionPlanMarkdownPath}`,
+    `- Structured helper execution plan: ${guides.helperExecutionPlanJsonPath}`,
     `- Raw current case row if needed: ${guides.caseManifest.currentCasePath ?? "(current-case unavailable; inspect workbook minimally)"}`,
     `- Read allowed carryover and isolation policy: ${guides.runStatePath}`,
     `- Use exact file paths from: ${guides.referenceIndexPath}`,
@@ -643,6 +664,7 @@ const buildPrompt = (
     "- If evidence is insufficient, do not write trusted PASS/FAIL; use BLOCKED/EVIDENCE_INSUFFICIENT.",
     "- Existing page data or old reports are not evidence that this run performed the action.",
     "- `input/current-case-pack.*` is a plan card, not a result. It reduces reading, but it never proves PASS/FAIL/BLOCKED.",
+    "- `input/helper-execution-plan.*` may provide UI helper actions. Helper evidence can support judgment, but helper `status=ok` is never PASS.",
     "- Execute and record one case at a time. `case-manifest.json` is only an index; it is not permission to batch multiple case flows.",
     "- After each case, write or update evidence/result for that case before reading the next case JSON.",
     "- If startup instruction names a starting case, Agent resolves that into `current-case.json`; do not emit ambiguity merely because the workbook contains earlier cases.",
@@ -663,6 +685,8 @@ const buildPrompt = (
     `Document consistency: ${guides.documentConsistencyPath}`,
     `Current case pack: ${guides.currentCasePackMarkdownPath}`,
     `Current case pack JSON: ${guides.currentCasePackJsonPath}`,
+    `Helper execution plan: ${guides.helperExecutionPlanMarkdownPath}`,
+    `Helper execution plan JSON: ${guides.helperExecutionPlanJsonPath}`,
     `Current case JSON: ${guides.caseManifest.currentCasePath ?? "(unavailable)"}`,
     `Current case no: ${guides.caseManifest.currentCaseNo ?? "(unavailable)"}`,
     guides.caseManifest.currentCaseSelection

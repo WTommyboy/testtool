@@ -77,6 +77,8 @@ const buildCurrentCaseRecommendations = (runDir: string, entries: RuleIndexEntry
     "current-case",
     "current-case-pack",
     "current-case-pack-json",
+    "helper-execution-plan",
+    "helper-execution-plan-json",
     "run-state",
     "evidence-policy",
     "codex-runtime",
@@ -106,6 +108,8 @@ const buildCurrentCaseRecommendations = (runDir: string, entries: RuleIndexEntry
     );
     if (operationTemplate) {
       add(ids, "bi-ui-helper-guidance");
+      add(ids, "helper-execution-plan");
+      add(ids, "helper-execution-plan-json");
       notes.push("Helper hints are present; load BI UI helper guidance before page exploration.");
     }
     if (requiredEvidence.some((item) => item.startsWith("network."))) {
@@ -290,6 +294,20 @@ export const writeRuleIndex = (runDir: string, domain: string): string => {
     filePath: path.join(runDir, "input", "current-case-pack.json"),
     loadWhen: ["need structured evidence requirements", "need screenshot policy", "case plan cross-check"],
     summary: "Structured current-case pack with required evidence and screenshot policy."
+  });
+  addIfExists(entries, runDir, {
+    id: "helper-execution-plan",
+    scope: "input",
+    filePath: path.join(runDir, "input", "helper-execution-plan.md"),
+    loadWhen: ["helper-assisted UI operation", "need step-scoped helper actions", "avoid ad hoc UI exploration"],
+    summary: "Single-case helper execution plan. Helper actions operate UI and collect evidence only; Codex still judges result."
+  });
+  addIfExists(entries, runDir, {
+    id: "helper-execution-plan-json",
+    scope: "input",
+    filePath: path.join(runDir, "input", "helper-execution-plan.json"),
+    loadWhen: ["need structured helper action list", "need helper artifact path", "checking Tool Bridge-required helper action"],
+    summary: "Structured helper execution plan with action templates, evidence requirements, and Tool Bridge flags."
   });
   addIfExists(entries, runDir, {
     id: "bi-ui-helper-guidance",

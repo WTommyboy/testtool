@@ -7,6 +7,7 @@ import ExcelJS from "exceljs";
 import { writeBiUiHelperGuidance } from "../agent/src/bi-ui-helper-guidance";
 import { writeCaseManifest } from "../agent/src/case-manifest";
 import { writeCurrentCasePack } from "../agent/src/current-case-pack";
+import { writeHelperExecutionPlan } from "../agent/src/helper-execution-plan";
 import { writeNetworkObservationGuidance } from "../agent/src/network-observation-guidance";
 import { writeRuleIndex } from "../agent/src/rule-index";
 
@@ -157,6 +158,11 @@ const main = async (): Promise<void> => {
       currentCase,
       helperHints: currentCasePack.helperHints
     });
+    const helperExecutionPlan = writeHelperExecutionPlan({
+      runDir,
+      currentCase,
+      helperHints: currentCasePack.helperHints
+    });
     writeNetworkObservationGuidance(runDir);
     const ruleIndexPath = writeRuleIndex(runDir, "BI");
 
@@ -185,11 +191,28 @@ const main = async (): Promise<void> => {
     mustInclude(helperGuidance, "### Template Notes", "bi-ui-helper-guidance.md");
     mustInclude(helperGuidance, "切到不帶值 operator", "bi-ui-helper-guidance.md");
 
+    const helperPlanJson = JSON.parse(fs.readFileSync(helperExecutionPlan.jsonPath, "utf8")) as {
+      schemaVersion?: string;
+      safety?: { helperMayJudgePassFail?: boolean; helperMayWriteResultXlsx?: boolean };
+      availableTemplates?: Array<{ template?: string }>;
+    };
+    assert.equal(helperPlanJson.schemaVersion, "helper-execution-plan-v1", "helper execution plan schema");
+    assert.equal(helperPlanJson.safety?.helperMayJudgePassFail, false, "helper plan must not judge PASS/FAIL");
+    assert.equal(helperPlanJson.safety?.helperMayWriteResultXlsx, false, "helper plan must not write result.xlsx");
+    assert.ok(
+      helperPlanJson.availableTemplates?.some((item) => item.template === "filter.addAndPreview"),
+      "helper plan should include filter.addAndPreview template"
+    );
+    const helperPlanMarkdown = fs.readFileSync(helperExecutionPlan.markdownPath, "utf8");
+    mustInclude(helperPlanMarkdown, "Helper Execution Plan v1", "helper-execution-plan.md");
+    mustInclude(helperPlanMarkdown, "helper 不可判 PASS/FAIL/BLOCKED", "helper-execution-plan.md");
+
     const ruleIndex = JSON.parse(fs.readFileSync(ruleIndexPath, "utf8")) as {
       currentCaseRecommendations?: { ruleIds?: string[] };
     };
     const ruleIds = ruleIndex.currentCaseRecommendations?.ruleIds ?? [];
     assert.ok(ruleIds.includes("bi-ui-helper-guidance"), "rule-index should recommend bi-ui-helper-guidance");
+    assert.ok(ruleIds.includes("helper-execution-plan"), "rule-index should recommend helper-execution-plan");
     assert.ok(ruleIds.includes("network-observation-guidance"), "rule-index should recommend network-observation-guidance");
 
     console.log(
@@ -204,6 +227,7 @@ const main = async (): Promise<void> => {
             "ACTIVE prompt Helper Hints preserved",
             "current-case-pack.json helperHints",
             "current-case-pack.md Helper Hints section",
+            "helper-execution-plan safety and templates",
             "bi-ui-helper-guidance Template Notes",
             "rule-index currentCaseRecommendations"
           ]

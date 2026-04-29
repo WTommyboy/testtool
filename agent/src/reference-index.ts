@@ -20,6 +20,8 @@ const roleForGeneratedKey = (key: string): string => {
     ruleIndex: "progressive disclosure rule index",
     supportingDocsManifest: "downloaded document roles",
     evidenceTemplateIndex: "evidence schema index",
+    helperExecutionPlan: "helper-assisted UI execution plan",
+    helperExecutionPlanJson: "structured helper-assisted UI execution plan",
     resultTemplate: "result workbook template reference",
     networkObservationGuidance: "network observation guidance",
     preflightGuidance: "auth/reachability preflight",
