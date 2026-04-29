@@ -502,3 +502,11 @@ Tommy 曾討論是否改成腳本。最後決策是採「半腳本化 / helper �
 - 修改檔案：`web/src/App.tsx`、`web/src/App.css`。
 - 驗證：`npm run build --prefix web` 通過；`npm run lint --prefix web` 無 error，仍有既有 hooks dependency warning；`npm run typecheck` 通過。另以本機 API fixture 驗證 WAITING_APPROVAL 畫面：不可逆授權卡未勾選時按鈕 disabled，勾選後 enabled；按「清空為新測試草稿」後狀態回 DRAFT、approval/case/log 清空、file input 顯示未選檔。
 - 後續影響：此為前端 UX 修正，不改 Tool Bridge server protocol。之後若要更完整，後端 approvals table 可新增 structured request payload 欄位，避免 Web UI 從 reason 文字反解析 request id / action / reason。
+
+### 2026-04-29 18:31 - 修正 Mac Agent persistent Chrome 多 tab 與 resume 開新 tab
+
+- 背景：OTTEST003 run `02079de5-7896-4ec9-999e-23eeb6a1581e` 顯示 Codex log 已進入 DEMO-A-01 UI 操作，但 Tommy 肉眼看到 Chrome 畫面幾乎不動，且沒有跳出 Tool Bridge 授權。檢查 run workspace 後確認尚未到儲存授權點；MCP session 實際已點 `拼貼test_001`、`+ 新增報表`、選 `新增帳號數`，並卡在日期面板設定。關鍵線索是 MCP 每次回傳都有 5 個 Galaxy tab，且 `ensureChromeDebugSession()` 在 CDP 已存在時每次都 `/json/new` 開新 tab，resume 也會再開 DEV URL tab，導致 Playwright 可能在背景 tab 操作，Tommy 看到的前景 tab 與受控 tab 不一致。
+- 決策：Mac Agent initial run 啟動 persistent Chrome 時，先整理 dedicated `~/.uat-agent/chrome-profile` 內既有 page tabs，再開一個 DEV URL tab 並用 CDP `/json/activate` 置前；Tool Bridge resume 時不再開新 DEV URL tab，只 activate 既有 BI edit/home page，避免授權後破壞原本的 browser context。這不改 Tool Bridge request/response protocol，只修正本機 Agent 對 persistent Chrome tab lifecycle 的管理。
+- 修改檔案：`agent/src/browser-session.ts`、`agent/src/task-runner.ts`。
+- 驗證：`npm run typecheck --prefix agent`、`npm run build --prefix agent`、`npm run typecheck`、`npm run build` 均通過；compiled `agent/dist/browser-session.js` / `agent/dist/task-runner.js` 已包含 `resetTabs` 與 `openInitialUrl=false` resume 路徑。
+- 後續影響：目前正在跑的 OTTEST003 仍使用舊 Agent process，需取消該 run 並重啟 Mac Agent 後才能套用此修正。下一輪 E2E 需確認：(1) run 開始時 Chrome 只留下單一受控 Galaxy tab；(2) UI 操作在前景可見；(3) 儲存前才出現不可逆 Tool Bridge 授權卡；(4) 授權後 resume 不再新增 home tab，而是接續原 edit tab。

@@ -5,6 +5,18 @@ import type { AgentConfig } from "./types";
 
 const defaultDebugPort = 9222;
 
+type CdpTarget = {
+  id?: string;
+  type?: string;
+  title?: string;
+  url?: string;
+};
+
+type ChromeSessionOptions = {
+  resetTabs?: boolean;
+  openInitialUrl?: boolean;
+};
+
 const chromeExecutableCandidates = [
   "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
   "/Applications/Chromium.app/Contents/MacOS/Chromium",
@@ -37,14 +49,66 @@ const isCdpAvailable = async (endpoint: string): Promise<boolean> => {
   }
 };
 
-const openCdpTab = async (endpoint: string, url: string): Promise<void> => {
+const listCdpTargets = async (endpoint: string): Promise<CdpTarget[]> => {
   try {
-    await withTimeout(
-      fetch(`${endpoint}/json/new?${encodeURIComponent(url)}`, { method: "PUT" }).then(() => undefined),
-      1000
-    );
+    const response = await withTimeout(fetch(`${endpoint}/json/list`), 1000);
+    if (!response.ok) return [];
+    const targets = (await response.json()) as CdpTarget[];
+    return Array.isArray(targets) ? targets : [];
+  } catch {
+    return [];
+  }
+};
+
+const requestCdpTargetAction = async (endpoint: string, action: "activate" | "close", targetId: string): Promise<void> => {
+  const url = `${endpoint}/json/${action}/${encodeURIComponent(targetId)}`;
+  try {
+    const response = await withTimeout(fetch(url, { method: "PUT" }), 1000);
+    if (!response.ok) throw new Error(`CDP_${action.toUpperCase()}_${response.status}`);
+  } catch {
+    try {
+      const response = await withTimeout(fetch(url), 1000);
+      if (!response.ok) throw new Error(`CDP_${action.toUpperCase()}_${response.status}`);
+    } catch {
+      // CDP target actions are best-effort. Playwright MCP can still connect and navigate.
+    }
+  }
+};
+
+const closeExistingPageTabs = async (endpoint: string): Promise<void> => {
+  const targets = await listCdpTargets(endpoint);
+  await Promise.all(
+    targets
+      .filter((target) => target.type === "page" && target.id)
+      .map((target) => requestCdpTargetAction(endpoint, "close", target.id as string))
+  );
+};
+
+const pickBestVisibleTarget = (targets: CdpTarget[]): CdpTarget | null => {
+  const pages = targets.filter((target) => target.type === "page" && target.id);
+  return (
+    pages.find((target) => target.url?.includes("/testview/edit")) ??
+    pages.find((target) => target.url?.includes("/testview/home")) ??
+    pages.find((target) => !target.url?.startsWith("chrome://")) ??
+    null
+  );
+};
+
+const activateBestExistingTab = async (endpoint: string): Promise<void> => {
+  const target = pickBestVisibleTarget(await listCdpTargets(endpoint));
+  if (target?.id) await requestCdpTargetAction(endpoint, "activate", target.id);
+};
+
+const openCdpTab = async (endpoint: string, url: string): Promise<string | null> => {
+  try {
+    const response = await withTimeout(fetch(`${endpoint}/json/new?${encodeURIComponent(url)}`, { method: "PUT" }), 1000);
+    if (!response.ok) return null;
+    const target = (await response.json()) as CdpTarget;
+    if (target.id) await requestCdpTargetAction(endpoint, "activate", target.id);
+    return target.id ?? null;
   } catch {
     // Opening the visible window is best-effort; Codex can still navigate through Playwright MCP.
+    return null;
   }
 };
 
@@ -68,11 +132,15 @@ export const getChromeCdpEndpoint = (): string => {
 
 export const ensureChromeDebugSession = async (
   config: AgentConfig,
-  initialUrl?: string | null
+  initialUrl?: string | null,
+  options: ChromeSessionOptions = {}
 ): Promise<string | null> => {
   const endpoint = getChromeCdpEndpoint();
+  const openInitialUrl = options.openInitialUrl ?? true;
   if (await isCdpAvailable(endpoint)) {
-    if (initialUrl) await openCdpTab(endpoint, initialUrl);
+    if (options.resetTabs) await closeExistingPageTabs(endpoint);
+    if (initialUrl && openInitialUrl) await openCdpTab(endpoint, initialUrl);
+    else await activateBestExistingTab(endpoint);
     return endpoint;
   }
 
@@ -96,5 +164,7 @@ export const ensureChromeDebugSession = async (
   });
   child.unref();
 
-  return (await waitForCdp(endpoint, 5000)) ? endpoint : null;
+  const ready = await waitForCdp(endpoint, 5000);
+  if (ready) await activateBestExistingTab(endpoint);
+  return ready ? endpoint : null;
 };

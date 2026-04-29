@@ -1363,7 +1363,10 @@ export const handleTaskDispatch = async (
       "done"
     );
     sendPhase(connection, runId, "browser_start", "開啟持久化 Chrome", "準備 Playwright CDP 與 Galaxy SSO session。");
-    const chromeCdpEndpoint = await ensureChromeDebugSession(config, getStringPayload(message, "dev_url"));
+    const chromeCdpEndpoint = await ensureChromeDebugSession(config, getStringPayload(message, "dev_url"), {
+      resetTabs: true,
+      openInitialUrl: true
+    });
     sendPhase(
       connection,
       runId,
@@ -1693,7 +1696,9 @@ export const handleToolResponse = async (
     originalDispatch = readJson<AgentMessage>(dispatchPath);
     downloadedInputs = readJson<DownloadedInputs>(inputsPath);
     sendPhase(connection, runId, "browser_start", "重新確認 Chrome CDP", "續跑前確認持久化 Chrome / Playwright CDP。");
-    const chromeCdpEndpoint = await ensureChromeDebugSession(config, getStringPayload(originalDispatch, "dev_url"));
+    const chromeCdpEndpoint = await ensureChromeDebugSession(config, getStringPayload(originalDispatch, "dev_url"), {
+      openInitialUrl: false
+    });
     sendPhase(
       connection,
       runId,
