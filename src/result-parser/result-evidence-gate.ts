@@ -269,7 +269,7 @@ export const evaluateResultEvidenceGate = (input: ResultEvidenceGateInput): Resu
     issues.push({
       severity: "warning",
       code: "RESULT_XLSX_SCHEMA_VERSION_MISSING",
-      message: "result.xlsx does not include schema_version in 索引!B1."
+      message: "result.xlsx does not include schema_version in the 索引 sheet."
     });
   }
 

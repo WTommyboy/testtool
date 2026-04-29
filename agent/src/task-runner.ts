@@ -137,6 +137,7 @@ const prepareCodexContext = (config: AgentConfig, runDir: string): void => {
     "- Use `input/run-state.json` for allowed carryover only; previous-case evidence is isolated.",
     "- Never execute or write results for multiple cases in one Playwright tool call or one workbook write.",
     "- Write the final workbook to `output/result.xlsx` when real UAT cases are executed.",
+    "- Result detail_json hard gate: PASS must include 測試目的/設定條件/預期行為/實際行為; FAIL must also include 錯誤原因/根因層級/驗證方法/RD 分派; BLOCKED must include blocked_reason; PARTIAL must include 部分符合的子項清單/不符的子項清單.",
     ""
   ].join("\n");
   fs.writeFileSync(path.join(runDir, "AGENTS.md"), generatedAgents);
@@ -262,6 +263,7 @@ const writeRunBrief = (
     "- `input/run-state.json` defines allowed carryover. Evidence from a previous case is isolated and cannot prove a later case.",
     "- Prefer structured evidence first: DOM read, network observation, chart/table data. Use screenshots for Tool Bridge, FAIL/bug, major state transitions, and final evidence.",
     "- If structured DOM/network evidence already proves the result and a screenshot times out, do not repeatedly retry full-page screenshots. Try at most one smaller screenshot; if that also fails, record screenshot_unavailable_reason and continue.",
+    "- Result detail_json is checked by the server before ingest. PASS requires 測試目的/設定條件/預期行為/實際行為. FAIL requires those fields plus 錯誤原因/根因層級/驗證方法/RD 分派. BLOCKED requires blocked_reason. PARTIAL requires 部分符合的子項清單 and 不符的子項清單.",
     "",
     "## Tool Bridge Schemas",
     '- Irreversible: [TOOL_REQUEST]{"type":"irreversible_operation","request_id":"<run-id>-<case-no>-<slug>","case":"<case-no>","action":"<short action>","reason":"<why approval is required>","proposed_action":"<exact PM-approved action>"}[/TOOL_REQUEST]',
@@ -820,6 +822,9 @@ const buildPrompt = (
     `- Use ${guides.resultTemplatePath} as a column/shape reference when useful; do not edit the template in place.`,
     "- Preferred: create output/result.xlsx yourself with sheets named 索引, 測試案例, Bug.",
     "- 測試案例 sheet should include at minimum: 群組, 編號, 測試項目, 測試類型, 執行方式, 結果, 失敗分類, 詳細紀錄JSON.",
+    "- Bug sheet should include at minimum: 嚴重度, Bug ID, 關聯編號, 標題, 描述, 建議, 狀態. You may add Evidence as an extra column.",
+    "- 詳細紀錄JSON required fields: PASS => 測試目的, 設定條件, 預期行為, 實際行為; FAIL => PASS fields plus 錯誤原因, 根因層級, 驗證方法, RD 分派; BLOCKED => blocked_reason; PARTIAL => 部分符合的子項清單, 不符的子項清單.",
+    "- FAIL/BLOCKED/PARTIAL workbooks that omit the required detail_json fields will be rejected by result evidence gate.",
     "- If you cannot execute the real UAT, explain why; the agent will create a fallback summary workbook.",
     "- Do not use Tool Bridge for missing testcase files; report the missing files and exit cleanly.",
     "- For user approval or SSO/manual blockers, emit only supported actionable Tool Bridge types: irreversible_operation, ambiguity_decision, playwright_recovery.",

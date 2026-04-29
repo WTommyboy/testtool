@@ -13,6 +13,10 @@ export const writeResultTemplate = async (runDir: string): Promise<string> => {
   index.addRow(["schemaVersion", "result-template-v1"]);
   index.addRow(["policy", "Codex 仍需寫 output/result.xlsx；本檔只作欄位模板參考。"]);
   index.addRow(["oneCaseAtATime", "每次只寫一個 case 結果，禁止累積多題後一次寫入。"]);
+  index.addRow(["passDetailRequired", "測試目的, 設定條件, 預期行為, 實際行為"]);
+  index.addRow(["failDetailRequired", "測試目的, 設定條件, 預期行為, 實際行為, 錯誤原因, 根因層級, 驗證方法, RD 分派"]);
+  index.addRow(["blockedDetailRequired", "blocked_reason"]);
+  index.addRow(["partialDetailRequired", "部分符合的子項清單, 不符的子項清單"]);
 
   const cases = workbook.addWorksheet("測試案例");
   cases.addRow([
@@ -40,9 +44,28 @@ export const writeResultTemplate = async (runDir: string): Promise<string> => {
       實際行為: ""
     })
   ]);
+  cases.addRow([
+    "Example",
+    "EX-FAIL",
+    "FAIL 詳細紀錄範例",
+    "auto",
+    "Codex with Playwright",
+    "FAIL",
+    "EXAMPLE_ONLY",
+    JSON.stringify({
+      測試目的: "範例，不可當正式結果。",
+      設定條件: {},
+      預期行為: "",
+      實際行為: "",
+      錯誤原因: "",
+      根因層級: "",
+      驗證方法: "",
+      "RD 分派": ""
+    })
+  ]);
 
   const bugs = workbook.addWorksheet("Bug");
-  bugs.addRow(["Bug ID", "來源 Case", "標題", "嚴重度", "描述", "建議", "Evidence"]);
+  bugs.addRow(["嚴重度", "Bug ID", "關聯編號", "標題", "描述", "建議", "狀態", "Evidence"]);
 
   for (const sheet of workbook.worksheets) {
     sheet.getRow(1).font = { bold: true };

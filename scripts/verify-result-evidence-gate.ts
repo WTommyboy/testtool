@@ -65,6 +65,32 @@ const writeWorkbook = async (filePath: string, cases: FixtureCase[], schemaVersi
   await workbook.xlsx.writeFile(filePath);
 };
 
+const writeLegacyBugHeaderWorkbook = async (filePath: string): Promise<void> => {
+  const workbook = new ExcelJS.Workbook();
+  const index = workbook.addWorksheet("索引");
+  index.addRow(["欄位", "值"]);
+  index.addRow(["schemaVersion", "legacy-bug-header-fixture-v1"]);
+
+  const sheet = workbook.addWorksheet("測試案例");
+  sheet.addRow(["群組", "編號", "測試項目", "測試類型", "執行方式", "結果", "失敗分類", "詳細紀錄JSON"]);
+  sheet.addRow([
+    "H:Fixture",
+    "FIX-H-01",
+    "legacy bug header parser fixture",
+    "前後端整合",
+    "agent",
+    "PASS",
+    "",
+    JSON.stringify(goodDetail)
+  ]);
+
+  const bugs = workbook.addWorksheet("Bug");
+  bugs.addRow(["Bug ID", "來源 Case", "標題", "嚴重度", "描述", "建議", "Evidence"]);
+  bugs.addRow(["BUG-LEGACY-001", "FIX-H-01", "舊欄位相容性", "P2", "legacy fixture", "keep compatible", ""]);
+
+  await workbook.xlsx.writeFile(filePath);
+};
+
 const runGate = async (
   xlsxPath: string,
   options: { currentCaseNo?: string | null; expectedCaseNos?: string[]; resultSource?: string | null } = {}
@@ -95,6 +121,14 @@ const main = async (): Promise<void> => {
     ]);
     const goodReport = await runGate(good);
     assert.equal(goodReport.status, "ok", `good result should pass; issues=${JSON.stringify(goodReport.issues)}`);
+
+    const legacyBugHeader = path.join(tempRoot, "legacy-bug-header-result.xlsx");
+    await writeLegacyBugHeaderWorkbook(legacyBugHeader);
+    const legacyParsed = await parseResultXlsx(legacyBugHeader);
+    assert.equal(legacyParsed.schemaVersion, "legacy-bug-header-fixture-v1");
+    assert.equal(legacyParsed.bugs.length, 1);
+    assert.equal(legacyParsed.bugs[0]?.relatedCaseNo, "FIX-H-01");
+    assert.equal(legacyParsed.bugs[0]?.status, "OPEN");
 
     const multi = path.join(tempRoot, "multi-result.xlsx");
     await writeWorkbook(multi, [
@@ -160,6 +194,7 @@ const main = async (): Promise<void> => {
           fixture: "result-evidence-gate",
           checked: [
             "single current-case result with current-run evidence passes",
+            "legacy Bug sheet header 來源 Case without 狀態 is parsed as OPEN",
             "multi-case result is blocked",
             "missing current-run evidence is blocked",
             "agent fallback result is blocked",

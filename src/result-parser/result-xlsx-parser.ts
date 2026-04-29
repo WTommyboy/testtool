@@ -67,8 +67,28 @@ const requireHeader = (row: ExcelJS.Row, key: string, names: string[]): number =
   return index;
 };
 
+const optionalHeader = (row: ExcelJS.Row, names: string[]): number | null => {
+  return findHeader(row, names) ?? null;
+};
+
 const nullable = (value: string): string | null => {
   return value ? value : null;
+};
+
+const readSchemaVersion = (sheet: ExcelJS.Worksheet): string | null => {
+  const schemaKeys = new Set(["schemaversion", "schema_version"]);
+  const maxRows = Math.min(sheet.rowCount, 20);
+  for (let rowNo = 1; rowNo <= maxRows; rowNo += 1) {
+    const row = sheet.getRow(rowNo);
+    if (schemaKeys.has(normalize(row.getCell(1).value))) {
+      return nullable(text(row.getCell(2).value));
+    }
+  }
+
+  const a1 = normalize(sheet.getCell("A1").value);
+  const b1 = normalize(sheet.getCell("B1").value);
+  if (a1 === "欄位" && b1 === "值") return null;
+  return nullable(text(sheet.getCell("B1").value));
 };
 
 export const parseResultXlsx = async (filePath: string): Promise<ParsedResultXlsx> => {
@@ -80,7 +100,7 @@ export const parseResultXlsx = async (filePath: string): Promise<ParsedResultXls
   await workbook.xlsx.readFile(filePath);
 
   const indexSheet = workbook.getWorksheet("索引");
-  const schemaVersion = indexSheet ? nullable(text(indexSheet.getCell("B1").value)) : null;
+  const schemaVersion = indexSheet ? readSchemaVersion(indexSheet) : null;
 
   const caseSheet = workbook.getWorksheet("測試案例");
   if (!caseSheet) throw new Error("RESULT_CASE_SHEET_NOT_FOUND");
@@ -123,11 +143,18 @@ export const parseResultXlsx = async (filePath: string): Promise<ParsedResultXls
     const b = {
       severity: requireHeader(bugHeader, "severity", ["嚴重度", "severity"]),
       bugId: requireHeader(bugHeader, "bugId", ["bugid", "bug_id", "bug id"]),
-      relatedCaseNo: requireHeader(bugHeader, "relatedCaseNo", ["關聯編號", "related_case_no"]),
+      relatedCaseNo: requireHeader(bugHeader, "relatedCaseNo", [
+        "關聯編號",
+        "related_case_no",
+        "relatedCaseNo",
+        "來源 Case",
+        "來源Case",
+        "source case"
+      ]),
       title: requireHeader(bugHeader, "title", ["標題", "title"]),
       description: requireHeader(bugHeader, "description", ["描述", "description"]),
       suggestion: requireHeader(bugHeader, "suggestion", ["建議", "suggestion"]),
-      status: requireHeader(bugHeader, "status", ["狀態", "status"])
+      status: optionalHeader(bugHeader, ["狀態", "status"])
     };
     for (let rowNo = 2; rowNo <= bugSheet.rowCount; rowNo += 1) {
       const row = bugSheet.getRow(rowNo);
@@ -140,7 +167,7 @@ export const parseResultXlsx = async (filePath: string): Promise<ParsedResultXls
         title: text(row.getCell(b.title).value),
         description: nullable(text(row.getCell(b.description).value)),
         suggestion: nullable(text(row.getCell(b.suggestion).value)),
-        status: text(row.getCell(b.status).value) || "OPEN"
+        status: b.status ? text(row.getCell(b.status).value) || "OPEN" : "OPEN"
       });
     }
   }

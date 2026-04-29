@@ -53,6 +53,46 @@ backend 應記錄 `run.partial_artifacts` event。
 
 如果 Codex 在 evidence 不足時產生 case results，這些 rows 應標為 blocked 或 evidence-insufficient。
 
+## Result Workbook Contract
+
+`output/result.xlsx` 至少需要三個 sheet：
+
+- `索引`
+- `測試案例`
+- `Bug`
+
+`測試案例` sheet 至少包含：
+
+- `群組`
+- `編號`
+- `測試項目`
+- `測試類型`
+- `執行方式`
+- `結果`
+- `失敗分類`
+- `詳細紀錄JSON`
+
+`Bug` sheet 至少包含：
+
+- `嚴重度`
+- `Bug ID`
+- `關聯編號`
+- `標題`
+- `描述`
+- `建議`
+- `狀態`
+
+可額外加入 `Evidence` 欄，但不可用 `Evidence` 取代 `狀態`。
+
+`詳細紀錄JSON` 會被 server evidence gate 檢查：
+
+- `PASS` 必填：`測試目的`、`設定條件`、`預期行為`、`實際行為`
+- `FAIL` 必填：PASS 四欄，加上 `錯誤原因`、`根因層級`、`驗證方法`、`RD 分派`
+- `BLOCKED` 必填：`blocked_reason`
+- `PARTIAL` 必填：`部分符合的子項清單`、`不符的子項清單`
+
+缺少上述欄位時，result ingest 會失敗；不視為 case 完成。
+
 ## Logs
 
 Agent 應維持 execution log，至少包含：
