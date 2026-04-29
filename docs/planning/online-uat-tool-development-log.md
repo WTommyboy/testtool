@@ -576,3 +576,16 @@ Tommy 曾討論是否改成腳本。最後決策是採「半腳本化 / helper �
 - 決策：M2 前補正式 `agent-skills/uat-tool/rules/helper-protocol.md`，系統化定義 Helper protocol、職責邊界、hard rules、`helper-execution-plan` / `helper-pre-run-summary` / `helper-report` 契約；M2 再把 BI domain helper templates 搬到 `domains/BI/helpers/`，並把 helper artifact timestamp / caseId / action 驗證納入 hard gate。M0/M1 不搬架構。
 - 本次修改：helper plan safety 新增「不可使用 `force: true` 或繞過 browser actionability check」；`bi-ui-helper-executor` 移除 `clickByText()` 的 `force: true` fallback，點不到或 actionability 失敗改回 `blocked` report 並留下 reason / DOM / screenshot；Agent 在產生 current-case helper plan 前，會把 `output/helper-artifacts/` 中非 current case 的 artifact 與不符 current case 的 `helper-pre-run-summary.json` 移到 `output/helper-artifacts-archive/<timestamp>/`，避免 Codex 誤讀上題殘留。
 - 後續影響：Helper 仍只可收集 current-run evidence，不可判 PASS/FAIL、不寫 `result.xlsx`、不跑多題、不直接打 BI API、不用內部 JS setter。下一版 result evidence gate 需進一步解析 helper report 的 `caseId` / `action` / `startedAt` / `endedAt`，不能只靠 detail_json 文字命中 current-run evidence 關鍵字。
+
+### 2026-04-30 06:02 - 補 Codex 文件更新與 Git 推送紀律
+
+- 背景：Tommy 指出「只要調文件都要更新日誌」本來就是既有要求，但前面 Helper 新元件雖有 planning log，沒有同步補正式規格 / protocol，也曾發生文件先留在本機未即時推 Git，造成跨 session 交接風險。
+- 決策：後續 Codex 修改 uat-tool 時，必須把「文件更新、commit/push、deployment branch」狀態當成交付物的一部分回報，不可只說程式已改。
+- 執行紀律：
+  - 任何工具流程、Mac Agent、Helper、Tool Bridge、run packet、rule index、current-case-pack、evidence gate、result pipeline、部署分支或 production 架構調整，都必須同步更新本 planning log。
+  - 架構級新元件或跨 M 版本會沿用的 protocol，不只寫 planning log，也必須補正式 spec / protocol 文件，或至少在本 planning log 明確列入具體待辦、目標路徑與版本點。
+  - 程式變更必須在 typecheck/build/相關 verify 通過後立刻 commit/push；若尚未驗證，回報必須明講「尚未 commit/push」。
+  - 文件-only 變更也要 commit 並推 `refactor/mac-agent-mvp`；是否同步推 `codex/uat-tool-mvp` 要明確說明。預設不為純文件更新觸發 Railway redeploy，除非該文件是 production runtime 會讀取的契約或 Tommy 明確要求。
+  - 需要上線的程式 / runtime 行為變更，必須同步推 `codex/uat-tool-mvp`，並用 `/version`、`/health` 或 Railway deployment 狀態確認 production 是否真的更新。
+  - 每次收尾回報必須列清楚：commit hash、已 push 分支、production commit/deployment 是否更新、本機 Mac Agent 是否需要或已完成重啟。
+- 後續影響：這條是 Codex 自身工作紀律，避免未來只把規則留在對話裡，造成 compact / 新 session 後遺忘。
