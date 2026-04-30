@@ -766,3 +766,10 @@ Tommy 曾討論是否改成腳本。最後決策是採「半腳本化 / helper �
 - 背景：OTTEST002 run `d1f5e4c8-4889-4001-bbed-ffaf71bf0812` 顯示 helper 已成功打開日期工具，截圖中左側是 `三月 2026`、右側是 `四月 2026`，左側 31 號可見；但 helper 仍把 `2026/03/01~2026/03/31` 的結束日固定拿到右側月曆找，右側四月沒有 31，導致 `DATE_RANGE_CALENDAR_DAY_NOT_CLICKABLE`。這是同月區間被錯寫成「start 左、end 右」的假設。
 - 本次修正：日期點擊改為依目標年月尋找目前可見的月曆，再在該月曆內點 day cell；若開始與結束同年月，結束日會留在同一側月曆點擊，不再強制右側。warning 也補上 `startClicked/endClicked/sameMonth`，下次若再失敗可直接看是哪一段沒點到。
 - 修改檔案：`agent/src/bi-ui-helper-executor.ts`、本 planning log。
+
+### 2026-05-01 07:59 - 修正 OTTEST002_07：日期元件是 start/end calendar，不是左右任意 range picker
+
+- 背景：OTTEST002 run `dfe4d47e-67b0-465a-a821-37f5be006bdc` 顯示 07:50 修正仍不足。Helper 在左側 `startCalendar` 點 3/1 後，再點左側 3/31，結果變成 `2026/03/31 ~ 2026/04/30`；DOM 診斷確認此元件不是任意 range picker，而是兩個固定容器：左側 `#startCalendar` 永遠改 start date，右側 `#endCalendar` 永遠改 end date。
+- 本次修正：月曆定位改用 DOM id：`#startCalendarMonth/#endCalendarMonth`、`prevMonth('start'/'end')`、`#startCalendar .calendar-day`、`#endCalendar .calendar-day`。即使起訖同月，也會把右側 end calendar 移到目標月份，然後左側點 start day、右側點 end day；不再用左右座標或同側點兩次猜測。另補 `#datePickerPopup` 開啟狀態檢查，避免面板已開時再點日期按鈕反而把面板關掉。
+- 二次診斷補充：實測發現只要點左側 start day，前端會把右側 end calendar 自動重算回下一個月，因此 helper 必須在「點完 start day 之後」再移動 end calendar 並點 end day；不能先把兩邊月份都移好再點。流程已改為 `move start month -> click start day -> move end month -> click end day -> confirm`。
+- 修改檔案：`agent/src/bi-ui-helper-executor.ts`、本 planning log。

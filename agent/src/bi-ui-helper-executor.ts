@@ -264,6 +264,31 @@ type VisibleTextTarget = {
 };
 type VisibleMonthLabel = { text: string; year: number; month: number; x: number; y: number; width: number; height: number };
 
+const calendarDomSide = (side: CalendarSide): "start" | "end" => side === "left" ? "start" : "end";
+
+const parseCalendarMonthText = (text: string | null | undefined): Pick<VisibleMonthLabel, "year" | "month"> | null => {
+  const normalized = (text ?? "").trim().replace(/\s+/g, " ");
+  const match = normalized.match(/^([一二三四五六七八九十]{1,2})月\s+(\d{4})$/);
+  if (!match) return null;
+  const monthMap: Record<string, number> = {
+    一: 1,
+    二: 2,
+    三: 3,
+    四: 4,
+    五: 5,
+    六: 6,
+    七: 7,
+    八: 8,
+    九: 9,
+    十: 10,
+    十一: 11,
+    十二: 12
+  };
+  const month = monthMap[match[1] ?? ""];
+  if (!month) return null;
+  return { year: Number(match[2]), month };
+};
+
 const parseDateRange = (value: string | null): { startIso: string; endIso: string; display: string } | null => {
   if (!value) return null;
   const matches = [...value.matchAll(/(\d{4})[/-](\d{1,2})[/-](\d{1,2})/g)];
@@ -289,6 +314,14 @@ const bodyContainsDateRange = async (page: Page, display: string): Promise<boole
 const bodyContainsText = async (page: Page, expected: string): Promise<boolean> => {
   const bodyText = await page.locator("body").innerText({ timeout: 5000 }).catch(() => "");
   return normalizeUiText(bodyText).includes(normalizeUiText(expected));
+};
+
+const isDatePickerOpen = async (page: Page): Promise<boolean> => {
+  return page.locator("#datePickerPopup").first().evaluate((element) => {
+    const rect = element.getBoundingClientRect();
+    const style = window.getComputedStyle(element);
+    return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden";
+  }).catch(() => false);
 };
 
 const parseCleanupTargets = (value: unknown): Record<string, string> => {
@@ -526,26 +559,82 @@ const ensureStaticCalendarTabs = async (page: Page): Promise<void> => {
 };
 
 const calendarMonthForSide = async (page: Page, side: CalendarSide): Promise<VisibleMonthLabel | null> => {
+  const domSide = calendarDomSide(side);
+  const selector = `#${domSide}CalendarMonth`;
+  const located = await page.locator(selector).first().evaluate((element) => {
+    const rect = element.getBoundingClientRect();
+    return {
+      text: element.textContent?.trim() ?? "",
+      x: rect.x,
+      y: rect.y,
+      width: rect.width,
+      height: rect.height
+    };
+  }).catch(() => null);
+  if (located) {
+    const parsed = parseCalendarMonthText(located.text);
+    if (parsed) {
+      return {
+        text: located.text,
+        year: parsed.year,
+        month: parsed.month,
+        x: located.x,
+        y: located.y,
+        width: located.width,
+        height: located.height
+      };
+    }
+  }
   const months = (await visibleCalendarMonths(page)).sort((a, b) => a.x - b.x || a.y - b.y);
   if (months.length === 0) return null;
   return side === "left" ? months[0] ?? null : months[months.length - 1] ?? null;
 };
 
 const moveCalendarToMonth = async (page: Page, side: CalendarSide, targetYear: number, targetMonth: number): Promise<boolean> => {
+  const domSide = calendarDomSide(side);
   for (let attempt = 0; attempt < 24; attempt += 1) {
     const current = await calendarMonthForSide(page, side);
     if (!current) return false;
     const diff = monthDiff(current, targetYear, targetMonth);
     if (diff === 0) return true;
-    const direction = diff < 0 ? "‹" : "›";
-    const clicked = await clickSideButton(page, direction, side, 3000);
-    if (!clicked) return false;
+    const fn = diff < 0 ? "prevMonth" : "nextMonth";
+    const clicked = await page
+      .locator(`button[onclick="${fn}('${domSide}', event)"]`)
+      .first()
+      .click({ timeout: 3000 })
+      .then(() => true)
+      .catch(() => false);
+    if (!clicked) {
+      const direction = diff < 0 ? "‹" : "›";
+      const fallbackClicked = await clickSideButton(page, direction, side, 3000);
+      if (!fallbackClicked) return false;
+    }
     await page.waitForTimeout(250);
   }
   return false;
 };
 
 const clickCalendarDay = async (page: Page, side: CalendarSide, day: number): Promise<boolean> => {
+  const domSide = calendarDomSide(side);
+  const calendarLocator = page.locator(`#${domSide}Calendar .calendar-day`);
+  const count = await calendarLocator.count().catch(() => 0);
+  for (let index = 0; index < count; index += 1) {
+    const dayLocator = calendarLocator.nth(index);
+    const candidate = await dayLocator.evaluate((element) => {
+      const rect = element.getBoundingClientRect();
+      const style = window.getComputedStyle(element);
+      return {
+        text: element.textContent?.trim() ?? "",
+        className: typeof element.className === "string" ? element.className : "",
+        visible: rect.width > 0 && rect.height > 0 && style.visibility !== "hidden" && style.display !== "none"
+      };
+    }).catch(() => null);
+    if (!candidate || candidate.text !== String(day) || !candidate.visible) continue;
+    if (/disabled|disable|unavailable|outside|other-month/i.test(candidate.className)) continue;
+    await dayLocator.click({ timeout: 5000 });
+    return true;
+  }
+
   const months = (await visibleCalendarMonths(page)).sort((a, b) => a.x - b.x || a.y - b.y);
   if (months.length < 2) return false;
   const left = months[0];
@@ -585,28 +674,6 @@ const clickCalendarDay = async (page: Page, side: CalendarSide, day: number): Pr
   return true;
 };
 
-const clickCalendarDayInVisibleMonth = async (
-  page: Page,
-  targetYear: number,
-  targetMonth: number,
-  day: number,
-  preferredSide?: CalendarSide
-): Promise<boolean> => {
-  const months = (await visibleCalendarMonths(page)).sort((a, b) => a.x - b.x || a.y - b.y);
-  if (months.length < 2) return false;
-  const matching = months
-    .map((month, index) => ({
-      month,
-      side: index === 0 ? "left" as CalendarSide : "right" as CalendarSide
-    }))
-    .filter((item) => item.month.year === targetYear && item.month.month === targetMonth);
-  const selected = preferredSide
-    ? matching.find((item) => item.side === preferredSide) ?? matching[0]
-    : matching[0];
-  if (!selected) return false;
-  return clickCalendarDay(page, selected.side, day);
-};
-
 const setStaticDateRangeByCalendar = async (
   page: Page,
   parsed: { startIso: string; endIso: string; display: string }
@@ -622,23 +689,38 @@ const setStaticDateRangeByCalendar = async (
 
   await ensureStaticCalendarTabs(page);
   const startMonthReady = await moveCalendarToMonth(page, "left", startYear, startMonth);
-  const sameMonth = startYear === endYear && startMonth === endMonth;
-  const endMonthReady = sameMonth ? true : await moveCalendarToMonth(page, "right", endYear, endMonth);
-  if (!startMonthReady || !endMonthReady) {
+  if (!startMonthReady) {
     return {
       ok: false,
-      warning: "DATE_RANGE_CALENDAR_MONTH_NOT_REACHED",
+      warning: `DATE_RANGE_START_CALENDAR_MONTH_NOT_REACHED:startMonth=${startYear}-${startMonth}`,
       observedAfter: (await page.locator("body").innerText({ timeout: 5000 }).catch(() => "")).slice(0, 1000)
     };
   }
 
-  const startClicked = await clickCalendarDayInVisibleMonth(page, startYear, startMonth, startDay, "left");
-  await page.waitForTimeout(250);
-  const endClicked = await clickCalendarDayInVisibleMonth(page, endYear, endMonth, endDay, sameMonth ? "left" : "right");
-  if (!startClicked || !endClicked) {
+  const startClicked = await clickCalendarDay(page, "left", startDay);
+  if (!startClicked) {
     return {
       ok: false,
-      warning: `DATE_RANGE_CALENDAR_DAY_NOT_CLICKABLE:startClicked=${startClicked};endClicked=${endClicked};sameMonth=${sameMonth}`,
+      warning: `DATE_RANGE_START_DAY_NOT_CLICKABLE:startDay=${startDay};startMonth=${startYear}-${startMonth}`,
+      observedAfter: (await page.locator("body").innerText({ timeout: 5000 }).catch(() => "")).slice(0, 1200)
+    };
+  }
+  await page.waitForTimeout(250);
+
+  const endMonthReady = await moveCalendarToMonth(page, "right", endYear, endMonth);
+  if (!endMonthReady) {
+    return {
+      ok: false,
+      warning: `DATE_RANGE_END_CALENDAR_MONTH_NOT_REACHED:endMonth=${endYear}-${endMonth}`,
+      observedAfter: (await page.locator("body").innerText({ timeout: 5000 }).catch(() => "")).slice(0, 1000)
+    };
+  }
+
+  const endClicked = await clickCalendarDay(page, "right", endDay);
+  if (!endClicked) {
+    return {
+      ok: false,
+      warning: `DATE_RANGE_END_DAY_NOT_CLICKABLE:endDay=${endDay};endMonth=${endYear}-${endMonth}`,
       observedAfter: (await page.locator("body").innerText({ timeout: 5000 }).catch(() => "")).slice(0, 1200)
     };
   }
@@ -665,13 +747,15 @@ const setDateRange = async (page: Page, dateRange: string): Promise<{ ok: boolea
   if (!parsed) return setDatePreset(page, dateRange);
   if (await bodyContainsDateRange(page, parsed.display)) return { ok: true, observedAfter: parsed.display };
 
-  const opened = await clickFirstVisible([
-    page.locator("#dateRangeBtn"),
-    page.locator("button").filter({ hasText: /過去|最近|今日|昨日|本週|上週|本月|上月|\d{4}[/-]\d{1,2}[/-]\d{1,2}/ }),
-    page.getByText(/過去7天|最近7天|過去30天|最近30天|\d{4}[/-]\d{1,2}[/-]\d{1,2}/, { exact: false })
-  ], 8000);
-  if (!opened) return { ok: false, warning: "DATE_RANGE_CONTROL_NOT_CLICKABLE" };
-  await page.waitForTimeout(400);
+  if (!(await isDatePickerOpen(page))) {
+    const opened = await clickFirstVisible([
+      page.locator("#dateRangeBtn"),
+      page.locator("button").filter({ hasText: /過去|最近|今日|昨日|本週|上週|本月|上月|\d{4}[/-]\d{1,2}[/-]\d{1,2}/ }),
+      page.getByText(/過去7天|最近7天|過去30天|最近30天|\d{4}[/-]\d{1,2}[/-]\d{1,2}/, { exact: false })
+    ], 8000);
+    if (!opened) return { ok: false, warning: "DATE_RANGE_CONTROL_NOT_CLICKABLE" };
+    await page.waitForTimeout(400);
+  }
 
   await clickFirstVisible([page.getByText("靜態時間", { exact: true }), page.locator("button").filter({ hasText: "靜態時間" })], 5000);
   await page.waitForTimeout(400);
@@ -708,13 +792,15 @@ const setDatePreset = async (page: Page, preset: string): Promise<{ ok: boolean;
   if (!normalizedPreset) return { ok: false, warning: "DATE_RANGE_PRESET_EMPTY" };
   if (await bodyContainsText(page, normalizedPreset)) return { ok: true, observedAfter: normalizedPreset };
 
-  const opened = await clickFirstVisible([
-    page.locator("#dateRangeBtn"),
-    page.locator("button").filter({ hasText: /過去|最近|今日|昨日|本週|上週|本月|上月|\d{4}[/-]\d{1,2}[/-]\d{1,2}/ }),
-    page.getByText(/過去7天|最近7天|過去30天|最近30天|今日|昨日|本週|上週|本月|上月/, { exact: false })
-  ], 8000);
-  if (!opened) return { ok: false, warning: "DATE_RANGE_CONTROL_NOT_CLICKABLE" };
-  await page.waitForTimeout(400);
+  if (!(await isDatePickerOpen(page))) {
+    const opened = await clickFirstVisible([
+      page.locator("#dateRangeBtn"),
+      page.locator("button").filter({ hasText: /過去|最近|今日|昨日|本週|上週|本月|上月|\d{4}[/-]\d{1,2}[/-]\d{1,2}/ }),
+      page.getByText(/過去7天|最近7天|過去30天|最近30天|今日|昨日|本週|上週|本月|上月/, { exact: false })
+    ], 8000);
+    if (!opened) return { ok: false, warning: "DATE_RANGE_CONTROL_NOT_CLICKABLE" };
+    await page.waitForTimeout(400);
+  }
 
   const selected = await clickFirstVisible([
     page.getByText(normalizedPreset, { exact: true }),
