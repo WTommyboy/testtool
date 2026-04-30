@@ -32,6 +32,27 @@ export type HelperPreRunSummary = {
   actions: HelperPreRunActionResult[];
 };
 
+type AutoApprovedToolBridgeResponseLike = {
+  requestId: string | null;
+  request: unknown;
+  raw?: string;
+  note?: string;
+};
+
+export type HelperContinuationSummary = {
+  schemaVersion: "helper-continuation-v1";
+  generatedAt: string;
+  runDir: string;
+  caseId: string | null;
+  status: "ok" | "partial" | "skipped";
+  skippedReason: string | null;
+  actionCount: number;
+  executedCount: number;
+  durationMs: number;
+  autoResponseCount: number;
+  actions: HelperPreRunActionResult[];
+};
+
 const readJsonIfExists = <T>(filePath: string): T | null => {
   if (!fs.existsSync(filePath)) return null;
   return JSON.parse(fs.readFileSync(filePath, "utf8")) as T;
@@ -81,6 +102,8 @@ const latestReportPath = (runDir: string, caseId: string | null, template: strin
   const safeAction = template.replace(/[^a-zA-Z0-9._-]+/g, "_").replace(/^_+|_+$/g, "") || "helper-action";
   return path.join(runDir, "output", "helper-artifacts", safeCase, `${safeAction}-latest.json`);
 };
+
+const sanitizeId = (value: string): string => value.replace(/[^a-zA-Z0-9._-]+/g, "_").replace(/^_+|_+$/g, "") || "helper-action";
 
 type HelperReportArtifactValidation = {
   ok: boolean;
@@ -179,12 +202,14 @@ const runHelperAction = async (
   runDir: string,
   caseId: string | null,
   action: HelperPlanAction,
-  timing?: RunTimingRecorder
+  timing?: RunTimingRecorder,
+  options: { approvedToolRequestId?: string | null } = {}
 ): Promise<HelperPreRunActionResult> => {
   const startedAt = Date.now();
   const timingId = timing?.start(`helper.${action.template}`, "helper_action", {
     actionId: action.id,
-    title: action.title
+    title: action.title,
+    continuation: Boolean(options.approvedToolRequestId)
   });
   const executor = helperExecutorPath();
   const reportPath = latestReportPath(runDir, caseId, action.template);
@@ -199,6 +224,9 @@ const runHelperAction = async (
     "--params-json",
     JSON.stringify(action.params ?? {})
   ];
+  if (options.approvedToolRequestId) {
+    args.push("--approved-tool-request-id", options.approvedToolRequestId);
+  }
 
   return await new Promise((resolve) => {
     const child = spawn(process.execPath, args, {
@@ -268,6 +296,169 @@ const writeSummary = (runDir: string, summary: HelperPreRunSummary): string => {
   return filePath;
 };
 
+const writeContinuationSummary = (runDir: string, summary: HelperContinuationSummary): string => {
+  const filePath = path.join(runDir, "output", "helper-continuation-summary.json");
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, `${JSON.stringify(summary, null, 2)}\n`);
+  fs.appendFileSync(path.join(runDir, "output", "helper-continuation-summary.jsonl"), `${JSON.stringify(summary)}\n`);
+  return filePath;
+};
+
+const requestRecord = (request: unknown): Record<string, unknown> | null => {
+  return request && typeof request === "object" && !Array.isArray(request) ? (request as Record<string, unknown>) : null;
+};
+
+const requestText = (response: AutoApprovedToolBridgeResponseLike): string => {
+  const request = requestRecord(response.request);
+  return [
+    request?.type,
+    request?.request_id,
+    request?.case,
+    request?.caseNo,
+    request?.action,
+    request?.proposed_action,
+    request?.reason,
+    response.note,
+    response.raw
+  ]
+    .filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+    .join("\n");
+};
+
+const responseMatchesCase = (response: AutoApprovedToolBridgeResponseLike, caseId: string | null): boolean => {
+  if (!caseId) return false;
+  const request = requestRecord(response.request);
+  const explicitCase = request?.case ?? request?.caseNo ?? request?.case_no;
+  if (typeof explicitCase === "string" && explicitCase.trim()) return explicitCase.trim() === caseId;
+  return requestText(response).includes(caseId);
+};
+
+const findApprovalForAction = (
+  action: HelperPlanAction,
+  caseId: string | null,
+  responses: AutoApprovedToolBridgeResponseLike[]
+): AutoApprovedToolBridgeResponseLike | null => {
+  return (
+    responses.find((response) => {
+      const request = requestRecord(response.request);
+      if (request?.type !== "irreversible_operation") return false;
+      if (!responseMatchesCase(response, caseId)) return false;
+      const text = requestText(response);
+      if (text.includes(action.template) || text.includes(action.title)) return true;
+      if (action.template === "collage.saveReport" && /儲存|save/i.test(text)) return true;
+      if (action.template === "collage.deleteTemporaryReport" && /刪除|delete|remove/i.test(text)) return true;
+      return false;
+    }) ?? null
+  );
+};
+
+const existingActionStatus = (
+  runDir: string,
+  caseId: string | null,
+  action: HelperPlanAction
+): { status: HelperPreRunActionResult["status"] | null; warnings: string[]; error?: string } => {
+  const reportPath = latestReportPath(runDir, caseId, action.template);
+  if (!fs.existsSync(reportPath)) return { status: null, warnings: [] };
+  return readLatestReport(runDir, caseId, action, reportPath);
+};
+
+export const runHelperContinuationAfterApprovals = async (
+  runDir: string,
+  autoResponses: AutoApprovedToolBridgeResponseLike[],
+  timing?: RunTimingRecorder
+): Promise<HelperContinuationSummary> => {
+  const startedAt = Date.now();
+  const planPath = path.join(runDir, "input", "helper-execution-plan.json");
+  const plan = readJsonIfExists<HelperExecutionPlan>(planPath);
+  const consistency = consistencyStatus(runDir);
+  const capabilityGate = capabilityGateAllowsHelperPreRun(runDir);
+  const skippedReason = !plan
+    ? "HELPER_EXECUTION_PLAN_MISSING"
+    : autoResponses.length === 0
+      ? "AUTO_TOOL_RESPONSES_EMPTY"
+      : consistency === "error"
+        ? "CONSISTENCY_GATE_ERROR"
+        : !capabilityGate.allowed
+          ? `CAPABILITY_GATE_SKIPPED_HELPER:${capabilityGate.reason ?? "helper continuation not allowed"}`
+          : null;
+
+  if (!plan || skippedReason) {
+    const summary: HelperContinuationSummary = {
+      schemaVersion: "helper-continuation-v1",
+      generatedAt: new Date().toISOString(),
+      runDir,
+      caseId: plan?.caseId ?? null,
+      status: "skipped",
+      skippedReason,
+      actionCount: 0,
+      executedCount: 0,
+      durationMs: Date.now() - startedAt,
+      autoResponseCount: autoResponses.length,
+      actions: []
+    };
+    writeContinuationSummary(runDir, summary);
+    return summary;
+  }
+
+  const results: HelperPreRunActionResult[] = [];
+  let blockedByExistingAction = false;
+  let missingPrerequisiteBeforeApproval = false;
+  for (const action of plan.actions) {
+    if (action.optional) break;
+    const existing = existingActionStatus(runDir, plan.caseId, action);
+    if (existing.status === "ok") continue;
+    if (existing.status && existing.status !== "requires_approval") {
+      blockedByExistingAction = true;
+      break;
+    }
+
+    if (action.requiresToolBridge) {
+      const approval = findApprovalForAction(action, plan.caseId, autoResponses);
+      if (!approval) break;
+      const approvedToolRequestId = approval.requestId ?? `${plan.caseId ?? "unknown-case"}-${sanitizeId(action.template)}-auto`;
+      const result = await runHelperAction(runDir, plan.caseId, action, timing, { approvedToolRequestId });
+      results.push(result);
+      if (result.status !== "ok") break;
+      continue;
+    }
+
+    if (results.length === 0) {
+      missingPrerequisiteBeforeApproval = true;
+      break;
+    }
+    const result = await runHelperAction(runDir, plan.caseId, action, timing);
+    results.push(result);
+    if (result.status !== "ok" || result.warnings.some((warning) => /NOT_FULLY_AUTOMATED|REQUIRES_CODEX|MANUAL/i.test(warning))) {
+      break;
+    }
+  }
+
+  const durationMs = Date.now() - startedAt;
+  const status: HelperContinuationSummary["status"] =
+    results.length > 0 && results.every((item) => item.status === "ok") && !blockedByExistingAction ? "ok" : results.length > 0 ? "partial" : "skipped";
+  const summary: HelperContinuationSummary = {
+    schemaVersion: "helper-continuation-v1",
+    generatedAt: new Date().toISOString(),
+    runDir,
+    caseId: plan.caseId,
+    status,
+    skippedReason: status === "skipped"
+      ? blockedByExistingAction
+        ? "PREVIOUS_HELPER_ACTION_NOT_OK"
+        : missingPrerequisiteBeforeApproval
+          ? "PREVIOUS_HELPER_ACTION_MISSING_BEFORE_APPROVAL"
+          : "NO_MATCHING_PENDING_HELPER_ACTION"
+      : null,
+    actionCount: plan.actions.length,
+    executedCount: results.length,
+    durationMs,
+    autoResponseCount: autoResponses.length,
+    actions: results
+  };
+  writeContinuationSummary(runDir, summary);
+  return summary;
+};
+
 export const runSafeHelperActions = async (
   runDir: string,
   timing?: RunTimingRecorder
@@ -333,4 +524,10 @@ export const summarizeHelperPreRun = (summary: HelperPreRunSummary): string => {
   if (summary.status === "skipped") return `helper pre-run skipped: ${summary.skippedReason ?? "unknown"}`;
   const parts = summary.actions.map((item) => `${item.template}=${item.status}(${formatDuration(item.durationMs)})`);
   return `helper pre-run ${summary.status}: ${summary.executedCount}/${summary.actionCount} actions in ${formatDuration(summary.durationMs)}${parts.length ? `; ${parts.join(", ")}` : ""}`;
+};
+
+export const summarizeHelperContinuation = (summary: HelperContinuationSummary): string => {
+  if (summary.status === "skipped") return `helper continuation skipped: ${summary.skippedReason ?? "unknown"}`;
+  const parts = summary.actions.map((item) => `${item.template}=${item.status}(${formatDuration(item.durationMs)})`);
+  return `helper continuation ${summary.status}: ${summary.executedCount}/${summary.actionCount} actions in ${formatDuration(summary.durationMs)}${parts.length ? `; ${parts.join(", ")}` : ""}`;
 };

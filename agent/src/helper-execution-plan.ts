@@ -95,6 +95,12 @@ const stringParam = (params: Record<string, unknown>, keys: string[]): string | 
   return null;
 };
 
+const cleanReportNamePattern = (value: string | null): string | null => {
+  if (!value) return null;
+  const cleaned = value.replace(/[)）]\s*$/, "").trim();
+  return cleaned || null;
+};
+
 const inferCollageParams = (currentCase: CaseManifestCase | null, helperHints: HelperHints | null): Record<string, unknown> => {
   const text = textBlob(currentCase);
   const cleanup = parseCleanupTargets(currentCase?.cleanupChecklist);
@@ -113,9 +119,10 @@ const inferCollageParams = (currentCase: CaseManifestCase | null, helperHints: H
     display: stringParam(params, ["display", "displayMode"]) ?? cleanup["顯示"] ?? null,
     cleanupChecklist: currentCase?.cleanupChecklist ?? null,
     cleanupTargets: cleanup,
-    reportNamePattern:
+    reportNamePattern: cleanReportNamePattern(
       stringParam(params, ["reportName", "reportNamePattern"]) ??
       firstMatch(text, [/報表名[：:]\s*([^\n]+)/, /報表名稱[：:]\s*([^\n]+)/])
+    )
   };
 };
 

@@ -18,6 +18,7 @@
 - Helper 不可使用 `force: true` click 或其他方式繞過 Playwright/browser actionability check。
 - Helper 點不到、actionability 失敗、postcondition 驗證不到時，必須回 `blocked` 或 `requires_approval`，並留下 reason / DOM / screenshot evidence。
 - Irreversible action、native alert/confirm、overwrite/delete/save 等流程必須先有 Tool Bridge response；非 SSO/login/auth request 可由 Mac Agent auto approval policy 回覆。
+- Helper executor 只能由 Mac Agent 執行；Codex 不可用 shell `command_execution` 直接呼叫 helper executor 或自行連 persistent Chrome CDP。Codex 的職責是讀 helper report、必要時發 Tool Bridge request、再判定並寫 result。
 
 ## Artifacts
 
@@ -66,6 +67,23 @@ Helper 使用三種主要 artifact。
 - `durationMs`
 - `reportPath`
 - `warnings[]`
+
+### `output/helper-continuation-summary.json`
+
+Mac Agent 在 Tool Bridge auto approval 後，若 current case 還有 pending helper action，會在 Codex resume 前執行 approved helper continuation，並寫入本檔。
+
+必要欄位：
+
+- `schemaVersion = helper-continuation-v1`
+- `runDir`
+- `caseId`
+- `status = ok | partial | skipped`
+- `autoResponseCount`
+- `actionCount`
+- `executedCount`
+- `actions[]`
+
+每個 action result 欄位同 `helper-pre-run-summary.json`。Codex 只能引用通過 current-run evidence gate 的 helper report；continuation summary 本身不是 PASS / FAIL / BLOCKED 結果。
 
 ### `output/helper-artifacts/<case>/helper-report.jsonl`
 

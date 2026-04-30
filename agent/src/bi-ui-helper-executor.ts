@@ -196,8 +196,11 @@ const createReport = (
 const getGalaxyPage = async (browser: Browser): Promise<Page> => {
   const context = browser.contexts()[0] ?? (await browser.newContext());
   const pages = context.pages();
-  return pages.find((page) => page.url().includes("galaxy.games.gamania.com")) ?? pages[0] ?? (await context.newPage());
+  const applicationPages = pages.filter((page) => /^https?:\/\//i.test(page.url()));
+  return pages.find((page) => page.url().includes("galaxy.games.gamania.com")) ?? applicationPages[0] ?? (await context.newPage());
 };
+
+const isApplicationPage = (page: Page): boolean => /^https?:\/\//i.test(page.url());
 
 const screenshot = async (options: CliOptions, page: Page, label: string): Promise<string | null> => {
   const filePath = path.join(artifactRoot(options), `${sanitize(options.caseId)}-${sanitize(label)}.png`);
@@ -248,6 +251,17 @@ const normalizeUiText = (value: string): string => value.replace(/\s+/g, "");
 
 type CalendarSide = "left" | "right";
 type VisibleButton = { index: number; text: string; x: number; y: number; width: number; height: number };
+type VisibleTextTarget = {
+  index: number;
+  text: string;
+  tagName: string;
+  role: string | null;
+  className: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
 type VisibleMonthLabel = { text: string; year: number; month: number; x: number; y: number; width: number; height: number };
 
 const parseDateRange = (value: string | null): { startIso: string; endIso: string; display: string } | null => {
@@ -399,6 +413,46 @@ const visibleButtons = async (page: Page): Promise<VisibleButton[]> => {
   });
 };
 
+const visibleExactTextTargets = async (page: Page, expectedText: string): Promise<VisibleTextTarget[]> => {
+  return page.evaluate((targetText) => {
+    const normalize = (value: string | null | undefined) => (value ?? "").trim().replace(/\s+/g, " ");
+    const elements = Array.from(document.querySelectorAll("body *"));
+    const isVisible = (element: Element): boolean => {
+      const rect = element.getBoundingClientRect();
+      const style = window.getComputedStyle(element);
+      return rect.width > 0 && rect.height > 0 && style.visibility !== "hidden" && style.display !== "none" && style.opacity !== "0";
+    };
+    return elements.flatMap((element, index) => {
+      if (!(element instanceof HTMLElement)) return [];
+      const text = normalize(element.textContent);
+      if (text !== targetText) return [];
+      const hasExactVisibleChild = Array.from(element.children).some((child) => normalize(child.textContent) === targetText && isVisible(child));
+      if (hasExactVisibleChild) return [];
+      const rect = element.getBoundingClientRect();
+      const style = window.getComputedStyle(element);
+      const className = typeof element.className === "string" ? element.className : "";
+      const ariaDisabled = element.getAttribute("aria-disabled") === "true";
+      const disabled = "disabled" in element && Boolean((element as HTMLButtonElement).disabled);
+      const visuallyDisabled = /disabled|disable|unavailable|outside|other-month/i.test(className) || Number.parseFloat(style.opacity || "1") < 0.35;
+      const visible = rect.width > 0 && rect.height > 0 && style.visibility !== "hidden" && style.display !== "none";
+      if (!visible || ariaDisabled || disabled || visuallyDisabled) return [];
+      return [
+        {
+          index,
+          text,
+          tagName: element.tagName.toLowerCase(),
+          role: element.getAttribute("role"),
+          className,
+          x: rect.x,
+          y: rect.y,
+          width: rect.width,
+          height: rect.height
+        }
+      ];
+    });
+  }, expectedText);
+};
+
 const visibleCalendarMonths = async (page: Page): Promise<VisibleMonthLabel[]> => {
   return page.evaluate(() => {
     const monthMap: Record<string, number> = {
@@ -446,6 +500,10 @@ const monthDiff = (from: Pick<VisibleMonthLabel, "year" | "month">, toYear: numb
 
 const clickVisibleButtonByIndex = async (page: Page, index: number, timeout = 5000): Promise<void> => {
   await page.locator("button").nth(index).click({ timeout });
+};
+
+const clickVisibleBodyElementByIndex = async (page: Page, index: number, timeout = 5000): Promise<void> => {
+  await page.locator("body *").nth(index).click({ timeout });
 };
 
 const clickSideButton = async (page: Page, text: string | RegExp, side: CalendarSide, timeout = 5000): Promise<boolean> => {
@@ -506,8 +564,24 @@ const clickCalendarDay = async (page: Page, side: CalendarSide, day: number): Pr
     })
     .sort((a, b) => a.y - b.y || a.x - b.x);
   const selected = candidates[0];
-  if (!selected) return false;
-  await clickVisibleButtonByIndex(page, selected.index, 5000);
+  if (selected) {
+    await clickVisibleButtonByIndex(page, selected.index, 5000);
+    return true;
+  }
+
+  const textTargets = await visibleExactTextTargets(page, String(day));
+  const targetCandidates = textTargets
+    .filter((target) => target.width <= 90 && target.height <= 90)
+    .filter((target) => {
+      const centerX = target.x + target.width / 2;
+      const centerY = target.y + target.height / 2;
+      const inSide = side === "left" ? centerX < splitX : centerX > splitX;
+      return inSide && centerY > selectedMonth.y + selectedMonth.height && centerY < selectedMonth.y + 320;
+    })
+    .sort((a, b) => a.y - b.y || a.x - b.x);
+  const target = targetCandidates[0];
+  if (!target) return false;
+  await clickVisibleBodyElementByIndex(page, target.index, 5000);
   return true;
 };
 
@@ -1034,6 +1108,9 @@ const run = async (): Promise<void> => {
     }
     browser = await chromium.connectOverCDP(endpoint);
     page = await getGalaxyPage(browser);
+    if (options.action !== "collage.openProject" && !isApplicationPage(page)) {
+      throw new HelperBlockedError(`GALAXY_PAGE_NOT_FOUND_FOR_HELPER_ACTION:url=${page.url() || "blank"}`);
+    }
     await page.bringToFront();
     await ensureSingleUserPageTab(endpoint, { closeNewTab: true });
     switch (options.action) {

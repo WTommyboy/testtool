@@ -133,6 +133,7 @@ export const writeBiUiHelperGuidance = (runDir: string, options: WriteBiUiHelper
     "- Evidence 優先順序: DOM/form state > network observation > chart/table data > screenshot。",
     "- Helper 可用 state delta planner 減少重複設定，但只能跳過已由 visible UI / DOM value 驗證對齊的項目；讀不到或不確定就操作 UI 或 BLOCKED。",
     "- Helper report 必須包含 runId / caseId / action / timestamp / currentRunEvidence metadata，否則 Codex 不可引用。",
+    "- Helper executor 只能由 Mac Agent 執行；Codex 不可透過 shell command_execution 自行呼叫 helper executor 或連 CDP。",
     "- Screenshot 用於 Tool Bridge、FAIL/bug、重大狀態轉換、final evidence；bug 若無 screenshot 必須寫明原因。",
     "- 若 DOM/network evidence 已足以支撐 PASS/FAIL，但 screenshot timeout，不可反覆重試 full-page screenshot；最多改試一次較小 viewport/element screenshot。仍失敗就記 `screenshot_unavailable_reason` 並繼續寫結構化 evidence。",
     "",
