@@ -57,7 +57,9 @@ const resolveCaseNo = (caseNo: string, knownCaseNos: Set<string>): string => {
   const normalized = normalizeCaseNo(caseNo);
   if (knownCaseNos.has(normalized)) return normalized;
   const demoAlias = normalized.startsWith("DEMO-") ? normalized.replace(/^DEMO-/, "") : `DEMO-${normalized}`;
-  return knownCaseNos.has(demoAlias) ? demoAlias : normalized;
+  if (knownCaseNos.has(demoAlias)) return demoAlias;
+  const suffixMatches = [...knownCaseNos].filter((known) => known.endsWith(`-${normalized}`));
+  return suffixMatches.length === 1 ? suffixMatches[0] ?? normalized : normalized;
 };
 
 const normalizeInline = (value: string | null | undefined): string =>

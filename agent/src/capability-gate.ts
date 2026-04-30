@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import type { CaseManifestCase } from "./case-manifest";
 import type { HelperHints } from "./helper-hints";
+import { detectCaseFeatures } from "./case-feature-detection";
 
 export type CapabilityGateReport = {
   schemaVersion: "uat-capability-gate-v1";
@@ -37,46 +38,19 @@ type WriteCapabilityGateOptions = {
   helperHints: HelperHints | null;
 };
 
-const normalize = (value: unknown): string => String(value ?? "").trim();
-
-const textBlob = (item: CaseManifestCase | null, helperHints: HelperHints | null): string =>
-  [
-    item?.groupName,
-    item?.caseNo,
-    item?.caseTitle,
-    item?.testType,
-    item?.riskLevel,
-    item?.testTarget,
-    item?.cleanupChecklist,
-    item?.preconditions,
-    item?.stepsSummary,
-    item?.expected,
-    item?.validationMethod,
-    helperHints?.operationTemplate,
-    helperHints?.automationLevel
-  ]
-    .filter(Boolean)
-    .join("\n");
-
-const detectMode = (text: string, operationTemplate: string | null): CapabilityGateReport["detected"]["mode"] => {
-  if (/record_static_fields|明細|record[-_ ]?centric|detail/i.test(`${operationTemplate ?? ""}\n${text}`)) return "record";
-  if (/metric_|指標|趨勢|metric[-_ ]?centric/i.test(`${operationTemplate ?? ""}\n${text}`)) return "metric";
-  if (/collage|拼貼|新增報表|儲存報表|重開|重新檢視/.test(`${operationTemplate ?? ""}\n${text}`)) return "collage";
-  return "unknown";
-};
-
 export const evaluateCapabilityGate = (
   currentCase: CaseManifestCase | null,
   helperHints: HelperHints | null
 ): CapabilityGateReport => {
   const operationTemplate = helperHints?.operationTemplate ?? null;
   const automationLevel = helperHints?.automationLevel ?? null;
-  const text = textBlob(currentCase, helperHints);
-  const mode = detectMode(text, operationTemplate);
-  const hasFilter = /篩選|filter|operator|運算子/i.test(text);
-  const hasGroup = /分組|分群|group|series/i.test(text);
-  const isMetadataDropdown = operationTemplate === "metadata_dropdown_compare" || /metadata|欄位清單|下拉|dropdown/i.test(text);
-  const isSaveReopenFlow = operationTemplate === "collage_build_preview_save_reopen" || /儲存報表|重開|重新檢視|還原|載入/.test(text);
+  const detectedFeatures = detectCaseFeatures(currentCase, helperHints);
+  const text = detectedFeatures.text;
+  const mode = detectedFeatures.mode;
+  const hasFilter = detectedFeatures.hasFilter;
+  const hasGroup = detectedFeatures.hasGroup;
+  const isMetadataDropdown = detectedFeatures.isMetadataDropdown;
+  const isSaveReopenFlow = detectedFeatures.isSaveReopenFlow;
   const unsupportedFeatures: string[] = [];
   const supportedHelperTemplates: string[] = [];
 

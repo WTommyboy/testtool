@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import type { CaseManifestCase } from "./case-manifest";
 import type { HelperHints } from "./helper-hints";
+import { detectCaseFeatures, parseCleanupTargets } from "./case-feature-detection";
 
 export type HelperPlanAction = {
   id: string;
@@ -54,8 +55,6 @@ type WriteHelperExecutionPlanOptions = {
   helperHints: HelperHints | null;
 };
 
-const normalize = (value: unknown): string => String(value ?? "").trim();
-
 const textBlob = (item: CaseManifestCase | null): string =>
   [
     item?.groupName,
@@ -72,17 +71,6 @@ const textBlob = (item: CaseManifestCase | null): string =>
   ]
     .filter(Boolean)
     .join("\n");
-
-const parseCleanup = (value: string | null | undefined): Record<string, string> => {
-  const result: Record<string, string> = {};
-  for (const part of normalize(value).split(";")) {
-    const [key, ...rest] = part.split("=");
-    const normalizedKey = key?.trim();
-    if (!normalizedKey) continue;
-    result[normalizedKey] = rest.join("=").trim();
-  }
-  return result;
-};
 
 const firstMatch = (text: string, patterns: RegExp[]): string | null => {
   for (const pattern of patterns) {
@@ -109,7 +97,7 @@ const stringParam = (params: Record<string, unknown>, keys: string[]): string | 
 
 const inferCollageParams = (currentCase: CaseManifestCase | null, helperHints: HelperHints | null): Record<string, unknown> => {
   const text = textBlob(currentCase);
-  const cleanup = parseCleanup(currentCase?.cleanupChecklist);
+  const cleanup = parseCleanupTargets(currentCase?.cleanupChecklist);
   const params = paramsObject(helperHints);
   const dateRangeText =
     stringParam(params, ["dateRange", "timeRange"]) ??
@@ -158,12 +146,13 @@ const buildActions = (currentCase: CaseManifestCase | null, helperHints: HelperH
   const operationTemplate = helperHints?.operationTemplate ?? "";
   const params = inferCollageParams(currentCase, helperHints);
   const actions: HelperPlanAction[] = [];
+  const features = detectCaseFeatures(currentCase, helperHints);
   const unsupportedHelperTarget =
-    /record_static_fields|明細|record[-_ ]?centric|detail/i.test(`${operationTemplate}\n${text}`) ||
-    /metric_|指標|趨勢|metric[-_ ]?centric/i.test(`${operationTemplate}\n${text}`) ||
-    /篩選|filter|operator|運算子/i.test(text) ||
-    /分組|分群|group|series/i.test(text);
-  const metadataOnly = operationTemplate === "metadata_dropdown_compare" || /metadata|欄位清單|下拉|dropdown/i.test(text);
+    features.mode === "record" ||
+    features.mode === "metric" ||
+    features.hasFilter ||
+    features.hasGroup;
+  const metadataOnly = features.isMetadataDropdown;
   if (unsupportedHelperTarget || metadataOnly) return [];
   const isCollageFlow = /collage_build_preview_save_reopen/.test(operationTemplate) || /拼貼|新增報表|儲存報表|重開|重新檢視/.test(text);
 
@@ -215,8 +204,8 @@ const buildActions = (currentCase: CaseManifestCase | null, helperHints: HelperH
 };
 
 const buildAvailableTemplates = (currentCase: CaseManifestCase | null, helperHints: HelperHints | null): HelperPlanAction[] => {
-  const text = textBlob(currentCase);
   const params = inferCollageParams(currentCase, helperHints);
+  const features = detectCaseFeatures(currentCase, helperHints);
   const available: HelperPlanAction[] = [
     action("T-delete", "collage.deleteTemporaryReport", "刪除本輪臨時報表 helper（需授權）", params, {
       optional: true,
@@ -227,7 +216,7 @@ const buildAvailableTemplates = (currentCase: CaseManifestCase | null, helperHin
     })
   ];
 
-  if (/篩選|filter|分組|分群|group/i.test(text)) return [];
+  if (features.hasFilter || features.hasGroup) return [];
   return available;
 };
 
@@ -255,7 +244,7 @@ export const buildHelperExecutionPlan = ({ runDir, currentCase, helperHints }: W
       "Helper actions may operate the UI and collect evidence, but Codex must judge PASS/FAIL/BLOCKED.",
       "Helper actions must not write result.xlsx and must not run multiple cases.",
       "Helper actions must not use force:true clicks or bypass browser actionability checks.",
-      "Irreversible actions and native dialogs require Tool Bridge response in Agent mode; non-SSO/login requests may be auto-approved by Mac Agent policy."
+      "Irreversible actions and native dialogs require Tool Bridge response in Agent mode; non-SSO/login authorization requests may be auto-approved by Mac Agent policy."
     ],
     safety: {
       helperMayWriteResultXlsx: false,

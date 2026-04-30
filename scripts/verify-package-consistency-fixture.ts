@@ -132,6 +132,93 @@ const runChecker = (xlsx: string, assignment: string, instruction: string, out: 
   return JSON.parse(fs.readFileSync(out, "utf8")) as { status: string; issues: Array<{ code: string; severity: string }> };
 };
 
+const writeToolPrefixedWorkbook = async (xlsxPath: string): Promise<void> => {
+  const workbook = new ExcelJS.Workbook();
+  const sheet = workbook.addWorksheet("測試案例");
+  sheet.addRow([
+    "輪次ID",
+    "群組",
+    "編號",
+    "測試類型",
+    "測試項目",
+    "風險等級",
+    "測試標的",
+    "狀態清理",
+    "前置條件",
+    "步驟",
+    "預期結果",
+    "結果",
+    "執行方式",
+    "測試日",
+    "詳細紀錄JSON",
+    "驗證方法"
+  ]);
+  for (const caseNo of ["TOOL-A-01", "TOOL-A-02"]) {
+    sheet.addRow([
+      "FIXTURE",
+      "A:TOOL prefixed cases",
+      caseNo,
+      "功能流程",
+      `${caseNo} prefixed case id fixture`,
+      "🟡 建立",
+      "功能流程",
+      "欄位=新增帳號數;篩選=不影響;分組=不影響;時間=2026/03/01~2026/03/31;顯示=每天",
+      "起始頁面: DEV URL 首頁; 建構模式: 拼貼; 參考資料: metadata v1.2.5",
+      "1. 來源報表選每日報表\n2. 加欄位新增帳號數\n3. 按執行",
+      "流程完成",
+      "",
+      "",
+      "",
+      "",
+      "DOM read + network request body"
+    ]);
+  }
+  await workbook.xlsx.writeFile(xlsxPath);
+};
+
+const writeToolPrefixedDocs = (assignmentPath: string, instructionPath: string): void => {
+  const baseLines = [
+    "# TOOL Prefixed Fixture",
+    "",
+    "起始 case: TOOL-A-01",
+    "跳過 case: 無",
+    "",
+    "### 本機手動模式暫停",
+    "",
+    "| 完成 case | 動作 |",
+    "|---|---|",
+    "| TOOL-A-01 | 暫停 → Tommy chat 確認 → 繼續 A-02 |",
+    "| TOOL-A-02 | 暫停 → Tommy chat 確認 → 結束 |",
+    "",
+    "## Case Sections",
+    "",
+    "### TOOL-A-01 — prefixed case id fixture",
+    "",
+    "**風險等級**: 🟡 建立",
+    "",
+    "**測試標的**: 功能流程",
+    "",
+    "**狀態清理**(固定 5 項格式):",
+    "```",
+    "欄位=新增帳號數;篩選=不影響;分組=不影響;時間=2026/03/01~2026/03/31;顯示=每天",
+    "```",
+    "",
+    "### TOOL-A-02 — prefixed case id fixture",
+    "",
+    "**風險等級**: 🟡 建立",
+    "",
+    "**測試標的**: 功能流程",
+    "",
+    "**狀態清理**(固定 5 項格式):",
+    "```",
+    "欄位=新增帳號數;篩選=不影響;分組=不影響;時間=2026/03/01~2026/03/31;顯示=每天",
+    "```",
+    ""
+  ].join("\n");
+  fs.writeFileSync(assignmentPath, baseLines);
+  fs.writeFileSync(instructionPath, baseLines);
+};
+
 const main = async (): Promise<void> => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "uat-package-consistency-fixture-"));
   try {
@@ -160,6 +247,21 @@ const main = async (): Promise<void> => {
       assert.notEqual(demoReport.status, "error", `DEMO001 v1_4 should not have blocking package consistency errors; issues=${JSON.stringify(demoReport.issues)}`);
     }
 
+    const toolXlsx = path.join(tempRoot, "TOOLPrefixed_測試案例_v1_0.xlsx");
+    const toolAssignment = path.join(tempRoot, "Codex_指派文字_TOOLPrefixed_v1_0.md");
+    const toolInstruction = path.join(tempRoot, "TOOLPrefixed_測試執行說明_for_v1_0.md");
+    await writeToolPrefixedWorkbook(toolXlsx);
+    writeToolPrefixedDocs(toolAssignment, toolInstruction);
+    const toolReport = runChecker(toolXlsx, toolAssignment, toolInstruction, path.join(tempRoot, "tool-prefixed-report.json"));
+    assert.ok(
+      !toolReport.issues.some((item) => item.severity === "error" && item.code.startsWith("START_CASE")),
+      `TOOL-prefixed package must not treat pause-table shorthand A-02 as the start case; issues=${JSON.stringify(toolReport.issues)}`
+    );
+    assert.ok(
+      !toolReport.issues.some((item) => item.code === "DOC_REFERENCES_UNKNOWN_CASE"),
+      `TOOL-prefixed package should resolve shorthand A-02 to TOOL-A-02 when unique; issues=${JSON.stringify(toolReport.issues)}`
+    );
+
     console.log(
       JSON.stringify(
         {
@@ -168,7 +270,8 @@ const main = async (): Promise<void> => {
           checked: [
             "good helper hints package status ok",
             "risk-level conflict emits blocking error",
-            "DEMO001 v1_4 has no blocking consistency error"
+            "DEMO001 v1_4 has no blocking consistency error",
+            "TOOL-prefixed case ids do not conflict with pause-table shorthand"
           ]
         },
         null,

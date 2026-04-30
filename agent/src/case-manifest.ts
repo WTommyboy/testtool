@@ -110,10 +110,15 @@ const safeFilePart = (value: string): string => {
 
 const normalizeCaseNo = (value: string): string => value.trim().replace(/\s+/g, "").toUpperCase();
 
-const matchesPreferredCaseNo = (caseNo: string, preferred: string): boolean => {
-  const current = normalizeCaseNo(caseNo);
+const findPreferredCase = (cases: CaseManifestCase[], preferred: string): { caseItem: CaseManifestCase | null; ambiguous: boolean } => {
   const target = normalizeCaseNo(preferred);
-  return current === target || current.replace(/^DEMO-/, "") === target || current === `DEMO-${target}`;
+  const exact = cases.find((item) => normalizeCaseNo(item.caseNo) === target);
+  if (exact) return { caseItem: exact, ambiguous: false };
+  const demoTarget = target.startsWith("DEMO-") ? target.replace(/^DEMO-/, "") : `DEMO-${target}`;
+  const demo = cases.find((item) => normalizeCaseNo(item.caseNo) === demoTarget || normalizeCaseNo(item.caseNo).replace(/^DEMO-/, "") === target);
+  if (demo) return { caseItem: demo, ambiguous: false };
+  const suffixMatches = cases.filter((item) => normalizeCaseNo(item.caseNo).endsWith(`-${target}`));
+  return suffixMatches.length === 1 ? { caseItem: suffixMatches[0] ?? null, ambiguous: false } : { caseItem: null, ambiguous: suffixMatches.length > 1 };
 };
 
 const aliases: Record<keyof HeaderColumns, string[]> = {
@@ -320,12 +325,11 @@ const writeManifestFiles = (
   }
 
   const requestedCaseNo = options.preferredStartCaseNo?.trim() ? normalizeCaseNo(options.preferredStartCaseNo) : null;
-  const requestedCase = requestedCaseNo
-    ? cases.find((item) => matchesPreferredCaseNo(item.caseNo, requestedCaseNo))
-    : null;
+  const requestedCaseMatch = requestedCaseNo ? findPreferredCase(cases, requestedCaseNo) : { caseItem: null, ambiguous: false };
+  const requestedCase = requestedCaseMatch.caseItem;
   const selectedCase = requestedCase ?? cases[0] ?? null;
   if (requestedCaseNo && !requestedCase) {
-    warnings.push(`START_CASE_NOT_FOUND:${requestedCaseNo}`);
+    warnings.push(`${requestedCaseMatch.ambiguous ? "START_CASE_AMBIGUOUS" : "START_CASE_NOT_FOUND"}:${requestedCaseNo}`);
   }
   const currentCaseSelection: CaseManifestCurrentCaseSelection = {
     selectedCaseNo: selectedCase?.caseNo ?? null,

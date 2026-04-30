@@ -6,7 +6,14 @@ export type StartCaseHint = {
   excerpt: string;
 };
 
-const casePattern = "((?:DEMO-)?[A-Z]+-\\d{1,3})";
+const casePattern = "((?:DEMO-)?[A-Z]+(?:-[A-Z]+)?-\\d{1,3})";
+
+const explicitStartCasePatterns = [
+  new RegExp(
+    `(?:起始\\s*case|本輪\\s*Codex\\s*起始\\s*case|start\\s*case)\\**\\s*[:：]?\\s*\\**${casePattern}\\**`,
+    "i"
+  )
+];
 
 const startCasePatterns = [
   new RegExp(`(?:start|begin|resume|continue)\\s+(?:from|at|with)?\\s*(?:case\\s*)?${casePattern}`, "i"),
@@ -25,8 +32,13 @@ const excerptAround = (text: string, index: number, length: number): string => {
   return compact(text.slice(start, end));
 };
 
+const shouldIgnoreGenericStartLine = (line: string): boolean => {
+  if (line.includes("|") && /(?:完成\s*case|暫停|確認|繼續)/i.test(line)) return true;
+  return /(?:完成\s*case|case\s*completed).{0,80}(?:繼續|continue|resume)/i.test(line);
+};
+
 const detectInText = (text: string, source: string): StartCaseHint | null => {
-  for (const pattern of startCasePatterns) {
+  for (const pattern of explicitStartCasePatterns) {
     const match = pattern.exec(text);
     if (!match?.[1]) continue;
     return {
@@ -34,6 +46,28 @@ const detectInText = (text: string, source: string): StartCaseHint | null => {
       source,
       excerpt: excerptAround(text, match.index, match[0].length)
     };
+  }
+
+  let offset = 0;
+  for (const line of text.split(/(\r?\n)/)) {
+    if (/^\r?\n$/.test(line)) {
+      offset += line.length;
+      continue;
+    }
+    if (shouldIgnoreGenericStartLine(line)) {
+      offset += line.length;
+      continue;
+    }
+    for (const pattern of startCasePatterns) {
+      const match = pattern.exec(line);
+      if (!match?.[1]) continue;
+      return {
+        caseNo: normalizeCaseNo(match[1]),
+        source,
+        excerpt: excerptAround(text, offset + match.index, match[0].length)
+      };
+    }
+    offset += line.length;
   }
   return null;
 };

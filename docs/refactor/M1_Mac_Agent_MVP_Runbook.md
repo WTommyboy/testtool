@@ -78,7 +78,7 @@ Relevant local runtime flags:
 
 - `UAT_AGENT_CODEX_MODEL` defaults to `gpt-5.3-codex`.
 - `UAT_AGENT_CODEX_REASONING_EFFORT` defaults to `low`.
-- `UAT_AGENT_AUTO_APPROVE_TOOL_REQUESTS=false` disables non-SSO/login auto approval.
+- `UAT_AGENT_AUTO_APPROVE_TOOL_REQUESTS=false` disables non-SSO/login authorization auto approval. Package-gate ambiguity decisions, such as testcase/start-case conflicts, still wait for PM even when auto approval is enabled.
 - `UAT_AGENT_KEEP_CHROME_WARM=false` disables warm dedicated Chrome and returns to run-scoped Chrome.
 
 ## Start Agent Manually

@@ -1,0 +1,108 @@
+import type { CaseManifestCase } from "./case-manifest";
+import type { HelperHints } from "./helper-hints";
+
+export type CaseFeatureDetection = {
+  text: string;
+  behaviorText: string;
+  cleanupTargets: Record<string, string>;
+  mode: "collage" | "record" | "metric" | "unknown";
+  hasFilter: boolean;
+  hasGroup: boolean;
+  isMetadataDropdown: boolean;
+  isSaveReopenFlow: boolean;
+};
+
+const normalize = (value: unknown): string => String(value ?? "").trim();
+
+export const parseCleanupTargets = (value: string | null | undefined): Record<string, string> => {
+  const result: Record<string, string> = {};
+  for (const part of normalize(value).split(/[;；]/)) {
+    const [key, ...rest] = part.split("=");
+    const normalizedKey = key?.trim();
+    if (!normalizedKey) continue;
+    result[normalizedKey] = rest.join("=").trim();
+  }
+  return result;
+};
+
+const neutralCleanupTarget = (value: string | null | undefined): boolean => {
+  const normalized = normalize(value).replace(/\s+/g, "").toLowerCase();
+  return !normalized || ["不影響", "不限", "空", "無", "0", "0組", "none", "n/a", "na"].includes(normalized);
+};
+
+const cleanupRequiresFeature = (value: string | null | undefined): boolean => !neutralCleanupTarget(value);
+
+const fullTextBlob = (item: CaseManifestCase | null, helperHints: HelperHints | null): string =>
+  [
+    item?.groupName,
+    item?.caseNo,
+    item?.caseTitle,
+    item?.testType,
+    item?.riskLevel,
+    item?.testTarget,
+    item?.cleanupChecklist,
+    item?.preconditions,
+    item?.stepsSummary,
+    item?.expected,
+    item?.validationMethod,
+    helperHints?.operationTemplate,
+    helperHints?.automationLevel
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+const behaviorTextBlob = (item: CaseManifestCase | null, helperHints: HelperHints | null): string =>
+  [
+    item?.caseTitle,
+    item?.testType,
+    item?.testTarget,
+    item?.preconditions,
+    item?.stepsSummary,
+    item?.expected,
+    item?.validationMethod,
+    helperHints?.operationTemplate,
+    helperHints?.automationLevel
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+const detectMode = (text: string, operationTemplate: string | null): CaseFeatureDetection["mode"] => {
+  if (/record_static_fields|明細|record[-_ ]?centric|detail/i.test(`${operationTemplate ?? ""}\n${text}`)) return "record";
+  if (/metric_|指標|趨勢|metric[-_ ]?centric/i.test(`${operationTemplate ?? ""}\n${text}`)) return "metric";
+  if (/collage|拼貼|新增報表|儲存報表|重開|重新檢視/.test(`${operationTemplate ?? ""}\n${text}`)) return "collage";
+  return "unknown";
+};
+
+export const detectCaseFeatures = (
+  currentCase: CaseManifestCase | null,
+  helperHints: HelperHints | null
+): CaseFeatureDetection => {
+  const operationTemplate = helperHints?.operationTemplate ?? null;
+  const text = fullTextBlob(currentCase, helperHints);
+  const behaviorText = behaviorTextBlob(currentCase, helperHints);
+  const cleanupTargets = parseCleanupTargets(currentCase?.cleanupChecklist);
+  const mode = detectMode(text, operationTemplate);
+  const hasFilter =
+    cleanupRequiresFeature(cleanupTargets["篩選"]) ||
+    /(?:新增|加入|設定|套用|切換|選擇|輸入|移除|清空).{0,30}(?:篩選|filter|運算子|operator)/i.test(behaviorText) ||
+    /(?:篩選|filter|運算子|operator).{0,30}(?:等於|不等於|包含|不包含|大於|小於|有值|無值|is_null|is_not_null)/i.test(behaviorText);
+  const hasGroup =
+    cleanupRequiresFeature(cleanupTargets["分組"]) ||
+    /(?:新增|加入|設定|套用|切換|選擇|移除|清空).{0,30}(?:分組|分群|group|series)/i.test(behaviorText) ||
+    /(?:分組|分群|group|series).{0,30}(?:維度|dimension|欄位|依據)/i.test(behaviorText);
+  const isMetadataDropdown =
+    operationTemplate === "metadata_dropdown_compare" ||
+    /(?:metadata|欄位清單).{0,24}(?:下拉|dropdown|比對|compare)|(?:下拉|dropdown).{0,24}(?:metadata|欄位清單)/i.test(behaviorText);
+  const isSaveReopenFlow = operationTemplate === "collage_build_preview_save_reopen" || /儲存報表|重開|重新檢視|還原|載入/.test(behaviorText);
+
+  return {
+    text,
+    behaviorText,
+    cleanupTargets,
+    mode,
+    hasFilter,
+    hasGroup,
+    isMetadataDropdown,
+    isSaveReopenFlow
+  };
+};
