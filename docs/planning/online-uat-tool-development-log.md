@@ -734,3 +734,19 @@ Tommy 曾討論是否改成腳本。最後決策是採「半腳本化 / helper �
 - 規則讀取策略：generated `AGENTS.md` 與 Codex prompt 改為每題判斷前必讀 `AGENTS.md`、`agent-skills/uat-tool/SKILL.md`、`domain-routing.md`、`rules/PROJECT_AGENTS_FULL.md`，再依 `rule-index.json` 讀取必要規則。這會增加一點耗時，但優先避免誤解測題。
 - 修改檔案：`agent/src/case-feature-detection.ts`、`agent/src/current-case-pack.ts`、`agent/src/result-template.ts`、`agent/src/case-advance-policy.ts`、`agent/src/task-runner.ts`、`scripts/verify-capability-gate.ts`、`scripts/verify-agent-result-contract.ts`、`scripts/verify-case-advance-policy.ts`、`package.json`、本 planning log。
 - 驗證：`npm run typecheck --prefix agent`、`npm run typecheck`、`npm run build --prefix agent`、`npm run build`、`npm run build --prefix web`、`npm run verify:capability-gate`、`npm run verify:case-advance-policy`、`npm run verify:agent-result-contract`、`npm run verify:helper-report-gate`、`npm run verify:package-consistency`、`npm run verify:result-evidence-gate`、`npm run verify:helper-hints`、`npm run verify:tool-bridge`、`npm run verify:agent-resume`、`npm run verify:agent-roundtrip`、`git diff --check` 已通過；部署與本機 Agent 重啟狀態由本次收尾回報補列。
+
+### 2026-05-01 05:55 - 未來規劃：文件分層、必讀契約與 xlsx single source of truth
+
+- 背景：OTTEST002 regression 暴露「為了加速而過度依賴 compact/run brief/classifier」的風險。原始三文件其實已清楚寫明 5 題皆為拼貼模式、Agent 模式只跑 `current-case.json`、BI domain reference 以 `PROJECT_AGENTS_FULL.md` / `BI_TEST_RULES/` / metadata 為準；但 capability gate/helper classifier 在 Codex 深讀 domain rules 前就先做錯誤 hard block，導致測題準度下降。
+- 短期優先順序：先驗證 OTTEST002 在完整上下文必讀策略下不再亂測，再做文件分層分群。不要在同一輪同時大搬文件架構與調整 runtime 判斷，避免無法判斷 regression 來源。下一輪驗證重點是：`TOOL-A-02` 不再判成 metric、`TOOL-A-03` 不再判成 record、Agent mode 不再違反「跑完 current case 即停止」、result template 不再夾帶 EX 範例列。
+- 文件分層目標：
+  - L0 Runtime / Infrastructure：Vercel、Railway、Mac Agent、Codex CLI、Chrome/CDP、Playwright MCP、storage；只管在哪裡跑、怎麼連、怎麼存，不判斷 BI case 對錯。
+  - L1 Tool / Platform：`agent-skills/uat-tool/`，管 run lifecycle、Tool Bridge、evidence gate、result/artifact contract、agent security、one-case-at-a-time、auto approval；不寫 BI metadata、拼貼操作或 PASS/FAIL/BLOCKED domain 邏輯。
+  - L2 Domain / BI：目前來源為 `AGENTS.md`、`BI_TEST_RULES/*`、`BI_DATA/metadata.csv`；未來整理成 `domains/BI/BI_UAT_MASTER_CONTRACT.md` + `domains/BI/rules/` + `domains/BI/references/`。負責 BI 測試硬邊界、metadata、狀態清理、測試標的、detail_json、PASS/FAIL/BLOCKED。
+  - L3 Feature / Mode：BI 下再分 Collage / Record / Metric。Collage 專屬 locator、helper template、visible UI recipe 應搬到 `domains/BI/features/collage/`，避免 Layer 1 認得過多 BI 細節。
+  - L4 Round / Test Package：每輪的 `Codex_指派文字`、`測試執行說明`、`測試案例.xlsx`、supporting docs。管本輪目的、起始 case、暫停策略、授權要求、資料時間與特殊依賴。
+  - L5 Current Case：`current-case.json`、`current-case-pack.*`、`run-state.json`、`capability-gate.*`、`helper-execution-plan.*`。只管目前這一題的 intent、風險、測試標的、狀態清理、步驟、預期與 evidence requirement。
+- 必讀策略方向：架構可分多層，但 runtime 不應每題讀每層全文。每個 BI trusted case 固定讀 L1 Tool short contract、L2 BI Master Contract、L3 命中的 Feature Contract、L4 本輪 Agent/暫停/授權段落、L5 current case；只有 metadata 對照、狀態清理疑義、detail_json 疑義、Tool Bridge/不可逆操作、PASS/FAIL/BLOCKED 灰區、hard block 前才回讀原始長文件對應段落。
+- Master Contract 定位：`BI_UAT_MASTER_CONTRACT.md` 不是摘要取代原文，而是 BI run 必讀的決策入口。它應保留來源版本/hash，並列明「何時必須回讀原文」。目標不是壓到 200 行；現實上可能需要 300-600 行才保留足夠邊界。
+- xlsx single source of truth 方向：長期可朝「PM 只提供 xlsx」前進，但前提是 xlsx schema 承載 run-level 與 case-level 完整資訊，例如 `RunConfig` sheet（domain、feature、devUrl、metadata version、executionMode、startCase、stopPolicy、authorizationPolicy、purpose）、`測試案例` sheet（建構模式、授權需求、case dependency、evidence profile、helper policy、download requirement）與 `RoundNotes/Guide` sheet。屆時 `run-brief.md`、`current-case-pack.md`、`case-execution-guide.md` 由工具從 xlsx 產生，兩份 md 可降為 optional supporting docs。
+- 安全邊界：在新版 xlsx schema 與 Master Contract 穩定前，不要立即砍掉 `Codex_指派文字` 與 `測試執行說明`。短期仍維持三文件輸入，並要求 classifier/gate 不可早於 structured case intent + 必讀契約做 hard block；若 gate 低信心或只靠關鍵字命中，必須降級為 Codex visible UI / Tool Bridge ambiguity，而不是直接 BLOCKED。
