@@ -551,7 +551,7 @@ const clickCalendarDay = async (page: Page, side: CalendarSide, day: number): Pr
   const left = months[0];
   const right = months[months.length - 1];
   if (!left || !right) return false;
-  const splitX = (left.x + right.x) / 2;
+  const splitX = (left.x + left.width / 2 + right.x + right.width / 2) / 2;
   const selectedMonth = side === "left" ? left : right;
   const buttons = await visibleButtons(page);
   const candidates = buttons
@@ -585,6 +585,28 @@ const clickCalendarDay = async (page: Page, side: CalendarSide, day: number): Pr
   return true;
 };
 
+const clickCalendarDayInVisibleMonth = async (
+  page: Page,
+  targetYear: number,
+  targetMonth: number,
+  day: number,
+  preferredSide?: CalendarSide
+): Promise<boolean> => {
+  const months = (await visibleCalendarMonths(page)).sort((a, b) => a.x - b.x || a.y - b.y);
+  if (months.length < 2) return false;
+  const matching = months
+    .map((month, index) => ({
+      month,
+      side: index === 0 ? "left" as CalendarSide : "right" as CalendarSide
+    }))
+    .filter((item) => item.month.year === targetYear && item.month.month === targetMonth);
+  const selected = preferredSide
+    ? matching.find((item) => item.side === preferredSide) ?? matching[0]
+    : matching[0];
+  if (!selected) return false;
+  return clickCalendarDay(page, selected.side, day);
+};
+
 const setStaticDateRangeByCalendar = async (
   page: Page,
   parsed: { startIso: string; endIso: string; display: string }
@@ -600,7 +622,8 @@ const setStaticDateRangeByCalendar = async (
 
   await ensureStaticCalendarTabs(page);
   const startMonthReady = await moveCalendarToMonth(page, "left", startYear, startMonth);
-  const endMonthReady = await moveCalendarToMonth(page, "right", endYear, endMonth);
+  const sameMonth = startYear === endYear && startMonth === endMonth;
+  const endMonthReady = sameMonth ? true : await moveCalendarToMonth(page, "right", endYear, endMonth);
   if (!startMonthReady || !endMonthReady) {
     return {
       ok: false,
@@ -609,13 +632,13 @@ const setStaticDateRangeByCalendar = async (
     };
   }
 
-  const startClicked = await clickCalendarDay(page, "left", startDay);
+  const startClicked = await clickCalendarDayInVisibleMonth(page, startYear, startMonth, startDay, "left");
   await page.waitForTimeout(250);
-  const endClicked = await clickCalendarDay(page, "right", endDay);
+  const endClicked = await clickCalendarDayInVisibleMonth(page, endYear, endMonth, endDay, sameMonth ? "left" : "right");
   if (!startClicked || !endClicked) {
     return {
       ok: false,
-      warning: "DATE_RANGE_CALENDAR_DAY_NOT_CLICKABLE",
+      warning: `DATE_RANGE_CALENDAR_DAY_NOT_CLICKABLE:startClicked=${startClicked};endClicked=${endClicked};sameMonth=${sameMonth}`,
       observedAfter: (await page.locator("body").innerText({ timeout: 5000 }).catch(() => "")).slice(0, 1200)
     };
   }

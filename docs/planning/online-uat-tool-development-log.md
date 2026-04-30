@@ -760,3 +760,9 @@ Tommy 曾討論是否改成腳本。最後決策是採「半腳本化 / helper �
 - 其他修正：`reportNamePattern` 清除從指派文字擷取時可能帶入的尾端 `)`，避免臨時報表名稱多出括號。
 - 回滾方式：若 helper continuation 造成授權後 action 錯接或重複執行，先將 runtime 回滾到前一個 production commit，或暫時把 `UAT_AGENT_AUTO_APPROVE_TOOL_REQUESTS=false` 關掉 auto approval，讓所有授權回到手動 Tool Bridge；不可回到「Codex shell 跑 helper executor」的作法，因為那會再次遇到 sandbox/CDP 邊界不穩。
 - 修改檔案：`agent/src/helper-pre-runner.ts`、`agent/src/task-runner.ts`、`agent/src/bi-ui-helper-executor.ts`、`agent/src/helper-execution-plan.ts`、`agent/src/bi-ui-helper-guidance.ts`、`agent-skills/uat-tool/rules/helper-protocol.md`、本 planning log。
+
+### 2026-05-01 07:50 - 修正 OTTEST002_06：同月日期區間結束日不可固定點右月曆
+
+- 背景：OTTEST002 run `d1f5e4c8-4889-4001-bbed-ffaf71bf0812` 顯示 helper 已成功打開日期工具，截圖中左側是 `三月 2026`、右側是 `四月 2026`，左側 31 號可見；但 helper 仍把 `2026/03/01~2026/03/31` 的結束日固定拿到右側月曆找，右側四月沒有 31，導致 `DATE_RANGE_CALENDAR_DAY_NOT_CLICKABLE`。這是同月區間被錯寫成「start 左、end 右」的假設。
+- 本次修正：日期點擊改為依目標年月尋找目前可見的月曆，再在該月曆內點 day cell；若開始與結束同年月，結束日會留在同一側月曆點擊，不再強制右側。warning 也補上 `startClicked/endClicked/sameMonth`，下次若再失敗可直接看是哪一段沒點到。
+- 修改檔案：`agent/src/bi-ui-helper-executor.ts`、本 planning log。
