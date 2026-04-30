@@ -24,7 +24,7 @@ import { writeReferenceIndex } from "./reference-index";
 import { writeResultTemplate } from "./result-template";
 import { writeTestPackageConsistencyReport } from "./test-package-consistency";
 import { writeHelperExecutionPlan } from "./helper-execution-plan";
-import { runSafeHelperActions, summarizeHelperPreRun } from "./helper-pre-runner";
+import { runSafeHelperActions, summarizeHelperPreRun, type HelperPreRunSummary } from "./helper-pre-runner";
 import { formatDuration, RunTimingRecorder } from "./timing";
 
 const getRunId = (message: AgentMessage): string => {
@@ -706,6 +706,120 @@ const uploadLogFile = async (url: string, filePath: string, token: string): Prom
   return body;
 };
 
+const uploadJsonArtifactFile = async (
+  url: string,
+  filePath: string,
+  token: string,
+  fieldName: string,
+  uploadName: string
+): Promise<unknown> => {
+  const form = new FormData();
+  const bytes = fs.readFileSync(filePath);
+  form.append(fieldName, new Blob([new Uint8Array(bytes)], { type: "application/json" }), uploadName);
+
+  const response = await fetch(url, {
+    method: "POST",
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+    body: form
+  });
+  const text = await response.text();
+  let body: unknown = text;
+  try {
+    body = text ? JSON.parse(text) : null;
+  } catch {
+    // Keep raw text for diagnostics.
+  }
+  if (!response.ok) {
+    throw new Error(`ARTIFACT_UPLOAD_FAILED ${response.status} ${typeof body === "string" ? body : JSON.stringify(body)}`);
+  }
+  return body;
+};
+
+const uploadFinalSidecarArtifacts = async (
+  connection: AgentConnection,
+  config: AgentConfig,
+  message: AgentMessage,
+  runId: string,
+  runDir: string
+): Promise<void> => {
+  const outputUrls = getOutputUrls(message);
+  const logPath = path.join(runDir, "output", "agent.log");
+  const logUploadStatePath = path.join(runDir, "output", "log-upload.json");
+  if (outputUrls.log && fs.existsSync(logPath) && !fs.existsSync(logUploadStatePath)) {
+    try {
+      const response = await uploadLogFile(outputUrls.log, logPath, config.token);
+      writeJson(logUploadStatePath, {
+        path: logPath,
+        uploaded: true,
+        upload_response: response
+      });
+      sendBestEffort(connection, "run.stdout", {
+        run_id: runId,
+        text: "uat-agent uploaded agent.log"
+      }, false);
+    } catch (error) {
+      writeJson(logUploadStatePath, {
+        path: logPath,
+        uploaded: false,
+        error: error instanceof Error ? error.message : String(error)
+      });
+      sendBestEffort(connection, "run.stderr", {
+        run_id: runId,
+        text: `uat-agent agent.log upload failed: ${error instanceof Error ? error.message : String(error)}`
+      }, false);
+    }
+  }
+
+  const artifacts = [
+    {
+      key: "timing_summary",
+      url: outputUrls.timing_summary,
+      filePath: path.join(runDir, "output", "timing-summary.json"),
+      fieldName: "timingSummary",
+      uploadName: "timing-summary.json"
+    },
+    {
+      key: "diagnostic_summary",
+      url: outputUrls.diagnostic_summary,
+      filePath: path.join(runDir, "output", "diagnostic-summary.json"),
+      fieldName: "diagnosticSummary",
+      uploadName: "diagnostic-summary.json"
+    }
+  ];
+
+  for (const artifact of artifacts) {
+    if (!artifact.url || !fs.existsSync(artifact.filePath)) continue;
+    try {
+      const response = await uploadJsonArtifactFile(
+        artifact.url,
+        artifact.filePath,
+        config.token,
+        artifact.fieldName,
+        artifact.uploadName
+      );
+      writeJson(path.join(runDir, "output", `${artifact.key}-upload.json`), {
+        path: artifact.filePath,
+        uploaded: true,
+        upload_response: response
+      });
+      sendBestEffort(connection, "run.stdout", {
+        run_id: runId,
+        text: `uat-agent uploaded ${artifact.uploadName}`
+      }, false);
+    } catch (error) {
+      writeJson(path.join(runDir, "output", `${artifact.key}-upload.json`), {
+        path: artifact.filePath,
+        uploaded: false,
+        error: error instanceof Error ? error.message : String(error)
+      });
+      sendBestEffort(connection, "run.stderr", {
+        run_id: runId,
+        text: `uat-agent ${artifact.uploadName} upload failed: ${error instanceof Error ? error.message : String(error)}`
+      }, false);
+    }
+  }
+};
+
 const downloadInputs = async (config: AgentConfig, message: AgentMessage, runDir: string): Promise<DownloadedInputs> => {
   const inputDir = path.join(runDir, "input");
   const urls = getInputUrls(message);
@@ -1024,6 +1138,67 @@ const buildPrompt = (
     "PM dispatch instruction:",
     instruction
   ].join("\n");
+};
+
+const isDiagnosticRun = (message: AgentMessage): boolean => {
+  return getStringPayload(message, "execution_mode") === "diagnostic";
+};
+
+const writeDiagnosticSummary = (
+  runId: string,
+  runDir: string,
+  message: AgentMessage,
+  guides: GeneratedRunGuides,
+  helperPreRunSummary: HelperPreRunSummary
+): string => {
+  const diagnosticPayload =
+    message.payload.diagnostic && typeof message.payload.diagnostic === "object" && !Array.isArray(message.payload.diagnostic)
+      ? message.payload.diagnostic as Record<string, unknown>
+      : {};
+  const capabilityGate = fs.existsSync(guides.capabilityGateJsonPath)
+    ? readJson<Record<string, unknown>>(guides.capabilityGateJsonPath)
+    : null;
+  const caseNo = guides.caseManifest.currentCaseNo ?? helperPreRunSummary.caseId ?? null;
+  const executedSteps = helperPreRunSummary.actions.map((action, index) => ({
+    stepNo: index + 1,
+    actionId: action.actionId,
+    template: action.template,
+    status: action.status,
+    durationMs: action.durationMs,
+    artifacts: action.reportPath ? [action.reportPath] : []
+  }));
+  const evidenceGaps = [
+    "Diagnostic mode does not execute the full trusted current-case evidence chain.",
+    "Diagnostic artifacts cannot be promoted to output/result.xlsx.",
+    helperPreRunSummary.status === "skipped"
+      ? `Helper pre-run skipped: ${helperPreRunSummary.skippedReason ?? "unknown"}`
+      : null,
+    helperPreRunSummary.status === "partial"
+      ? "Helper pre-run stopped before all planned safe actions completed."
+      : null
+  ].filter((item): item is string => Boolean(item));
+  const summary = {
+    schemaVersion: "uat-diagnostic-summary-v0.1",
+    generatedAt: new Date().toISOString(),
+    runId,
+    caseNo,
+    fromStep: typeof diagnosticPayload.fromStep === "number" ? diagnosticPayload.fromStep : null,
+    untilStep: typeof diagnosticPayload.untilStep === "number" ? diagnosticPayload.untilStep : null,
+    purpose: typeof diagnosticPayload.purpose === "string" ? diagnosticPayload.purpose : "helper/timing diagnostic",
+    executionMode: "diagnostic",
+    currentCasePack: guides.currentCasePackJsonPath,
+    capabilityGate,
+    executedSteps,
+    skippedSteps: [],
+    evidenceGaps,
+    locatorDrift: [],
+    helperReports: helperPreRunSummary.actions.flatMap((action) => action.reportPath ? [action.reportPath] : []),
+    timingSummary: path.join(runDir, "output", "timing-summary.json"),
+    canPromoteToTrustedResult: false
+  };
+  const filePath = path.join(runDir, "output", "diagnostic-summary.json");
+  writeJson(filePath, summary);
+  return filePath;
 };
 
 const buildResultDetail = (
@@ -2440,6 +2615,52 @@ export const handleTaskDispatch = async (
       helperPreRun: helperPreRunSummary
     });
 
+    if (isDiagnosticRun(message)) {
+      const diagnosticSummaryPath = writeDiagnosticSummary(runId, runDir, message, generatedGuides, helperPreRunSummary);
+      fs.writeFileSync(
+        path.join(runDir, "output", "agent.log"),
+        [
+          "# uat-agent diagnostic log",
+          `generated_at=${new Date().toISOString()}`,
+          `run_id=${runId}`,
+          "execution_mode=diagnostic",
+          `diagnostic_summary_path=${diagnosticSummaryPath}`,
+          `helper_pre_run=${summarizeHelperPreRun(helperPreRunSummary)}`,
+          "",
+          "Diagnostic mode does not run Codex trusted result generation and does not write output/result.xlsx."
+        ].join("\n")
+      );
+      writeJson(path.join(runDir, "state.json"), {
+        run_id: runId,
+        status: "completed",
+        completed_at: new Date().toISOString(),
+        execution_mode: "diagnostic",
+        diagnostic_summary_path: diagnosticSummaryPath
+      });
+      sendPhase(
+        connection,
+        runId,
+        "completed",
+        "Diagnostic Run 已完成",
+        "Agent 已產生 diagnostic-summary.json；未寫入可信 result.xlsx。",
+        "done"
+      );
+      connection.send(
+        "run.completed",
+        {
+          run_id: runId,
+          completed_at: new Date().toISOString(),
+          result: "diagnostic_completed",
+          workdir: runDir,
+          inputs: Object.keys(downloadedInputs),
+          diagnostic_summary_path: diagnosticSummaryPath,
+          result_xlsx_uploaded: false
+        },
+        true
+      );
+      return;
+    }
+
     const freshOutcome = await runFreshCasesUntilPauseOrDone({
       connection,
       config,
@@ -2564,6 +2785,7 @@ export const handleTaskDispatch = async (
   } finally {
     hooks.onCancelClear?.(runId);
     timing.write();
+    await uploadFinalSidecarArtifacts(connection, config, message, runId, runDir);
     if (!keepChromeOpenForToolBridge) {
       await closeChromeDebugSession(config);
     }
@@ -2903,6 +3125,7 @@ export const handleToolResponse = async (
   } finally {
     hooks.onCancelClear?.(runId);
     timing.write();
+    await uploadFinalSidecarArtifacts(connection, config, originalDispatch ?? message, runId, runDir);
     if (!keepChromeOpenForToolBridge) {
       await closeChromeDebugSession(config);
     }

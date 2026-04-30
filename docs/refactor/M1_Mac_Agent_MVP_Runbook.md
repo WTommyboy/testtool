@@ -137,7 +137,7 @@ node agent/dist/cli.js uninstall-launchd
 
 1. Open the Vercel UI.
 2. Go to `測試執行`.
-3. Set `執行模式` to `Agent 互動執行（推薦）`.
+3. Set `執行模式` to `Agent 互動執行（推薦）` for trusted UAT, or `Diagnostic 快速診斷（不產正式結果）` for helper/timing debugging.
 4. Select an idle Agent, normally `Tommy Mac`.
 5. Upload testcase `.xlsx` and `.md`, and optionally baseline `.csv`.
 6. Fill `輪次 ID`, `位置`, `功能主項`, `功能細項`, `輪次名稱`, and `Dev URL`.
@@ -148,13 +148,19 @@ The UI blocks dispatch if:
 - No Agent is online.
 - The selected Agent is busy.
 - Agent doctor failed.
-- The selected Agent does not declare `uat_run` or `interactive` support.
+- The selected Agent does not declare `uat_run` or the selected execution mode (`interactive` / `diagnostic`) support.
 
 If a run was created but remains `READY`, select it and click `派發目前 Run`.
 
 ## Human-In-The-Loop Flow
 
 If local Codex emits a Tool Bridge request:
+
+- Non-SSO/login/auth actionable requests are auto-approved by Mac Agent policy when `auto_approve_tool_requests=true`.
+- Auto-approved requests are recorded as approved audit rows and keep the Agent busy on the same `currentRunId`.
+- SSO/login/auth blockers still require PM handling.
+
+For manual blockers:
 
 - Railway creates a pending approval.
 - UI shows it under `等待人工處理`.
@@ -179,6 +185,8 @@ Expected output files:
 - `rules/BI_TEST_RULES/*.md`
 - `output/result.xlsx`
 - `output/agent.log`
+- `output/timing-summary.json`
+- `output/diagnostic-summary.json` for diagnostic runs
 - `output/codex-result.json`
 - `output/tool-requests.json` when approval is required
 
@@ -186,12 +194,15 @@ Agent uploads:
 
 - `result.xlsx` to `/api/runs/:id/output/result-xlsx`
 - `agent.log` to `/api/runs/:id/output/log`
+- `timing-summary.json` to `/api/runs/:id/output/timing-summary`
+- `diagnostic-summary.json` to `/api/runs/:id/output/diagnostic-summary` when present
 
 The API ingests result xlsx into run cases, bugs, logs, and summary views.
 
 Result workbook behavior:
 - Preferred path: spawned Codex writes `output/result.xlsx` itself after executing the UAT cases.
-- Fallback path: if Codex exits without creating `output/result.xlsx`, the agent creates a one-row summary workbook so the run still has an ingestible artifact.
+- Fallback path: if Codex exits without creating `output/result.xlsx`, the agent creates a local diagnostic workbook only. It is not uploaded as trusted UAT output.
+- Diagnostic mode does not call trusted result generation, does not write trusted `output/result.xlsx`, and cannot update PASS/FAIL/BLOCKED.
 
 ## Verification Commands
 

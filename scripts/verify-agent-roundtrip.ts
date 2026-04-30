@@ -73,7 +73,7 @@ const startServer = async (): Promise<{ child: ChildProcess; baseUrl: string; te
       STORAGE_ROOT: path.join(tempDir, "storage"),
       MAC_AGENT_BOOTSTRAP_TOKEN: roundtripBootstrapToken,
       AUTH_REQUIRED: "false",
-      MAC_AGENT_HEARTBEAT_TIMEOUT_MS: "1200",
+      MAC_AGENT_HEARTBEAT_TIMEOUT_MS: "3000",
       MAC_AGENT_HEARTBEAT_SWEEP_INTERVAL_MS: "100",
       NODE_ENV: "development"
     },
@@ -115,6 +115,26 @@ const waitForRunStatus = async (baseUrl: string, runId: string, status: string):
   }
   const summary = await requestJson<{ runStatus: string }>(baseUrl, `/api/runs/${runId}/summary`);
   throw new Error(`Run ${runId} did not reach ${status}; current status is ${summary.runStatus}.`);
+};
+
+const waitForAgent = async (
+  baseUrl: string,
+  predicate: (agent: { deviceName: string; status: string; currentRunId: string | null }) => boolean,
+  label: string
+): Promise<{ deviceName: string; status: string; currentRunId: string | null }> => {
+  const startedAt = Date.now();
+  let lastItems: Array<{ deviceName: string; status: string; currentRunId: string | null }> = [];
+  while (Date.now() - startedAt < 5_000) {
+    const agents = await requestJson<{ items: Array<{ deviceName: string; status: string; currentRunId: string | null }> }>(
+      baseUrl,
+      "/api/agents"
+    );
+    lastItems = agents.items;
+    const found = agents.items.find(predicate);
+    if (found) return found;
+    await sleep(100);
+  }
+  throw new Error(`Agent did not appear: ${label}; last=${JSON.stringify(lastItems)}`);
 };
 
 const verifyDomainPackEndpoints = async (baseUrl: string): Promise<void> => {
@@ -282,6 +302,11 @@ const verifyAutoApprovedToolRequestIsClosed = async (baseUrl: string): Promise<v
     status: "busy",
     current_run_id: run.id
   });
+  await waitForAgent(
+    baseUrl,
+    (item) => item.deviceName === "Auto Approval Agent" && item.status === "busy" && item.currentRunId === run.id,
+    "Auto Approval Agent online"
+  );
   send("run.tool_request", {
     run_id: run.id,
     request_id: "roundtrip-auto-req-1",
@@ -300,6 +325,15 @@ const verifyAutoApprovedToolRequestIsClosed = async (baseUrl: string): Promise<v
       note: "Auto approval smoke"
     }
   }, true);
+  await sleep(100);
+  const agentsAfterRequest = await requestJson<{ items: Array<{ deviceName: string; status: string; currentRunId: string | null }> }>(
+    baseUrl,
+    "/api/agents"
+  );
+  assert.ok(
+    agentsAfterRequest.items.some((item) => item.deviceName === "Auto Approval Agent"),
+    `auto approval agent disappeared after tool_request: ${JSON.stringify(agentsAfterRequest.items)}`
+  );
   send("tool_response.delivered", {
     run_id: run.id,
     request_id: "roundtrip-auto-req-1",
@@ -308,8 +342,16 @@ const verifyAutoApprovedToolRequestIsClosed = async (baseUrl: string): Promise<v
     auto_approved_by: "mac_agent",
     auto_approval_policy: "mac_agent_non_sso_login_auto_approval_v1"
   }, true);
+  await sleep(100);
+  const agentsAfterResponse = await requestJson<{ items: Array<{ deviceName: string; status: string; currentRunId: string | null }> }>(
+    baseUrl,
+    "/api/agents"
+  );
+  const agent = agentsAfterResponse.items.find((item) => item.deviceName === "Auto Approval Agent");
+  assert.ok(agent, `auto approval agent disappeared after tool_response.delivered: ${JSON.stringify(agentsAfterResponse.items)}`);
+  assert.equal(agent.status, "busy", "auto-approved tool request must not make the Agent look idle");
+  assert.equal(agent.currentRunId, run.id, "auto-approved tool request must keep the current run attached");
 
-  await sleep(300);
   const pendingApprovals = await requestJson<{ items: Array<{ status: string }> }>(
     baseUrl,
     `/api/runs/${run.id}/approvals?status=PENDING`

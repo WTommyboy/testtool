@@ -34,6 +34,10 @@ export const migrate = (): void => {
       result_xlsx_parser_version TEXT,
       log_path TEXT,
       log_uploaded_at TEXT,
+      timing_summary_path TEXT,
+      timing_summary_uploaded_at TEXT,
+      diagnostic_summary_path TEXT,
+      diagnostic_summary_uploaded_at TEXT,
       status TEXT NOT NULL DEFAULT 'DRAFT',
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
@@ -230,6 +234,18 @@ export const migrate = (): void => {
   }
   if (!hasColumn("runs", "log_uploaded_at")) {
     db.exec("ALTER TABLE runs ADD COLUMN log_uploaded_at TEXT");
+  }
+  if (!hasColumn("runs", "timing_summary_path")) {
+    db.exec("ALTER TABLE runs ADD COLUMN timing_summary_path TEXT");
+  }
+  if (!hasColumn("runs", "timing_summary_uploaded_at")) {
+    db.exec("ALTER TABLE runs ADD COLUMN timing_summary_uploaded_at TEXT");
+  }
+  if (!hasColumn("runs", "diagnostic_summary_path")) {
+    db.exec("ALTER TABLE runs ADD COLUMN diagnostic_summary_path TEXT");
+  }
+  if (!hasColumn("runs", "diagnostic_summary_uploaded_at")) {
+    db.exec("ALTER TABLE runs ADD COLUMN diagnostic_summary_uploaded_at TEXT");
   }
   if (!hasColumn("run_cases", "group_name")) {
     db.exec("ALTER TABLE run_cases ADD COLUMN group_name TEXT");

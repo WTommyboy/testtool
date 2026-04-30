@@ -120,7 +120,7 @@ export const buildAgentCapability = async (config: AgentConfig): Promise<AgentCa
     codex_version: getStringDetail(getCheck(doctorChecks, "codex-version"), "version"),
     node_version: process.version,
     supported_task_types: ["uat_run"],
-    supported_execution_modes: ["interactive"],
+    supported_execution_modes: ["interactive", "diagnostic"],
     tool_bridge_versions: ["spike-v1"],
     playwright_mcp_available: playwrightMcp?.verdict === "PASS",
     chrome_profile_ready: chromeProfile?.verdict === "PASS",

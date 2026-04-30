@@ -129,14 +129,31 @@ Diagnostic mode 是驗證 helper 和 locator registry 的主要工具。
 
 ## 8. 建議實作順序
 
-1. 先完成 spec 與 Layer 1 rule。
-2. 加 dispatch payload validation：`execution_mode=diagnostic` 時不得要求 result upload。
-3. Agent 支援只產 `diagnostic-summary.json`，不呼叫 trusted result upload。
-4. Web UI 顯示 diagnostic artifacts 與 timing summary。
+1. 先完成 spec 與 Layer 1 rule。已完成。
+2. 加 dispatch payload validation：`execution_mode=diagnostic` 時不得要求 result upload。已完成最小版，trusted result gate 會拒絕 `resultSource=diagnostic`。
+3. Agent 支援只產 `diagnostic-summary.json`，不呼叫 trusted result upload。已完成最小版。
+4. Web UI 顯示 diagnostic artifacts 與 timing summary。已完成最小版。
 5. 再加 `fromStep` / `untilStep` prompt wiring。
 
 ## 9. 目前狀態
 
-v0.1 是規格文件，尚未實作 runtime dispatch。
+v0.1 已有最小 runtime dispatch。
 
-在 runtime 支援前，若需要快速迭代，仍應人工明確標記「diagnostic only」，並避免產出或上傳正式 `result.xlsx`。
+目前已支援：
+
+- `execution_mode=diagnostic`
+- 下載 input、產 current-case pack / capability gate / helper execution plan
+- 重置 dedicated Chrome
+- 執行 safe helper pre-run
+- 寫出並上傳 `output/diagnostic-summary.json`
+- 寫出並上傳 `output/timing-summary.json`
+- Web UI 顯示 timing bucket 與 diagnostic 摘要
+- result evidence gate 拒絕 `resultSource=diagnostic`
+
+目前尚未支援：
+
+- Web UI 填寫 `fromStep` / `untilStep`
+- Codex diagnostic partial-step execution prompt wiring
+- locator drift review UI
+
+Diagnostic output 仍不可改名或重上傳成 trusted `output/result.xlsx`。要產正式 UAT 結果，必須用 trusted mode 重新執行完整 current case evidence chain。

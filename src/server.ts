@@ -91,7 +91,7 @@ app.use(cors({
 }));
 app.use(express.json({ limit: "5mb" }));
 
-const runAgentExchangePattern = /^\/[^/]+\/(?:input\/(?:xlsx|md|startup|baseline)|output\/(?:result-xlsx|log))$/;
+const runAgentExchangePattern = /^\/[^/]+\/(?:input\/(?:xlsx|md|startup|baseline)|output\/(?:result-xlsx|log|timing-summary|diagnostic-summary))$/;
 const runsAccess = (req: Request, res: Response, next: NextFunction): void | Response => {
   if (runAgentExchangePattern.test(req.path)) {
     return requireUserOrAgent(req, res, next);

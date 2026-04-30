@@ -57,6 +57,20 @@ const asStringArray = (value: unknown): string[] => {
 
 const asBooleanOrNull = (value: unknown): boolean | null => (typeof value === "boolean" ? value : null);
 
+const hasAutoApproval = (payload: Record<string, unknown>): boolean => {
+  const autoApproval = payload.auto_approval;
+  return Boolean(
+    autoApproval &&
+    typeof autoApproval === "object" &&
+    !Array.isArray(autoApproval) &&
+    (autoApproval as { approved?: unknown }).approved === true
+  );
+};
+
+const hasAutoToolResponse = (payload: Record<string, unknown>): boolean => {
+  return payload.auto_approved_by === "mac_agent" || typeof payload.auto_approval_policy === "string";
+};
+
 const asDoctorChecks = (value: unknown): AgentDoctorCheck[] => {
   if (!Array.isArray(value)) return [];
   return value.flatMap((item) => {
@@ -221,12 +235,20 @@ class AgentRegistry {
         agent.currentRunId = typeof message.payload.run_id === "string" ? message.payload.run_id : agent.currentRunId;
       }
     }
-    if (message.type === "run.tool_request") {
+    if (message.type === "run.tool_request" && !hasAutoApproval(message.payload)) {
       const agent = this.agents.get(agentId);
       if (agent) {
         agent.status = "idle";
         agent.lastSeenAt = new Date().toISOString();
         agent.currentRunId = null;
+      }
+    }
+    if (message.type === "tool_response.delivered" && hasAutoToolResponse(message.payload)) {
+      const agent = this.agents.get(agentId);
+      if (agent) {
+        agent.status = "busy";
+        agent.lastSeenAt = new Date().toISOString();
+        agent.currentRunId = typeof message.payload.run_id === "string" ? message.payload.run_id : agent.currentRunId;
       }
     }
     if (["run.completed", "run.failed", "run.rejected", "run.cancelled", "task.rejected"].includes(message.type)) {

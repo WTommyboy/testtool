@@ -57,7 +57,7 @@ Future dispatch payload may include:
 }
 ```
 
-Until runtime support exists, this file is a protocol reference only.
+Runtime support exists for the minimum helper/timing diagnostic loop. `fromStep` / `untilStep` prompt wiring is still planned, so current diagnostic runs should be treated as helper/timing diagnostics unless the dispatch payload explicitly adds more structured support.
 
 ## Output Contract
 

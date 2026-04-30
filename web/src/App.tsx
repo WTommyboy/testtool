@@ -42,6 +42,10 @@ type Summary = {
   resultParserVersion?: string | null;
   logAvailable?: boolean;
   logUploadedAt?: string | null;
+  timingSummaryAvailable?: boolean;
+  timingSummaryUploadedAt?: string | null;
+  diagnosticSummaryAvailable?: boolean;
+  diagnosticSummaryUploadedAt?: string | null;
   caseStats: Record<string, number>;
   stepStats: Record<string, number>;
   pendingApprovals: number;
@@ -90,6 +94,26 @@ type RunPhase = {
   status: "active" | "done" | "waiting" | "failed" | string;
   createdAt: string;
   durationMs?: number | null;
+};
+
+type TimingSummary = {
+  schemaVersion?: string;
+  generatedAt?: string;
+  totalCompletedMs?: number;
+  entryCount?: number;
+  activeCount?: number;
+  byName?: Record<string, { count: number; totalMs: number; maxMs: number; p95Ms: number | null }>;
+};
+
+type DiagnosticSummary = {
+  schemaVersion?: string;
+  generatedAt?: string;
+  caseNo?: string | null;
+  purpose?: string | null;
+  executionMode?: string;
+  evidenceGaps?: string[];
+  executedSteps?: Array<{ stepNo?: number; template?: string; status?: string; durationMs?: number }>;
+  canPromoteToTrustedResult?: boolean;
 };
 
 type RunCase = {
@@ -211,6 +235,13 @@ const api = async <T,>(url: string, init?: RequestInit): Promise<T> => {
   return data;
 };
 
+const optionalJson = async <T,>(url: string): Promise<T | null> => {
+  const resp = await fetch(buildApiUrl(url), { credentials: "include" });
+  if (resp.status === 404) return null;
+  if (!resp.ok) return null;
+  return (await resp.json().catch(() => null)) as T | null;
+};
+
 const formatDate = (v?: string): string => {
   if (!v) return "-";
   const d = new Date(v);
@@ -288,7 +319,7 @@ function App() {
   const [runStatusFilter, setRunStatusFilter] = useState("");
   const [runRoundFilter, setRunRoundFilter] = useState("");
   const [sourceMode, setSourceMode] = useState<"upload" | "conversation">("upload");
-  const [runExecutionMode, setRunExecutionMode] = useState<"interactive" | "offline">("interactive");
+  const [runExecutionMode, setRunExecutionMode] = useState<"interactive" | "offline" | "diagnostic">("interactive");
   const [autoSelectLatestRun, setAutoSelectLatestRun] = useState(true);
   const [agents, setAgents] = useState<AgentItem[]>([]);
   const [selectedAgentId, setSelectedAgentId] = useState("");
@@ -318,6 +349,8 @@ function App() {
   const [caseStatusFilter, setCaseStatusFilter] = useState("ALL");
   const [expandedCaseId, setExpandedCaseId] = useState<string | null>(null);
   const [approvals, setApprovals] = useState<Approval[]>([]);
+  const [timingSummary, setTimingSummary] = useState<TimingSummary | null>(null);
+  const [diagnosticSummary, setDiagnosticSummary] = useState<DiagnosticSummary | null>(null);
   const [runBusy, setRunBusy] = useState(false);
   const [isStarting, setIsStarting] = useState(false);
   const [runError, setRunError] = useState("");
@@ -348,7 +381,7 @@ function App() {
   const selectedAgentMacPermissionCheck = selectedAgent?.doctorChecks.find((check) => check.name === "macos-ui-automation-permissions");
   const pendingApprovals = approvals.filter((x) => x.status === "PENDING");
   const getSelectedAgentBlockingReason = (): string | null => {
-    if (runExecutionMode !== "interactive") return null;
+    if (runExecutionMode === "offline") return null;
     if (!selectedAgent) return "請先選擇一台在線 Agent";
     if (selectedAgent.status === "busy") return `Agent 正在執行 ${selectedAgent.currentRunId || "其他 Run"}`;
     if (selectedAgent.status !== "idle") return "Agent 尚未 ready";
@@ -356,8 +389,8 @@ function App() {
     if (selectedAgent.supportedTaskTypes.length > 0 && !selectedAgent.supportedTaskTypes.includes("uat_run")) {
       return "Agent 不支援 uat_run 任務";
     }
-    if (selectedAgent.supportedExecutionModes.length > 0 && !selectedAgent.supportedExecutionModes.includes("interactive")) {
-      return "Agent 不支援 interactive 模式";
+    if (selectedAgent.supportedExecutionModes.length > 0 && !selectedAgent.supportedExecutionModes.includes(runExecutionMode)) {
+      return `Agent 不支援 ${runExecutionMode} 模式`;
     }
     return null;
   };
@@ -777,6 +810,64 @@ function App() {
     );
   };
 
+  const renderArtifactSummaryCard = () => {
+    if (!timingSummary && !diagnosticSummary && !summary?.timingSummaryAvailable && !summary?.diagnosticSummaryAvailable) {
+      return null;
+    }
+    const timingRows = Object.entries(timingSummary?.byName ?? {})
+      .sort(([, a], [, b]) => (b.totalMs ?? 0) - (a.totalMs ?? 0))
+      .slice(0, 5);
+    return (
+      <div className="card artifact-card mb-16">
+        <div className="card-header">
+          <h2>診斷與耗時</h2>
+          <span className="count">
+            {timingSummary ? formatDuration(timingSummary.totalCompletedMs) : summary?.timingSummaryAvailable ? "Timing 可下載" : "—"}
+          </span>
+        </div>
+        <div className="artifact-grid">
+          <div>
+            <div className="artifact-title">Timing Summary</div>
+            {timingSummary ? (
+              <div className="artifact-list">
+                {timingRows.length === 0 ? <span className="muted">尚無 timing bucket</span> : null}
+                {timingRows.map(([name, bucket]) => (
+                  <div className="artifact-row" key={name}>
+                    <span>{name}</span>
+                    <strong>{formatDuration(bucket.totalMs)}</strong>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="muted">尚未載入 timing summary</p>
+            )}
+          </div>
+          <div>
+            <div className="artifact-title">Diagnostic Summary</div>
+            {diagnosticSummary ? (
+              <div className="artifact-list">
+                <div className="artifact-row">
+                  <span>Case</span>
+                  <strong>{diagnosticSummary.caseNo || "—"}</strong>
+                </div>
+                <div className="artifact-row">
+                  <span>Executed steps</span>
+                  <strong>{diagnosticSummary.executedSteps?.length ?? 0}</strong>
+                </div>
+                <div className="artifact-row">
+                  <span>Trusted result</span>
+                  <strong>{diagnosticSummary.canPromoteToTrustedResult ? "可升級" : "不可升級"}</strong>
+                </div>
+              </div>
+            ) : (
+              <p className="muted">尚無 diagnostic summary</p>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   const renderRunLogCard = (maxHeight: number) => {
     const eventItems: RunTimelineItem[] = runEvents.map((event) => {
         let payloadText = event.payload_json || "";
@@ -1001,10 +1092,16 @@ function App() {
         api<{ items: RunCase[] }>(`/api/runs/${runId}/cases`),
         api<{ items: Approval[] }>(`/api/runs/${runId}/approvals`),
       ]);
+      const [timingData, diagnosticData] = await Promise.all([
+        optionalJson<TimingSummary>(`/api/runs/${runId}/output/timing-summary`),
+        optionalJson<DiagnosticSummary>(`/api/runs/${runId}/output/diagnostic-summary`)
+      ]);
       setSummary(summaryData);
       applyRunActivity(resetActivity, activityData.eventsData, activityData.logsData);
       setRunCases(casesData.items);
       setApprovals(approvalsData.items);
+      setTimingSummary(timingData);
+      setDiagnosticSummary(diagnosticData);
       try {
         const bugsData = await api<{ items: BugItem[] }>(`/api/runs/${runId}/bugs`);
         setRunBugs(bugsData.items);
@@ -1032,6 +1129,8 @@ function App() {
     setRunCases([]);
     setRunBugs([]);
     setApprovals([]);
+    setTimingSummary(null);
+    setDiagnosticSummary(null);
     setApprovalConfirmations({});
     setApprovalNotes({});
     setExpandedCaseId(null);
@@ -1080,7 +1179,7 @@ function App() {
 
   useEffect(() => {
     if (authStatus !== "authenticated") return;
-    if (runExecutionMode !== "interactive") return;
+    if (runExecutionMode === "offline") return;
     const timer = setInterval(() => {
       void loadAgents();
     }, 10000);
@@ -1328,7 +1427,7 @@ function App() {
       await loadRunDetail(created.id, { resetActivity: true });
 
       try {
-        if (runExecutionMode === "interactive") {
+        if (runExecutionMode !== "offline") {
           await api(`/api/runs/${created.id}/dispatch-agent`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -1736,8 +1835,9 @@ function App() {
               </div>
               <div className="form-group">
                 <label>執行模式</label>
-                <select value={runExecutionMode} onChange={(e) => setRunExecutionMode(e.target.value as "interactive" | "offline")}>
+                <select value={runExecutionMode} onChange={(e) => setRunExecutionMode(e.target.value as "interactive" | "offline" | "diagnostic")}>
                   <option value="interactive">Agent 互動執行（推薦）</option>
+                  <option value="diagnostic">Diagnostic 快速診斷（不產正式結果）</option>
                   <option value="offline">離線 Runner（批次）</option>
                 </select>
               </div>
@@ -1747,7 +1847,7 @@ function App() {
               </div>
             </div>
 
-            {runExecutionMode === "interactive" ? (
+            {runExecutionMode !== "offline" ? (
               <div className="form-row">
                 <div className="form-group">
                   <label>執行 Agent</label>
@@ -1929,18 +2029,18 @@ function App() {
               <button
                 className="btn primary"
                 onClick={() => void handleCreateRun()}
-                disabled={runBusy || isStarting || (runExecutionMode === "interactive" && Boolean(selectedAgentBlockingReason))}
+                disabled={runBusy || isStarting || (runExecutionMode !== "offline" && Boolean(selectedAgentBlockingReason))}
                 title={selectedAgentBlockingReason || undefined}
               >
                 {isStarting ? (
                   <>
-                    <span className="spinner-sm" /> {runExecutionMode === "interactive" ? "派發 Agent..." : "檢查 Playwright..."}
+                    <span className="spinner-sm" /> {runExecutionMode !== "offline" ? "派發 Agent..." : "檢查 Playwright..."}
                   </>
                 ) : (
                   <>▶ 開始執行</>
                 )}
               </button>
-              {selectedRunId && summary?.runStatus === "READY" && selectedRun?.execution_mode === "interactive" ? (
+              {selectedRunId && summary?.runStatus === "READY" && selectedRun?.execution_mode !== "offline" ? (
                 <button
                   className="btn success"
                   onClick={() => void handleDispatchRunToAgent(selectedRunId)}
@@ -1959,7 +2059,7 @@ function App() {
                 取消 Run
               </button>
             </div>
-            {runExecutionMode === "interactive" && selectedAgentBlockingReason ? (
+              {runExecutionMode !== "offline" && selectedAgentBlockingReason ? (
               <p className="muted mt-8">Agent 檢查：{selectedAgentBlockingReason}</p>
             ) : null}
             {startError ? (
@@ -2027,6 +2127,7 @@ function App() {
             {renderCaseResultsCard(340)}
           </div>
           {renderPhaseCard()}
+          {renderArtifactSummaryCard()}
           {renderRunLogCard(280)}
           {renderBugCard()}
         </section>
@@ -2130,6 +2231,8 @@ function App() {
                   <span>功能: {summary?.featureMain || "—"} / {summary?.featureSub || "—"}</span>
                   <span>Result XLSX: {summary?.resultXlsxAvailable ? "可下載" : "—"}</span>
                   <span>Agent Log: {summary?.logAvailable ? "可下載" : "—"}</span>
+                  <span>Timing: {summary?.timingSummaryAvailable ? "可查看" : "—"}</span>
+                  <span>Diagnostic: {summary?.diagnosticSummaryAvailable ? "可查看" : "—"}</span>
                   <span>Pending approvals: {summary?.pendingApprovals ?? 0}</span>
                 </div>
                 <div className="stats mt-8">
@@ -2153,6 +2256,7 @@ function App() {
               </div>
 
               {renderPhaseCard()}
+              {renderArtifactSummaryCard()}
               {renderCaseResultsCard(280)}
               {renderBugCard()}
               {renderRunLogCard(260)}

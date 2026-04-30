@@ -39,7 +39,7 @@ const RUN_STATUS = [
 ] as const;
 
 const CASE_EXECUTION_TYPE = ["auto", "semi", "manual"] as const;
-const RUN_EXECUTION_MODE = ["offline", "interactive"] as const;
+const RUN_EXECUTION_MODE = ["offline", "interactive", "diagnostic"] as const;
 const CASE_RESULT_STATUS = [
   "PENDING",
   "PASS",
@@ -158,6 +158,8 @@ type RunInputPaths = {
 type RunOutputPaths = {
   result_xlsx_path?: string | null;
   log_path?: string | null;
+  timing_summary_path?: string | null;
+  diagnostic_summary_path?: string | null;
 };
 
 type RunLogRow = {
@@ -515,7 +517,9 @@ const getRunOutputUrls = (req: Request, runId: string): Record<string, string> =
   const base = getRequestBaseUrl(req);
   return {
     result_xlsx: `${base}/api/runs/${runId}/output/result-xlsx`,
-    log: `${base}/api/runs/${runId}/output/log`
+    log: `${base}/api/runs/${runId}/output/log`,
+    timing_summary: `${base}/api/runs/${runId}/output/timing-summary`,
+    diagnostic_summary: `${base}/api/runs/${runId}/output/diagnostic-summary`
   };
 };
 
@@ -1588,7 +1592,8 @@ router.post("/:id/dispatch-agent", (req, res) => {
       supportedTaskTypes: agent.supportedTaskTypes
     });
   }
-  if (agent.supportedExecutionModes.length > 0 && !agent.supportedExecutionModes.includes("interactive")) {
+  const requestedExecutionMode = String(run.execution_mode ?? "interactive");
+  if (agent.supportedExecutionModes.length > 0 && !agent.supportedExecutionModes.includes(requestedExecutionMode)) {
     return res.status(409).json({
       error: "AGENT_UNSUPPORTED_EXECUTION_MODE",
       supportedExecutionModes: agent.supportedExecutionModes
@@ -1606,7 +1611,7 @@ router.post("/:id/dispatch-agent", (req, res) => {
       run_id: req.params.id,
       domain,
       round_id: String(run.round_id ?? ""),
-      execution_mode: String(run.execution_mode ?? "interactive"),
+      execution_mode: requestedExecutionMode,
       dev_url: String(run.dev_url ?? ""),
       feature_main: String(run.feature_main ?? ""),
       feature_sub: String(run.feature_sub ?? ""),
@@ -2135,6 +2140,104 @@ router.get("/:id/output/log", (req, res) => {
   return safeSendRunOutputFile(res, run.log_path, `${String(run.round_id ?? req.params.id)}_agent.log`);
 });
 
+router.post("/:id/output/timing-summary", resultUpload.single("timingSummary"), (req, res) => {
+  const runId = String(req.params.id);
+  const run = getRun(runId);
+  if (!run) {
+    return res.status(404).json({ error: "RUN_NOT_FOUND" });
+  }
+
+  if (!req.file) {
+    return res.status(400).json({
+      error: "TIMING_SUMMARY_REQUIRED",
+      message: "請使用 multipart 欄位 timingSummary 上傳 timing-summary.json"
+    });
+  }
+
+  const now = nowIso();
+  db.prepare("UPDATE runs SET timing_summary_path = ?, timing_summary_uploaded_at = ?, updated_at = ? WHERE id = ?").run(
+    req.file.path,
+    now,
+    now,
+    runId
+  );
+  insertRunEvent(runId, "timing_summary.uploaded", {
+    filePath: req.file.path,
+    originalName: req.file.originalname,
+    size: req.file.size
+  });
+  insertRunLog(runId, "INFO", "Agent timing summary uploaded", {
+    filePath: req.file.path,
+    originalName: req.file.originalname,
+    size: req.file.size
+  });
+
+  return res.status(201).json({
+    runId,
+    timingSummaryPath: req.file.path,
+    uploadedAt: now
+  });
+});
+
+router.get("/:id/output/timing-summary", (req, res) => {
+  const run = getRun(req.params.id);
+  if (!run) {
+    return res.status(404).json({ error: "RUN_NOT_FOUND" });
+  }
+  return safeSendRunOutputFile(res, run.timing_summary_path, `${String(run.round_id ?? req.params.id)}_timing-summary.json`);
+});
+
+router.post("/:id/output/diagnostic-summary", resultUpload.single("diagnosticSummary"), (req, res) => {
+  const runId = String(req.params.id);
+  const run = getRun(runId);
+  if (!run) {
+    return res.status(404).json({ error: "RUN_NOT_FOUND" });
+  }
+
+  if (!req.file) {
+    return res.status(400).json({
+      error: "DIAGNOSTIC_SUMMARY_REQUIRED",
+      message: "請使用 multipart 欄位 diagnosticSummary 上傳 diagnostic-summary.json"
+    });
+  }
+
+  const now = nowIso();
+  db.prepare("UPDATE runs SET diagnostic_summary_path = ?, diagnostic_summary_uploaded_at = ?, updated_at = ? WHERE id = ?").run(
+    req.file.path,
+    now,
+    now,
+    runId
+  );
+  insertRunEvent(runId, "diagnostic_summary.uploaded", {
+    filePath: req.file.path,
+    originalName: req.file.originalname,
+    size: req.file.size
+  });
+  insertRunLog(runId, "INFO", "Agent diagnostic summary uploaded", {
+    filePath: req.file.path,
+    originalName: req.file.originalname,
+    size: req.file.size
+  });
+
+  return res.status(201).json({
+    runId,
+    diagnosticSummaryPath: req.file.path,
+    uploadedAt: now
+  });
+});
+
+router.get("/:id/output/diagnostic-summary", (req, res) => {
+  const run = getRun(req.params.id);
+  if (!run) {
+    return res.status(404).json({ error: "RUN_NOT_FOUND" });
+  }
+  return safeSendRunOutputFile(
+    res,
+    run.diagnostic_summary_path,
+    `${String(run.round_id ?? req.params.id)}_diagnostic-summary.json`
+  );
+});
+
 router.get("/:id/cases", (req, res) => {
   const run = getRun(req.params.id);
   if (!run) {
@@ -2217,6 +2320,10 @@ router.get("/:id/summary", (req, res) => {
     resultParserVersion: run.result_xlsx_parser_version ?? null,
     logAvailable: typeof run.log_path === "string" && run.log_path.trim().length > 0,
     logUploadedAt: run.log_uploaded_at ?? null,
+    timingSummaryAvailable: typeof run.timing_summary_path === "string" && run.timing_summary_path.trim().length > 0,
+    timingSummaryUploadedAt: run.timing_summary_uploaded_at ?? null,
+    diagnosticSummaryAvailable: typeof run.diagnostic_summary_path === "string" && run.diagnostic_summary_path.trim().length > 0,
+    diagnosticSummaryUploadedAt: run.diagnostic_summary_uploaded_at ?? null,
     caseStats,
     stepStats,
     pendingApprovals: pendingApprovals.count

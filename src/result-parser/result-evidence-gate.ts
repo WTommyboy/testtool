@@ -281,6 +281,14 @@ export const evaluateResultEvidenceGate = (input: ResultEvidenceGateInput): Resu
     });
   }
 
+  if (resultSource === "diagnostic") {
+    issues.push({
+      severity: "error",
+      code: "DIAGNOSTIC_RESULT_NOT_TRUSTED",
+      message: "Diagnostic output cannot be ingested as trusted UAT result.xlsx."
+    });
+  }
+
   if (parsed.cases.length === 0) {
     issues.push({
       severity: "error",

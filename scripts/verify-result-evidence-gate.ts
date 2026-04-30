@@ -160,6 +160,10 @@ const main = async (): Promise<void> => {
     assert.equal(fallbackReport.status, "error");
     assert.ok(hasIssue(fallbackReport, "AGENT_FALLBACK_RESULT_NOT_TRUSTED"));
 
+    const diagnosticReport = await runGate(good, { resultSource: "diagnostic" });
+    assert.equal(diagnosticReport.status, "error");
+    assert.ok(hasIssue(diagnosticReport, "DIAGNOSTIC_RESULT_NOT_TRUSTED"));
+
     const missingToolBridge = path.join(tempRoot, "missing-tool-bridge-result.xlsx");
     await writeWorkbook(missingToolBridge, [
       {
@@ -198,6 +202,7 @@ const main = async (): Promise<void> => {
             "multi-case result is blocked",
             "missing current-run evidence is blocked",
             "agent fallback result is blocked",
+            "diagnostic result source is blocked",
             "Tool Bridge action claim without response evidence is blocked",
             "invalid detail_json is blocked"
           ]
