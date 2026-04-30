@@ -669,4 +669,28 @@ Tommy 曾討論是否改成腳本。最後決策是採「半腳本化 / helper �
 - Helper protocol：新增 `agent-skills/uat-tool/rules/helper-protocol.md`，正式寫下 Layer 1 Helper 職責邊界、hard rules、三份 artifact 契約、current-run evidence gate、state delta planner 與 warm session policy。`SKILL.md`、`rule-index`、run prompt、BI helper guidance、Agent security rule、M1 runbook 都已同步引用。
 - 修改檔案：`agent/src/types.ts`、`agent/src/config.ts`、`agent/src/cli.ts`、`agent/src/doctor.ts`、`agent/src/task-runner.ts`、`agent/src/bi-ui-helper-executor.ts`、`agent/src/helper-execution-plan.ts`、`agent/src/helper-pre-runner.ts`、`agent/src/bi-ui-helper-guidance.ts`、`agent/src/rule-index.ts`、`agent-skills/uat-tool/SKILL.md`、`agent-skills/uat-tool/rules/agent-security.md`、`agent-skills/uat-tool/rules/helper-protocol.md`、`docs/refactor/M1_Mac_Agent_MVP_Runbook.md`、`scripts/verify-helper-report-gate.ts`、`package.json`、本 planning log。
 - 回滾方式：若 warm Chrome 造成 UI state 或 native dialog 污染，先在本機 Agent 設 `UAT_AGENT_KEEP_CHROME_WARM=false` 並重啟 `com.tommy.uat-agent`；若 helper report gate 擋下過多 action，回查 `HELPER_REPORT_VALIDATION_FAILED:*` 的欄位，不應關掉 evidence gate，而是修 report metadata 或 action artifact。
-- 驗證：`npm run typecheck --prefix agent`、`npm run typecheck`、`npm run build --prefix agent`、`npm run build`、`npm run build --prefix web`、`npm run verify:helper-report-gate`、`npm run verify:helper-hints`、`npm run verify:result-evidence-gate`、`npm run verify:agent-result-contract`、`npm run verify:package-consistency`、`npm run verify:tool-bridge`、`npm run verify:agent-resume`、`npm run verify:agent-roundtrip`、`git diff --check` 已通過。完成後會 commit/push `refactor/mac-agent-mvp` 與 `codex/uat-tool-mvp`，並重啟本機 Agent。
+- 驗證：`npm run typecheck --prefix agent`、`npm run typecheck`、`npm run build --prefix agent`、`npm run build`、`npm run build --prefix web`、`npm run verify:helper-report-gate`、`npm run verify:helper-hints`、`npm run verify:result-evidence-gate`、`npm run verify:agent-result-contract`、`npm run verify:package-consistency`、`npm run verify:tool-bridge`、`npm run verify:agent-resume`、`npm run verify:agent-roundtrip`、`git diff --check` 已通過。runtime commit `6c4df8e` 已推 `refactor/mac-agent-mvp` 與 `codex/uat-tool-mvp`，Railway production 已部署到該版本，本機 Agent 已重啟。
+
+### 2026-05-01 00:17 - M2 優化候選：線上 evidence artifact 與系統產品化
+
+- 背景：Tommy 指出截圖只留在本機，對「線上系統」而言不完整。現況可讓本機 Codex/Helper 快速判斷，但線上 run detail 無法完整重現 evidence；若本機 run workspace 清掉，screenshot evidence 也會失效。
+- 決策：列入 M2 優先項，不在 M1 立即阻塞 run。M2 應建立 generic evidence artifact pipeline：Agent 先本機收集，run 結束或 case 完成後非同步上傳必要 artifact，detail_json / helper report / case result 改引用 artifact id / URL，不引用 raw local path。
+- M2 artifact scope：
+  - 上傳優先順序：FAIL/bug、BLOCKED、Tool Bridge/SSO/native dialog、save/reopen/delete major state transition、final evidence。
+  - manifest：新增 `output/evidence-artifacts-manifest.json`，記錄 runId、caseId、action、artifactType、localPath、checksum、createdAt、uploadStatus、remoteUrl/artifactId、retentionClass。
+  - backend：新增 run artifact table 或 generic artifact endpoints，至少支援 screenshot/helper-report/trace/json；後續可遷到 object storage。
+  - frontend：run detail 顯示 artifact list、inline screenshot preview、artifact download，並讓 PM review 可引用 artifact。
+  - policy：structured evidence 仍優先，screenshot 不可取代數值/DOM/network；artifact upload failure 不應把已完成的 trusted result 改成 PASS/FAIL，但需留下 upload warning。
+- 其他 M2 優化候選：
+  - persistent helper worker/session：減少每個 helper action spawn Node/Playwright connect 的成本；仍需逐 action report + artifact。
+  - BI domain helper registry：把 BI templates 搬到 domain pack，Layer 1 只保留 protocol/hard rules。
+  - locator drift loop：收集 failed locator、DOM excerpt、screenshot、action template，產出 drift report 給 locator registry 更新。
+  - diagnostic partial steps：UI 支援 fromStep/untilStep；仍不可 promote 成 trusted result。
+  - helper-aware evidence gate：server 解析 helper report metadata/artifact ids，而不是只靠 detail_json 關鍵字。
+  - failure taxonomy dashboard：統計 selector drift、preview no request、SSO/login、tool timeout、unsupported capability、result contract failure。
+  - crash-safe resume：Agent reconnect 的 `run_snapshot` 從診斷升級為可恢復的 resume/dispatched state。
+  - capability roadmap：filter/group/detail/metric 在 helper 覆蓋前繼續走 unsupported/degraded gate，不再硬跑。
+  - storage/retention/privacy：規劃 screenshot redaction、quota、90 天後壓縮或移到 object storage。
+  - PM review/product UI：run detail 更清楚呈現 Codex 建議判定、PM final decision、evidence artifact、timing bottleneck。
+- 優先順序建議：M2 先做 (1) evidence artifact pipeline，(2) persistent helper worker + BI helper coverage，(3) locator drift + diagnostic partial steps。這三個同時改善線上可信度、速度與失敗診斷。
+- 安全邊界：M2 不可放寬 one-case-at-a-time、current-run evidence、UI-only state setting、no direct BI API result、Tool Bridge、result evidence gate。加速只能減少固定操作成本，不能跳過判定或 evidence。
