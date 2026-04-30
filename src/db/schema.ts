@@ -20,6 +20,7 @@ export const runs = pgTable("runs", {
   resultXlsxUrl: text("result_xlsx_url"),
   resultXlsxParserVersion: text("result_xlsx_parser_version"),
   logPath: text("log_path"),
+  diagnosticConfigJson: jsonb("diagnostic_config_json").$type<Record<string, unknown> | null>(),
   notes: text("notes"),
   createdBy: text("created_by"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -43,6 +44,37 @@ export const runEvents = pgTable(
     index("run_events_run_id_idx").on(table.runId),
     index("run_events_event_type_idx").on(table.eventType),
     index("run_events_payload_gin_idx").using("gin", table.payload)
+  ]
+);
+
+export const runArtifacts = pgTable(
+  "run_artifacts",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    runId: uuid("run_id")
+      .notNull()
+      .references(() => runs.id, { onDelete: "cascade" }),
+    caseNo: text("case_no"),
+    action: text("action"),
+    artifactType: text("artifact_type").notNull(),
+    manifestId: text("manifest_id"),
+    storagePath: text("storage_path").notNull(),
+    originalName: text("original_name"),
+    mimeType: text("mime_type"),
+    sizeBytes: integer("size_bytes"),
+    checksum: text("checksum"),
+    localPath: text("local_path"),
+    relativePath: text("relative_path"),
+    source: text("source"),
+    retentionClass: text("retention_class"),
+    metadataJson: jsonb("metadata_json").$type<Record<string, unknown> | null>(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    uploadedAt: timestamp("uploaded_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => [
+    index("run_artifacts_run_id_idx").on(table.runId),
+    index("run_artifacts_case_no_idx").on(table.runId, table.caseNo),
+    index("run_artifacts_type_idx").on(table.artifactType)
   ]
 );
 

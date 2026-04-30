@@ -133,7 +133,7 @@ Diagnostic mode 是驗證 helper 和 locator registry 的主要工具。
 2. 加 dispatch payload validation：`execution_mode=diagnostic` 時不得要求 result upload。已完成最小版，trusted result gate 會拒絕 `resultSource=diagnostic`。
 3. Agent 支援只產 `diagnostic-summary.json`，不呼叫 trusted result upload。已完成最小版。
 4. Web UI 顯示 diagnostic artifacts 與 timing summary。已完成最小版。
-5. 再加 `fromStep` / `untilStep` prompt wiring。
+5. 再加 `fromStep` / `untilStep` prompt wiring。UI dispatch 與 Agent summary propagation 已完成；Codex partial-step execution 仍維持非可信 diagnostic 邊界。
 
 ## 9. 目前狀態
 
@@ -147,12 +147,15 @@ v0.1 已有最小 runtime dispatch。
 - 執行 safe helper pre-run
 - 寫出並上傳 `output/diagnostic-summary.json`
 - 寫出並上傳 `output/timing-summary.json`
+- 寫出 `output/evidence-artifacts-manifest.json` 並上傳 generic artifacts
+- Web UI 可填寫 `fromStep` / `untilStep` / `purpose`
 - Web UI 顯示 timing bucket 與 diagnostic 摘要
+- Web UI 顯示 evidence artifact list 與 download link
+- `locator-drift.log/jsonl` 會被收進 diagnostic summary 的 `locatorDrift`
 - result evidence gate 拒絕 `resultSource=diagnostic`
 
 目前尚未支援：
 
-- Web UI 填寫 `fromStep` / `untilStep`
 - Codex diagnostic partial-step execution prompt wiring
 - locator drift review UI
 

@@ -694,3 +694,14 @@ Tommy 曾討論是否改成腳本。最後決策是採「半腳本化 / helper �
   - PM review/product UI：run detail 更清楚呈現 Codex 建議判定、PM final decision、evidence artifact、timing bottleneck。
 - 優先順序建議：M2 先做 (1) evidence artifact pipeline，(2) persistent helper worker + BI helper coverage，(3) locator drift + diagnostic partial steps。這三個同時改善線上可信度、速度與失敗診斷。
 - 安全邊界：M2 不可放寬 one-case-at-a-time、current-run evidence、UI-only state setting、no direct BI API result、Tool Bridge、result evidence gate。加速只能減少固定操作成本，不能跳過判定或 evidence。
+
+### 2026-05-01 01:11 - M2 第一批：generic evidence artifact pipeline 與 diagnostic step range
+
+- 背景：Tommy 要求開始執行 M2 優化。第一批先做不降低測試品質的基礎設施：讓線上 run detail 能看到 evidence artifacts，並讓 diagnostic mode 的 fromStep/untilStep/purpose 不再只停在 spec。
+- Evidence artifact pipeline：server 新增 `run_artifacts` table 與 `POST /api/runs/:id/output/artifacts`、`GET /api/runs/:id/artifacts`、`GET /api/runs/:id/artifacts/:artifactId/download`。Mac Agent 在 final sidecar upload 階段掃描 `output/helper-artifacts/**`、`output/helper-artifacts-archive/**`、`output/screenshots/**`、`artifacts/**`、`mcp-output/**`、`output/*.png/jpg/webp`、`output/locator-drift.log/jsonl`、helper summary，產生 `output/evidence-artifacts-manifest.json`，並把每個 artifact 以 generic endpoint 上傳。manifest 記錄 artifactId、runId、caseId、action、type、relativePath、checksum、uploadStatus、remoteArtifactId/remoteUrl。Agent 會等 sidecar/artifact upload 收尾後才清掉 local activeTask，避免 artifact upload 尚未完成時本機誤收下一個 task。
+- UI：run summary 增加 artifact count / screenshot count，run detail 的「Artifacts 與診斷」卡顯示 evidence artifact list 與 download link；timing summary / diagnostic summary 仍保留原本呈現。
+- Diagnostic partial：Web UI 可在 diagnostic mode 填 `fromStep` / `untilStep` / `purpose`，server 存成 `diagnostic_config_json` 並在 dispatch payload 帶給 Agent。Agent 會把 step range 寫入 `diagnostic-summary.json`，並把 range 外的步驟列為 `not_executed_in_diagnostic` evidence gap。這仍是非可信 diagnostic，不會寫 trusted `result.xlsx`。
+- Locator drift：Codex prompt 明確要求 locator drift 寫到 `output/locator-drift.log`；Agent 會解析 `locator-drift.log/jsonl` 放進 diagnostic summary 的 `locatorDrift`，同時把 drift 檔納入 artifact manifest。registry 本身仍不可由 run 自動修改。
+- 安全邊界：artifact upload 只增加線上可追溯性，不影響 result evidence gate；artifact upload failure 只留下 warning，不會把 trusted result 改判。Screenshot 仍不可取代 structured evidence。
+- 未納入本批：persistent helper worker/session 與 helper-aware result evidence gate 尚未實作。這兩項需要再看下一輪 timing 與 helper coverage，避免為了減少 spawn 成本而引入 session 狀態污染。
+- 驗證：`npm run typecheck`、`npm run typecheck --prefix agent`、`npm run build`、`npm run build --prefix agent`、`npm run build --prefix web`、`npm run verify:helper-report-gate`、`npm run verify:helper-hints`、`npm run verify:result-evidence-gate`、`npm run verify:agent-result-contract`、`npm run verify:package-consistency`、`npm run verify:tool-bridge`、`npm run verify:agent-resume`、`npm run verify:agent-roundtrip`、`git diff --check` 已通過。`verify:agent-roundtrip` 已新增 generic evidence artifact upload/download smoke。

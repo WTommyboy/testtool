@@ -31,6 +31,7 @@ run 正常完成時，上傳：
 - `output/codex-result.json`，若存在
 - MCP output directory summary 或 archive，若存在
 - case evidence 引用的 screenshots，若存在
+- `output/evidence-artifacts-manifest.json`
 
 ## Required Partial Artifacts
 
@@ -44,6 +45,45 @@ run cancelled、failed、或 lost Agent connection 時，上傳所有已存在�
 - error summary
 
 backend 應記錄 `run.partial_artifacts` event。
+
+## Evidence Artifact Manifest
+
+M2 起，Agent 必須產生 generic evidence artifact manifest：
+
+```text
+output/evidence-artifacts-manifest.json
+```
+
+manifest entries 至少包含：
+
+- `artifactId`
+- `runId`
+- `caseId`
+- `action`
+- `artifactType`
+- `relativePath`
+- `checksum`
+- `sizeBytes`
+- `createdAt`
+- `source`
+- `retentionClass`
+- `uploadStatus`
+- `remoteArtifactId` / `remoteUrl`，若已上傳
+
+Agent 會把下列檔案列入候選：
+
+- `output/helper-artifacts/**`
+- `output/helper-artifacts-archive/**`
+- `output/screenshots/**` 與 `output/*.png/jpg/webp`
+- `artifacts/**`
+- `mcp-output/**`
+- `output/locator-drift.log`
+- `output/locator-drift.jsonl`
+- helper pre-run / cleanup summary
+
+Backend 以 `POST /api/runs/:id/output/artifacts` 接收 generic artifacts，並在 `run_artifacts` 記錄 metadata。Web UI 應顯示 artifact list 與 download link。
+
+Artifact upload 是附加 observability，不得改變 case PASS/FAIL/BLOCKED 判定。若 artifact upload 失敗，Agent 留下 upload warning；trusted result evidence gate 仍依 `result.xlsx` 與 structured evidence contract 判斷。
 
 ## Result xlsx Trust
 
@@ -133,3 +173,5 @@ Screenshots 可以支援 evidence，但不能取代 structured observations。
 ## Artifact Portability
 
 結果中優先保存 logical artifact ids 或 relative run paths。Raw local paths 未來若從 local disk 搬到 cloud storage，可能失效。
+
+detail_json 可引用 artifact id / remote URL，但不可只寫「請見截圖」。數值、DOM、network observation 仍要直接寫進 JSON。

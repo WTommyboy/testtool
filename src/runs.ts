@@ -160,6 +160,28 @@ type RunOutputPaths = {
   log_path?: string | null;
   timing_summary_path?: string | null;
   diagnostic_summary_path?: string | null;
+  diagnostic_config_json?: string | null;
+};
+
+type RunArtifactRow = {
+  id: string;
+  run_id: string;
+  case_no: string | null;
+  action: string | null;
+  artifact_type: string;
+  manifest_id: string | null;
+  storage_path: string;
+  original_name: string | null;
+  mime_type: string | null;
+  size_bytes: number | null;
+  checksum: string | null;
+  local_path: string | null;
+  relative_path: string | null;
+  source: string | null;
+  retention_class: string | null;
+  metadata_json: string | null;
+  created_at: string;
+  uploaded_at: string;
 };
 
 type RunLogRow = {
@@ -422,7 +444,7 @@ const getRun = (runId: string): Record<string, unknown> | undefined =>
 
 const deleteRunCascade = (runId: string): void => {
   const remove = db.transaction((id: string) => {
-    for (const table of ["run_case_steps", "approvals", "bugs", "run_cases", "run_logs", "run_events"]) {
+    for (const table of ["run_case_steps", "approvals", "bugs", "run_cases", "run_logs", "run_events", "run_artifacts"]) {
       db.prepare(`DELETE FROM ${table} WHERE run_id = ?`).run(id);
     }
     db.prepare("DELETE FROM runs WHERE id = ?").run(id);
@@ -519,7 +541,8 @@ const getRunOutputUrls = (req: Request, runId: string): Record<string, string> =
     result_xlsx: `${base}/api/runs/${runId}/output/result-xlsx`,
     log: `${base}/api/runs/${runId}/output/log`,
     timing_summary: `${base}/api/runs/${runId}/output/timing-summary`,
-    diagnostic_summary: `${base}/api/runs/${runId}/output/diagnostic-summary`
+    diagnostic_summary: `${base}/api/runs/${runId}/output/diagnostic-summary`,
+    artifact: `${base}/api/runs/${runId}/output/artifacts`
   };
 };
 
@@ -547,6 +570,37 @@ const stringArrayBodyField = (req: Request, key: string): string[] => {
 };
 
 const parseJsonObject = (value: unknown): Record<string, unknown> | null => {
+  if (typeof value !== "string" || !value.trim()) return null;
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed as Record<string, unknown> : null;
+  } catch {
+    return null;
+  }
+};
+
+const numberBodyField = (body: Record<string, unknown>, key: string): number | null => {
+  const value = body[key];
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value !== "string" || !value.trim()) return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
+const buildDiagnosticConfig = (body: Record<string, unknown>): Record<string, unknown> | null => {
+  const fromStep = numberBodyField(body, "diagnosticFromStep");
+  const untilStep = numberBodyField(body, "diagnosticUntilStep");
+  const purpose = typeof body.diagnosticPurpose === "string" && body.diagnosticPurpose.trim()
+    ? body.diagnosticPurpose.trim()
+    : null;
+  const configPayload: Record<string, unknown> = {};
+  if (fromStep !== null) configPayload.fromStep = Math.max(1, Math.floor(fromStep));
+  if (untilStep !== null) configPayload.untilStep = Math.max(1, Math.floor(untilStep));
+  if (purpose) configPayload.purpose = purpose;
+  return Object.keys(configPayload).length > 0 ? configPayload : null;
+};
+
+const parseDiagnosticConfig = (value: unknown): Record<string, unknown> | null => {
   if (typeof value !== "string" || !value.trim()) return null;
   try {
     const parsed = JSON.parse(value) as unknown;
@@ -779,14 +833,69 @@ const upload = multer({
 });
 
 const resultUpload = multer({
-  storage: multer.diskStorage({
-    destination: (_req, _file, cb) => cb(null, outputRoot),
-    filename: (_req, file, cb) => {
-      const ext = path.extname(file.originalname) || (file.fieldname === "log" ? ".log" : ".xlsx");
-      cb(null, `${Date.now()}-${randomUUID()}${ext}`);
-    }
-  })
+	  storage: multer.diskStorage({
+	    destination: (_req, _file, cb) => cb(null, outputRoot),
+	    filename: (_req, file, cb) => {
+	      const ext = path.extname(file.originalname) || (file.fieldname === "log" ? ".log" : file.fieldname === "artifact" ? ".artifact" : ".xlsx");
+	      cb(null, `${Date.now()}-${randomUUID()}${ext}`);
+	    }
+	  })
 });
+
+const artifactDownloadUrl = (req: Request, runId: string, artifactId: string): string =>
+  `${getRequestBaseUrl(req)}/api/runs/${runId}/artifacts/${artifactId}/download`;
+
+const serializeRunArtifact = (req: Request, row: RunArtifactRow): Record<string, unknown> => ({
+  id: row.id,
+  runId: row.run_id,
+  caseNo: row.case_no,
+  action: row.action,
+  artifactType: row.artifact_type,
+  manifestId: row.manifest_id,
+  originalName: row.original_name,
+  mimeType: row.mime_type,
+  sizeBytes: row.size_bytes,
+  checksum: row.checksum,
+  localPath: row.local_path,
+  relativePath: row.relative_path,
+  source: row.source,
+  retentionClass: row.retention_class,
+  metadata: parseJsonObject(row.metadata_json),
+  createdAt: row.created_at,
+  uploadedAt: row.uploaded_at,
+  downloadUrl: artifactDownloadUrl(req, row.run_id, row.id)
+});
+
+const listRunArtifacts = (runId: string): RunArtifactRow[] =>
+  db
+    .prepare(
+      `
+        SELECT *
+        FROM run_artifacts
+        WHERE run_id = ?
+        ORDER BY uploaded_at DESC
+      `
+    )
+    .all(runId) as RunArtifactRow[];
+
+const countRunArtifactsByType = (runId: string): { total: number; screenshots: number; manifests: number } => {
+  const rows = db
+    .prepare(
+      `
+        SELECT artifact_type, COUNT(1) AS count
+        FROM run_artifacts
+        WHERE run_id = ?
+        GROUP BY artifact_type
+      `
+    )
+    .all(runId) as Array<{ artifact_type: string; count: number }>;
+  return rows.reduce((acc, row) => {
+    acc.total += row.count;
+    if (row.artifact_type === "screenshot") acc.screenshots += row.count;
+    if (row.artifact_type === "evidence_manifest") acc.manifests += row.count;
+    return acc;
+  }, { total: 0, screenshots: 0, manifests: 0 });
+};
 
 const upsertImportedTestcase = (
   runId: string,
@@ -1199,31 +1308,33 @@ router.post(
       });
     }
 
-    const now = nowIso();
-    const runId = randomUUID();
-    const payload = parsed.data;
+	    const now = nowIso();
+	    const runId = randomUUID();
+	    const payload = parsed.data;
+	    const diagnosticConfig = buildDiagnosticConfig(req.body as Record<string, unknown>);
 
-    db.prepare(
-      `
-      INSERT INTO runs (
-        id, round_id, domain, location, feature_main, feature_sub, run_name, dev_url, execution_mode, status, created_at, updated_at
-      ) VALUES (
-        @id, @round_id, @domain, @location, @feature_main, @feature_sub, @run_name, @dev_url, @execution_mode, @status, @created_at, @updated_at
-      )
-      `
-    ).run({
+	    db.prepare(
+	      `
+	      INSERT INTO runs (
+	        id, round_id, domain, location, feature_main, feature_sub, run_name, dev_url, execution_mode, diagnostic_config_json, status, created_at, updated_at
+	      ) VALUES (
+	        @id, @round_id, @domain, @location, @feature_main, @feature_sub, @run_name, @dev_url, @execution_mode, @diagnostic_config_json, @status, @created_at, @updated_at
+	      )
+	      `
+	    ).run({
       id: runId,
       round_id: payload.roundId,
       domain: payload.domain ?? "BI",
       location: payload.location,
       feature_main: payload.featureMain,
-      feature_sub: payload.featureSub,
-      run_name: payload.runName,
-      dev_url: payload.devUrl,
-      execution_mode: payload.executionMode ?? (config.nodeEnv === "production" ? "offline" : "interactive"),
-      status: "READY",
-      created_at: now,
-      updated_at: now
+	      feature_sub: payload.featureSub,
+	      run_name: payload.runName,
+	      dev_url: payload.devUrl,
+	      execution_mode: payload.executionMode ?? (config.nodeEnv === "production" ? "offline" : "interactive"),
+	      diagnostic_config_json: diagnosticConfig ? JSON.stringify(diagnosticConfig) : null,
+	      status: "READY",
+	      created_at: now,
+	      updated_at: now
     });
 
     insertRunLog(runId, "INFO", "Run created", payload);
@@ -1231,10 +1342,11 @@ router.post(
       domain: payload.domain ?? "BI",
       roundId: payload.roundId,
       location: payload.location,
-      featureMain: payload.featureMain,
-      featureSub: payload.featureSub,
-      executionMode: payload.executionMode ?? null
-    });
+	      featureMain: payload.featureMain,
+	      featureSub: payload.featureSub,
+	      executionMode: payload.executionMode ?? null,
+	      diagnostic: diagnosticConfig
+	    });
 
     const files = req.files as
       | {
@@ -1602,6 +1714,9 @@ router.post("/:id/dispatch-agent", (req, res) => {
 
   try {
     const domain = String(run.domain ?? "BI");
+    const diagnosticConfig = requestedExecutionMode === "diagnostic"
+      ? parseDiagnosticConfig((run as RunOutputPaths).diagnostic_config_json)
+      : null;
     const inputUrls = {
       ...getDomainInputUrls(req, domain),
       ...getRunInputUrls(req, req.params.id, run as RunInputPaths)
@@ -1615,6 +1730,7 @@ router.post("/:id/dispatch-agent", (req, res) => {
       dev_url: String(run.dev_url ?? ""),
       feature_main: String(run.feature_main ?? ""),
       feature_sub: String(run.feature_sub ?? ""),
+      ...(diagnosticConfig ? { diagnostic: diagnosticConfig } : {}),
       input_urls: inputUrls,
       output_urls: outputUrls,
       startup_instruction:
@@ -1626,22 +1742,24 @@ router.post("/:id/dispatch-agent", (req, res) => {
             "If SSO login, irreversible operation approval, or an ambiguous testing decision blocks progress, emit a Tool Bridge [TOOL_REQUEST]...[/TOOL_REQUEST] block and stop at the safe pause point."
           ].join(" ")
           : "You are assigned a Galaxy BI UAT run, but no uploaded testcase package is available. Report missing inputs and exit cleanly."
-    });
+	    });
 
-    setRunStatusWithMeta(req.params.id, "RUNNING");
-    insertRunEvent(req.params.id, "task.dispatched", {
-      agentId: parsed.data.agentId,
-      deviceName: agent.deviceName,
-      messageId: message.id,
-      inputUrls: Object.keys(inputUrls),
-      outputUrls: Object.keys(outputUrls)
-    }, message.seq);
+	    setRunStatusWithMeta(req.params.id, "RUNNING");
+	    insertRunEvent(req.params.id, "task.dispatched", {
+	      agentId: parsed.data.agentId,
+	      deviceName: agent.deviceName,
+	      messageId: message.id,
+	      inputUrls: Object.keys(inputUrls),
+	      outputUrls: Object.keys(outputUrls),
+	      diagnostic: diagnosticConfig
+	    }, message.seq);
     insertRunLog(req.params.id, "INFO", "Run dispatched to Mac Agent", {
       agentId: parsed.data.agentId,
       deviceName: agent.deviceName,
       messageId: message.id,
       inputUrls: Object.keys(inputUrls),
-      outputUrls: Object.keys(outputUrls)
+      outputUrls: Object.keys(outputUrls),
+      diagnostic: diagnosticConfig
     });
 
     return res.status(202).json({
@@ -2238,6 +2356,115 @@ router.get("/:id/output/diagnostic-summary", (req, res) => {
   );
 });
 
+router.post("/:id/output/artifacts", resultUpload.single("artifact"), (req, res) => {
+  const runId = String(req.params.id);
+  const run = getRun(runId);
+  if (!run) {
+    return res.status(404).json({ error: "RUN_NOT_FOUND" });
+  }
+
+  if (!req.file) {
+    return res.status(400).json({
+      error: "ARTIFACT_REQUIRED",
+      message: "請使用 multipart 欄位 artifact 上傳 evidence artifact"
+    });
+  }
+
+  const body = req.body as Record<string, unknown>;
+  const now = nowIso();
+  const artifactId = randomUUID();
+  const artifactType = typeof body.artifactType === "string" && body.artifactType.trim()
+    ? body.artifactType.trim()
+    : "artifact";
+  const originalName = normalizeUploadOriginalName(req.file.originalname);
+  const metadataJson = typeof body.metadataJson === "string" && body.metadataJson.trim()
+    ? body.metadataJson.trim()
+    : null;
+
+  db.prepare(
+    `
+      INSERT INTO run_artifacts (
+        id, run_id, case_no, action, artifact_type, manifest_id, storage_path, original_name, mime_type,
+        size_bytes, checksum, local_path, relative_path, source, retention_class, metadata_json, created_at, uploaded_at
+      ) VALUES (
+        @id, @run_id, @case_no, @action, @artifact_type, @manifest_id, @storage_path, @original_name, @mime_type,
+        @size_bytes, @checksum, @local_path, @relative_path, @source, @retention_class, @metadata_json, @created_at, @uploaded_at
+      )
+    `
+  ).run({
+    id: artifactId,
+    run_id: runId,
+    case_no: typeof body.caseNo === "string" && body.caseNo.trim() ? body.caseNo.trim() : null,
+    action: typeof body.action === "string" && body.action.trim() ? body.action.trim() : null,
+    artifact_type: artifactType,
+    manifest_id: typeof body.manifestId === "string" && body.manifestId.trim() ? body.manifestId.trim() : null,
+    storage_path: req.file.path,
+    original_name: originalName,
+    mime_type: req.file.mimetype || null,
+    size_bytes: req.file.size,
+    checksum: typeof body.checksum === "string" && body.checksum.trim() ? body.checksum.trim() : null,
+    local_path: typeof body.localPath === "string" && body.localPath.trim() ? body.localPath.trim() : null,
+    relative_path: typeof body.relativePath === "string" && body.relativePath.trim() ? body.relativePath.trim() : null,
+    source: typeof body.source === "string" && body.source.trim() ? body.source.trim() : null,
+    retention_class: typeof body.retentionClass === "string" && body.retentionClass.trim() ? body.retentionClass.trim() : null,
+    metadata_json: metadataJson,
+    created_at: typeof body.createdAt === "string" && body.createdAt.trim() ? body.createdAt.trim() : now,
+    uploaded_at: now
+  });
+
+  const row = db.prepare("SELECT * FROM run_artifacts WHERE id = ? AND run_id = ?").get(artifactId, runId) as RunArtifactRow;
+  const serialized = serializeRunArtifact(req, row);
+  insertRunEvent(runId, "artifact.uploaded", {
+    artifactId,
+    artifactType,
+    caseNo: row.case_no,
+    action: row.action,
+    originalName,
+    size: req.file.size
+  });
+  insertRunLog(runId, "INFO", "Agent evidence artifact uploaded", {
+    artifactId,
+    artifactType,
+    caseNo: row.case_no,
+    relativePath: row.relative_path,
+    size: req.file.size
+  });
+
+  return res.status(201).json({
+    runId,
+    artifactId,
+    downloadUrl: serialized.downloadUrl,
+    artifact: serialized
+  });
+});
+
+router.get("/:id/artifacts", (req, res) => {
+  const run = getRun(req.params.id);
+  if (!run) {
+    return res.status(404).json({ error: "RUN_NOT_FOUND" });
+  }
+  const items = listRunArtifacts(req.params.id).map((row) => serializeRunArtifact(req, row));
+  return res.json({ items });
+});
+
+router.get("/:id/artifacts/:artifactId/download", (req, res) => {
+  const run = getRun(req.params.id);
+  if (!run) {
+    return res.status(404).json({ error: "RUN_NOT_FOUND" });
+  }
+  const row = db
+    .prepare("SELECT * FROM run_artifacts WHERE run_id = ? AND id = ?")
+    .get(req.params.id, req.params.artifactId) as RunArtifactRow | undefined;
+  if (!row) {
+    return res.status(404).json({ error: "ARTIFACT_NOT_FOUND" });
+  }
+  return safeSendRunOutputFile(
+    res,
+    row.storage_path,
+    row.original_name || `${String(run.round_id ?? req.params.id)}_${row.artifact_type}`
+  );
+});
+
 router.get("/:id/cases", (req, res) => {
   const run = getRun(req.params.id);
   if (!run) {
@@ -2301,6 +2528,7 @@ router.get("/:id/summary", (req, res) => {
   const pendingApprovals = db
     .prepare("SELECT COUNT(1) AS count FROM approvals WHERE run_id = ? AND status = 'PENDING'")
     .get(req.params.id) as { count: number };
+  const artifactStats = countRunArtifactsByType(req.params.id);
 
   const caseStats: Record<string, number> = {};
   for (const row of caseStatsRows) caseStats[row.result_status] = row.count;
@@ -2324,6 +2552,9 @@ router.get("/:id/summary", (req, res) => {
     timingSummaryUploadedAt: run.timing_summary_uploaded_at ?? null,
     diagnosticSummaryAvailable: typeof run.diagnostic_summary_path === "string" && run.diagnostic_summary_path.trim().length > 0,
     diagnosticSummaryUploadedAt: run.diagnostic_summary_uploaded_at ?? null,
+    artifactCount: artifactStats.total,
+    screenshotArtifactCount: artifactStats.screenshots,
+    artifactManifestAvailable: artifactStats.manifests > 0,
     caseStats,
     stepStats,
     pendingApprovals: pendingApprovals.count

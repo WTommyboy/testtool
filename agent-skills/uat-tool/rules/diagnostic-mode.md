@@ -40,9 +40,9 @@ If a diagnostic run starts at step N:
 - Any page state inherited from earlier work is setup context, not evidence.
 - The diagnostic summary must list missing evidence explicitly.
 
-## Recommended Inputs
+## Dispatch Inputs
 
-Future dispatch payload may include:
+Dispatch payload may include:
 
 ```json
 {
@@ -57,7 +57,9 @@ Future dispatch payload may include:
 }
 ```
 
-Runtime support exists for the minimum helper/timing diagnostic loop. `fromStep` / `untilStep` prompt wiring is still planned, so current diagnostic runs should be treated as helper/timing diagnostics unless the dispatch payload explicitly adds more structured support.
+Runtime support exists for the helper/timing diagnostic loop plus `fromStep` / `untilStep` / `purpose` propagation into `diagnostic-summary.json`.
+
+`fromStep` / `untilStep` do not make diagnostic output trusted. They only document which part of the case the operator intended to inspect. Steps outside the range must be listed as `not_executed_in_diagnostic` evidence gaps.
 
 ## Output Contract
 
@@ -68,6 +70,7 @@ output/diagnostic-summary.json
 output/timing-summary.json
 output/locator-drift.log          when locator drift is observed
 output/helper-artifacts/<case>/   when helper is used
+output/evidence-artifacts-manifest.json
 ```
 
 `diagnostic-summary.json` should include:
@@ -80,6 +83,7 @@ output/helper-artifacts/<case>/   when helper is used
 - `executedSteps`
 - `skippedSteps`
 - `artifacts`
+- `locatorDrift`
 - `evidenceGaps`
 - `canPromoteToTrustedResult: false`
 

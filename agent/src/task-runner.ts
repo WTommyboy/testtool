@@ -26,6 +26,12 @@ import { writeTestPackageConsistencyReport } from "./test-package-consistency";
 import { writeHelperExecutionPlan } from "./helper-execution-plan";
 import { runSafeHelperActions, summarizeHelperPreRun, type HelperPreRunSummary } from "./helper-pre-runner";
 import { formatDuration, RunTimingRecorder } from "./timing";
+import {
+  collectEvidenceArtifactManifest,
+  readLocatorDriftArtifacts,
+  writeEvidenceArtifactManifest,
+  type EvidenceArtifactManifestEntry
+} from "./evidence-artifacts";
 
 const getRunId = (message: AgentMessage): string => {
   const runId = message.payload.run_id;
@@ -430,6 +436,13 @@ const getOutputUrls = (message: AgentMessage): Record<string, string> => {
   return urls;
 };
 
+const parseDiagnosticConfig = (message: AgentMessage): Record<string, unknown> => {
+  const value = message.payload.diagnostic;
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
+};
+
 const helperHintSourcePaths = (inputs: DownloadedInputs): string[] => {
   const candidates = Object.entries(inputs).filter(([, filePath]) => /\.(?:md|markdown)$/i.test(filePath));
   const priority = ([key, filePath]: [string, string]): number => {
@@ -752,6 +765,152 @@ const uploadJsonArtifactFile = async (
   return body;
 };
 
+const mimeTypeForArtifact = (filePath: string): string => {
+  const ext = path.extname(filePath).toLowerCase();
+  if (ext === ".png") return "image/png";
+  if (ext === ".jpg" || ext === ".jpeg") return "image/jpeg";
+  if (ext === ".webp") return "image/webp";
+  if (ext === ".json") return "application/json";
+  if (ext === ".jsonl") return "application/x-ndjson";
+  if (ext === ".log" || ext === ".txt") return "text/plain";
+  return "application/octet-stream";
+};
+
+const appendOptionalFormField = (form: FormData, key: string, value: unknown): void => {
+  if (value === null || value === undefined) return;
+  const text = typeof value === "string" ? value : String(value);
+  if (!text.trim()) return;
+  form.append(key, text);
+};
+
+const uploadRunEvidenceArtifactFile = async (
+  url: string,
+  entry: EvidenceArtifactManifestEntry,
+  token: string
+): Promise<{ artifactId?: string; downloadUrl?: string; [key: string]: unknown }> => {
+  const form = new FormData();
+  const bytes = fs.readFileSync(entry.localPath);
+  form.append("artifact", new Blob([new Uint8Array(bytes)], { type: mimeTypeForArtifact(entry.localPath) }), path.basename(entry.localPath));
+  appendOptionalFormField(form, "manifestId", entry.artifactId);
+  appendOptionalFormField(form, "caseNo", entry.caseId);
+  appendOptionalFormField(form, "action", entry.action);
+  appendOptionalFormField(form, "artifactType", entry.artifactType);
+  appendOptionalFormField(form, "localPath", entry.localPath);
+  appendOptionalFormField(form, "relativePath", entry.relativePath);
+  appendOptionalFormField(form, "checksum", entry.checksum);
+  appendOptionalFormField(form, "retentionClass", entry.retentionClass);
+  appendOptionalFormField(form, "source", entry.source);
+  appendOptionalFormField(form, "createdAt", entry.createdAt);
+  appendOptionalFormField(form, "metadataJson", JSON.stringify({
+    schemaVersion: "uat-evidence-artifact-entry-v1",
+    runId: entry.runId,
+    sizeBytes: entry.sizeBytes
+  }));
+
+  const response = await fetch(url, {
+    method: "POST",
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+    body: form
+  });
+  const text = await response.text();
+  let body: unknown = text;
+  try {
+    body = text ? JSON.parse(text) : null;
+  } catch {
+    // Keep raw response in the thrown diagnostic.
+  }
+  if (!response.ok) {
+    throw new Error(`EVIDENCE_ARTIFACT_UPLOAD_FAILED ${response.status} ${typeof body === "string" ? body : JSON.stringify(body)}`);
+  }
+  return body && typeof body === "object" && !Array.isArray(body)
+    ? body as { artifactId?: string; downloadUrl?: string; [key: string]: unknown }
+    : {};
+};
+
+const uploadEvidenceArtifacts = async (
+  connection: AgentConnection,
+  config: AgentConfig,
+  message: AgentMessage,
+  runId: string,
+  runDir: string
+): Promise<void> => {
+  const outputUrls = getOutputUrls(message);
+  const { manifestPath, manifest } = collectEvidenceArtifactManifest(runDir, runId);
+  const uploadUrl = outputUrls.artifact;
+  if (!uploadUrl) {
+    writeJson(path.join(runDir, "output", "evidence-artifacts-upload.json"), {
+      manifestPath,
+      uploaded: false,
+      reason: "OUTPUT_URL_ARTIFACT_MISSING",
+      artifactCount: manifest.entries.length
+    });
+    return;
+  }
+
+  let uploadedThisPass = 0;
+  for (const entry of manifest.entries) {
+    if (entry.uploadStatus === "uploaded") continue;
+    try {
+      const response = await uploadRunEvidenceArtifactFile(uploadUrl, entry, config.token);
+      entry.uploadStatus = "uploaded";
+      entry.uploadedAt = new Date().toISOString();
+      entry.remoteArtifactId = typeof response.artifactId === "string" ? response.artifactId : null;
+      entry.remoteUrl = typeof response.downloadUrl === "string" ? response.downloadUrl : null;
+      entry.uploadError = null;
+      uploadedThisPass += 1;
+    } catch (error) {
+      entry.uploadStatus = "failed";
+      entry.uploadError = error instanceof Error ? error.message : String(error);
+      sendBestEffort(connection, "run.stderr", {
+        run_id: runId,
+        text: `uat-agent evidence artifact upload failed: ${entry.relativePath}: ${entry.uploadError}`
+      }, false);
+    }
+    writeEvidenceArtifactManifest(manifestPath, manifest);
+  }
+
+  try {
+    const manifestEntry: EvidenceArtifactManifestEntry = {
+      artifactId: `${runId}-evidence-manifest`,
+      runId,
+      caseId: null,
+      action: "evidence-artifacts-manifest",
+      artifactType: "evidence_manifest",
+      localPath: manifestPath,
+      relativePath: path.relative(runDir, manifestPath),
+      checksum: "",
+      sizeBytes: fs.statSync(manifestPath).size,
+      createdAt: fs.statSync(manifestPath).mtime.toISOString(),
+      source: "uat-agent-output",
+      retentionClass: "uat-debug",
+      uploadStatus: "pending"
+    };
+    const response = await uploadRunEvidenceArtifactFile(uploadUrl, manifestEntry, config.token);
+    writeJson(path.join(runDir, "output", "evidence-artifacts-upload.json"), {
+      manifestPath,
+      uploaded: true,
+      uploadedThisPass,
+      artifactCount: manifest.entries.length,
+      upload_response: response
+    });
+  } catch (error) {
+    writeJson(path.join(runDir, "output", "evidence-artifacts-upload.json"), {
+      manifestPath,
+      uploaded: false,
+      uploadedThisPass,
+      artifactCount: manifest.entries.length,
+      error: error instanceof Error ? error.message : String(error)
+    });
+  }
+
+  if (manifest.entries.length > 0) {
+    sendBestEffort(connection, "run.stdout", {
+      run_id: runId,
+      text: `uat-agent evidence artifacts manifest ready: ${manifest.entries.length} artifact(s), ${uploadedThisPass} uploaded this pass.`
+    }, false);
+  }
+};
+
 const uploadFinalSidecarArtifacts = async (
   connection: AgentConnection,
   config: AgentConfig,
@@ -835,6 +994,8 @@ const uploadFinalSidecarArtifacts = async (
       }, false);
     }
   }
+
+  await uploadEvidenceArtifacts(connection, config, message, runId, runDir);
 };
 
 const downloadInputs = async (config: AgentConfig, message: AgentMessage, runDir: string): Promise<DownloadedInputs> => {
@@ -939,9 +1100,11 @@ const generateRunGuides = async (
       ruleIndex: plannedRuleIndexPath,
       supportingDocsManifest: supportingDocsManifestPath,
       evidenceTemplateIndex: evidenceTemplates.indexPath,
-      resultTemplate: resultTemplatePath,
-      networkObservationGuidance: networkObservationGuidancePath,
-      preflightGuidance: preflightGuidancePath,
+	      resultTemplate: resultTemplatePath,
+	      networkObservationGuidance: networkObservationGuidancePath,
+	      evidenceArtifactsManifest: path.join(runDir, "output", "evidence-artifacts-manifest.json"),
+	      locatorDriftLog: path.join(runDir, "output", "locator-drift.log"),
+	      preflightGuidance: preflightGuidancePath,
       runState: runStatePath,
       biUiHelperGuidance: biUiHelperGuidancePath
     }
@@ -1038,9 +1201,11 @@ const buildPrompt = (
     `- Structured capability gate: ${guides.capabilityGateJsonPath}`,
     `- Helper execution plan: ${guides.helperExecutionPlanMarkdownPath}`,
     `- Structured helper execution plan: ${guides.helperExecutionPlanJsonPath}`,
-    `- Safe helper pre-run summary, if available: ${path.join(runDir, "output", "helper-pre-run-summary.json")}`,
-    `- Helper action evidence report, if available: ${path.join(runDir, "output", "helper-artifacts", guides.caseManifest.currentCaseNo ?? "unknown-case", "helper-report.jsonl")}`,
-    `- Raw current case row if needed: ${guides.caseManifest.currentCasePath ?? "(current-case unavailable; inspect workbook minimally)"}`,
+	    `- Safe helper pre-run summary, if available: ${path.join(runDir, "output", "helper-pre-run-summary.json")}`,
+	    `- Helper action evidence report, if available: ${path.join(runDir, "output", "helper-artifacts", guides.caseManifest.currentCaseNo ?? "unknown-case", "helper-report.jsonl")}`,
+	    `- Evidence artifact manifest, generated by Agent after sidecar collection: ${path.join(runDir, "output", "evidence-artifacts-manifest.json")}`,
+	    `- Locator drift log, if selectors fail: ${path.join(runDir, "output", "locator-drift.log")}`,
+	    `- Raw current case row if needed: ${guides.caseManifest.currentCasePath ?? "(current-case unavailable; inspect workbook minimally)"}`,
     `- Read allowed carryover and isolation policy: ${guides.runStatePath}`,
     `- Use exact file paths from: ${guides.referenceIndexPath}`,
     `- Use the rule index to avoid loading unnecessary rules: ${guides.ruleIndexPath}`,
@@ -1058,8 +1223,9 @@ const buildPrompt = (
     "- Treat `rules/PROJECT_AGENTS_FULL.md` and `rules/BI_TEST_RULES/` as BI domain references, not platform rules.",
     "- If `input/document-consistency.json` has status=error, do not touch the browser. Emit a Tool Bridge ambiguity_decision with the conflict and wait.",
     "- If `input/test-package-consistency.json` has status=error, treat it as a testcase package design conflict and do not touch the browser.",
-    "- If `input/capability-gate.json` says supportStatus=unsupported, do not run trusted browser testcase steps. Write a single-case BLOCKED result with fail_category=UNSUPPORTED_ONLINE_CAPABILITY and the gate blocking reason.",
-    "- The first browser MCP action must be preflight only: open DEV URL, verify auth/reachability, detect SSO/login/載入失敗/401/403/blank blocker.",
+	    "- If `input/capability-gate.json` says supportStatus=unsupported, do not run trusted browser testcase steps. Write a single-case BLOCKED result with fail_category=UNSUPPORTED_ONLINE_CAPABILITY and the gate blocking reason.",
+	    "- If locator hints drift, write concise JSONL or text observations to `output/locator-drift.log`; do not edit the locator registry during the run.",
+	    "- The first browser MCP action must be preflight only: open DEV URL, verify auth/reachability, detect SSO/login/載入失敗/401/403/blank blocker.",
     "- Preflight must not run testcase steps, capture baseline, change date/filter/field/group state, save/delete, or inspect deep BI behavior.",
     "",
     "Runtime constraints:",
@@ -1104,9 +1270,11 @@ const buildPrompt = (
     `Capability gate JSON: ${guides.capabilityGateJsonPath}`,
     `Helper execution plan: ${guides.helperExecutionPlanMarkdownPath}`,
     `Helper execution plan JSON: ${guides.helperExecutionPlanJsonPath}`,
-    `Safe helper pre-run summary: ${path.join(runDir, "output", "helper-pre-run-summary.json")}`,
-    `Helper evidence report: ${path.join(runDir, "output", "helper-artifacts", guides.caseManifest.currentCaseNo ?? "unknown-case", "helper-report.jsonl")}`,
-    `Current case JSON: ${guides.caseManifest.currentCasePath ?? "(unavailable)"}`,
+	    `Safe helper pre-run summary: ${path.join(runDir, "output", "helper-pre-run-summary.json")}`,
+	    `Helper evidence report: ${path.join(runDir, "output", "helper-artifacts", guides.caseManifest.currentCaseNo ?? "unknown-case", "helper-report.jsonl")}`,
+	    `Evidence artifact manifest: ${path.join(runDir, "output", "evidence-artifacts-manifest.json")}`,
+	    `Locator drift log: ${path.join(runDir, "output", "locator-drift.log")}`,
+	    `Current case JSON: ${guides.caseManifest.currentCasePath ?? "(unavailable)"}`,
     `Current case no: ${guides.caseManifest.currentCaseNo ?? "(unavailable)"}`,
     guides.caseManifest.currentCaseSelection
       ? `Current case selection: ${guides.caseManifest.currentCaseSelection.reason}; requested=${guides.caseManifest.currentCaseSelection.requestedCaseNo ?? "(none)"}; source=${guides.caseManifest.currentCaseSelection.source ?? "(none)"}`
@@ -1172,14 +1340,13 @@ const writeDiagnosticSummary = (
   guides: GeneratedRunGuides,
   helperPreRunSummary: HelperPreRunSummary
 ): string => {
-  const diagnosticPayload =
-    message.payload.diagnostic && typeof message.payload.diagnostic === "object" && !Array.isArray(message.payload.diagnostic)
-      ? message.payload.diagnostic as Record<string, unknown>
-      : {};
+  const diagnosticPayload = parseDiagnosticConfig(message);
   const capabilityGate = fs.existsSync(guides.capabilityGateJsonPath)
     ? readJson<Record<string, unknown>>(guides.capabilityGateJsonPath)
     : null;
   const caseNo = guides.caseManifest.currentCaseNo ?? helperPreRunSummary.caseId ?? null;
+  const fromStep = typeof diagnosticPayload.fromStep === "number" ? diagnosticPayload.fromStep : null;
+  const untilStep = typeof diagnosticPayload.untilStep === "number" ? diagnosticPayload.untilStep : null;
   const executedSteps = helperPreRunSummary.actions.map((action, index) => ({
     stepNo: index + 1,
     actionId: action.actionId,
@@ -1189,8 +1356,14 @@ const writeDiagnosticSummary = (
     artifacts: action.reportPath ? [action.reportPath] : []
   }));
   const evidenceGaps = [
-    "Diagnostic mode does not execute the full trusted current-case evidence chain.",
-    "Diagnostic artifacts cannot be promoted to output/result.xlsx.",
+	    "Diagnostic mode does not execute the full trusted current-case evidence chain.",
+	    "Diagnostic artifacts cannot be promoted to output/result.xlsx.",
+	    fromStep && fromStep > 1
+	      ? `Diagnostic fromStep=${fromStep}; earlier steps were not executed as current-run evidence.`
+	      : null,
+	    untilStep
+	      ? `Diagnostic untilStep=${untilStep}; later steps were not executed as current-run evidence.`
+	      : null,
     helperPreRunSummary.status === "skipped"
       ? `Helper pre-run skipped: ${helperPreRunSummary.skippedReason ?? "unknown"}`
       : null,
@@ -1201,18 +1374,21 @@ const writeDiagnosticSummary = (
   const summary = {
     schemaVersion: "uat-diagnostic-summary-v0.1",
     generatedAt: new Date().toISOString(),
-    runId,
-    caseNo,
-    fromStep: typeof diagnosticPayload.fromStep === "number" ? diagnosticPayload.fromStep : null,
-    untilStep: typeof diagnosticPayload.untilStep === "number" ? diagnosticPayload.untilStep : null,
+	    runId,
+	    caseNo,
+	    fromStep,
+	    untilStep,
     purpose: typeof diagnosticPayload.purpose === "string" ? diagnosticPayload.purpose : "helper/timing diagnostic",
     executionMode: "diagnostic",
     currentCasePack: guides.currentCasePackJsonPath,
     capabilityGate,
     executedSteps,
-    skippedSteps: [],
+	    skippedSteps: [
+	      ...(fromStep && fromStep > 1 ? [{ range: `1-${fromStep - 1}`, reason: "not_executed_in_diagnostic" }] : []),
+	      ...(untilStep ? [{ range: `${untilStep + 1}+`, reason: "not_executed_in_diagnostic" }] : [])
+	    ],
     evidenceGaps,
-    locatorDrift: [],
+    locatorDrift: readLocatorDriftArtifacts(runDir),
     helperReports: helperPreRunSummary.actions.flatMap((action) => action.reportPath ? [action.reportPath] : []),
     timingSummary: path.join(runDir, "output", "timing-summary.json"),
     canPromoteToTrustedResult: false
@@ -2797,15 +2973,18 @@ export const handleTaskDispatch = async (
       },
       true
     );
-  } finally {
-    hooks.onCancelClear?.(runId);
-    timing.write();
-    await uploadFinalSidecarArtifacts(connection, config, message, runId, runDir);
-    if (!keepChromeOpenForToolBridge && closeChromeOnFinish) {
-      await closeChromeDebugSession(config);
-    }
-    connection.setRunState("idle", null);
-  }
+	  } finally {
+	    try {
+	      timing.write();
+	      await uploadFinalSidecarArtifacts(connection, config, message, runId, runDir);
+	      if (!keepChromeOpenForToolBridge && closeChromeOnFinish) {
+	        await closeChromeDebugSession(config);
+	      }
+	    } finally {
+	      hooks.onCancelClear?.(runId);
+	      connection.setRunState("idle", null);
+	    }
+	  }
 };
 
 export const handleToolResponse = async (
@@ -3139,13 +3318,16 @@ export const handleToolResponse = async (
       },
       true
     );
-  } finally {
-    hooks.onCancelClear?.(runId);
-    timing.write();
-    await uploadFinalSidecarArtifacts(connection, config, originalDispatch ?? message, runId, runDir);
-    if (!keepChromeOpenForToolBridge && closeChromeOnFinish) {
-      await closeChromeDebugSession(config);
-    }
-    connection.setRunState("idle", null);
-  }
+	  } finally {
+	    try {
+	      timing.write();
+	      await uploadFinalSidecarArtifacts(connection, config, originalDispatch ?? message, runId, runDir);
+	      if (!keepChromeOpenForToolBridge && closeChromeOnFinish) {
+	        await closeChromeDebugSession(config);
+	      }
+	    } finally {
+	      hooks.onCancelClear?.(runId);
+	      connection.setRunState("idle", null);
+	    }
+	  }
 };

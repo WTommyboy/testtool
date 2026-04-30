@@ -22,9 +22,11 @@ const roleForGeneratedKey = (key: string): string => {
     evidenceTemplateIndex: "evidence schema index",
     helperExecutionPlan: "helper-assisted UI execution plan",
     helperExecutionPlanJson: "structured helper-assisted UI execution plan",
-    resultTemplate: "result workbook template reference",
-    networkObservationGuidance: "network observation guidance",
-    preflightGuidance: "auth/reachability preflight",
+	    resultTemplate: "result workbook template reference",
+	    networkObservationGuidance: "network observation guidance",
+	    evidenceArtifactsManifest: "post-run evidence artifact upload manifest",
+	    locatorDriftLog: "runtime locator drift observations",
+	    preflightGuidance: "auth/reachability preflight",
     runState: "carryover and stale-evidence boundary",
     biUiHelperGuidance: "safe BI UI helper guidance"
   };

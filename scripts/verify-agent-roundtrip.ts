@@ -655,6 +655,58 @@ const verifyAgentProgressAndPartialArtifactsAreRecorded = async (baseUrl: string
   ws.close();
 };
 
+const verifyEvidenceArtifactUpload = async (baseUrl: string): Promise<void> => {
+  const run = await postJson<{ id: string; status: string }>(baseUrl, "/api/runs", {
+    domain: "BI",
+    roundId: "ROUNDTRIP-ARTIFACT",
+    location: "數據中心",
+    featureMain: "BI工具",
+    featureSub: "artifact smoke",
+    runName: "Artifact Smoke",
+    devUrl: "https://example.com",
+    executionMode: "diagnostic"
+  });
+  assert.equal(run.status, "READY");
+
+  const form = new FormData();
+  form.append("artifact", new Blob([new Uint8Array(Buffer.from("fake screenshot bytes"))], { type: "image/png" }), "DEMO-A-01.png");
+  form.append("manifestId", "local-artifact-1");
+  form.append("caseNo", "DEMO-A-01");
+  form.append("action", "after-preview");
+  form.append("artifactType", "screenshot");
+  form.append("relativePath", "output/helper-artifacts/DEMO-A-01/after-preview.png");
+  form.append("checksum", "sha256-test");
+  form.append("retentionClass", "uat-evidence");
+  form.append("source", "roundtrip-test");
+
+  const uploadResponse = await fetch(`${baseUrl}/api/runs/${run.id}/output/artifacts`, {
+    method: "POST",
+    body: form
+  });
+  const uploadBody = await uploadResponse.json() as JsonObject;
+  assert.equal(uploadResponse.status, 201);
+  assert.equal(typeof uploadBody.artifactId, "string");
+
+  const summary = await requestJson<{ artifactCount: number; screenshotArtifactCount: number; artifactManifestAvailable: boolean }>(
+    baseUrl,
+    `/api/runs/${run.id}/summary`
+  );
+  assert.equal(summary.artifactCount, 1);
+  assert.equal(summary.screenshotArtifactCount, 1);
+  assert.equal(summary.artifactManifestAvailable, false);
+
+  const artifacts = await requestJson<{ items: Array<{ id: string; caseNo: string; artifactType: string; downloadUrl: string }> }>(
+    baseUrl,
+    `/api/runs/${run.id}/artifacts`
+  );
+  assert.equal(artifacts.items.length, 1);
+  assert.equal(artifacts.items[0]?.caseNo, "DEMO-A-01");
+  assert.equal(artifacts.items[0]?.artifactType, "screenshot");
+
+  const download = await fetch(artifacts.items[0].downloadUrl);
+  assert.equal(download.ok, true);
+};
+
 const main = async (): Promise<void> => {
   const { child, baseUrl, tempDir } = await startServer();
   try {
@@ -665,6 +717,7 @@ const main = async (): Promise<void> => {
     await verifyAgentHeartbeatTimeoutMarksRunFailed(baseUrl);
     await verifyAgentRunSnapshotIsRecorded(baseUrl);
     await verifyAgentProgressAndPartialArtifactsAreRecorded(baseUrl);
+    await verifyEvidenceArtifactUpload(baseUrl);
     console.log("Agent roundtrip smoke passed.");
   } finally {
     await stopServer(child);

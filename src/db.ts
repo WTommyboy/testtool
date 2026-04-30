@@ -34,11 +34,12 @@ export const migrate = (): void => {
       result_xlsx_parser_version TEXT,
       log_path TEXT,
       log_uploaded_at TEXT,
-      timing_summary_path TEXT,
-      timing_summary_uploaded_at TEXT,
-      diagnostic_summary_path TEXT,
-      diagnostic_summary_uploaded_at TEXT,
-      status TEXT NOT NULL DEFAULT 'DRAFT',
+	      timing_summary_path TEXT,
+	      timing_summary_uploaded_at TEXT,
+	      diagnostic_summary_path TEXT,
+	      diagnostic_summary_uploaded_at TEXT,
+	      diagnostic_config_json TEXT,
+	      status TEXT NOT NULL DEFAULT 'DRAFT',
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
@@ -70,17 +71,39 @@ export const migrate = (): void => {
       FOREIGN KEY (run_id) REFERENCES runs(id)
     );
 
-    CREATE TABLE IF NOT EXISTS run_events (
-      id TEXT PRIMARY KEY,
-      run_id TEXT NOT NULL,
-      event_type TEXT NOT NULL,
-      seq INTEGER,
+	    CREATE TABLE IF NOT EXISTS run_events (
+	      id TEXT PRIMARY KEY,
+	      run_id TEXT NOT NULL,
+	      event_type TEXT NOT NULL,
+	      seq INTEGER,
       payload_json TEXT,
       created_at TEXT NOT NULL,
-      FOREIGN KEY (run_id) REFERENCES runs(id)
-    );
+	      FOREIGN KEY (run_id) REFERENCES runs(id)
+	    );
 
-    CREATE TABLE IF NOT EXISTS run_case_steps (
+	    CREATE TABLE IF NOT EXISTS run_artifacts (
+	      id TEXT PRIMARY KEY,
+	      run_id TEXT NOT NULL,
+	      case_no TEXT,
+	      action TEXT,
+	      artifact_type TEXT NOT NULL,
+	      manifest_id TEXT,
+	      storage_path TEXT NOT NULL,
+	      original_name TEXT,
+	      mime_type TEXT,
+	      size_bytes INTEGER,
+	      checksum TEXT,
+	      local_path TEXT,
+	      relative_path TEXT,
+	      source TEXT,
+	      retention_class TEXT,
+	      metadata_json TEXT,
+	      created_at TEXT NOT NULL,
+	      uploaded_at TEXT NOT NULL,
+	      FOREIGN KEY (run_id) REFERENCES runs(id)
+	    );
+
+	    CREATE TABLE IF NOT EXISTS run_case_steps (
       id TEXT PRIMARY KEY,
       run_id TEXT NOT NULL,
       case_no TEXT NOT NULL,
@@ -174,9 +197,12 @@ export const migrate = (): void => {
     CREATE INDEX IF NOT EXISTS idx_run_cases_run_id ON run_cases(run_id);
     CREATE UNIQUE INDEX IF NOT EXISTS idx_run_cases_run_case_no ON run_cases(run_id, case_no);
     CREATE INDEX IF NOT EXISTS idx_run_logs_run_id ON run_logs(run_id);
-    CREATE INDEX IF NOT EXISTS idx_run_events_run_id ON run_events(run_id);
-    CREATE INDEX IF NOT EXISTS idx_run_events_event_type ON run_events(event_type);
-    CREATE INDEX IF NOT EXISTS idx_run_case_steps_run_id ON run_case_steps(run_id);
+	    CREATE INDEX IF NOT EXISTS idx_run_events_run_id ON run_events(run_id);
+	    CREATE INDEX IF NOT EXISTS idx_run_events_event_type ON run_events(event_type);
+	    CREATE INDEX IF NOT EXISTS idx_run_artifacts_run_id ON run_artifacts(run_id);
+	    CREATE INDEX IF NOT EXISTS idx_run_artifacts_case_no ON run_artifacts(run_id, case_no);
+	    CREATE INDEX IF NOT EXISTS idx_run_artifacts_type ON run_artifacts(artifact_type);
+	    CREATE INDEX IF NOT EXISTS idx_run_case_steps_run_id ON run_case_steps(run_id);
     CREATE UNIQUE INDEX IF NOT EXISTS idx_run_case_steps_unique ON run_case_steps(run_id, case_no, step_no);
     CREATE INDEX IF NOT EXISTS idx_approvals_run_id ON approvals(run_id);
     CREATE INDEX IF NOT EXISTS idx_approvals_status ON approvals(status);
@@ -244,9 +270,12 @@ export const migrate = (): void => {
   if (!hasColumn("runs", "diagnostic_summary_path")) {
     db.exec("ALTER TABLE runs ADD COLUMN diagnostic_summary_path TEXT");
   }
-  if (!hasColumn("runs", "diagnostic_summary_uploaded_at")) {
-    db.exec("ALTER TABLE runs ADD COLUMN diagnostic_summary_uploaded_at TEXT");
-  }
+	  if (!hasColumn("runs", "diagnostic_summary_uploaded_at")) {
+	    db.exec("ALTER TABLE runs ADD COLUMN diagnostic_summary_uploaded_at TEXT");
+	  }
+	  if (!hasColumn("runs", "diagnostic_config_json")) {
+	    db.exec("ALTER TABLE runs ADD COLUMN diagnostic_config_json TEXT");
+	  }
   if (!hasColumn("run_cases", "group_name")) {
     db.exec("ALTER TABLE run_cases ADD COLUMN group_name TEXT");
   }

@@ -46,6 +46,9 @@ type Summary = {
   timingSummaryUploadedAt?: string | null;
   diagnosticSummaryAvailable?: boolean;
   diagnosticSummaryUploadedAt?: string | null;
+  artifactCount?: number;
+  screenshotArtifactCount?: number;
+  artifactManifestAvailable?: boolean;
   caseStats: Record<string, number>;
   stepStats: Record<string, number>;
   pendingApprovals: number;
@@ -110,10 +113,28 @@ type DiagnosticSummary = {
   generatedAt?: string;
   caseNo?: string | null;
   purpose?: string | null;
+  fromStep?: number | null;
+  untilStep?: number | null;
   executionMode?: string;
   evidenceGaps?: string[];
+  locatorDrift?: unknown[];
   executedSteps?: Array<{ stepNo?: number; template?: string; status?: string; durationMs?: number }>;
   canPromoteToTrustedResult?: boolean;
+};
+
+type RunArtifact = {
+  id: string;
+  caseNo?: string | null;
+  action?: string | null;
+  artifactType: string;
+  originalName?: string | null;
+  mimeType?: string | null;
+  sizeBytes?: number | null;
+  relativePath?: string | null;
+  source?: string | null;
+  retentionClass?: string | null;
+  uploadedAt?: string | null;
+  downloadUrl?: string | null;
 };
 
 type RunCase = {
@@ -261,6 +282,14 @@ const formatDuration = (ms?: number | null): string => {
   return `${hours}h ${restMinutes}m`;
 };
 
+const formatBytes = (bytes?: number | null): string => {
+  if (bytes === null || bytes === undefined || !Number.isFinite(bytes)) return "—";
+  if (bytes < 1024) return `${bytes} B`;
+  const kb = bytes / 1024;
+  if (kb < 1024) return `${kb.toFixed(1)} KB`;
+  return `${(kb / 1024).toFixed(1)} MB`;
+};
+
 const numberOf = (obj: Record<string, number> | undefined, key: string): number => obj?.[key] ?? 0;
 const objectValue = (value: unknown): Record<string, unknown> | null => (
   value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null
@@ -320,6 +349,9 @@ function App() {
   const [runRoundFilter, setRunRoundFilter] = useState("");
   const [sourceMode, setSourceMode] = useState<"upload" | "conversation">("upload");
   const [runExecutionMode, setRunExecutionMode] = useState<"interactive" | "offline" | "diagnostic">("interactive");
+  const [diagnosticFromStep, setDiagnosticFromStep] = useState("");
+  const [diagnosticUntilStep, setDiagnosticUntilStep] = useState("");
+  const [diagnosticPurpose, setDiagnosticPurpose] = useState("");
   const [autoSelectLatestRun, setAutoSelectLatestRun] = useState(true);
   const [agents, setAgents] = useState<AgentItem[]>([]);
   const [selectedAgentId, setSelectedAgentId] = useState("");
@@ -351,6 +383,7 @@ function App() {
   const [approvals, setApprovals] = useState<Approval[]>([]);
   const [timingSummary, setTimingSummary] = useState<TimingSummary | null>(null);
   const [diagnosticSummary, setDiagnosticSummary] = useState<DiagnosticSummary | null>(null);
+  const [runArtifacts, setRunArtifacts] = useState<RunArtifact[]>([]);
   const [runBusy, setRunBusy] = useState(false);
   const [isStarting, setIsStarting] = useState(false);
   const [runError, setRunError] = useState("");
@@ -491,6 +524,9 @@ function App() {
   const resetRunDraftForm = () => {
     setSourceMode("upload");
     setRunExecutionMode("interactive");
+    setDiagnosticFromStep("");
+    setDiagnosticUntilStep("");
+    setDiagnosticPurpose("");
     setRunRoundId("");
     setRunLocation(defaultRunLocation);
     setRunFeatureMain(defaultRunFeatureMain);
@@ -811,18 +847,28 @@ function App() {
   };
 
   const renderArtifactSummaryCard = () => {
-    if (!timingSummary && !diagnosticSummary && !summary?.timingSummaryAvailable && !summary?.diagnosticSummaryAvailable) {
+    if (
+      !timingSummary
+      && !diagnosticSummary
+      && runArtifacts.length === 0
+      && !summary?.timingSummaryAvailable
+      && !summary?.diagnosticSummaryAvailable
+      && !summary?.artifactCount
+    ) {
       return null;
     }
     const timingRows = Object.entries(timingSummary?.byName ?? {})
       .sort(([, a], [, b]) => (b.totalMs ?? 0) - (a.totalMs ?? 0))
       .slice(0, 5);
+    const evidenceRows = [...runArtifacts]
+      .sort((a, b) => (b.uploadedAt ?? "").localeCompare(a.uploadedAt ?? ""))
+      .slice(0, 8);
     return (
       <div className="card artifact-card mb-16">
         <div className="card-header">
-          <h2>診斷與耗時</h2>
+          <h2>Artifacts 與診斷</h2>
           <span className="count">
-            {timingSummary ? formatDuration(timingSummary.totalCompletedMs) : summary?.timingSummaryAvailable ? "Timing 可下載" : "—"}
+            {summary?.artifactCount ? `${summary.artifactCount} files` : timingSummary ? formatDuration(timingSummary.totalCompletedMs) : "—"}
           </span>
         </div>
         <div className="artifact-grid">
@@ -855,12 +901,47 @@ function App() {
                   <strong>{diagnosticSummary.executedSteps?.length ?? 0}</strong>
                 </div>
                 <div className="artifact-row">
+                  <span>Step range</span>
+                  <strong>
+                    {diagnosticSummary.fromStep || diagnosticSummary.untilStep
+                      ? `${diagnosticSummary.fromStep ?? "start"}-${diagnosticSummary.untilStep ?? "end"}`
+                      : "—"}
+                  </strong>
+                </div>
+                <div className="artifact-row">
+                  <span>Locator drift</span>
+                  <strong>{diagnosticSummary.locatorDrift?.length ?? 0}</strong>
+                </div>
+                <div className="artifact-row">
                   <span>Trusted result</span>
                   <strong>{diagnosticSummary.canPromoteToTrustedResult ? "可升級" : "不可升級"}</strong>
                 </div>
               </div>
             ) : (
               <p className="muted">尚無 diagnostic summary</p>
+            )}
+          </div>
+          <div>
+            <div className="artifact-title">Evidence Artifacts</div>
+            {evidenceRows.length > 0 ? (
+              <div className="artifact-list">
+                {evidenceRows.map((artifact) => (
+                  <a
+                    className="artifact-row artifact-link"
+                    key={artifact.id}
+                    href={artifact.downloadUrl ?? undefined}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    <span>{artifact.caseNo || "run"} · {artifact.artifactType}</span>
+                    <strong>{formatBytes(artifact.sizeBytes)}</strong>
+                  </a>
+                ))}
+              </div>
+            ) : (
+              <p className="muted">
+                {summary?.artifactCount ? "Artifacts 尚未載入" : "尚無 evidence artifact"}
+              </p>
             )}
           </div>
         </div>
@@ -1086,11 +1167,12 @@ function App() {
     if (!runId) return;
     try {
       const resetActivity = Boolean(options.resetActivity);
-      const [summaryData, activityData, casesData, approvalsData] = await Promise.all([
+      const [summaryData, activityData, casesData, approvalsData, artifactsData] = await Promise.all([
         api<Summary>(`/api/runs/${runId}/summary`),
         fetchRunActivity(runId, resetActivity),
         api<{ items: RunCase[] }>(`/api/runs/${runId}/cases`),
         api<{ items: Approval[] }>(`/api/runs/${runId}/approvals`),
+        optionalJson<{ items: RunArtifact[] }>(`/api/runs/${runId}/artifacts`)
       ]);
       const [timingData, diagnosticData] = await Promise.all([
         optionalJson<TimingSummary>(`/api/runs/${runId}/output/timing-summary`),
@@ -1102,6 +1184,7 @@ function App() {
       setApprovals(approvalsData.items);
       setTimingSummary(timingData);
       setDiagnosticSummary(diagnosticData);
+      setRunArtifacts(artifactsData?.items ?? []);
       try {
         const bugsData = await api<{ items: BugItem[] }>(`/api/runs/${runId}/bugs`);
         setRunBugs(bugsData.items);
@@ -1131,6 +1214,7 @@ function App() {
     setApprovals([]);
     setTimingSummary(null);
     setDiagnosticSummary(null);
+    setRunArtifacts([]);
     setApprovalConfirmations({});
     setApprovalNotes({});
     setExpandedCaseId(null);
@@ -1393,6 +1477,11 @@ function App() {
       formData.append("runName", runName.trim() || `Run-${Date.now()}`);
       formData.append("devUrl", runDevUrl.trim());
       formData.append("executionMode", runExecutionMode);
+      if (runExecutionMode === "diagnostic") {
+        if (diagnosticFromStep.trim()) formData.append("diagnosticFromStep", diagnosticFromStep.trim());
+        if (diagnosticUntilStep.trim()) formData.append("diagnosticUntilStep", diagnosticUntilStep.trim());
+        if (diagnosticPurpose.trim()) formData.append("diagnosticPurpose", diagnosticPurpose.trim());
+      }
 
       if (sourceMode === "upload") {
         if (!uploadXlsx || uploadDocs.length === 0) {
@@ -1845,10 +1934,43 @@ function App() {
                 <label>輪次 ID</label>
                 <input value={runRoundId} onChange={(e) => setRunRoundId(e.target.value)} placeholder="例如 RC-R001" />
               </div>
-            </div>
+	            </div>
 
-            {runExecutionMode !== "offline" ? (
-              <div className="form-row">
+	            {runExecutionMode === "diagnostic" ? (
+	              <div className="form-row">
+	                <div className="form-group">
+	                  <label>From Step</label>
+	                  <input
+	                    type="number"
+	                    min="1"
+	                    value={diagnosticFromStep}
+	                    onChange={(e) => setDiagnosticFromStep(e.target.value)}
+	                    placeholder="選填"
+	                  />
+	                </div>
+	                <div className="form-group">
+	                  <label>Until Step</label>
+	                  <input
+	                    type="number"
+	                    min="1"
+	                    value={diagnosticUntilStep}
+	                    onChange={(e) => setDiagnosticUntilStep(e.target.value)}
+	                    placeholder="選填"
+	                  />
+	                </div>
+	                <div className="form-group">
+	                  <label>Diagnostic 目的</label>
+	                  <input
+	                    value={diagnosticPurpose}
+	                    onChange={(e) => setDiagnosticPurpose(e.target.value)}
+	                    placeholder="例如只驗 helper/timing 或 selector drift"
+	                  />
+	                </div>
+	              </div>
+	            ) : null}
+
+	            {runExecutionMode !== "offline" ? (
+	              <div className="form-row">
                 <div className="form-group">
                   <label>執行 Agent</label>
                   <select value={selectedAgentId} onChange={(e) => setSelectedAgentId(e.target.value)}>
@@ -2233,6 +2355,8 @@ function App() {
                   <span>Agent Log: {summary?.logAvailable ? "可下載" : "—"}</span>
                   <span>Timing: {summary?.timingSummaryAvailable ? "可查看" : "—"}</span>
                   <span>Diagnostic: {summary?.diagnosticSummaryAvailable ? "可查看" : "—"}</span>
+                  <span>Artifacts: {summary?.artifactCount ? `${summary.artifactCount} 個` : "—"}</span>
+                  <span>Screenshots: {summary?.screenshotArtifactCount ? `${summary.screenshotArtifactCount} 張` : "—"}</span>
                   <span>Pending approvals: {summary?.pendingApprovals ?? 0}</span>
                 </div>
                 <div className="stats mt-8">
