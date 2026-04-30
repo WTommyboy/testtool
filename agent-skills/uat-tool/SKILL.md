@@ -64,6 +64,7 @@ CodexRunner 不應在 initial prompt 一次塞入所有規則。
 - `rules/domain-routing.md`：如何路由 `domain=BI` 與未來 domain。
 - `rules/codex-runtime.md`：CodexRunner prompt、stdout progress、MCP 使用與 runtime 限制。
 - `rules/agent-security.md`：Agent task 白名單、active run lock、token 範圍。
+- `rules/helper-protocol.md`：Helper 職責邊界、artifact contract、current-run evidence gate。
 - `rules/diagnostic-mode.md`：非可信快速迭代模式的邊界與輸出契約。
 
 ## 平台層硬規則
@@ -77,6 +78,7 @@ CodexRunner 不應在 initial prompt 一次塞入所有規則。
 - 當前 run 必須擁有自己的 evidence；除非 testcase 明確指定，否則不可借用舊 run evidence。
 - `run-state.json` 只允許記錄明確允許 carryover 的資訊；previous-case evidence 永遠不可拿來證明 current case。
 - 不可用單次 Playwright tool call 或單次 result write 執行多個 case。
+- Helper 只可加速固定且可驗證的 UI 操作；不可判結果、不可寫 result.xlsx、不可引用 stale artifact。
 - 補強平台共通紀律時才改 Layer 1；補強特定 domain 測試邏輯時，寫進該 domain 的 `AGENTS.md` / `rules` / `references`，不可寫進 Layer 1。
 
 ## 版本說明

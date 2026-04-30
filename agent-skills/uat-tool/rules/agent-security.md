@@ -62,6 +62,22 @@ Agent 不可以：
 - reason 使用 `agent_busy`。
 - backend 應保留該 run 以便稍後重新 dispatch，或讓 PM 手動重派。
 
+## Chrome Session Policy
+
+Agent 可用 warm dedicated Chrome process 降低 cold start 成本，但這不是 evidence carryover。
+
+允許：
+
+- 成功完成 run 後保留 dedicated Chrome process 與 persistent profile。
+- 下一個 run / case 開始時重置為單一 DEV tab。
+- 保留 SSO/profile session，減少登入與 Chrome spawn 成本。
+
+禁止：
+
+- 把上一題頁面、DOM、network、screenshot 或 helper artifact 當成本題 current-run evidence。
+- 在 failed / cancelled 狀態後繼續沿用可能被 native dialog 或 blocker 卡住的 Chrome session。
+- 因為 Chrome 是 warm 的就跳過 preflight、cleanup checklist、postcondition 或 evidence gate。
+
 ## Cancellation 邊界
 
 `task.cancel` 只允許取消目前 active run。

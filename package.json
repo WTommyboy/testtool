@@ -16,7 +16,8 @@
     "verify:result-evidence-gate": "tsx scripts/verify-result-evidence-gate.ts",
     "verify:agent-resume": "tsx scripts/verify-agent-resume.ts",
     "verify:agent-result-contract": "tsx scripts/verify-agent-result-contract.ts",
-    "verify:all": "npm run typecheck && npm run build --prefix agent && npm run build --prefix web && npm run verify:tool-bridge && npm run verify:agent-roundtrip",
+    "verify:helper-report-gate": "tsx scripts/verify-helper-report-gate.ts",
+    "verify:all": "npm run typecheck && npm run build --prefix agent && npm run build --prefix web && npm run verify:helper-report-gate && npm run verify:tool-bridge && npm run verify:agent-roundtrip",
     "verify:tool-bridge": "tsx scripts/verify-tool-bridge.ts",
     "postinstall": "playwright install chromium"
   },

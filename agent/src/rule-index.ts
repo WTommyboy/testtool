@@ -82,6 +82,7 @@ const buildCurrentCaseRecommendations = (runDir: string, entries: RuleIndexEntry
     "helper-execution-plan",
     "helper-execution-plan-json",
     "run-state",
+    "helper-protocol",
     "evidence-policy",
     "codex-runtime",
     "artifacts-and-results"
@@ -190,6 +191,13 @@ export const writeRuleIndex = (runDir: string, domain: string): string => {
     filePath: path.join(skillRoot, "rules", "agent-security.md"),
     loadWhen: ["agent task boundary", "agent_busy", "token/file boundary", "task whitelist"],
     summary: "Mac Agent security boundary and active-run lock."
+  });
+  addIfExists(entries, runDir, {
+    id: "helper-protocol",
+    scope: "platform",
+    filePath: path.join(skillRoot, "rules", "helper-protocol.md"),
+    loadWhen: ["helper evidence", "helper artifact validation", "state delta planner", "warm session safety"],
+    summary: "Helper artifact contract, hard rules, current-run evidence gate, and state delta planner boundaries."
   });
   addIfExists(entries, runDir, {
     id: "run-lifecycle",

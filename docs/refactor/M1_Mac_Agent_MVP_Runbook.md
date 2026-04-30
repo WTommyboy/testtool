@@ -74,6 +74,13 @@ node agent/dist/cli.js doctor
 
 Doctor should pass for required checks before using interactive execution.
 
+Relevant local runtime flags:
+
+- `UAT_AGENT_CODEX_MODEL` defaults to `gpt-5.3-codex`.
+- `UAT_AGENT_CODEX_REASONING_EFFORT` defaults to `low`.
+- `UAT_AGENT_AUTO_APPROVE_TOOL_REQUESTS=false` disables non-SSO/login auto approval.
+- `UAT_AGENT_KEEP_CHROME_WARM=false` disables warm dedicated Chrome and returns to run-scoped Chrome.
+
 ## Start Agent Manually
 
 Use this while testing:
@@ -88,6 +95,7 @@ Expected behavior:
 - It reconnects automatically if the WebSocket closes.
 - If the Railway API detects a stale heartbeat, the active run is marked `FAILED` with `run.interrupted`.
 - If the agent reconnects with a local unfinished run, it reports `run_snapshot` for diagnostics.
+- By default it keeps the dedicated Chrome process warm after successful terminal states, but each run/case still resets to a single DEV tab and must collect fresh current-run evidence. Failed/cancelled runs close dedicated Chrome to clear possible native dialogs or blockers.
 
 Verify from another terminal:
 
@@ -189,6 +197,8 @@ Expected output files:
 - `output/diagnostic-summary.json` for diagnostic runs
 - `output/codex-result.json`
 - `output/tool-requests.json` when approval is required
+- `output/helper-pre-run-summary.json` when helper pre-run is attempted
+- `output/helper-artifacts/<case>/helper-report.jsonl` when helper actions run
 
 Agent uploads:
 
@@ -198,6 +208,11 @@ Agent uploads:
 - `diagnostic-summary.json` to `/api/runs/:id/output/diagnostic-summary` when present
 
 The API ingests result xlsx into run cases, bugs, logs, and summary views.
+
+Helper artifact behavior:
+- Helper reports are accepted only when `runId`, `caseId`, `action`, timestamps, and `evidenceMetadata.currentRunEvidence=true` match the current run.
+- Helper `status=ok` means the UI action and postconditions were captured, not that the testcase passed.
+- State delta planner may skip repeated setup only when visible UI / DOM evidence proves alignment; unknown or failed checks fall back to UI action or `blocked`.
 
 Result workbook behavior:
 - Preferred path: spawned Codex writes `output/result.xlsx` itself after executing the UAT cases.

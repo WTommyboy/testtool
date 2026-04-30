@@ -40,6 +40,19 @@ const getStringPayload = (message: AgentMessage, key: string): string | null => 
   return typeof value === "string" && value.trim() ? value : null;
 };
 
+const prepareChromeForCase = async (
+  config: AgentConfig,
+  message: AgentMessage
+): Promise<string | null> => {
+  if (!config.keep_chrome_warm) {
+    await closeChromeDebugSession(config);
+  }
+  return ensureChromeDebugSession(config, getStringPayload(message, "dev_url"), {
+    resetTabs: true,
+    openInitialUrl: true
+  });
+};
+
 const ensureRunWorkspace = (config: AgentConfig, runId: string): string => {
   const runDir = path.join(config.workdir_root, runId);
   fs.mkdirSync(path.join(runDir, "input"), { recursive: true });
@@ -122,6 +135,7 @@ const prepareCodexContext = (config: AgentConfig, runDir: string): void => {
     "- Read `input/document-consistency.json` before any browser action; status=error requires Tool Bridge ambiguity handling.",
     "- Use `input/current-case-pack.md` as the compact current-case card; it is not result evidence.",
     "- Read `input/capability-gate.md` before testcase UI execution; unsupported cases must be marked BLOCKED/UNSUPPORTED_ONLINE_CAPABILITY instead of silently falling back to unsupported helper/manual paths.",
+    "- When using helper artifacts, follow `agent-skills/uat-tool/rules/helper-protocol.md`; helper status is never testcase PASS/FAIL.",
     "- Use `input/reference-index.json` for exact paths before broad searches.",
     "",
     "Domain context:",
@@ -138,6 +152,7 @@ const prepareCodexContext = (config: AgentConfig, runDir: string): void => {
     "- Do not write trusted PASS/FAIL when evidence is insufficient; use BLOCKED/EVIDENCE_INSUFFICIENT.",
     "- Do not let speed optimizations merge multiple testcase executions or result writes.",
     "- Use `input/run-state.json` for allowed carryover only; previous-case evidence is isolated.",
+    "- Helper report must match current runId/caseId/action/timestamp before it can support current-run evidence.",
     "- Never execute or write results for multiple cases in one Playwright tool call or one workbook write.",
     "- Write the final workbook to `output/result.xlsx` when real UAT cases are executed.",
     "- Consecutive native dialog guard: after one native alert/confirm in a save/delete/overwrite flow has been handled, do not attempt to accept a follow-up native dialog through Playwright. Emit playwright_recovery immediately to avoid dialog-chain timeouts.",
@@ -163,6 +178,7 @@ const prepareCodexContext = (config: AgentConfig, runDir: string): void => {
     codex_workspace_root: workspaceRoot,
     codex_model: config.codex_model,
     codex_reasoning_effort: config.codex_reasoning_effort,
+    keep_chrome_warm: config.keep_chrome_warm,
     bi_metadata_csv: biMetadataCsv,
     copied_context: copied
   });
@@ -198,6 +214,7 @@ const writeRunBrief = (
     `- workdir: ${runDir}`,
     `- codex_model: ${config.codex_model}`,
     `- auto_approve_tool_requests: ${config.auto_approve_tool_requests ? "true_except_sso_login" : "false"}`,
+    `- chrome_session_policy: ${config.keep_chrome_warm ? "warm_process_reset_tabs_per_case" : "run_scoped_process_reset_tabs_per_case"}`,
     `- expected_result_xlsx: ${resultXlsxPath}`,
     `- case_manifest: ${guides.caseManifest.manifestPath ?? "(unavailable)"}`,
     `- current_case: ${guides.caseManifest.currentCasePath ?? "(unavailable)"}`,
@@ -1058,6 +1075,7 @@ const buildPrompt = (
     "- Existing page data or old reports are not evidence that this run performed the action.",
     "- `input/current-case-pack.*` is a plan card, not a result. It reduces reading, but it never proves PASS/FAIL/BLOCKED.",
     "- `input/helper-execution-plan.*` may provide UI helper actions. Helper evidence can support judgment, but helper `status=ok` is never PASS.",
+    "- Helper report is usable only if the Agent hard gate accepted its runId/caseId/action/timestamp/currentRunEvidence metadata.",
     "- If `output/helper-pre-run-summary.json` exists, inspect it before repeating UI steps. Reuse successful helper evidence when it satisfies current-run evidence needs; only repeat actions when evidence is incomplete or state is not aligned.",
     "- Execute and record one case at a time. `case-manifest.json` is only an index; it is not permission to batch multiple case flows.",
     "- After each case, write or update evidence/result for that case before reading the next case JSON.",
@@ -1068,6 +1086,9 @@ const buildPrompt = (
     "- Never trade correctness gates for speed. Keep evidence, Tool Bridge, stale-evidence and one-case-at-a-time gates intact.",
     "- Keep the final response concise; the workbook and log are the primary artifacts.",
     "- Playwright MCP is configured to connect to a persistent local Chrome session through CDP when available.",
+    config.keep_chrome_warm
+      ? "- The Mac Agent may keep the dedicated Chrome process warm between runs, but each run/case still starts from a single DEV tab and must collect fresh current-run evidence."
+      : "- The Mac Agent uses run-scoped Chrome and closes the dedicated Chrome process after terminal run states.",
     "",
     `Run ID: ${runId}`,
     `Domain: ${domain}`,
@@ -2326,15 +2347,11 @@ const prepareNextCaseIfAny = async (options: {
     connection,
     runId,
     "browser_start",
-    "重置專用 Chrome",
-    "下一題前重置持久化 Chrome，避免沿用上一題 UI/native dialog 狀態。",
-    async () => {
-      await closeChromeDebugSession(config);
-      return ensureChromeDebugSession(config, getStringPayload(message, "dev_url"), {
-        resetTabs: true,
-        openInitialUrl: true
-      });
-    }
+    "準備專用 Chrome",
+    config.keep_chrome_warm
+      ? "下一題前重用 dedicated Chrome process，但重置為單一 DEV tab；UI 狀態仍需由 checklist/evidence 驗證。"
+      : "下一題前重建 dedicated Chrome process，避免沿用上一題 UI/native dialog 狀態。",
+    () => prepareChromeForCase(config, message)
   );
   const helperPreRunSummary = await timeAgentPhase(
     timing,
@@ -2517,6 +2534,7 @@ export const handleTaskDispatch = async (
   let lastResult: CodexTurnResult | null = null;
   let uploadedArtifacts: UploadedArtifacts | null = null;
   let keepChromeOpenForToolBridge = false;
+  let closeChromeOnFinish = !config.keep_chrome_warm;
 
   try {
     await timeAgentPhase(timing, connection, runId, "prepare_workspace", "準備 Agent 工作區", `workdir: ${runDir}`, async () => {
@@ -2569,15 +2587,11 @@ export const handleTaskDispatch = async (
       connection,
       runId,
       "browser_start",
-      "重置專用 Chrome",
-      "關閉前次 Agent Chrome，準備乾淨單一頁籤。",
-      async () => {
-        await closeChromeDebugSession(config);
-        return ensureChromeDebugSession(config, getStringPayload(message, "dev_url"), {
-          resetTabs: true,
-          openInitialUrl: true
-        });
-      }
+      "準備專用 Chrome",
+      config.keep_chrome_warm
+        ? "重用 dedicated Chrome process 並重置為單一 DEV tab；SSO/profile 保持，case evidence 不沿用。"
+        : "關閉前次 Agent Chrome，準備乾淨單一頁籤。",
+      () => prepareChromeForCase(config, message)
     );
 
     connection.send(
@@ -2710,6 +2724,7 @@ export const handleTaskDispatch = async (
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     const cancelled = errorMessage.startsWith("CODEX_RUN_CANCELLED");
+    closeChromeOnFinish = true;
     timing.failActive({ error: errorMessage });
     sendPhase(
       connection,
@@ -2786,7 +2801,7 @@ export const handleTaskDispatch = async (
     hooks.onCancelClear?.(runId);
     timing.write();
     await uploadFinalSidecarArtifacts(connection, config, message, runId, runDir);
-    if (!keepChromeOpenForToolBridge) {
+    if (!keepChromeOpenForToolBridge && closeChromeOnFinish) {
       await closeChromeDebugSession(config);
     }
     connection.setRunState("idle", null);
@@ -2810,6 +2825,7 @@ export const handleToolResponse = async (
   let lastResult: CodexTurnResult | null = null;
   let uploadedArtifacts: UploadedArtifacts | null = null;
   let keepChromeOpenForToolBridge = false;
+  let closeChromeOnFinish = !config.keep_chrome_warm;
 
   try {
     const statePath = path.join(runDir, "state.json");
@@ -3050,6 +3066,7 @@ export const handleToolResponse = async (
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     const cancelled = errorMessage.startsWith("CODEX_RUN_CANCELLED");
+    closeChromeOnFinish = true;
     sendPhase(
       connection,
       runId,
@@ -3126,7 +3143,7 @@ export const handleToolResponse = async (
     hooks.onCancelClear?.(runId);
     timing.write();
     await uploadFinalSidecarArtifacts(connection, config, originalDispatch ?? message, runId, runDir);
-    if (!keepChromeOpenForToolBridge) {
+    if (!keepChromeOpenForToolBridge && closeChromeOnFinish) {
       await closeChromeDebugSession(config);
     }
     connection.setRunState("idle", null);

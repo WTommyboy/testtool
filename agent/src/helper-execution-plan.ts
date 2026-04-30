@@ -123,6 +123,8 @@ const inferCollageParams = (currentCase: CaseManifestCase | null, helperHints: H
     field: stringParam(params, ["field", "metric", "metricField"]) ?? cleanup["欄位"] ?? firstMatch(text, [/欄位[「=：: ]+([^」\n,，]+)/]),
     dateRange: dateRangeText,
     display: stringParam(params, ["display", "displayMode"]) ?? cleanup["顯示"] ?? null,
+    cleanupChecklist: currentCase?.cleanupChecklist ?? null,
+    cleanupTargets: cleanup,
     reportNamePattern:
       stringParam(params, ["reportName", "reportNamePattern"]) ??
       firstMatch(text, [/報表名[：:]\s*([^\n]+)/, /報表名稱[：:]\s*([^\n]+)/])
@@ -175,8 +177,11 @@ const buildActions = (currentCase: CaseManifestCase | null, helperHints: HelperH
         requiredEvidence: ["dom.url", "dom.pageTitle", "dom.state", "screenshot"]
       }),
       action("H3", "collage.configureMetric", "設定來源、欄位、日期與顯示", params, {
-        requiredEvidence: ["dom.state", "screenshot"],
-        notes: ["所有設定都必須透過 visible UI；不可使用內部 JS setter。"]
+        requiredEvidence: ["dom.state", "state.delta", "screenshot"],
+        notes: [
+          "所有設定都必須透過 visible UI；不可使用內部 JS setter。",
+          "可用 state delta planner 跳過已逐字/DOM 驗證對齊的項目；讀不到或不確定時必須操作 UI 或回 blocked。"
+        ]
       }),
       action("H4", "collage.runPreviewAndCollectEvidence", "執行 preview 並收集 evidence", params, {
         requiredEvidence: ["network.requestBody", "network.responseBody", "chart.datasets", "dom.previewState", "screenshot"],

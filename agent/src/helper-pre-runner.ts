@@ -82,14 +82,96 @@ const latestReportPath = (runDir: string, caseId: string | null, template: strin
   return path.join(runDir, "output", "helper-artifacts", safeCase, `${safeAction}-latest.json`);
 };
 
-const readLatestReport = (filePath: string): { status: HelperPreRunActionResult["status"] | null; warnings: string[] } => {
-  const parsed = readJsonIfExists<{ status?: unknown; warnings?: unknown }>(filePath);
-  const status = parsed?.status;
+type HelperReportArtifactValidation = {
+  ok: boolean;
+  status: HelperPreRunActionResult["status"] | null;
+  warnings: string[];
+  error: string | null;
+};
+
+const isValidHelperStatus = (value: unknown): value is Exclude<HelperPreRunActionResult["status"], "skipped"> =>
+  value === "ok" || value === "blocked" || value === "requires_approval" || value === "not_implemented" || value === "error";
+
+const getString = (value: Record<string, unknown> | null, key: string): string | null => {
+  const item = value?.[key];
+  return typeof item === "string" && item.trim() ? item.trim() : null;
+};
+
+const parseIsoMs = (value: unknown): number | null => {
+  if (typeof value !== "string") return null;
+  const ms = Date.parse(value);
+  return Number.isFinite(ms) ? ms : null;
+};
+
+export const validateHelperReportArtifact = (options: {
+  runDir: string;
+  reportPath: string;
+  expectedCaseId: string | null;
+  expectedAction: string;
+}): HelperReportArtifactValidation => {
+  const parsed = readJsonIfExists<Record<string, unknown>>(options.reportPath);
+  if (!parsed) {
+    return {
+      ok: false,
+      status: null,
+      warnings: ["HELPER_REPORT_MISSING"],
+      error: "HELPER_REPORT_MISSING"
+    };
+  }
+  const warnings = Array.isArray(parsed.warnings) ? parsed.warnings.filter((item): item is string => typeof item === "string") : [];
+  const errors: string[] = [];
+  const status = parsed.status;
+  const expectedRunId = path.basename(path.resolve(options.runDir));
+  const expectedCaseId = options.expectedCaseId ?? "";
+  const evidenceMetadata = parsed.evidenceMetadata && typeof parsed.evidenceMetadata === "object" && !Array.isArray(parsed.evidenceMetadata)
+    ? parsed.evidenceMetadata as Record<string, unknown>
+    : null;
+  const state = readJsonIfExists<Record<string, unknown>>(path.join(options.runDir, "state.json"));
+  const runStartedAtMs = parseIsoMs(state?.started_at);
+  const startedAtMs = parseIsoMs(parsed.startedAt);
+  const endedAtMs = parseIsoMs(parsed.endedAt);
+
+  if (parsed.schemaVersion !== "bi-ui-helper-report-v1") errors.push("schemaVersion");
+  if (!isValidHelperStatus(status)) errors.push("status");
+  if (parsed.helperCanJudgeResult !== false) errors.push("helperCanJudgeResult");
+  if (parsed.runId !== expectedRunId) errors.push("runId");
+  if (parsed.caseId !== expectedCaseId) errors.push("caseId");
+  if (parsed.action !== options.expectedAction) errors.push("action");
+  if (!startedAtMs) errors.push("startedAt");
+  if (!endedAtMs) errors.push("endedAt");
+  if (startedAtMs && endedAtMs && endedAtMs < startedAtMs) errors.push("timestamp_order");
+  if (runStartedAtMs && startedAtMs && startedAtMs < runStartedAtMs - 5000) errors.push("stale_startedAt_before_run");
+  if (endedAtMs && endedAtMs > Date.now() + 60_000) errors.push("endedAt_in_future");
+  if (getString(evidenceMetadata, "source") !== "mac-agent-bi-ui-helper") errors.push("evidenceMetadata.source");
+  if (evidenceMetadata?.currentRunEvidence !== true) errors.push("evidenceMetadata.currentRunEvidence");
+  if (getString(evidenceMetadata, "runId") !== expectedRunId) errors.push("evidenceMetadata.runId");
+  if (getString(evidenceMetadata, "caseId") !== expectedCaseId) errors.push("evidenceMetadata.caseId");
+  if (getString(evidenceMetadata, "action") !== options.expectedAction) errors.push("evidenceMetadata.action");
+
   return {
-    status: status === "ok" || status === "blocked" || status === "requires_approval" || status === "not_implemented" || status === "error"
-      ? status
-      : null,
-    warnings: Array.isArray(parsed?.warnings) ? parsed.warnings.filter((item): item is string => typeof item === "string") : []
+    ok: errors.length === 0,
+    status: isValidHelperStatus(status) ? status : null,
+    warnings: errors.length === 0 ? warnings : [...warnings, `HELPER_REPORT_VALIDATION_FAILED:${errors.join(",")}`],
+    error: errors.length === 0 ? null : `HELPER_REPORT_VALIDATION_FAILED:${errors.join(",")}`
+  };
+};
+
+const readLatestReport = (
+  runDir: string,
+  caseId: string | null,
+  action: HelperPlanAction,
+  filePath: string
+): { status: HelperPreRunActionResult["status"] | null; warnings: string[]; error?: string } => {
+  const validation = validateHelperReportArtifact({
+    runDir,
+    reportPath: filePath,
+    expectedCaseId: caseId,
+    expectedAction: action.template
+  });
+  return {
+    status: validation.ok ? validation.status : "error",
+    warnings: validation.warnings,
+    error: validation.error ?? undefined
   };
 };
 
@@ -134,7 +216,7 @@ const runHelperAction = async (
     });
     child.on("close", (exitCode, signal) => {
       const durationMs = Date.now() - startedAt;
-      const latestReport = readLatestReport(reportPath);
+      const latestReport = readLatestReport(runDir, caseId, action, reportPath);
       const status = latestReport.status ?? (exitCode === 0 ? "ok" : "error");
       timing?.end(timingId ?? "", status === "ok" ? "ok" : status === "requires_approval" ? "requires_approval" : "failed", {
         exitCode,
@@ -154,7 +236,8 @@ const runHelperAction = async (
         stdoutExcerpt: stdout.slice(-2000),
         stderrExcerpt: stderr.slice(-2000),
         reportPath: fs.existsSync(reportPath) ? reportPath : null,
-        warnings: latestReport.warnings
+        warnings: latestReport.warnings,
+        error: latestReport.error
       });
     });
     child.on("error", (error) => {

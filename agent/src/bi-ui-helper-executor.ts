@@ -17,6 +17,7 @@ type CliOptions = {
 type HelperReport = {
   schemaVersion: "bi-ui-helper-report-v1";
   generatedAt: string;
+  runId: string;
   startedAt: string;
   endedAt: string;
   durationMs: number;
@@ -25,6 +26,17 @@ type HelperReport = {
   status: "ok" | "blocked" | "requires_approval" | "not_implemented" | "error";
   helperCanJudgeResult: false;
   params: Record<string, unknown>;
+  evidenceMetadata: {
+    source: "mac-agent-bi-ui-helper";
+    runId: string;
+    caseId: string;
+    action: string;
+    currentRunEvidence: true;
+    artifactRoot: string;
+    generatedAt: string;
+    startedAt: string;
+    endedAt: string;
+  };
   evidence: Record<string, unknown>;
   artifacts: Record<string, string>;
   warnings: string[];
@@ -86,6 +98,8 @@ const ensureDir = (dir: string): void => {
 
 const artifactRoot = (options: CliOptions): string => path.join(options.runDir, "output", "helper-artifacts", sanitize(options.caseId));
 
+const runIdFromOptions = (options: CliOptions): string => path.basename(path.resolve(options.runDir));
+
 const writeReport = (options: CliOptions, report: HelperReport): void => {
   const dir = artifactRoot(options);
   ensureDir(dir);
@@ -145,22 +159,39 @@ const createReport = (
   artifacts: Record<string, string>,
   warnings: string[] = [],
   extra: Partial<HelperReport> = {}
-): HelperReport => ({
-  schemaVersion: "bi-ui-helper-report-v1",
-  generatedAt: new Date().toISOString(),
-  startedAt,
-  endedAt: new Date().toISOString(),
-  durationMs: Math.max(0, Date.now() - Date.parse(startedAt)),
-  caseId: options.caseId,
-  action: options.action,
-  status,
-  helperCanJudgeResult: false,
-  params: options.params,
-  evidence,
-  artifacts,
-  warnings,
-  ...extra
-});
+): HelperReport => {
+  const generatedAt = new Date().toISOString();
+  const endedAt = generatedAt;
+  const runId = runIdFromOptions(options);
+  return {
+    schemaVersion: "bi-ui-helper-report-v1",
+    generatedAt,
+    runId,
+    startedAt,
+    endedAt,
+    durationMs: Math.max(0, Date.now() - Date.parse(startedAt)),
+    caseId: options.caseId,
+    action: options.action,
+    status,
+    helperCanJudgeResult: false,
+    params: options.params,
+    evidenceMetadata: {
+      source: "mac-agent-bi-ui-helper",
+      runId,
+      caseId: options.caseId,
+      action: options.action,
+      currentRunEvidence: true,
+      artifactRoot: artifactRoot(options),
+      generatedAt,
+      startedAt,
+      endedAt
+    },
+    evidence,
+    artifacts,
+    warnings,
+    ...extra
+  };
+};
 
 const getGalaxyPage = async (browser: Browser): Promise<Page> => {
   const context = browser.contexts()[0] ?? (await browser.newContext());
@@ -182,6 +213,7 @@ const screenshot = async (options: CliOptions, page: Page, label: string): Promi
 const readDomState = async (page: Page): Promise<Record<string, unknown>> => {
   return page.evaluate(() => {
     const text = (selector: string) => document.querySelector(selector)?.textContent?.trim() ?? null;
+    const innerText = (selector: string) => (document.querySelector(selector) as HTMLElement | null)?.innerText?.trim() ?? null;
     const buttons = Array.from(document.querySelectorAll("button"))
       .map((item) => item.textContent?.trim())
       .filter(Boolean)
@@ -196,6 +228,14 @@ const readDomState = async (page: Page): Promise<Record<string, unknown>> => {
       title: document.title,
       bodyTextExcerpt: document.body.innerText.slice(0, 2500),
       reportHeader: text("h1, h2, [class*=title], [class*=header]"),
+      cleanupState: {
+        dateRangeText: innerText("#dateRangeBtn"),
+        fieldSelectionText: innerText("#fieldSelectionContainer"),
+        filterText: innerText("#dataFilterContainer"),
+        groupText: innerText("#groupDimensionContainer"),
+        displayModeValue: (document.querySelector('select[name="displayMode"]') as HTMLSelectElement | null)?.value ?? null,
+        displayModeText: (document.querySelector('select[name="displayMode"]') as HTMLSelectElement | null)?.selectedOptions?.[0]?.textContent?.trim() ?? null
+      },
       buttons,
       selects
     };
@@ -203,6 +243,7 @@ const readDomState = async (page: Page): Promise<Record<string, unknown>> => {
 };
 
 const normalizeDateText = (value: string): string => value.replace(/\s+/g, "").replaceAll("-", "/");
+const normalizeUiText = (value: string): string => value.replace(/\s+/g, "");
 
 const parseDateRange = (value: string | null): { startIso: string; endIso: string; display: string } | null => {
   if (!value) return null;
@@ -224,6 +265,76 @@ const parseDateRange = (value: string | null): { startIso: string; endIso: strin
 const bodyContainsDateRange = async (page: Page, display: string): Promise<boolean> => {
   const bodyText = await page.locator("body").innerText({ timeout: 5000 }).catch(() => "");
   return normalizeDateText(bodyText).includes(normalizeDateText(display));
+};
+
+const bodyContainsText = async (page: Page, expected: string): Promise<boolean> => {
+  const bodyText = await page.locator("body").innerText({ timeout: 5000 }).catch(() => "");
+  return normalizeUiText(bodyText).includes(normalizeUiText(expected));
+};
+
+const parseCleanupTargets = (value: unknown): Record<string, string> => {
+  if (typeof value !== "string") return {};
+  const result: Record<string, string> = {};
+  for (const part of value.split(";")) {
+    const [key, ...rest] = part.split("=");
+    const normalizedKey = key?.trim();
+    if (!normalizedKey) continue;
+    const normalizedValue = rest.join("=").trim();
+    if (normalizedValue) result[normalizedKey] = normalizedValue;
+  }
+  return result;
+};
+
+const targetStateFromParams = (params: Record<string, unknown>): Record<string, string | null> => {
+  const cleanup = parseCleanupTargets(params.cleanupChecklist);
+  return {
+    field: stringParam(params, "field") ?? cleanup["欄位"] ?? null,
+    filter: cleanup["篩選"] ?? null,
+    group: cleanup["分組"] ?? null,
+    dateRange: stringParam(params, "dateRange") ?? cleanup["時間"] ?? null,
+    display: stringParam(params, "display") ?? cleanup["顯示"] ?? null
+  };
+};
+
+const readStateDelta = async (page: Page, params: Record<string, unknown>): Promise<Record<string, unknown>> => {
+  const targets = targetStateFromParams(params);
+  const observed = await page.evaluate(() => {
+    const innerText = (selector: string) => (document.querySelector(selector) as HTMLElement | null)?.innerText?.trim() ?? null;
+    return {
+      url: location.href,
+      bodyText: document.body.innerText.slice(0, 5000),
+      dateRangeText: innerText("#dateRangeBtn"),
+      fieldSelectionText: innerText("#fieldSelectionContainer"),
+      filterText: innerText("#dataFilterContainer"),
+      groupText: innerText("#groupDimensionContainer"),
+      displayModeValue: (document.querySelector('select[name="displayMode"]') as HTMLSelectElement | null)?.value ?? null,
+      displayModeText: (document.querySelector('select[name="displayMode"]') as HTMLSelectElement | null)?.selectedOptions?.[0]?.textContent?.trim() ?? null
+    };
+  });
+  const contains = (value: unknown, expected: string | null): boolean | null => {
+    if (!expected || expected === "不限" || expected === "不影響") return null;
+    if (typeof value !== "string") return false;
+    return normalizeUiText(value).includes(normalizeUiText(expected));
+  };
+  return {
+    targets,
+    observed: {
+      ...observed,
+      bodyText: observed.bodyText.slice(0, 1200)
+    },
+    checks: {
+      field: contains(`${observed.fieldSelectionText ?? ""}\n${observed.bodyText}`, targets.field),
+      filter: targets.filter === "0組" || targets.filter === "空"
+        ? null
+        : contains(observed.filterText, targets.filter),
+      group: targets.group === "0組" || targets.group === "空"
+        ? null
+        : contains(observed.groupText, targets.group),
+      dateRange: contains(`${observed.dateRangeText ?? ""}\n${observed.bodyText}`, targets.dateRange),
+      display: contains(`${observed.displayModeText ?? ""}\n${observed.displayModeValue ?? ""}\n${observed.bodyText}`, targets.display)
+    },
+    policy: "delta planner may skip only when visible UI text/value verifies the target; unknown or false must fall back to UI action or blocked"
+  };
 };
 
 const clickFirstVisible = async (locators: Array<ReturnType<Page["locator"]>>, timeout = 5000): Promise<boolean> => {
@@ -259,7 +370,7 @@ const visibleInputIndexes = async (page: Page): Promise<Array<{ index: number; t
 
 const setDateRange = async (page: Page, dateRange: string): Promise<{ ok: boolean; warning?: string; observedAfter?: string; inputs?: unknown }> => {
   const parsed = parseDateRange(dateRange);
-  if (!parsed) return { ok: false, warning: `DATE_RANGE_PARSE_FAILED:${dateRange}` };
+  if (!parsed) return setDatePreset(page, dateRange);
   if (await bodyContainsDateRange(page, parsed.display)) return { ok: true, observedAfter: parsed.display };
 
   const opened = await clickFirstVisible([
@@ -300,6 +411,41 @@ const setDateRange = async (page: Page, dateRange: string): Promise<{ ok: boolea
     warning: ok ? undefined : "DATE_RANGE_VERIFY_FAILED_AFTER_UI_INPUT",
     observedAfter: (await page.locator("body").innerText({ timeout: 5000 }).catch(() => "")).slice(0, 1000),
     inputs
+  };
+};
+
+const setDatePreset = async (page: Page, preset: string): Promise<{ ok: boolean; warning?: string; observedAfter?: string; inputs?: unknown }> => {
+  const normalizedPreset = preset.trim();
+  if (!normalizedPreset) return { ok: false, warning: "DATE_RANGE_PRESET_EMPTY" };
+  if (await bodyContainsText(page, normalizedPreset)) return { ok: true, observedAfter: normalizedPreset };
+
+  const opened = await clickFirstVisible([
+    page.locator("#dateRangeBtn"),
+    page.locator("button").filter({ hasText: /過去|最近|今日|昨日|本週|上週|本月|上月|\d{4}[/-]\d{1,2}[/-]\d{1,2}/ }),
+    page.getByText(/過去7天|最近7天|過去30天|最近30天|今日|昨日|本週|上週|本月|上月/, { exact: false })
+  ], 8000);
+  if (!opened) return { ok: false, warning: "DATE_RANGE_CONTROL_NOT_CLICKABLE" };
+  await page.waitForTimeout(400);
+
+  const selected = await clickFirstVisible([
+    page.getByText(normalizedPreset, { exact: true }),
+    page.locator("button").filter({ hasText: normalizedPreset })
+  ], 5000);
+  if (!selected) {
+    return {
+      ok: false,
+      warning: `DATE_RANGE_PRESET_NOT_FOUND:${normalizedPreset}`,
+      observedAfter: (await page.locator("body").innerText({ timeout: 5000 }).catch(() => "")).slice(0, 1000)
+    };
+  }
+  await clickFirstVisible([page.getByText("確認", { exact: true }), page.locator("button").filter({ hasText: "確認" })], 3000).catch(() => false);
+  await page.waitForTimeout(800);
+
+  const ok = await bodyContainsText(page, normalizedPreset);
+  return {
+    ok,
+    warning: ok ? undefined : "DATE_RANGE_PRESET_VERIFY_FAILED_AFTER_UI_CLICK",
+    observedAfter: (await page.locator("body").innerText({ timeout: 5000 }).catch(() => "")).slice(0, 1000)
   };
 };
 
@@ -429,6 +575,8 @@ const configureMetric = async (options: CliOptions, page: Page, startedAt: strin
   const warnings: string[] = [];
   const field = stringParam(options.params, "field");
   const dateRange = stringParam(options.params, "dateRange");
+  const stateDeltaBefore = await readStateDelta(page, options.params);
+  const operations: string[] = [];
   let dateRangeEvidence: Record<string, unknown> | null = null;
   if (field) {
     const bodyText = await page.locator("body").innerText({ timeout: 5000 }).catch(() => "");
@@ -437,6 +585,9 @@ const configureMetric = async (options: CliOptions, page: Page, startedAt: strin
       await page.waitForTimeout(800);
       await clickByText(page, field);
       await page.waitForTimeout(800);
+      operations.push(`field:set:${field}`);
+    } else {
+      operations.push(`field:already_visible:${field}`);
     }
   }
   if (dateRange) {
@@ -444,14 +595,27 @@ const configureMetric = async (options: CliOptions, page: Page, startedAt: strin
     dateRangeEvidence = result;
     if (!result.ok) {
       warnings.push(`DATE_RANGE_UI_SETTING_NOT_COMPLETED:${result.warning ?? "unknown"}`);
+      operations.push(`dateRange:blocked:${dateRange}`);
+    } else {
+      operations.push(`dateRange:verified:${dateRange}`);
     }
   }
+  const stateDeltaAfter = await readStateDelta(page, options.params);
   const shot = await screenshot(options, page, "configure-metric");
   return createReport(
     options,
     warnings.some((warning) => warning.startsWith("DATE_RANGE_UI_SETTING_NOT_COMPLETED")) ? "blocked" : "ok",
     startedAt,
-    { domState: await readDomState(page), requestedDateRange: dateRange, dateRangeEvidence },
+    {
+      domState: await readDomState(page),
+      requestedDateRange: dateRange,
+      dateRangeEvidence,
+      stateDelta: {
+        before: stateDeltaBefore,
+        after: stateDeltaAfter,
+        operations
+      }
+    },
     shot ? { screenshot: shot } : {},
     shot ? warnings : [...warnings, "SCREENSHOT_UNAVAILABLE"]
   );
@@ -462,18 +626,24 @@ const runPreview = async (options: CliOptions, page: Page, startedAt: string): P
     await page.getByText("執行", { exact: true }).first().click({ timeout: 15000 });
     await page.waitForTimeout(2500);
   });
+  const chart = await readChartSummary(page);
   const shot = await screenshot(options, page, "run-preview");
+  const hasPreviewEvidence = observed.requests.length > 0 || observed.responses.length > 0 || chart !== null;
   return createReport(
     options,
-    "ok",
+    hasPreviewEvidence ? "ok" : "blocked",
     startedAt,
     {
       domState: await readDomState(page),
       network: { requests: observed.requests, responses: observed.responses },
-      chart: await readChartSummary(page)
+      chart,
+      stateDelta: await readStateDelta(page, options.params)
     },
     shot ? { screenshot: shot } : {},
-    shot ? [] : ["SCREENSHOT_UNAVAILABLE"]
+    [
+      ...(shot ? [] : ["SCREENSHOT_UNAVAILABLE"]),
+      ...(hasPreviewEvidence ? [] : ["PREVIEW_UI_ACTION_NOT_VERIFIED_NO_NETWORK_OR_CHART_EVIDENCE"])
+    ]
   );
 };
 

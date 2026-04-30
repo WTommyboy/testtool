@@ -71,6 +71,12 @@ export const runDoctor = async (config: AgentConfig): Promise<DoctorCheck[]> => 
     }),
     check("workdir-writable", ensureWritableDir(config.workdir_root), { dir: config.workdir_root }),
     check("chrome-profile-writable", ensureWritableDir(config.chrome_profile_dir), { dir: config.chrome_profile_dir }),
+    check("chrome-session-policy", true, {
+      keep_chrome_warm: config.keep_chrome_warm,
+      policy: config.keep_chrome_warm
+        ? "warm_process_reset_tabs_per_case"
+        : "run_scoped_process_reset_tabs_per_case"
+    }),
     os.platform() === "darwin"
       ? skipped("macos-ui-automation-permissions", {
           reason: "macOS privacy grants cannot be changed programmatically by Agent doctor.",
