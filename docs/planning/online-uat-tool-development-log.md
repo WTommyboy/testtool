@@ -617,3 +617,14 @@ Tommy 曾討論是否改成腳本。最後決策是採「半腳本化 / helper �
 - 修改檔案：`agent/src/browser-session.ts`、`agent/src/bi-ui-helper-executor.ts`、`agent/src/helper-pre-runner.ts`、`agent/src/result-contract.ts`、`agent/src/result-template.ts`、`agent/src/task-runner.ts`、`agent-skills/uat-tool/rules/tool-bridge.md`、`domain-packs/BI/result_parser_adapter.json`、`scripts/verify-agent-result-contract.ts`、`package.json`、本 planning log。
 - 驗證：`npm run typecheck --prefix agent`、`npm run typecheck`、`npm run build --prefix agent`、`npm run build`、`npm run verify:agent-result-contract`、`npm run verify:helper-hints`、`npm run verify:result-evidence-gate`、`npm run verify:agent-resume`、`npm run verify:package-consistency`、`npm run verify:tool-bridge`、`npm run verify:agent-roundtrip`、`git diff --check` 已通過。
 - 後續影響：OTTEST008 觀察點：(1) helper pre-run 是否跑到 H4 preview；(2) 若 save 後連續 dialog 再出現，是否 5-10 秒內直接 Tool Bridge recovery；(3) 若 Codex 寫壞 result.xlsx，是否被 Agent self-check 擋下並明確顯示欄位/缺欄位，而不是 server 400/422。
+
+### 2026-04-30 08:09 - 修正多 case run 第一題後即結束
+
+- 背景：OTTEST008 run `fb9a9702-c2b8-463e-8d66-cdb2877d092b` 匯入 `importedCases=4`，但 Agent run packet 只固定 `currentCaseNo=DEMO-A-01`；Codex 完成 DEMO-A-01 並上傳單題 `result.xlsx` 後，Agent 直接送 `run.completed`。同時 server ingest 依單題結果把 run 標成 `FAILED`，即使 B/C/D 仍是 `PENDING`，所以畫面呈現「跑完第一個就結束」。
+- 決策：維持 one-case-at-a-time hard gate，不改成一個 workbook 批次寫多題。改由 Mac Agent 做逐題 orchestration：每題仍是獨立 current-case pack、獨立 Codex turn、獨立 `output/result.xlsx` 上傳；完成一題後才切下一題。
+- 本次修改：Agent 新增 `output/agent-case-progress.json`，記錄本 run 起始 case、已完成 case 與每題 result/log artifact；每次成功上傳後清掉上一題 `output/result.xlsx` 與 self-check/tool-request 暫存，重新產生下一題 `case-manifest/current-case-pack/run-state/helper-execution-plan/run-brief`，封存非本題 helper artifacts，重置 dedicated Chrome，再跑下一題 safe helper pre-run 與 Codex turn。Tool Bridge pause/resume 後也會依 `state.current_case_no` 或 `generated-guides.json` 回到正確 case，完成後繼續後續 case。
+- Server ingest：`ingestResultXlsx()` 改為依整個 run 的 `run_cases` 狀態決定 run status。只要仍有 `PENDING/MANUAL_PENDING`，result ingest 回 `RUNNING`，不因目前單題 `FAIL/BLOCKED/PARTIAL` 提前終結；全部 case 都有結果後，才依是否全為 pass-like (`PASS/MANUAL_PASS/SKIPPED`) 決定 `SUCCEEDED` 或 `FAILED`。Bug ingest 也從「每次刪全 run bugs」改為只替換本次 result 相關 case 的 bug，避免第二題上傳時清掉第一題 bug。
+- 安全邊界：server result evidence gate 仍 `requireSingleCase=true`，所以 Codex 不能一次交多題 result workbook；Agent 只是自動切換下一個 current case。若 Codex 嘗試把多題塞進同一份 `result.xlsx`，仍會被 gate 擋下。
+- 修改檔案：`agent/src/task-runner.ts`、`src/runs.ts`、本 planning log。
+- 驗證：`npm run typecheck --prefix agent`、`npm run typecheck`、`npm run build --prefix agent`、`npm run build`、`npm run verify:agent-resume`、`npm run verify:agent-result-contract`、`npm run verify:tool-bridge`、`npm run verify:helper-hints`、`npm run verify:result-evidence-gate`、`npm run verify:package-consistency`、`npm run verify:agent-roundtrip` 已通過。
+- 後續影響：下一輪 OTTEST008/OTTEST009 應看到 DEMO-A-01 上傳後 run 仍維持 `RUNNING`，並出現「切換到下一個 Case」phase；若下一題再次需要授權，Tool Bridge 仍只針對該題停下，不會把前一題授權 carry over。

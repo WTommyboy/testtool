@@ -852,6 +852,21 @@ const resultHasFailedOutcome = (cases: ParsedResultCase[]): boolean => {
   return cases.some((item) => !passLike.has(normalizeParsedResultStatus(item.status)));
 };
 
+const terminalStatusForRunCases = (runId: string, fallbackCases: ParsedResultCase[]): string => {
+  const rows = db
+    .prepare("SELECT result_status FROM run_cases WHERE run_id = ?")
+    .all(runId) as Array<{ result_status: string | null }>;
+  const statuses = rows.map((item) => normalizeParsedResultStatus(item.result_status ?? "PENDING"));
+  if (statuses.some((status) => status === "PENDING" || status === "MANUAL_PENDING")) {
+    return "RUNNING";
+  }
+  const passLike = new Set(["PASS", "MANUAL_PASS", "SKIPPED"]);
+  if (statuses.length === 0) {
+    return resultHasFailedOutcome(fallbackCases) ? "FAILED" : "SUCCEEDED";
+  }
+  return statuses.some((status) => !passLike.has(status)) ? "FAILED" : "SUCCEEDED";
+};
+
 const stepStatusForCaseResult = (status: string): "PASS" | "FAIL" | "SKIPPED" => {
   if (status === "PASS" || status === "MANUAL_PASS") return "PASS";
   if (status === "SKIPPED") return "SKIPPED";
@@ -890,6 +905,16 @@ const uniqueCaseNosForGate = (values: Array<string | null | undefined>): string[
     result.push(trimmed);
   }
   return result;
+};
+
+const deleteBugsForParsedResult = (runId: string, parsed: { cases: ParsedResultCase[]; bugs: ParsedBug[] }): void => {
+  const relatedCaseNos = uniqueCaseNosForGate([
+    ...parsed.cases.map((item) => item.caseNo),
+    ...parsed.bugs.map((item) => item.relatedCaseNo)
+  ]).filter((caseNo) => caseNo !== "-");
+  if (relatedCaseNos.length === 0) return;
+  const placeholders = relatedCaseNos.map(() => "?").join(", ");
+  db.prepare(`DELETE FROM bugs WHERE run_id = ? AND related_case_no IN (${placeholders})`).run(runId, ...relatedCaseNos);
 };
 
 const expectedCaseNosForRun = (runId: string): string[] => {
@@ -945,7 +970,6 @@ const ingestResultXlsx = async (
     throw new ResultEvidenceGateError(report);
   }
   const now = nowIso();
-  const terminalStatus = resultHasFailedOutcome(parsed.cases) ? "FAILED" : "SUCCEEDED";
 
   const upsertCaseStmt = db.prepare(
     `
@@ -1012,14 +1036,15 @@ const ingestResultXlsx = async (
       );
     }
 
-    db.prepare("DELETE FROM bugs WHERE run_id = ?").run(runId);
+    deleteBugsForParsedResult(runId, parsed);
+    const defaultBugRelatedCaseNo = parsed.cases.length === 1 ? parsed.cases[0]?.caseNo ?? "-" : "-";
     for (const bug of parsed.bugs) {
       insertBugStmt.run({
         id: randomUUID(),
         run_id: runId,
         round_id: String(run.round_id ?? ""),
         severity: bug.severity || "INFO",
-        related_case_no: bug.relatedCaseNo ?? "-",
+        related_case_no: bug.relatedCaseNo ?? defaultBugRelatedCaseNo,
         description: formatParsedBugDescription(bug),
         suggestion: bug.suggestion,
         created_at: now,
@@ -1037,13 +1062,14 @@ const ingestResultXlsx = async (
   });
   tx();
 
-  setRunStatusWithMeta(runId, terminalStatus, "Mac Agent");
+  const runStatus = terminalStatusForRunCases(runId, parsed.cases);
+  setRunStatusWithMeta(runId, runStatus, "Mac Agent");
 
   return {
     cases: parsed.cases.length,
     bugs: parsed.bugs.length,
     parserVersion: parsed.parserVersion,
-    runStatus: terminalStatus,
+    runStatus,
     resultEvidenceGate: {
       status: report.status,
       issueCount: report.issues.length,

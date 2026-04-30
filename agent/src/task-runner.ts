@@ -315,6 +315,29 @@ type GeneratedRunGuides = {
   startCaseHint: StartCaseHint | null;
 };
 
+type GenerateRunGuidesOptions = {
+  currentCaseNoOverride?: string | null;
+  currentCaseSource?: string | null;
+  skipStartCaseDocumentGate?: boolean;
+};
+
+type AgentCaseProgress = {
+  schemaVersion: "agent-case-progress-v1";
+  runId: string;
+  startedAt: string;
+  updatedAt: string;
+  startCaseNo: string | null;
+  startOrder: number | null;
+  completedCaseNos: string[];
+  history: Array<{
+    caseNo: string;
+    completedAt: string;
+    resultXlsxPath?: string | null;
+    logPath?: string | null;
+    source: "codex_generated" | "agent_fallback" | "unknown";
+  }>;
+};
+
 export type TaskDispatchHooks = {
   onCancelReady?: (runId: string, cancel: (reason?: string) => void) => void;
   onCancelClear?: (runId: string) => void;
@@ -460,6 +483,114 @@ const archiveStaleHelperArtifacts = (runDir: string, currentCaseNo: string | nul
   return reportPath;
 };
 
+const caseProgressPath = (runDir: string): string => path.join(runDir, "output", "agent-case-progress.json");
+
+const readAgentCaseProgress = (runDir: string, runId: string, caseManifest: CaseManifestResult): AgentCaseProgress => {
+  const filePath = caseProgressPath(runDir);
+  if (fs.existsSync(filePath)) {
+    try {
+      const parsed = readJson<AgentCaseProgress>(filePath);
+      if (parsed.schemaVersion === "agent-case-progress-v1" && parsed.runId === runId) {
+        return parsed;
+      }
+    } catch {
+      // Recreate below if the progress file is unreadable.
+    }
+  }
+
+  const startCase = currentCaseForManifest(caseManifest);
+  const now = new Date().toISOString();
+  return {
+    schemaVersion: "agent-case-progress-v1",
+    runId,
+    startedAt: now,
+    updatedAt: now,
+    startCaseNo: startCase?.caseNo ?? caseManifest.currentCaseNo,
+    startOrder: startCase?.order ?? null,
+    completedCaseNos: [],
+    history: []
+  };
+};
+
+const writeAgentCaseProgress = (runDir: string, progress: AgentCaseProgress): void => {
+  writeJson(caseProgressPath(runDir), {
+    ...progress,
+    completedCaseNos: [...new Set(progress.completedCaseNos)]
+  });
+};
+
+const hasWorkbookResultEvidence = (item: CaseManifestResult["cases"][number]): boolean => {
+  const status = item.resultStatus?.trim();
+  return Boolean((status && !/^pending$/i.test(status)) || item.detailJson?.trim());
+};
+
+const markCurrentCaseCompleted = (
+  runDir: string,
+  runId: string,
+  caseManifest: CaseManifestResult,
+  uploadedArtifacts: UploadedArtifacts | null
+): AgentCaseProgress => {
+  const progress = readAgentCaseProgress(runDir, runId, caseManifest);
+  const currentCaseNo = caseManifest.currentCaseNo?.trim();
+  if (currentCaseNo) {
+    progress.completedCaseNos = [...new Set([...progress.completedCaseNos, currentCaseNo])];
+    progress.history.push({
+      caseNo: currentCaseNo,
+      completedAt: new Date().toISOString(),
+      resultXlsxPath: uploadedArtifacts?.resultXlsxPath ?? null,
+      logPath: uploadedArtifacts?.combinedLogPath ?? null,
+      source: uploadedArtifacts
+        ? uploadedArtifacts.usedCodexGeneratedResult
+          ? "codex_generated"
+          : "agent_fallback"
+        : "unknown"
+    });
+  }
+  progress.updatedAt = new Date().toISOString();
+  writeAgentCaseProgress(runDir, progress);
+  return progress;
+};
+
+const nextCaseAfterProgress = (caseManifest: CaseManifestResult, progress: AgentCaseProgress): string | null => {
+  const completed = new Set(progress.completedCaseNos.map((item) => item.trim()).filter(Boolean));
+  const startOrder = progress.startOrder ?? currentCaseForManifest(caseManifest)?.order ?? 1;
+  const next = caseManifest.cases.find((item) => {
+    if (item.order < startOrder) return false;
+    if (completed.has(item.caseNo)) return false;
+    if (hasWorkbookResultEvidence(item)) return false;
+    return true;
+  });
+  return next?.caseNo ?? null;
+};
+
+const removeStaleCaseOutput = (runDir: string): void => {
+  const outputDir = path.join(runDir, "output");
+  const staleFiles = [
+    "result.xlsx",
+    "result-xlsx.json",
+    "result-xlsx-self-check.json",
+    "tool-requests.json",
+    "tool-requests-resume.json"
+  ];
+  for (const fileName of staleFiles) {
+    fs.rmSync(path.join(outputDir, fileName), { force: true });
+  }
+};
+
+const readCurrentCaseNoFromGeneratedGuides = (runDir: string): string | null => {
+  const filePath = path.join(runDir, "input", "generated-guides.json");
+  if (!fs.existsSync(filePath)) return null;
+  try {
+    const generated = readJson<Record<string, unknown>>(filePath);
+    const manifest = generated.case_manifest;
+    if (!manifest || typeof manifest !== "object" || Array.isArray(manifest)) return null;
+    const currentCaseNo = (manifest as { currentCaseNo?: unknown }).currentCaseNo;
+    return typeof currentCaseNo === "string" && currentCaseNo.trim() ? currentCaseNo.trim() : null;
+  } catch {
+    return null;
+  }
+};
+
 const downloadFile = async (url: string, filePath: string, token: string): Promise<void> => {
   const response = await fetch(url, {
     headers: token ? { Authorization: `Bearer ${token}` } : undefined
@@ -581,7 +712,13 @@ const downloadInputs = async (config: AgentConfig, message: AgentMessage, runDir
   return downloaded;
 };
 
-const generateRunGuides = async (runId: string, runDir: string, message: AgentMessage, inputs: DownloadedInputs): Promise<GeneratedRunGuides> => {
+const generateRunGuides = async (
+  runId: string,
+  runDir: string,
+  message: AgentMessage,
+  inputs: DownloadedInputs,
+  options: GenerateRunGuidesOptions = {}
+): Promise<GeneratedRunGuides> => {
   const inputDir = path.join(runDir, "input");
   const domain = getStringPayload(message, "domain") ?? "BI";
   const startCaseHint = detectStartCaseHint({
@@ -589,9 +726,12 @@ const generateRunGuides = async (runId: string, runDir: string, message: AgentMe
     startupInstructionPath: inputs.startup_instruction,
     fallbackMarkdownPath: inputs.md
   });
+  const preferredStartCaseNo = options.currentCaseNoOverride ?? startCaseHint?.caseNo;
   const caseManifest = await writeCaseManifest(inputs.xlsx, inputDir, {
-    preferredStartCaseNo: startCaseHint?.caseNo,
-    preferredStartCaseSource: startCaseHint?.source
+    preferredStartCaseNo,
+    preferredStartCaseSource: options.currentCaseNoOverride
+      ? options.currentCaseSource ?? "agent_case_progress"
+      : startCaseHint?.source
   });
   const preflightGuidancePath = writePreflightGuidance(runDir, getStringPayload(message, "dev_url"));
   const runStatePath = writeRunStateGuide(runDir, runId, caseManifest);
@@ -606,7 +746,12 @@ const generateRunGuides = async (runId: string, runDir: string, message: AgentMe
     xlsxPath: inputs.xlsx,
     baseDir: runDir
   });
-  const documentConsistencyPath = writeDocumentConsistency(runDir, caseManifest, startCaseHint, testPackageConsistency.issues);
+  const documentConsistencyPath = writeDocumentConsistency(
+    runDir,
+    caseManifest,
+    options.skipStartCaseDocumentGate ? null : startCaseHint,
+    testPackageConsistency.issues
+  );
   const currentCasePack = writeCurrentCasePack(runDir, caseManifest, documentConsistencyPath, helperHintSourcePaths(inputs));
   const currentCase = currentCaseForManifest(caseManifest);
   const helperArtifactCleanupPath = archiveStaleHelperArtifacts(
@@ -1377,6 +1522,165 @@ const enforceBatchCasePolicy = (
   throw new Error(`BATCH_CASE_POLICY_VIOLATION ${violations.map((item) => item.code).join(",")}`);
 };
 
+type CodexTurnPostProcessOptions = {
+  connection: AgentConnection;
+  runId: string;
+  runDir: string;
+  result: CodexTurnResult;
+  toolRequestsFileName: string;
+  parseWarningLabel: string;
+  toolBridgeWarningLabel: string;
+  policyViolationLabel: string;
+  policyViolationFileName: string;
+  batchViolationLabel: string;
+  batchViolationFileName: string;
+  waitingDetail: string;
+  pauseText: string;
+  currentCaseNo: string | null;
+  fallbackThreadId?: string | null;
+};
+
+const processCodexTurnAfterExit = (options: CodexTurnPostProcessOptions): { paused: boolean } => {
+  const {
+    connection,
+    runId,
+    runDir,
+    result,
+    toolRequestsFileName,
+    parseWarningLabel,
+    toolBridgeWarningLabel,
+    policyViolationLabel,
+    policyViolationFileName,
+    batchViolationLabel,
+    batchViolationFileName,
+    waitingDetail,
+    pauseText,
+    currentCaseNo,
+    fallbackThreadId = null
+  } = options;
+
+  if (result.parseErrors.length > 0) {
+    connection.send(
+      "run.stderr",
+      {
+        run_id: runId,
+        text: `${parseWarningLabel}: ${result.parseErrors.length}`
+      },
+      false
+    );
+  }
+
+  const stderrSummary = summarizeStderr(result.stderr);
+  if (stderrSummary) {
+    connection.send(
+      "run.stderr",
+      {
+        run_id: runId,
+        text: stderrSummary
+      },
+      false
+    );
+  }
+
+  if (result.assistantText.trim()) {
+    connection.send(
+      "run.stdout",
+      {
+        run_id: runId,
+        text: result.assistantText.slice(0, 8000)
+      },
+      false
+    );
+  }
+
+  const toolRequestParse = extractToolRequests(result.assistantText);
+  const validToolRequests = toolRequestParse.requests.filter((request) => request.valid && isActionableToolRequest(request.data));
+  const diagnosticToolRequests = toolRequestParse.requests.filter((request) => request.valid && !isActionableToolRequest(request.data));
+  const invalidTypedToolRequests = toolRequestParse.requests.filter((request) => !request.valid && getToolRequestType(request.data));
+  writeJson(path.join(runDir, "output", toolRequestsFileName), toolRequestParse);
+
+  const parseWarningCodes = [
+    ...toolRequestParse.warnings.map((warning) => warning.code),
+    ...toolRequestParse.requests.flatMap((request) => request.warnings.map((warning) => warning.code))
+  ];
+  if (parseWarningCodes.length > 0) {
+    connection.send(
+      "run.stderr",
+      {
+        run_id: runId,
+        text: `${toolBridgeWarningLabel}: ${parseWarningCodes.join(", ")}`
+      },
+      false
+    );
+  }
+  if (toolRequestParse.warnings.length > 0 || invalidTypedToolRequests.length > 0) {
+    throw toolBridgeSchemaError(parseWarningCodes);
+  }
+
+  const policyViolations = scanToolBridgePolicyViolations(runDir, result.assistantText);
+  if (policyViolations.length > 0) {
+    writeJson(path.join(runDir, "output", policyViolationFileName), {
+      violations: policyViolations
+    });
+    connection.send(
+      "run.stderr",
+      {
+        run_id: runId,
+        text: `${policyViolationLabel}: ${policyViolations.map((item) => item.code).join(", ")}`
+      },
+      false
+    );
+    throw new Error(`TOOL_BRIDGE_POLICY_VIOLATION ${policyViolations.map((item) => item.code).join(",")}`);
+  }
+  enforceBatchCasePolicy(connection, runId, runDir, batchViolationFileName, batchViolationLabel);
+
+  if (diagnosticToolRequests.length > 0) {
+    connection.send(
+      "run.stdout",
+      {
+        run_id: runId,
+        text: `uat-agent captured ${diagnosticToolRequests.length} diagnostic Tool Bridge request(s); continuing without waiting for PM response.`
+      },
+      false
+    );
+  }
+
+  if (validToolRequests.length > 0) {
+    sendPhase(connection, runId, "waiting_user", "等待人工處理", waitingDetail, "waiting");
+    for (const request of validToolRequests) {
+      connection.send(
+        "run.tool_request",
+        {
+          run_id: runId,
+          request_id: getToolRequestId(request.data),
+          request: request.data,
+          raw: request.raw
+        },
+        true
+      );
+    }
+    writeJson(path.join(runDir, "state.json"), {
+      run_id: runId,
+      status: "waiting_user",
+      waiting_at: new Date().toISOString(),
+      tool_request_count: validToolRequests.length,
+      thread_id: result.threadId ?? fallbackThreadId,
+      current_case_no: currentCaseNo
+    });
+    connection.send(
+      "run.stdout",
+      {
+        run_id: runId,
+        text: pauseText
+      },
+      false
+    );
+    return { paused: true };
+  }
+
+  return { paused: false };
+};
+
 type UploadArtifactsOptions = {
   connection: AgentConnection;
   config: AgentConfig;
@@ -1598,6 +1902,215 @@ const uploadRunArtifacts = async (options: UploadArtifactsOptions): Promise<Uplo
   };
 };
 
+type NextCasePreparation = {
+  guides: GeneratedRunGuides;
+  chromeCdpEndpoint: string | null;
+};
+
+const prepareNextCaseIfAny = async (options: {
+  connection: AgentConnection;
+  config: AgentConfig;
+  message: AgentMessage;
+  runId: string;
+  runDir: string;
+  inputs: DownloadedInputs;
+  timing: RunTimingRecorder;
+  currentGuides: GeneratedRunGuides;
+  uploadedArtifacts: UploadedArtifacts;
+}): Promise<NextCasePreparation | null> => {
+  const { connection, config, message, runId, runDir, inputs, timing, currentGuides, uploadedArtifacts } = options;
+  const progress = markCurrentCaseCompleted(runDir, runId, currentGuides.caseManifest, uploadedArtifacts);
+  const nextCaseNo = nextCaseAfterProgress(currentGuides.caseManifest, progress);
+  if (!nextCaseNo) return null;
+
+  removeStaleCaseOutput(runDir);
+  const guides = await timeAgentPhase(
+    timing,
+    connection,
+    runId,
+    "advance_case",
+    "切換到下一個 Case",
+    `已完成 ${currentGuides.caseManifest.currentCaseNo ?? "(unknown)"}，準備 ${nextCaseNo}。`,
+    async () => generateRunGuides(runId, runDir, message, inputs, {
+      currentCaseNoOverride: nextCaseNo,
+      currentCaseSource: "agent_case_progress",
+      skipStartCaseDocumentGate: true
+    })
+  );
+  const runBriefPath = timeAgentStep(
+    timing,
+    "write_run_brief",
+    "agent_phase",
+    () => writeRunBrief(runId, message, runDir, inputs, guides),
+    { currentCaseNo: guides.caseManifest.currentCaseNo }
+  );
+  sendPhase(
+    connection,
+    runId,
+    "advance_case",
+    "下一題輸入已就緒",
+    `current_case=${guides.caseManifest.currentCaseNo ?? "(unavailable)"}；run brief: ${runBriefPath}`,
+    "done"
+  );
+
+  const chromeCdpEndpoint = await timeAgentPhase(
+    timing,
+    connection,
+    runId,
+    "browser_start",
+    "重置專用 Chrome",
+    "下一題前重置持久化 Chrome，避免沿用上一題 UI/native dialog 狀態。",
+    async () => {
+      await closeChromeDebugSession(config);
+      return ensureChromeDebugSession(config, getStringPayload(message, "dev_url"), {
+        resetTabs: true,
+        openInitialUrl: true
+      });
+    }
+  );
+  const helperPreRunSummary = await timeAgentPhase(
+    timing,
+    connection,
+    runId,
+    "helper_pre_run",
+    "執行安全 Helper",
+    "先執行不需 Tool Bridge 的 helper action，收集 current-run evidence。",
+    () => runSafeHelperActions(runDir, timing)
+  );
+  sendProgress(connection, runId, summarizeHelperPreRun(helperPreRunSummary), {
+    helperPreRun: helperPreRunSummary
+  });
+
+  return { guides, chromeCdpEndpoint };
+};
+
+const runFreshCasesUntilPauseOrDone = async (options: {
+  connection: AgentConnection;
+  config: AgentConfig;
+  message: AgentMessage;
+  runId: string;
+  runDir: string;
+  inputs: DownloadedInputs;
+  timing: RunTimingRecorder;
+  hooks: TaskDispatchHooks;
+  initialGuides: GeneratedRunGuides;
+  initialChromeCdpEndpoint: string | null;
+  firstRunStartedEvent?: boolean;
+}): Promise<{
+  paused: boolean;
+  lastResult: CodexTurnResult | null;
+  uploadedArtifacts: UploadedArtifacts | null;
+  runner: CodexRunner | null;
+}> => {
+  const { connection, config, message, runId, runDir, inputs, timing, hooks } = options;
+  let guides = options.initialGuides;
+  let chromeCdpEndpoint = options.initialChromeCdpEndpoint;
+  let runner: CodexRunner | null = null;
+  let lastResult: CodexTurnResult | null = null;
+  let uploadedArtifacts: UploadedArtifacts | null = null;
+  let firstIteration = true;
+
+  while (true) {
+    runner = createCodexRunner(connection, config, runDir, runId, chromeCdpEndpoint, timing);
+    const activeRunner = runner;
+    hooks.onCancelReady?.(runId, (reason = "cancelled_by_pm") => {
+      activeRunner.cancel(reason);
+      try {
+        connection.send(
+          "run.stderr",
+          {
+            run_id: runId,
+            text: `uat-agent cancellation requested: ${reason}`
+          },
+          false
+        );
+      } catch {
+        // Cancellation must still kill Codex even if the WebSocket is already closing.
+      }
+    });
+
+    const result = await timeAgentPhase(
+      timing,
+      connection,
+      runId,
+      firstIteration ? "codex_starting" : "codex_next_case",
+      firstIteration ? "啟動 Codex CLI" : "啟動下一題 Codex CLI",
+      `Codex 將用 reasoning=${config.codex_reasoning_effort} 讀取 helper evidence、判定 ${guides.caseManifest.currentCaseNo ?? "current case"} 並寫 workbook。`,
+      () => activeRunner.start(buildPrompt(runId, message, runDir, inputs, guides))
+    );
+    firstIteration = false;
+    lastResult = result;
+    persistCodexResult(runDir, result, "codex");
+    const cancelReason = activeRunner.getCancelReason();
+    if (cancelReason) {
+      throw new Error(`CODEX_RUN_CANCELLED reason=${cancelReason}`);
+    }
+
+    const postProcess = processCodexTurnAfterExit({
+      connection,
+      runId,
+      runDir,
+      result,
+      toolRequestsFileName: "tool-requests.json",
+      parseWarningLabel: "Codex JSON parse warnings",
+      toolBridgeWarningLabel: "Tool Bridge parse warnings",
+      policyViolationLabel: "Tool Bridge policy violation",
+      policyViolationFileName: "tool-bridge-policy-violations.json",
+      batchViolationLabel: "Batch case policy violation",
+      batchViolationFileName: "batch-case-policy-violations.json",
+      waitingDetail: "Codex 發出 Tool Bridge request，等待 Tommy 授權或處理。",
+      pauseText: `uat-agent paused for Tool Bridge request(s) while executing ${guides.caseManifest.currentCaseNo ?? "current case"}.`,
+      currentCaseNo: guides.caseManifest.currentCaseNo
+    });
+    if (postProcess.paused) {
+      return { paused: true, lastResult, uploadedArtifacts, runner };
+    }
+
+    uploadedArtifacts = await timeAgentPhase(
+      timing,
+      connection,
+      runId,
+      "upload_result",
+      "上傳結果與 Log",
+      `Codex 已結束 ${guides.caseManifest.currentCaseNo ?? "current case"}，Agent 正在上傳 output/result.xlsx 與 agent.log。`,
+      () => uploadRunArtifacts({
+        connection,
+        config,
+        message,
+        runId,
+        runDir,
+        inputs,
+        result,
+        failCategory: result.exitCode === 0 ? null : "CODEX_RUN_FAILED"
+      })
+    );
+
+    if (result.exitCode !== 0) {
+      throw new Error(`CODEX_RUN_FAILED exit=${result.exitCode} signal=${result.signal ?? "none"}`);
+    }
+    if (!uploadedArtifacts.usedCodexGeneratedResult) {
+      throw new Error("CODEX_NO_RESULT_XLSX");
+    }
+
+    const next = await prepareNextCaseIfAny({
+      connection,
+      config,
+      message,
+      runId,
+      runDir,
+      inputs,
+      timing,
+      currentGuides: guides,
+      uploadedArtifacts
+    });
+    if (!next) {
+      return { paused: false, lastResult, uploadedArtifacts, runner };
+    }
+    guides = next.guides;
+    chromeCdpEndpoint = next.chromeCdpEndpoint;
+  }
+};
+
 export const handleTaskDispatch = async (
   connection: AgentConnection,
   config: AgentConfig,
@@ -1712,187 +2225,26 @@ export const handleTaskDispatch = async (
       helperPreRun: helperPreRunSummary
     });
 
-    runner = createCodexRunner(connection, config, runDir, runId, chromeCdpEndpoint, timing);
-    const activeRunner = runner;
-    hooks.onCancelReady?.(runId, (reason = "cancelled_by_pm") => {
-      activeRunner.cancel(reason);
-      try {
-        connection.send(
-          "run.stderr",
-          {
-            run_id: runId,
-            text: `uat-agent cancellation requested: ${reason}`
-          },
-          false
-        );
-      } catch {
-        // Cancellation must still kill Codex even if the WebSocket is already closing.
-      }
-    });
-    const result = await timeAgentPhase(
-      timing,
+    const freshOutcome = await runFreshCasesUntilPauseOrDone({
       connection,
-      runId,
-      "codex_starting",
-      "啟動 Codex CLI",
-      `Codex 將用 reasoning=${config.codex_reasoning_effort} 讀取 helper evidence、判定結果並寫 workbook。`,
-      () => activeRunner.start(buildPrompt(runId, message, runDir, downloadedInputs, generatedGuides))
-    );
-    lastResult = result;
-    persistCodexResult(runDir, result, "codex");
-    const cancelReason = activeRunner.getCancelReason();
-    if (cancelReason) {
-      throw new Error(`CODEX_RUN_CANCELLED reason=${cancelReason}`);
-    }
-
-    if (result.parseErrors.length > 0) {
-      connection.send(
-        "run.stderr",
-        {
-          run_id: runId,
-          text: `Codex JSON parse warnings: ${result.parseErrors.length}`
-        },
-        false
-      );
-    }
-
-    const stderrSummary = summarizeStderr(result.stderr);
-    if (stderrSummary) {
-      connection.send(
-        "run.stderr",
-        {
-          run_id: runId,
-          text: stderrSummary
-        },
-        false
-      );
-    }
-
-    if (result.assistantText.trim()) {
-      connection.send(
-        "run.stdout",
-        {
-          run_id: runId,
-          text: result.assistantText.slice(0, 8000)
-        },
-        false
-      );
-    }
-
-    const toolRequestParse = extractToolRequests(result.assistantText);
-    const validToolRequests = toolRequestParse.requests.filter((request) => request.valid && isActionableToolRequest(request.data));
-    const diagnosticToolRequests = toolRequestParse.requests.filter((request) => request.valid && !isActionableToolRequest(request.data));
-    const invalidTypedToolRequests = toolRequestParse.requests.filter((request) => !request.valid && getToolRequestType(request.data));
-    writeJson(path.join(runDir, "output", "tool-requests.json"), toolRequestParse);
-
-    const parseWarningCodes = [
-      ...toolRequestParse.warnings.map((warning) => warning.code),
-      ...toolRequestParse.requests.flatMap((request) => request.warnings.map((warning) => warning.code))
-    ];
-    if (parseWarningCodes.length > 0) {
-      connection.send(
-        "run.stderr",
-        {
-          run_id: runId,
-          text: `Tool Bridge parse warnings: ${parseWarningCodes.join(", ")}`
-        },
-        false
-      );
-    }
-    if (toolRequestParse.warnings.length > 0 || invalidTypedToolRequests.length > 0) {
-      throw toolBridgeSchemaError(parseWarningCodes);
-    }
-
-    const policyViolations = scanToolBridgePolicyViolations(runDir, result.assistantText);
-    if (policyViolations.length > 0) {
-      writeJson(path.join(runDir, "output", "tool-bridge-policy-violations.json"), {
-        violations: policyViolations
-      });
-      connection.send(
-        "run.stderr",
-        {
-          run_id: runId,
-          text: `Tool Bridge policy violation: ${policyViolations.map((item) => item.code).join(", ")}`
-        },
-        false
-      );
-      throw new Error(`TOOL_BRIDGE_POLICY_VIOLATION ${policyViolations.map((item) => item.code).join(",")}`);
-    }
-    enforceBatchCasePolicy(
-      connection,
+      config,
+      message,
       runId,
       runDir,
-      "batch-case-policy-violations.json",
-      "Batch case policy violation"
-    );
-
-    if (diagnosticToolRequests.length > 0) {
-      connection.send(
-        "run.stdout",
-        {
-          run_id: runId,
-          text: `uat-agent captured ${diagnosticToolRequests.length} diagnostic Tool Bridge request(s); continuing without waiting for PM response.`
-        },
-        false
-      );
-    }
-
-    if (validToolRequests.length > 0) {
+      inputs: downloadedInputs,
+      timing,
+      hooks,
+      initialGuides: generatedGuides,
+      initialChromeCdpEndpoint: chromeCdpEndpoint
+    });
+    runner = freshOutcome.runner;
+    lastResult = freshOutcome.lastResult;
+    uploadedArtifacts = freshOutcome.uploadedArtifacts;
+    if (freshOutcome.paused) {
       keepChromeOpenForToolBridge = true;
-      sendPhase(connection, runId, "waiting_user", "等待人工處理", "Codex 發出 Tool Bridge request，等待 Tommy 授權或處理。", "waiting");
-      for (const request of validToolRequests) {
-        connection.send(
-          "run.tool_request",
-          {
-            run_id: runId,
-            request_id: getToolRequestId(request.data),
-            request: request.data,
-            raw: request.raw
-          },
-          true
-        );
-      }
-      writeJson(path.join(runDir, "state.json"), {
-        run_id: runId,
-        status: "waiting_user",
-        waiting_at: new Date().toISOString(),
-        tool_request_count: validToolRequests.length,
-        thread_id: result.threadId
-      });
-      connection.send(
-        "run.stdout",
-        {
-          run_id: runId,
-          text: `uat-agent paused for ${validToolRequests.length} Tool Bridge request(s).`
-        },
-        false
-      );
       return;
     }
-
-    uploadedArtifacts = await timeAgentPhase(
-      timing,
-      connection,
-      runId,
-      "upload_result",
-      "上傳結果與 Log",
-      "Codex 已結束，Agent 正在上傳 output/result.xlsx 與 agent.log。",
-      () => uploadRunArtifacts({
-        connection,
-        config,
-        message,
-        runId,
-        runDir,
-        inputs: downloadedInputs,
-        result,
-        failCategory: result.exitCode === 0 ? null : "CODEX_RUN_FAILED"
-      })
-    );
-
-    if (result.exitCode !== 0) {
-      throw new Error(`CODEX_RUN_FAILED exit=${result.exitCode} signal=${result.signal ?? "none"}`);
-    }
-    if (!uploadedArtifacts.usedCodexGeneratedResult) {
+    if (!uploadedArtifacts || !lastResult) {
       throw new Error("CODEX_NO_RESULT_XLSX");
     }
 
@@ -1900,7 +2252,7 @@ export const handleTaskDispatch = async (
       run_id: runId,
       status: "completed",
       completed_at: new Date().toISOString(),
-      thread_id: result.threadId
+      thread_id: lastResult.threadId
     });
     sendPhase(connection, runId, "completed", "Run 已完成", "Agent 已完成本次派工。", "done");
 
@@ -1910,7 +2262,7 @@ export const handleTaskDispatch = async (
         run_id: runId,
         completed_at: new Date().toISOString(),
         result: "codex_completed",
-        thread_id: result.threadId,
+        thread_id: lastResult.threadId,
         workdir: runDir,
         inputs: Object.keys(downloadedInputs),
         result_xlsx_path: uploadedArtifacts.resultXlsxPath,
@@ -2120,127 +2472,29 @@ export const handleToolResponse = async (
       throw new Error(`CODEX_RUN_CANCELLED reason=${cancelReason}`);
     }
 
-    if (result.parseErrors.length > 0) {
-      connection.send(
-        "run.stderr",
-        {
-          run_id: runId,
-          text: `Codex resume JSON parse warnings: ${result.parseErrors.length}`
-        },
-        false
-      );
-    }
-
-    const stderrSummary = summarizeStderr(result.stderr);
-    if (stderrSummary) {
-      connection.send(
-        "run.stderr",
-        {
-          run_id: runId,
-          text: stderrSummary
-        },
-        false
-      );
-    }
-
-    if (result.assistantText.trim()) {
-      connection.send(
-        "run.stdout",
-        {
-          run_id: runId,
-          text: result.assistantText.slice(0, 8000)
-        },
-        false
-      );
-    }
-
-    const toolRequestParse = extractToolRequests(result.assistantText);
-    const validToolRequests = toolRequestParse.requests.filter((request) => request.valid && isActionableToolRequest(request.data));
-    const diagnosticToolRequests = toolRequestParse.requests.filter((request) => request.valid && !isActionableToolRequest(request.data));
-    const invalidTypedToolRequests = toolRequestParse.requests.filter((request) => !request.valid && getToolRequestType(request.data));
-    writeJson(path.join(runDir, "output", "tool-requests-resume.json"), toolRequestParse);
-
-    const parseWarningCodes = [
-      ...toolRequestParse.warnings.map((warning) => warning.code),
-      ...toolRequestParse.requests.flatMap((request) => request.warnings.map((warning) => warning.code))
-    ];
-    if (parseWarningCodes.length > 0) {
-      connection.send(
-        "run.stderr",
-        {
-          run_id: runId,
-          text: `Tool Bridge parse warnings during resume: ${parseWarningCodes.join(", ")}`
-        },
-        false
-      );
-    }
-    if (toolRequestParse.warnings.length > 0 || invalidTypedToolRequests.length > 0) {
-      throw toolBridgeSchemaError(parseWarningCodes);
-    }
-
-    const policyViolations = scanToolBridgePolicyViolations(runDir, result.assistantText);
-    if (policyViolations.length > 0) {
-      writeJson(path.join(runDir, "output", "tool-bridge-policy-violations-resume.json"), {
-        violations: policyViolations
-      });
-      connection.send(
-        "run.stderr",
-        {
-          run_id: runId,
-          text: `Tool Bridge policy violation during resume: ${policyViolations.map((item) => item.code).join(", ")}`
-        },
-        false
-      );
-      throw new Error(`TOOL_BRIDGE_POLICY_VIOLATION ${policyViolations.map((item) => item.code).join(",")}`);
-    }
-    enforceBatchCasePolicy(
+    const currentCaseNo =
+      typeof state.current_case_no === "string" && state.current_case_no.trim()
+        ? state.current_case_no.trim()
+        : readCurrentCaseNoFromGeneratedGuides(runDir);
+    const postProcess = processCodexTurnAfterExit({
       connection,
       runId,
       runDir,
-      "batch-case-policy-violations-resume.json",
-      "Batch case policy violation during resume"
-    );
-
-    if (diagnosticToolRequests.length > 0) {
-      connection.send(
-        "run.stdout",
-        {
-          run_id: runId,
-          text: `uat-agent captured ${diagnosticToolRequests.length} diagnostic Tool Bridge request(s) during resume; continuing without waiting for PM response.`
-        },
-        false
-      );
-    }
-    if (validToolRequests.length > 0) {
+      result,
+      toolRequestsFileName: "tool-requests-resume.json",
+      parseWarningLabel: "Codex resume JSON parse warnings",
+      toolBridgeWarningLabel: "Tool Bridge parse warnings during resume",
+      policyViolationLabel: "Tool Bridge policy violation during resume",
+      policyViolationFileName: "tool-bridge-policy-violations-resume.json",
+      batchViolationLabel: "Batch case policy violation during resume",
+      batchViolationFileName: "batch-case-policy-violations-resume.json",
+      waitingDetail: "Codex 續跑後再次發出 Tool Bridge request。",
+      pauseText: `uat-agent paused again for Tool Bridge request(s) while executing ${currentCaseNo ?? "current case"}.`,
+      currentCaseNo,
+      fallbackThreadId: threadId
+    });
+    if (postProcess.paused) {
       keepChromeOpenForToolBridge = true;
-      sendPhase(connection, runId, "waiting_user", "等待人工處理", "Codex 續跑後再次發出 Tool Bridge request。", "waiting");
-      for (const request of validToolRequests) {
-        connection.send(
-          "run.tool_request",
-          {
-            run_id: runId,
-            request_id: getToolRequestId(request.data),
-            request: request.data,
-            raw: request.raw
-          },
-          true
-        );
-      }
-      writeJson(path.join(runDir, "state.json"), {
-        run_id: runId,
-        status: "waiting_user",
-        waiting_at: new Date().toISOString(),
-        tool_request_count: validToolRequests.length,
-        thread_id: result.threadId ?? threadId
-      });
-      connection.send(
-        "run.stdout",
-        {
-          run_id: runId,
-          text: `uat-agent paused again for ${validToolRequests.length} Tool Bridge request(s).`
-        },
-        false
-      );
       return;
     }
 
@@ -2270,11 +2524,52 @@ export const handleToolResponse = async (
       throw new Error("CODEX_NO_RESULT_XLSX");
     }
 
+    const currentGuides = await generateRunGuides(runId, runDir, dispatch, downloadedInputs, {
+      currentCaseNoOverride: currentCaseNo,
+      currentCaseSource: "tool_response_state",
+      skipStartCaseDocumentGate: true
+    });
+    const next = await prepareNextCaseIfAny({
+      connection,
+      config,
+      message: dispatch,
+      runId,
+      runDir,
+      inputs: downloadedInputs,
+      timing,
+      currentGuides,
+      uploadedArtifacts
+    });
+    if (next) {
+      const freshOutcome = await runFreshCasesUntilPauseOrDone({
+        connection,
+        config,
+        message: dispatch,
+        runId,
+        runDir,
+        inputs: downloadedInputs,
+        timing,
+        hooks,
+        initialGuides: next.guides,
+        initialChromeCdpEndpoint: next.chromeCdpEndpoint
+      });
+      runner = freshOutcome.runner;
+      lastResult = freshOutcome.lastResult;
+      uploadedArtifacts = freshOutcome.uploadedArtifacts;
+      if (freshOutcome.paused) {
+        keepChromeOpenForToolBridge = true;
+        return;
+      }
+      if (!uploadedArtifacts || !lastResult) {
+        throw new Error("CODEX_NO_RESULT_XLSX");
+      }
+    }
+
     writeJson(path.join(runDir, "state.json"), {
       run_id: runId,
       status: "completed",
       completed_at: new Date().toISOString(),
-      thread_id: result.threadId ?? threadId
+      thread_id: lastResult.threadId ?? threadId
     });
     sendPhase(connection, runId, "completed", "Run 已完成", "Agent 已完成續跑派工。", "done");
 
@@ -2284,7 +2579,7 @@ export const handleToolResponse = async (
         run_id: runId,
         completed_at: new Date().toISOString(),
         result: "codex_resumed_completed",
-        thread_id: result.threadId ?? threadId,
+        thread_id: lastResult.threadId ?? threadId,
         workdir: runDir,
         inputs: Object.keys(downloadedInputs),
         result_xlsx_path: uploadedArtifacts.resultXlsxPath,
