@@ -34,7 +34,11 @@ const includesAny = (value: string, patterns: Array<string | RegExp>): boolean =
 const inferEvidenceTemplates = (item: CaseManifestCase): EvidenceTemplateId[] => {
   const blob = textBlob(item);
   const templates = new Set<EvidenceTemplateId>();
-  if (includesAny(blob, ["metadata", "欄位清單", "欄位數", "可選欄位", "下拉", "dropdown", "picker"])) {
+  if (includesAny(blob, [
+    /metadata.{0,40}(對照|一致|規範|比對|compare)/i,
+    /(欄位清單|欄位數|可選欄位|下拉|dropdown|picker).{0,40}(metadata|對照|一致|規範|比對|compare)/i,
+    /(metadata|對照|一致|規範|比對|compare).{0,40}(欄位清單|欄位數|可選欄位|下拉|dropdown|picker)/i
+  ])) {
     templates.add("metadata-dropdown");
   }
   if (includesAny(blob, ["request", "response", "network", "api", "dateRange", "filter", "篩選", "request body"])) {

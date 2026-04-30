@@ -67,9 +67,15 @@ const behaviorTextBlob = (item: CaseManifestCase | null, helperHints: HelperHint
     .join("\n");
 
 const detectMode = (text: string, operationTemplate: string | null): CaseFeatureDetection["mode"] => {
-  if (/record_static_fields|明細|record[-_ ]?centric|detail/i.test(`${operationTemplate ?? ""}\n${text}`)) return "record";
-  if (/metric_|指標|趨勢|metric[-_ ]?centric/i.test(`${operationTemplate ?? ""}\n${text}`)) return "metric";
-  if (/collage|拼貼|新增報表|儲存報表|重開|重新檢視/.test(`${operationTemplate ?? ""}\n${text}`)) return "collage";
+  const source = `${operationTemplate ?? ""}\n${text}`;
+  const constructionMode = source.match(/建構模式\s*[:：]\s*(拼貼|明細(?:檢視)?|指標(?:趨勢)?)/);
+  if (constructionMode?.[1]?.includes("拼貼")) return "collage";
+  if (constructionMode?.[1]?.includes("明細")) return "record";
+  if (constructionMode?.[1]?.includes("指標")) return "metric";
+
+  if (/collage|拼貼模式|我的自訂\s*>\s*拼貼模式|新增報表|儲存報表|重開|重新檢視/.test(source)) return "collage";
+  if (/record_static_fields|明細檢視|record[-_ ]?(?:centric|mode|view)|detail[-_ ]?(?:centric|mode|view)/i.test(source)) return "record";
+  if (/metric_(?:date|filter|group)|指標趨勢|metric[-_ ]?(?:centric|mode|view)/i.test(source)) return "metric";
   return "unknown";
 };
 

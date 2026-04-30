@@ -70,6 +70,9 @@ const main = async (): Promise<void> => {
     await writeResultTemplate(tempRoot);
     const templateReport = await validateResultWorkbookContract(path.join(tempRoot, "input", "result-template.xlsx"));
     assert.equal(templateReport.status, "ok", JSON.stringify(templateReport.issues));
+    const templateWorkbook = new ExcelJS.Workbook();
+    await templateWorkbook.xlsx.readFile(path.join(tempRoot, "input", "result-template.xlsx"));
+    assert.equal(templateWorkbook.getWorksheet("測試案例")?.rowCount, 1, "result-template must not contain EX-* example result rows");
 
     const bad = path.join(tempRoot, "bad-legacy-result.xlsx");
     await writeBadLegacyWorkbook(bad);
@@ -117,6 +120,7 @@ const main = async (): Promise<void> => {
       fixture: "agent-result-contract",
       checked: [
         "generated result-template follows adapter headers and detail_json fields",
+        "generated result-template contains no EX-* example result rows",
         "legacy Bug header 來源 Case is rejected by agent self-check",
         "FAIL detail_json missing required fields is rejected before upload",
         "BLOCKED detail_json without current-run evidence is enriched before upload"

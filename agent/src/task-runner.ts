@@ -26,6 +26,7 @@ import { writeResultTemplate } from "./result-template";
 import { writeTestPackageConsistencyReport } from "./test-package-consistency";
 import { writeHelperExecutionPlan } from "./helper-execution-plan";
 import { runSafeHelperActions, summarizeHelperPreRun, type HelperPreRunSummary } from "./helper-pre-runner";
+import { evaluateCaseAdvancePolicy, type CaseAdvancePolicy } from "./case-advance-policy";
 import { formatDuration, RunTimingRecorder } from "./timing";
 import {
   collectEvidenceArtifactManifest,
@@ -135,9 +136,9 @@ const prepareCodexContext = (config: AgentConfig, runDir: string): void => {
     "Platform entrypoint:",
     "- Start by reading `input/run-brief.md` when present.",
     "- The run brief is a compact dispatch packet generated from Layer 1 + the current run inputs.",
-    "- Use `agent-skills/uat-tool/SKILL.md` as the full Layer 1 reference only when the run brief is insufficient.",
-    "- Use progressive disclosure: read only the Layer 1 rule needed for the current decision.",
-    "- Route to domain-specific rules through `agent-skills/uat-tool/rules/domain-routing.md`.",
+    "- Always read `agent-skills/uat-tool/SKILL.md` and `agent-skills/uat-tool/rules/domain-routing.md` before judging a testcase.",
+    "- Always read `rules/PROJECT_AGENTS_FULL.md` as the BI domain rule source before judging a testcase.",
+    "- Use `input/rule-index.json` to decide which additional Layer 1 / BI rule files are needed for the current case.",
     "- Perform `input/preflight-auth-check.md` before deep domain loading or testcase actions.",
     "- Read `input/document-consistency.json` before any browser action; status=error requires Tool Bridge ambiguity handling.",
     "- Use `input/current-case-pack.md` as the compact current-case card; it is not result evidence.",
@@ -153,7 +154,7 @@ const prepareCodexContext = (config: AgentConfig, runDir: string): void => {
     "- Domain locator registry, when downloaded, is guidance only and must not bypass visible UI operation.",
     "",
     "Run rules:",
-    "- Follow the downloaded input files in `input/`.",
+    "- Follow the downloaded input files in `input/`, including case pause/advance instructions.",
     "- Do not execute UAT when the testcase workbook or startup instruction markdown is missing; report the missing prerequisite and exit cleanly.",
     "- Do not perform destructive operations unless an actionable Tool Bridge request is approved.",
     "- Do not write trusted PASS/FAIL when evidence is insufficient; use BLOCKED/EVIDENCE_INSUFFICIENT.",
@@ -622,6 +623,18 @@ const removeStaleCaseOutput = (runDir: string): void => {
   for (const fileName of staleFiles) {
     fs.rmSync(path.join(outputDir, fileName), { force: true });
   }
+};
+
+const evaluateRunCaseAdvancePolicy = (inputs: DownloadedInputs): CaseAdvancePolicy => {
+  const supportingDocs = Object.entries(inputs)
+    .filter(([key]) => key.startsWith("supporting_doc"))
+    .map(([key, filePath]) => ({ label: key, filePath }));
+  return evaluateCaseAdvancePolicy([
+    { label: "startup_instruction", filePath: inputs.startup_instruction },
+    { label: "md", filePath: inputs.md },
+    { label: "domain_startup_template", filePath: inputs.domain_startup_template },
+    ...supportingDocs
+  ]);
 };
 
 const readCurrentCaseNoFromGeneratedGuides = (runDir: string): string | null => {
@@ -1218,10 +1231,10 @@ const buildPrompt = (
     `- For network request observation, use: ${guides.networkObservationGuidancePath}`,
     `- Result workbook template reference: ${guides.resultTemplatePath}`,
     `- Full Layer 1 platform skill is available if needed: ${platformSkillPath}`,
-    "- Follow progressive disclosure: do not read every rule or every testcase at once.",
-    "- The run brief is enough for the initial execution decision; open full rule files only when exact policy text is needed.",
-    "- Use `agent-skills/uat-tool/rules/domain-routing.md` to route domain-specific rules.",
-    "- Treat `rules/PROJECT_AGENTS_FULL.md` and `rules/BI_TEST_RULES/` as BI domain references, not platform rules.",
+    "- Always read the generated `AGENTS.md`, `agent-skills/uat-tool/SKILL.md`, `agent-skills/uat-tool/rules/domain-routing.md`, and `rules/PROJECT_AGENTS_FULL.md` before judging a testcase.",
+    "- Read `input/rule-index.json` and then load the rule files it recommends for the current case. This is intentionally slower than relying only on compact summaries.",
+    "- Treat `rules/PROJECT_AGENTS_FULL.md` and `rules/BI_TEST_RULES/` as binding BI domain references for case interpretation.",
+    "- Respect startup/case instructions about pause points and next-case dispatch. If the packet says Agent mode runs only the current case, do not assume a multi-case batch.",
     "- If `input/document-consistency.json` has status=error, do not touch the browser. Emit a Tool Bridge ambiguity_decision with the conflict and wait.",
     "- If `input/test-package-consistency.json` has status=error, treat it as a testcase package design conflict and do not touch the browser.",
 	    "- If `input/capability-gate.json` says supportStatus=unsupported, do not run trusted browser testcase steps. Write a single-case BLOCKED result with fail_category=UNSUPPORTED_ONLINE_CAPABILITY and the gate blocking reason.",
@@ -2706,6 +2719,25 @@ const runFreshCasesUntilPauseOrDone = async (options: {
     }
     if (!uploadedArtifacts.usedCodexGeneratedResult) {
       throw new Error("CODEX_NO_RESULT_XLSX");
+    }
+
+    const advancePolicy = evaluateRunCaseAdvancePolicy(inputs);
+    writeJson(path.join(runDir, "output", "case-advance-policy.json"), {
+      ...advancePolicy,
+      currentCaseNo: guides.caseManifest.currentCaseNo,
+      generatedAt: new Date().toISOString()
+    });
+    if (!advancePolicy.autoAdvance) {
+      markCurrentCaseCompleted(runDir, runId, guides.caseManifest, uploadedArtifacts);
+      sendPhase(
+        connection,
+        runId,
+        "case_completed_stop",
+        "單題 Run 已完成",
+        `依指派文字停止自動下一題：${advancePolicy.matchedText ?? advancePolicy.reason}`,
+        "done"
+      );
+      return { paused: false, lastResult, uploadedArtifacts, runner };
     }
 
     const next = await prepareNextCaseIfAny({

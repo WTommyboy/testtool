@@ -23,41 +23,7 @@ export const writeResultTemplate = async (runDir: string): Promise<string> => {
 
   const cases = workbook.addWorksheet(adapter.sheets.cases);
   cases.addRow(adapter.headers.cases);
-  cases.addRow([
-    "Example",
-    "EX-01",
-    "單題結果範例",
-    "auto",
-    "Codex with Playwright",
-    "BLOCKED",
-    "EXAMPLE_ONLY",
-    JSON.stringify({
-      測試目的: "範例，不可當正式結果。",
-      設定條件: {},
-      預期行為: "",
-      實際行為: "",
-      blocked_reason: "範例欄位；正式 BLOCKED 必填。"
-    })
-  ]);
-  cases.addRow([
-    "Example",
-    "EX-FAIL",
-    "FAIL 詳細紀錄範例",
-    "auto",
-    "Codex with Playwright",
-    "FAIL",
-    "EXAMPLE_ONLY",
-    JSON.stringify({
-      測試目的: "範例，不可當正式結果。",
-      設定條件: {},
-      預期行為: "",
-      實際行為: "",
-      錯誤原因: "",
-      根因層級: "",
-      驗證方法: "",
-      "RD 分派": ""
-    })
-  ]);
+  index.addRow(["templateRows", "測試案例 sheet 僅保留 header；不得含 EX-* 範例列，避免 Codex 複製模板時混入正式結果。"]);
 
   const bugs = workbook.addWorksheet(adapter.sheets.bugs);
   bugs.addRow([...adapter.headers.bugs, ...(adapter.headers.optionalBugHeaders ?? [])]);
