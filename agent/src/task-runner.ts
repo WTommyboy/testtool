@@ -8,6 +8,7 @@ import { readFirstInputCase, writeAgentResultXlsx } from "./result-writer";
 import { validateResultWorkbookContract } from "./result-contract";
 import { parseToolRequests } from "./tool-bridge";
 import { writeBiUiHelperGuidance } from "./bi-ui-helper-guidance";
+import { writeCapabilityGate } from "./capability-gate";
 import { writeCaseManifest, type CaseManifestResult } from "./case-manifest";
 import { writeRuleIndex } from "./rule-index";
 import { writePreflightGuidance } from "./preflight-guidance";
@@ -120,6 +121,7 @@ const prepareCodexContext = (config: AgentConfig, runDir: string): void => {
     "- Perform `input/preflight-auth-check.md` before deep domain loading or testcase actions.",
     "- Read `input/document-consistency.json` before any browser action; status=error requires Tool Bridge ambiguity handling.",
     "- Use `input/current-case-pack.md` as the compact current-case card; it is not result evidence.",
+    "- Read `input/capability-gate.md` before testcase UI execution; unsupported cases must be marked BLOCKED/UNSUPPORTED_ONLINE_CAPABILITY instead of silently falling back to unsupported helper/manual paths.",
     "- Use `input/reference-index.json` for exact paths before broad searches.",
     "",
     "Domain context:",
@@ -159,6 +161,8 @@ const prepareCodexContext = (config: AgentConfig, runDir: string): void => {
 
   writeJson(path.join(runDir, "input", "codex-context.json"), {
     codex_workspace_root: workspaceRoot,
+    codex_model: config.codex_model,
+    codex_reasoning_effort: config.codex_reasoning_effort,
     bi_metadata_csv: biMetadataCsv,
     copied_context: copied
   });
@@ -167,6 +171,7 @@ const prepareCodexContext = (config: AgentConfig, runDir: string): void => {
 const writeRunBrief = (
   runId: string,
   message: AgentMessage,
+  config: AgentConfig,
   runDir: string,
   inputs: DownloadedInputs,
   guides: GeneratedRunGuides
@@ -191,6 +196,7 @@ const writeRunBrief = (
     `- domain: ${domain}`,
     `- dev_url: ${devUrl}`,
     `- workdir: ${runDir}`,
+    `- codex_model: ${config.codex_model}`,
     `- expected_result_xlsx: ${resultXlsxPath}`,
     `- case_manifest: ${guides.caseManifest.manifestPath ?? "(unavailable)"}`,
     `- current_case: ${guides.caseManifest.currentCasePath ?? "(unavailable)"}`,
@@ -202,6 +208,8 @@ const writeRunBrief = (
     `- document_consistency: ${guides.documentConsistencyPath}`,
     `- current_case_pack: ${guides.currentCasePackMarkdownPath}`,
     `- current_case_pack_json: ${guides.currentCasePackJsonPath}`,
+    `- capability_gate: ${guides.capabilityGateMarkdownPath}`,
+    `- capability_gate_json: ${guides.capabilityGateJsonPath}`,
     `- helper_execution_plan: ${guides.helperExecutionPlanMarkdownPath}`,
     `- helper_execution_plan_json: ${guides.helperExecutionPlanJsonPath}`,
     `- safe_helper_pre_run_summary: ${path.join(runDir, "output", "helper-pre-run-summary.json")}`,
@@ -238,23 +246,25 @@ const writeRunBrief = (
     "2. Read `input/test-package-consistency.json` and `input/document-consistency.json`. If either status=error, do not touch the browser; emit Tool Bridge ambiguity_decision.",
     "3. Read `input/preflight-auth-check.md` and perform only the auth/reachability preflight before deep domain rule loading.",
     "4. Read `input/current-case-pack.md`, `input/current-case-pack.json`, and `input/run-state.json` before loading full testcase/supporting docs. If Helper hints are present, treat them as single-case UI guidance only.",
-    "5. Read `input/helper-execution-plan.md` when present. Helper actions may operate UI and collect evidence, but cannot judge PASS/FAIL or write result.xlsx.",
-    "6. If `output/helper-pre-run-summary.json` exists, inspect helper reports before repeating UI actions. Reuse successful current-run helper evidence when sufficient; repeat only incomplete steps.",
-    "7. Read `input/reference-index.json` for exact paths; avoid broad filesystem search.",
-    "8. Read `input/rule-index.json` and load only the smallest rule file required for the current decision.",
+    "5. Read `input/capability-gate.md` before testcase UI execution. If support_status=unsupported, do not run trusted browser testcase steps; write BLOCKED/UNSUPPORTED_ONLINE_CAPABILITY with the gate reason.",
+    "6. Read `input/helper-execution-plan.md` when present. Helper actions may operate UI and collect evidence, but cannot judge PASS/FAIL or write result.xlsx.",
+    "7. If `output/helper-pre-run-summary.json` exists, inspect helper reports before repeating UI actions. Reuse successful current-run helper evidence when sufficient; repeat only incomplete steps.",
+    "8. Read `input/reference-index.json` for exact paths; avoid broad filesystem search.",
+    "9. Read `input/rule-index.json` and load only the smallest rule file required for the current decision.",
     biMetadataCsv
-      ? "9. If the current BI case needs metadata counts, use the copied `rules/BI_DATA/metadata.csv`; do not search the workspace for another metadata source first."
-      : "9. If the current BI case needs metadata counts and no baseline/reference CSV is downloaded, use uploaded supporting docs before doing broad filesystem searches.",
+      ? "10. If the current BI case needs metadata counts, use the copied `rules/BI_DATA/metadata.csv`; do not search the workspace for another metadata source first."
+      : "10. If the current BI case needs metadata counts and no baseline/reference CSV is downloaded, use uploaded supporting docs before doing broad filesystem searches.",
     domainLocatorRegistry
-      ? `10. For BI UI locator hints, use ${domainLocatorRegistry}. It is guidance only; if a locator fails, fall back to visible UI exploration and record drift.`
-      : "10. No domain locator registry was downloaded; use visible UI exploration and helper guidance.",
-    "11. For BI UI operations, read `input/bi-ui-helper-guidance.md`; it includes operationTemplate guidance when the current case provides Helper hints.",
-    "12. Use `input/evidence-templates/index.json` and only the current-case template(s) when writing evidence/detail_json.",
-    "13. Execute one case at a time, write evidence/result for that case, then move to the next case JSON if needed.",
+      ? `11. For BI UI locator hints, use ${domainLocatorRegistry}. It is guidance only; if a locator fails, fall back to visible UI exploration and record drift.`
+      : "11. No domain locator registry was downloaded; use visible UI exploration and helper guidance.",
+    "12. For BI UI operations, read `input/bi-ui-helper-guidance.md`; it includes operationTemplate guidance when the current case provides Helper hints.",
+    "13. Use `input/evidence-templates/index.json` and only the current-case template(s) when writing evidence/detail_json.",
+    "14. Execute one case at a time, write evidence/result for that case, then move to the next case JSON if needed.",
     "",
     "## Hard Gates",
     "- No trusted PASS/FAIL without current-run evidence.",
     "- A test-package-consistency error is a testcase design blocker. Do not open Playwright before PM resolves it.",
+    "- A capability-gate unsupported status is an online tool capability blocker. Do not fallback to slow manual exploration for filter/group/detail/metric unsupported cases in trusted Agent mode.",
     "- Old workbook rows, existing reports, and previous run artifacts are stale unless the testcase explicitly says to reuse them.",
     "- If SSO, native alert/confirm, irreversible operation, or ambiguity blocks progress, stop and emit a Tool Bridge request.",
     "- Consecutive native dialog guard: after one native alert/confirm in a save/delete/overwrite flow has been handled, do not attempt to accept a follow-up native dialog through Playwright. Emit playwright_recovery immediately; repeated snapshot/read_page calls can hang behind the dialog.",
@@ -306,6 +316,8 @@ type GeneratedRunGuides = {
   documentConsistencyPath: string;
   currentCasePackJsonPath: string;
   currentCasePackMarkdownPath: string;
+  capabilityGateJsonPath: string;
+  capabilityGateMarkdownPath: string;
   helperExecutionPlanJsonPath: string;
   helperExecutionPlanMarkdownPath: string;
   evidenceTemplates: EvidenceTemplateFiles;
@@ -758,6 +770,11 @@ const generateRunGuides = async (
     runDir,
     currentCase?.caseNo ?? currentCasePack.helperHints?.caseId ?? caseManifest.currentCaseNo
   );
+  const capabilityGate = writeCapabilityGate({
+    runDir,
+    currentCase,
+    helperHints: currentCasePack.helperHints
+  });
   const helperExecutionPlan = writeHelperExecutionPlan({
     runDir,
     currentCase,
@@ -780,6 +797,8 @@ const generateRunGuides = async (
       documentConsistency: documentConsistencyPath,
       currentCasePack: currentCasePack.markdownPath,
       currentCasePackJson: currentCasePack.jsonPath,
+      capabilityGate: capabilityGate.markdownPath,
+      capabilityGateJson: capabilityGate.jsonPath,
       helperExecutionPlan: helperExecutionPlan.markdownPath,
       helperExecutionPlanJson: helperExecutionPlan.jsonPath,
       ruleIndex: plannedRuleIndexPath,
@@ -804,6 +823,9 @@ const generateRunGuides = async (
     document_consistency_path: documentConsistencyPath,
     current_case_pack_json_path: currentCasePack.jsonPath,
     current_case_pack_markdown_path: currentCasePack.markdownPath,
+    capability_gate_json_path: capabilityGate.jsonPath,
+    capability_gate_markdown_path: capabilityGate.markdownPath,
+    capability_gate: capabilityGate.report,
     helper_artifact_cleanup_path: helperArtifactCleanupPath,
     helper_execution_plan_json_path: helperExecutionPlan.jsonPath,
     helper_execution_plan_markdown_path: helperExecutionPlan.markdownPath,
@@ -827,6 +849,8 @@ const generateRunGuides = async (
     documentConsistencyPath,
     currentCasePackJsonPath: currentCasePack.jsonPath,
     currentCasePackMarkdownPath: currentCasePack.markdownPath,
+    capabilityGateJsonPath: capabilityGate.jsonPath,
+    capabilityGateMarkdownPath: capabilityGate.markdownPath,
     helperExecutionPlanJsonPath: helperExecutionPlan.jsonPath,
     helperExecutionPlanMarkdownPath: helperExecutionPlan.markdownPath,
     evidenceTemplates,
@@ -874,6 +898,8 @@ const buildPrompt = (
     `- Perform preflight before deep rule loading or testcase action: ${guides.preflightGuidancePath}`,
     `- Read the current case execution card first: ${guides.currentCasePackMarkdownPath}`,
     `- Structured current case pack: ${guides.currentCasePackJsonPath}`,
+    `- Capability gate: ${guides.capabilityGateMarkdownPath}`,
+    `- Structured capability gate: ${guides.capabilityGateJsonPath}`,
     `- Helper execution plan: ${guides.helperExecutionPlanMarkdownPath}`,
     `- Structured helper execution plan: ${guides.helperExecutionPlanJsonPath}`,
     `- Safe helper pre-run summary, if available: ${path.join(runDir, "output", "helper-pre-run-summary.json")}`,
@@ -896,6 +922,7 @@ const buildPrompt = (
     "- Treat `rules/PROJECT_AGENTS_FULL.md` and `rules/BI_TEST_RULES/` as BI domain references, not platform rules.",
     "- If `input/document-consistency.json` has status=error, do not touch the browser. Emit a Tool Bridge ambiguity_decision with the conflict and wait.",
     "- If `input/test-package-consistency.json` has status=error, treat it as a testcase package design conflict and do not touch the browser.",
+    "- If `input/capability-gate.json` says supportStatus=unsupported, do not run trusted browser testcase steps. Write a single-case BLOCKED result with fail_category=UNSUPPORTED_ONLINE_CAPABILITY and the gate blocking reason.",
     "- The first browser MCP action must be preflight only: open DEV URL, verify auth/reachability, detect SSO/login/載入失敗/401/403/blank blocker.",
     "- Preflight must not run testcase steps, capture baseline, change date/filter/field/group state, save/delete, or inspect deep BI behavior.",
     "",
@@ -931,6 +958,8 @@ const buildPrompt = (
     `Document consistency: ${guides.documentConsistencyPath}`,
     `Current case pack: ${guides.currentCasePackMarkdownPath}`,
     `Current case pack JSON: ${guides.currentCasePackJsonPath}`,
+    `Capability gate: ${guides.capabilityGateMarkdownPath}`,
+    `Capability gate JSON: ${guides.capabilityGateJsonPath}`,
     `Helper execution plan: ${guides.helperExecutionPlanMarkdownPath}`,
     `Helper execution plan JSON: ${guides.helperExecutionPlanJsonPath}`,
     `Safe helper pre-run summary: ${path.join(runDir, "output", "helper-pre-run-summary.json")}`,
@@ -1296,6 +1325,7 @@ const createCodexRunner = (
   };
   return new CodexRunner({
     codexBin: config.codex_bin,
+    model: config.codex_model,
     cwd: runDir,
     reasoningEffort: config.codex_reasoning_effort,
     playwrightCdpEndpoint: chromeCdpEndpoint,
@@ -1941,7 +1971,7 @@ const prepareNextCaseIfAny = async (options: {
     timing,
     "write_run_brief",
     "agent_phase",
-    () => writeRunBrief(runId, message, runDir, inputs, guides),
+    () => writeRunBrief(runId, message, config, runDir, inputs, guides),
     { currentCaseNo: guides.caseManifest.currentCaseNo }
   );
   sendPhase(
@@ -2035,7 +2065,7 @@ const runFreshCasesUntilPauseOrDone = async (options: {
       runId,
       firstIteration ? "codex_starting" : "codex_next_case",
       firstIteration ? "啟動 Codex CLI" : "啟動下一題 Codex CLI",
-      `Codex 將用 reasoning=${config.codex_reasoning_effort} 讀取 helper evidence、判定 ${guides.caseManifest.currentCaseNo ?? "current case"} 並寫 workbook。`,
+      `Codex 將用 model=${config.codex_model}, reasoning=${config.codex_reasoning_effort} 讀取 helper evidence、判定 ${guides.caseManifest.currentCaseNo ?? "current case"} 並寫 workbook。`,
       () => activeRunner.start(buildPrompt(runId, message, runDir, inputs, guides))
     );
     firstIteration = false;
@@ -2163,7 +2193,7 @@ export const handleTaskDispatch = async (
       timing,
       "write_run_brief",
       "agent_phase",
-      () => writeRunBrief(runId, message, runDir, downloadedInputs, generatedGuides),
+      () => writeRunBrief(runId, message, config, runDir, downloadedInputs, generatedGuides),
       { currentCaseNo: generatedGuides.caseManifest.currentCaseNo }
     );
     sendPhase(
@@ -2462,7 +2492,7 @@ export const handleToolResponse = async (
       runId,
       "codex_resuming",
       "續跑 Codex thread",
-      `thread: ${threadId}; reasoning=${config.codex_reasoning_effort}`,
+      `thread: ${threadId}; model=${config.codex_model}; reasoning=${config.codex_reasoning_effort}`,
       () => activeRunner.resume(threadId, buildToolResponsePrompt(runId, message))
     );
     lastResult = result;

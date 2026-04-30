@@ -27,6 +27,7 @@ const main = async (): Promise<void> => {
   try {
     const runner = new CodexRunner({
       codexBin: fakeCodexPath,
+      model: "gpt-5.3-codex",
       cwd: tempDir,
       reasoningEffort: "low"
     });
@@ -37,6 +38,8 @@ const main = async (): Promise<void> => {
 
     const args = JSON.parse(fs.readFileSync(argvPath, "utf8")) as string[];
     assert.deepEqual(args, [
+      "-m",
+      "gpt-5.3-codex",
       "-c",
       'model_reasoning_effort="low"',
       "exec",

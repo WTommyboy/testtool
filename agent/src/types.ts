@@ -4,6 +4,7 @@ export type AgentConfig = {
   token: string;
   device_name: string;
   codex_bin: string;
+  codex_model: string;
   codex_reasoning_effort: "low" | "medium" | "high" | "xhigh";
   codex_workspace_root: string;
   workdir_root: string;

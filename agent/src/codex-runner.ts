@@ -18,6 +18,7 @@ export type CodexTurnResult = {
 
 export type CodexRunnerOptions = {
   codexBin: string;
+  model?: string | null;
   cwd: string;
   timeoutMs?: number;
   reasoningEffort?: string | null;
@@ -172,6 +173,9 @@ export class CodexRunner {
 
   private configArgs(): string[] {
     const args: string[] = [];
+    if (this.options.model) {
+      args.push("-m", this.options.model);
+    }
     if (this.options.reasoningEffort) {
       args.push("-c", `model_reasoning_effort=${JSON.stringify(this.options.reasoningEffort)}`);
     }

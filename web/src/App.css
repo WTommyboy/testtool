@@ -1371,6 +1371,32 @@
   color: var(--text-3);
 }
 
+.pm-review-box {
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid var(--border-light);
+  background: var(--bg-2);
+}
+
+.pm-review-title {
+  font-weight: 700;
+  font-size: 13px;
+  margin-bottom: 8px;
+}
+
+.pm-review-box textarea {
+  width: 100%;
+  min-height: 68px;
+  resize: vertical;
+  margin-bottom: 8px;
+}
+
+.pm-review-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 /* ─── Responsive ─── */
 @media (max-width: 900px) {
   .grid-sidebar,

@@ -132,6 +132,13 @@ const manualFillSchema = z.object({
   manualFilledBy: z.string().min(1)
 });
 
+const pmReviewSchema = z.object({
+  caseNo: z.string().min(1),
+  finalStatus: z.enum(["MANUAL_PASS", "MANUAL_FAIL", "MANUAL_BLOCKED"]),
+  reviewedBy: z.string().min(1),
+  note: z.string().optional()
+});
+
 const dispatchAgentSchema = z.object({
   agentId: z.string().min(1)
 });
@@ -871,6 +878,19 @@ const stepStatusForCaseResult = (status: string): "PASS" | "FAIL" | "SKIPPED" =>
   if (status === "PASS" || status === "MANUAL_PASS") return "PASS";
   if (status === "SKIPPED") return "SKIPPED";
   return "FAIL";
+};
+
+const parseStoredDetailJson = (value: unknown): Record<string, unknown> => {
+  if (typeof value !== "string" || !value.trim()) return {};
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : {};
+  } catch {
+    return {
+      原始詳細紀錄JSON解析狀態: "INVALID_JSON",
+      原始內容: value
+    };
+  }
 };
 
 const formatParsedBugDescription = (bug: ParsedBug): string => {
@@ -1739,6 +1759,79 @@ router.post("/:id/manual-fill", (req, res) => {
     runId: req.params.id,
     caseNo: parsed.data.caseNo,
     resultStatus: parsed.data.resultStatus
+  });
+});
+
+router.post("/:id/pm-review", (req, res) => {
+  const run = getRun(req.params.id);
+  if (!run) {
+    return res.status(404).json({ error: "RUN_NOT_FOUND" });
+  }
+
+  const parsed = pmReviewSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({
+      error: "INVALID_PAYLOAD",
+      issues: parsed.error.issues
+    });
+  }
+
+  const target = db
+    .prepare("SELECT * FROM run_cases WHERE run_id = ? AND case_no = ?")
+    .get(req.params.id, parsed.data.caseNo) as Record<string, unknown> | undefined;
+
+  if (!target) {
+    return res.status(404).json({ error: "CASE_NOT_FOUND" });
+  }
+
+  const now = nowIso();
+  const originalStatus = String(target.result_status ?? "PENDING");
+  const detailJson = {
+    ...parseStoredDetailJson(target.detail_json),
+    Codex建議判定: originalStatus,
+    PM最終判定: parsed.data.finalStatus,
+    PM複核者: parsed.data.reviewedBy,
+    PM複核時間: now,
+    ...(parsed.data.note?.trim() ? { PM複核備註: parsed.data.note.trim() } : {})
+  };
+
+  db.prepare(
+    `
+      UPDATE run_cases
+      SET result_status = ?, detail_json = ?, manual_filled_by = ?, manual_filled_at = ?, updated_at = ?
+      WHERE run_id = ? AND case_no = ?
+    `
+  ).run(
+    parsed.data.finalStatus,
+    JSON.stringify(detailJson),
+    parsed.data.reviewedBy,
+    now,
+    now,
+    req.params.id,
+    parsed.data.caseNo
+  );
+
+  const runStatus = terminalStatusForRunCases(req.params.id, []);
+  setRunStatusWithMeta(req.params.id, runStatus, "Mac Agent + PM Review");
+  insertRunEvent(req.params.id, "pm_review.updated", {
+    caseNo: parsed.data.caseNo,
+    originalStatus,
+    finalStatus: parsed.data.finalStatus,
+    reviewedBy: parsed.data.reviewedBy
+  });
+  insertRunLog(req.params.id, "INFO", "PM final review updated", {
+    caseNo: parsed.data.caseNo,
+    originalStatus,
+    finalStatus: parsed.data.finalStatus,
+    reviewedBy: parsed.data.reviewedBy
+  });
+
+  return res.json({
+    runId: req.params.id,
+    caseNo: parsed.data.caseNo,
+    originalStatus,
+    finalStatus: parsed.data.finalStatus,
+    runStatus
   });
 });
 

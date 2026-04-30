@@ -98,6 +98,45 @@ const stringParam = (params: Record<string, unknown>, key: string): string | nul
   return typeof value === "string" && value.trim() ? value.trim() : null;
 };
 
+const firstStringParam = (params: Record<string, unknown>, keys: string[]): string | null => {
+  for (const key of keys) {
+    const value = stringParam(params, key);
+    if (value) return value;
+  }
+  return null;
+};
+
+const timestampId = (): string => new Date().toISOString().replace(/[-:T.Z]/g, "").slice(0, 12);
+
+const resolveReportName = (options: CliOptions): string => {
+  const explicit = firstStringParam(options.params, ["reportName", "reportNamePattern", "name"]);
+  if (explicit) return explicit.replace("<timestamp>", timestampId());
+  return `${sanitize(options.caseId)}_${timestampId()}`;
+};
+
+const savedReportStatePath = (options: CliOptions): string => path.join(artifactRoot(options), "saved-report.json");
+
+const writeSavedReportState = (options: CliOptions, reportName: string, extra: Record<string, unknown> = {}): void => {
+  ensureDir(artifactRoot(options));
+  fs.writeFileSync(
+    savedReportStatePath(options),
+    `${JSON.stringify({ reportName, caseId: options.caseId, savedAt: new Date().toISOString(), ...extra }, null, 2)}\n`
+  );
+};
+
+const readSavedReportName = (options: CliOptions): string | null => {
+  const explicit = firstStringParam(options.params, ["reportName", "savedReportName", "name"]);
+  if (explicit) return explicit;
+  const filePath = savedReportStatePath(options);
+  if (!fs.existsSync(filePath)) return null;
+  try {
+    const parsed = JSON.parse(fs.readFileSync(filePath, "utf8")) as { reportName?: unknown };
+    return typeof parsed.reportName === "string" && parsed.reportName.trim() ? parsed.reportName.trim() : null;
+  } catch {
+    return null;
+  }
+};
+
 const createReport = (
   options: CliOptions,
   status: HelperReport["status"],
@@ -460,22 +499,131 @@ const approvalRequired = (options: CliOptions, action: string, startedAt: string
   );
 };
 
+const fillVisibleReportNameInput = async (page: Page, reportName: string): Promise<Record<string, unknown>> => {
+  const inputs = await visibleInputIndexes(page);
+  const candidates = inputs.filter((item) => item.type === "text" && !/專案|project/i.test(item.placeholder));
+  const preferred =
+    candidates.find((item) => /報表|report|名稱|name/i.test(item.placeholder)) ??
+    candidates.find((item) => item.value.trim().length === 0) ??
+    candidates.at(-1);
+  if (!preferred) {
+    throw new HelperBlockedError(`SAVE_REPORT_NAME_INPUT_NOT_FOUND inputs=${JSON.stringify(inputs).slice(0, 1000)}`);
+  }
+  await page.locator("input").nth(preferred.index).fill(reportName, { timeout: 8000 });
+  return { selectedInput: preferred, visibleInputs: inputs };
+};
+
+const clickModalSaveButton = async (page: Page): Promise<void> => {
+  const clicked = await clickFirstVisible([
+    page.locator(".modal button").filter({ hasText: /儲存|確認|確定|保存/ }),
+    page.locator("[role=dialog] button").filter({ hasText: /儲存|確認|確定|保存/ }),
+    page.locator("button").filter({ hasText: /儲存|確認|確定|保存/ })
+  ], 8000);
+  if (!clicked) throw new HelperBlockedError("SAVE_MODAL_SUBMIT_BUTTON_NOT_CLICKABLE");
+};
+
 const saveReport = async (options: CliOptions, page: Page, startedAt: string): Promise<HelperReport> => {
   if (!options.approvedToolRequestId) return approvalRequired(options, "save current temporary report", startedAt);
-  const reportName = stringParam(options.params, "reportNamePattern")?.replace("<timestamp>", new Date().toISOString().replace(/[-:T.Z]/g, "").slice(0, 12));
+  const reportName = resolveReportName(options);
   const dialogs: Record<string, unknown>[] = [];
-  page.once("dialog", async (dialog) => {
+  let dialogChainRequiresApproval = false;
+  page.on("dialog", async (dialog) => {
     dialogs.push({ type: dialog.type(), message: dialog.message(), defaultValue: dialog.defaultValue() });
-    await dialog.accept(reportName ?? undefined);
+    if (dialogs.length === 1) {
+      await dialog.accept();
+      return;
+    }
+    dialogChainRequiresApproval = true;
   });
-  await page.getByText("儲存報表", { exact: false }).first().click({ timeout: 15000 });
-  await page.waitForTimeout(2000);
+  const observed = await observeDuring(page, async () => {
+    await page.getByText("儲存報表", { exact: false }).first().click({ timeout: 15000 });
+    await page.waitForTimeout(600);
+    const nameInputEvidence = await fillVisibleReportNameInput(page, reportName);
+    await clickModalSaveButton(page);
+    await page.waitForTimeout(1800);
+    return nameInputEvidence;
+  });
+  writeSavedReportState(options, reportName, { approvedToolRequestId: options.approvedToolRequestId, dialogs });
+  if (dialogChainRequiresApproval) {
+    return createReport(
+      options,
+      "requires_approval",
+      startedAt,
+      {
+        reportName,
+        dialogs,
+        network: { requests: observed.requests, responses: observed.responses },
+        nameInput: observed.result
+      },
+      {},
+      ["NATIVE_DIALOG_CHAIN_REQUIRES_TOOL_BRIDGE", "SECOND_NATIVE_DIALOG_LEFT_FOR_PM_RECOVERY"],
+      {
+        toolRequest: {
+          type: "playwright_recovery",
+          request_id: `${options.caseId}-${sanitize(options.action)}-dialog-chain`,
+          case: options.caseId,
+          error: "NATIVE_DIALOG_CHAIN: helper handled the first save dialog and detected a follow-up native dialog.",
+          proposed_action: "Tommy handles the visible follow-up native dialog in persistent Chrome, returns to the report list, then continues the UAT Tool run."
+        }
+      }
+    );
+  }
   const shot = await screenshot(options, page, "save-report");
   return createReport(
     options,
     "ok",
     startedAt,
-    { domState: await readDomState(page), dialogs, approvedToolRequestId: options.approvedToolRequestId, reportName },
+    {
+      domState: await readDomState(page),
+      dialogs,
+      approvedToolRequestId: options.approvedToolRequestId,
+      reportName,
+      network: { requests: observed.requests, responses: observed.responses },
+      nameInput: observed.result
+    },
+    shot ? { screenshot: shot } : {},
+    shot ? [] : ["SCREENSHOT_UNAVAILABLE"]
+  );
+};
+
+const reopenReport = async (options: CliOptions, page: Page, startedAt: string): Promise<HelperReport> => {
+  const reportName = readSavedReportName(options);
+  const projectName = stringParam(options.params, "projectName");
+  if (!reportName) throw new HelperBlockedError("SAVED_REPORT_NAME_MISSING");
+  const beforeText = await page.locator("body").innerText({ timeout: 5000 }).catch(() => "");
+  if (!beforeText.includes(reportName) && projectName) {
+    await clickByText(page, projectName, 8000);
+    await page.waitForTimeout(1200);
+  }
+  const refreshedText = await page.locator("body").innerText({ timeout: 5000 }).catch(() => "");
+  if (!refreshedText.includes(reportName)) {
+    await page.reload({ waitUntil: "domcontentloaded", timeout: 15000 }).catch(() => undefined);
+    await page.waitForTimeout(1200);
+    if (projectName) {
+      await clickByText(page, projectName, 8000).catch(() => undefined);
+      await page.waitForTimeout(800);
+    }
+  }
+  const finalListText = await page.locator("body").innerText({ timeout: 5000 }).catch(() => "");
+  if (!finalListText.includes(reportName)) {
+    throw new HelperBlockedError(`SAVED_REPORT_ROW_NOT_FOUND:${reportName}`);
+  }
+  await clickByText(page, reportName, 12000);
+  await page.waitForTimeout(1800);
+  const shot = await screenshot(options, page, "reopen-report");
+  return createReport(
+    options,
+    "ok",
+    startedAt,
+    {
+      reportName,
+      expected: {
+        field: stringParam(options.params, "field"),
+        dateRange: stringParam(options.params, "dateRange"),
+        display: stringParam(options.params, "display")
+      },
+      domState: await readDomState(page)
+    },
     shot ? { screenshot: shot } : {},
     shot ? [] : ["SCREENSHOT_UNAVAILABLE"]
   );
@@ -543,14 +691,16 @@ const run = async (): Promise<void> => {
         report = await saveReport(options, page, startedAt);
         break;
       case "collage.reopenReport":
-        report = await notImplemented(options, page, "Reopen report helper is planned for V1.1; Codex may perform visible UI steps manually and still use helper evidence capture.", startedAt);
+        report = await reopenReport(options, page, startedAt);
         break;
       case "collage.deleteTemporaryReport":
-      case "filter.addAndPreview":
-      case "group.addAndPreview":
         report = options.approvedToolRequestId
           ? await notImplemented(options, page, "Template is registered but not implemented in this executor version.", startedAt)
           : approvalRequired(options, options.action, startedAt);
+        break;
+      case "filter.addAndPreview":
+      case "group.addAndPreview":
+        report = await notImplemented(options, page, "Filter/group helpers are not implemented for trusted Agent runs. Capability gate should mark these cases unsupported.", startedAt);
         break;
       default:
         report = await notImplemented(options, page, `Unknown helper action: ${options.action}`, startedAt);

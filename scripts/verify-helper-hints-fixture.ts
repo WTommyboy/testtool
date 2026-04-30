@@ -200,8 +200,8 @@ const main = async (): Promise<void> => {
     assert.equal(helperPlanJson.safety?.helperMayJudgePassFail, false, "helper plan must not judge PASS/FAIL");
     assert.equal(helperPlanJson.safety?.helperMayWriteResultXlsx, false, "helper plan must not write result.xlsx");
     assert.ok(
-      helperPlanJson.availableTemplates?.some((item) => item.template === "filter.addAndPreview"),
-      "helper plan should include filter.addAndPreview template"
+      !(helperPlanJson.availableTemplates ?? []).some((item) => item.template === "filter.addAndPreview"),
+      "helper plan must not advertise unimplemented filter.addAndPreview as available"
     );
     const helperPlanMarkdown = fs.readFileSync(helperExecutionPlan.markdownPath, "utf8");
     mustInclude(helperPlanMarkdown, "Helper Execution Plan v1", "helper-execution-plan.md");

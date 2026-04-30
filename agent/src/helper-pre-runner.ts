@@ -53,6 +53,20 @@ const consistencyStatus = (runDir: string): "ok" | "warning" | "error" | "missin
   return worst;
 };
 
+const capabilityGateAllowsHelperPreRun = (runDir: string): { allowed: boolean; reason: string | null } => {
+  const gate = readJsonIfExists<{ helperPreRunAllowed?: unknown; blockingReason?: unknown; supportStatus?: unknown }>(
+    path.join(runDir, "input", "capability-gate.json")
+  );
+  if (!gate) return { allowed: true, reason: null };
+  if (gate.helperPreRunAllowed === false) {
+    const reason = typeof gate.blockingReason === "string" && gate.blockingReason.trim()
+      ? gate.blockingReason.trim()
+      : `CAPABILITY_GATE_${String(gate.supportStatus ?? "SKIPPED")}`;
+    return { allowed: false, reason };
+  }
+  return { allowed: true, reason: null };
+};
+
 const safeActions = (plan: HelperExecutionPlan): HelperPlanAction[] => {
   const result: HelperPlanAction[] = [];
   for (const action of plan.actions) {
@@ -179,10 +193,13 @@ export const runSafeHelperActions = async (
   const planPath = path.join(runDir, "input", "helper-execution-plan.json");
   const plan = readJsonIfExists<HelperExecutionPlan>(planPath);
   const status = consistencyStatus(runDir);
+  const capabilityGate = capabilityGateAllowsHelperPreRun(runDir);
   const skippedReason = !plan
     ? "HELPER_EXECUTION_PLAN_MISSING"
     : status === "error"
       ? "CONSISTENCY_GATE_ERROR"
+      : !capabilityGate.allowed
+        ? `CAPABILITY_GATE_SKIPPED_HELPER:${capabilityGate.reason ?? "helper pre-run not allowed"}`
       : null;
 
   if (!plan || skippedReason) {

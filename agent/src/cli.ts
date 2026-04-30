@@ -121,6 +121,7 @@ const main = async (): Promise<void> => {
       device_name: config.device_name,
       token: maskToken(config.token),
       codex_bin: config.codex_bin,
+      codex_model: config.codex_model,
       codex_reasoning_effort: config.codex_reasoning_effort,
       codex_workspace_root: config.codex_workspace_root,
       codex_workspace_agents_exists: fs.existsSync(`${config.codex_workspace_root}/AGENTS.md`),

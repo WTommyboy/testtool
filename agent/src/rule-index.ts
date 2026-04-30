@@ -77,6 +77,8 @@ const buildCurrentCaseRecommendations = (runDir: string, entries: RuleIndexEntry
     "current-case",
     "current-case-pack",
     "current-case-pack-json",
+    "capability-gate",
+    "capability-gate-json",
     "helper-execution-plan",
     "helper-execution-plan-json",
     "run-state",
@@ -311,6 +313,20 @@ export const writeRuleIndex = (runDir: string, domain: string): string => {
     summary: "Structured current-case pack with required evidence and screenshot policy."
   });
   addIfExists(entries, runDir, {
+    id: "capability-gate",
+    scope: "input",
+    filePath: path.join(runDir, "input", "capability-gate.md"),
+    loadWhen: ["before testcase UI execution", "helper support decision", "unsupported filter/group/detail/metric case"],
+    summary: "Online trusted-run capability gate. If unsupported, write BLOCKED/UNSUPPORTED_ONLINE_CAPABILITY instead of falling back to unsupported helper/manual paths."
+  });
+  addIfExists(entries, runDir, {
+    id: "capability-gate-json",
+    scope: "input",
+    filePath: path.join(runDir, "input", "capability-gate.json"),
+    loadWhen: ["need structured supportStatus", "deciding helper pre-run", "unsupported capability reason"],
+    summary: "Structured capability gate used by Agent helper pre-run and Codex dispatch."
+  });
+  addIfExists(entries, runDir, {
     id: "helper-execution-plan",
     scope: "input",
     filePath: path.join(runDir, "input", "helper-execution-plan.md"),
@@ -362,6 +378,7 @@ export const writeRuleIndex = (runDir: string, domain: string): string => {
       "Read input/run-brief.md first.",
       "Read input/test-package-consistency.json before browser execution; if status=error, emit Tool Bridge ambiguity_decision.",
       "Read input/document-consistency.json before browser execution; if status=error, emit Tool Bridge ambiguity_decision.",
+      "Read input/capability-gate.md before testcase UI execution; if supportStatus=unsupported, do not run trusted browser testcase steps.",
       "Perform input/preflight-auth-check.md before deep domain rule loading or testcase actions.",
       "Read input/current-case-pack.md before loading full testcase/supporting docs.",
       "Use input/reference-index.json for exact paths before broad searches.",

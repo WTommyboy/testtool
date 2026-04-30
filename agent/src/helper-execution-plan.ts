@@ -156,6 +156,13 @@ const buildActions = (currentCase: CaseManifestCase | null, helperHints: HelperH
   const operationTemplate = helperHints?.operationTemplate ?? "";
   const params = inferCollageParams(currentCase, helperHints);
   const actions: HelperPlanAction[] = [];
+  const unsupportedHelperTarget =
+    /record_static_fields|明細|record[-_ ]?centric|detail/i.test(`${operationTemplate}\n${text}`) ||
+    /metric_|指標|趨勢|metric[-_ ]?centric/i.test(`${operationTemplate}\n${text}`) ||
+    /篩選|filter|operator|運算子/i.test(text) ||
+    /分組|分群|group|series/i.test(text);
+  const metadataOnly = operationTemplate === "metadata_dropdown_compare" || /metadata|欄位清單|下拉|dropdown/i.test(text);
+  if (unsupportedHelperTarget || metadataOnly) return [];
   const isCollageFlow = /collage_build_preview_save_reopen/.test(operationTemplate) || /拼貼|新增報表|儲存報表|重開|重新檢視/.test(text);
 
   if (isCollageFlow) {
@@ -206,16 +213,6 @@ const buildAvailableTemplates = (currentCase: CaseManifestCase | null, helperHin
   const text = textBlob(currentCase);
   const params = inferCollageParams(currentCase, helperHints);
   const available: HelperPlanAction[] = [
-    action("T-filter", "filter.addAndPreview", "基本單欄位篩選 helper（V1 可用模板）", params, {
-      optional: true,
-      requiredEvidence: ["dom.state", "network.requestBody", "chart.datasets", "screenshot"],
-      notes: ["只有當 current case 明確要求篩選時才使用；一次只處理一個 case 的一組篩選。"]
-    }),
-    action("T-group", "group.addAndPreview", "基本單欄位分群 helper（V1 可用模板）", params, {
-      optional: true,
-      requiredEvidence: ["dom.state", "network.requestBody", "chart.datasets", "screenshot"],
-      notes: ["只有當 current case 明確要求分組/分群時才使用；helper 不判 series 是否 PASS。"]
-    }),
     action("T-delete", "collage.deleteTemporaryReport", "刪除本輪臨時報表 helper（需授權）", params, {
       optional: true,
       requiresToolBridge: true,
@@ -225,8 +222,7 @@ const buildAvailableTemplates = (currentCase: CaseManifestCase | null, helperHin
     })
   ];
 
-  if (/篩選|filter/i.test(text)) return available.filter((item) => item.template !== "group.addAndPreview");
-  if (/分組|分群|group/i.test(text)) return available.filter((item) => item.template !== "filter.addAndPreview");
+  if (/篩選|filter|分組|分群|group/i.test(text)) return [];
   return available;
 };
 

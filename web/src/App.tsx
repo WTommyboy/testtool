@@ -326,6 +326,7 @@ function App() {
   const [resolvedBy, setResolvedBy] = useState("tommy");
   const [approvalConfirmations, setApprovalConfirmations] = useState<Record<string, boolean>>({});
   const [approvalNotes, setApprovalNotes] = useState<Record<string, string>>({});
+  const [pmReviewNotes, setPmReviewNotes] = useState<Record<string, string>>({});
   const fileInputRef = useRef<HTMLInputElement>(null);
   const uploadXlsxInputRef = useRef<HTMLInputElement>(null);
   const uploadDocsInputRef = useRef<HTMLInputElement>(null);
@@ -570,9 +571,9 @@ function App() {
                     <div className="group-header">
                       <span className="group-name">{groupName}</span>
                       <span className="group-stats">
-                        {gs?.PASS ? <span className="gs-pass">{gs.PASS} Pass</span> : null}
-                        {gs?.FAIL ? <span className="gs-fail">{gs.FAIL} Fail</span> : null}
-                        {gs?.BLOCKED ? <span className="gs-blocked">{gs.BLOCKED} Blocked</span> : null}
+                        {(gs?.PASS || gs?.MANUAL_PASS) ? <span className="gs-pass">{(gs.PASS ?? 0) + (gs.MANUAL_PASS ?? 0)} Pass</span> : null}
+                        {(gs?.FAIL || gs?.MANUAL_FAIL) ? <span className="gs-fail">{(gs.FAIL ?? 0) + (gs.MANUAL_FAIL ?? 0)} Fail</span> : null}
+                        {(gs?.BLOCKED || gs?.MANUAL_BLOCKED) ? <span className="gs-blocked">{(gs.BLOCKED ?? 0) + (gs.MANUAL_BLOCKED ?? 0)} Blocked</span> : null}
                       </span>
                     </div>
                   ) : null}
@@ -605,6 +606,25 @@ function App() {
                           )}
                         </tbody>
                       </table>
+                      <div className="pm-review-box">
+                        <div className="pm-review-title">PM 最終判定</div>
+                        <textarea
+                          value={pmReviewNotes[c.id] ?? ""}
+                          onChange={(event) => setPmReviewNotes((current) => ({ ...current, [c.id]: event.target.value }))}
+                          placeholder="複核備註（選填）"
+                        />
+                        <div className="pm-review-actions">
+                          <button className="btn sm success" onClick={() => void handlePmReview(c, "MANUAL_PASS")} disabled={runBusy}>
+                            PM Pass
+                          </button>
+                          <button className="btn sm danger" onClick={() => void handlePmReview(c, "MANUAL_FAIL")} disabled={runBusy}>
+                            PM Fail
+                          </button>
+                          <button className="btn sm" onClick={() => void handlePmReview(c, "MANUAL_BLOCKED")} disabled={runBusy}>
+                            PM Blocked
+                          </button>
+                        </div>
+                      </div>
                     </div>
                   ) : null}
                 </div>
@@ -1365,6 +1385,35 @@ function App() {
       setApprovalNotes((current) => {
         const next = { ...current };
         delete next[approval.id];
+        return next;
+      });
+      await loadRuns();
+      await loadRunDetail(selectedRunId);
+    } catch (error) {
+      setRunError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setRunBusy(false);
+    }
+  };
+
+  const handlePmReview = async (runCase: RunCase, finalStatus: "MANUAL_PASS" | "MANUAL_FAIL" | "MANUAL_BLOCKED") => {
+    if (!selectedRunId) return;
+    setRunBusy(true);
+    setRunError("");
+    try {
+      await api(`/api/runs/${selectedRunId}/pm-review`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          caseNo: runCase.case_no,
+          finalStatus,
+          reviewedBy: resolvedBy,
+          note: pmReviewNotes[runCase.id]?.trim() || undefined,
+        }),
+      });
+      setPmReviewNotes((current) => {
+        const next = { ...current };
+        delete next[runCase.id];
         return next;
       });
       await loadRuns();
