@@ -6,6 +6,7 @@ import type { AgentConfig, AgentMessage } from "./types";
 import type { AgentConnection } from "./connection";
 import { readFirstInputCase, writeAgentResultXlsx } from "./result-writer";
 import { validateResultWorkbookContract } from "./result-contract";
+import { ensureBlockedResultCurrentRunEvidence } from "./result-evidence-enricher";
 import { parseToolRequests, type ParsedToolRequest } from "./tool-bridge";
 import { writeBiUiHelperGuidance } from "./bi-ui-helper-guidance";
 import { writeCapabilityGate } from "./capability-gate";
@@ -1243,6 +1244,8 @@ const buildPrompt = (
     "- `input/helper-execution-plan.*` may provide UI helper actions. Helper evidence can support judgment, but helper `status=ok` is never PASS.",
     "- Helper report is usable only if the Agent hard gate accepted its runId/caseId/action/timestamp/currentRunEvidence metadata.",
     "- If `output/helper-pre-run-summary.json` exists, inspect it before repeating UI steps. Reuse successful helper evidence when it satisfies current-run evidence needs; only repeat actions when evidence is incomplete or state is not aligned.",
+    "- If browser MCP exposes only navigation/tab/resize tools, do not mark EVIDENCE_INSUFFICIENT while `input/helper-execution-plan.json` still contains executable helper commands. Use shell command_execution to run the remaining helper executor actions one at a time.",
+    "- For helper actions with `requiresToolBridge=true`, first emit the required Tool Bridge request and stop. After the Mac Agent delivers an approved response, run the helper executor command with `--approved-tool-request-id <request_id>` for that single current-case action.",
     "- Execute and record one case at a time. `case-manifest.json` is only an index; it is not permission to batch multiple case flows.",
     "- After each case, write or update evidence/result for that case before reading the next case JSON.",
     "- If startup instruction names a starting case, Agent resolves that into `current-case.json`; do not emit ambiguity merely because the workbook contains earlier cases.",
@@ -1312,7 +1315,8 @@ const buildPrompt = (
     "- 測試案例 sheet should include at minimum: 群組, 編號, 測試項目, 測試類型, 執行方式, 結果, 失敗分類, 詳細紀錄JSON.",
     "- Bug sheet should include at minimum: 嚴重度, Bug ID, 關聯編號, 標題, 描述, 建議, 狀態. You may add Evidence as an extra column.",
     "- 詳細紀錄JSON required fields: PASS => 測試目的, 設定條件, 預期行為, 實際行為; FAIL => PASS fields plus 錯誤原因, 根因層級, 驗證方法, RD 分派; BLOCKED => blocked_reason; PARTIAL => 部分符合的子項清單, 不符的子項清單.",
-    "- FAIL/BLOCKED/PARTIAL workbooks that omit the required detail_json fields will be rejected by result evidence gate.",
+    "- Every result status, including BLOCKED, must include current-run evidence in detail_json under a meaningful key such as `currentRunEvidence`; cite helper report paths, preflight DOM/url/title, mcp-output snapshot/session files, screenshot paths, network/chart evidence, or Tool Bridge response ids.",
+    "- FAIL/BLOCKED/PARTIAL workbooks that omit the required detail_json fields or current-run evidence will be rejected by result evidence gate.",
     "- If you cannot execute the real UAT, explain why; the agent will create a fallback summary workbook.",
     "- Do not use Tool Bridge for missing testcase files; report the missing files and exit cleanly.",
     "- For user approval or SSO/manual blockers, emit only supported actionable Tool Bridge types: irreversible_operation, ambiguity_decision, playwright_recovery.",
@@ -2378,6 +2382,27 @@ const uploadRunArtifacts = async (options: UploadArtifactsOptions): Promise<Uplo
       false
     );
   } else if (outputUrls.result_xlsx) {
+    const evidenceEnrichmentReport = resultSource === "codex_generated"
+      ? await ensureBlockedResultCurrentRunEvidence({
+        filePath: resultXlsxPath,
+        runId,
+        runDir
+      })
+      : null;
+    if (evidenceEnrichmentReport) {
+      writeJson(path.join(runDir, "output", "result-evidence-enrichment.json"), evidenceEnrichmentReport);
+      if (evidenceEnrichmentReport.status === "updated") {
+        sendBestEffort(
+          connection,
+          "run.stdout",
+          {
+            run_id: runId,
+            text: "uat-agent enriched BLOCKED result detail_json with current-run evidence pointers before upload."
+          },
+          false
+        );
+      }
+    }
     const contractReport = await validateResultWorkbookContract(resultXlsxPath);
     writeJson(path.join(runDir, "output", "result-xlsx-self-check.json"), contractReport);
     if (contractReport.status === "error") {
