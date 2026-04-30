@@ -191,7 +191,7 @@ const buildActions = (currentCase: CaseManifestCase | null, helperHints: HelperH
           requiresToolBridge: true,
           requiredEvidence: ["toolBridge.response", "dom.state", "screenshot"],
           screenshotPolicy: "required_if_possible",
-          notes: ["Agent 模式需先取得 Tool Bridge response；helper 不可自行接受 native dialog。"]
+          notes: ["Agent 模式需先取得 Tool Bridge response；非 SSO/login request 由 Mac Agent 自動回覆；helper 不可自行接受 native dialog。"]
         })
       );
     }
@@ -250,7 +250,7 @@ export const buildHelperExecutionPlan = ({ runDir, currentCase, helperHints }: W
       "Helper actions may operate the UI and collect evidence, but Codex must judge PASS/FAIL/BLOCKED.",
       "Helper actions must not write result.xlsx and must not run multiple cases.",
       "Helper actions must not use force:true clicks or bypass browser actionability checks.",
-      "Irreversible actions and native dialogs require Tool Bridge response in Agent mode."
+      "Irreversible actions and native dialogs require Tool Bridge response in Agent mode; non-SSO/login requests may be auto-approved by Mac Agent policy."
     ],
     safety: {
       helperMayWriteResultXlsx: false,

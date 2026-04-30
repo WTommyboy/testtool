@@ -242,6 +242,96 @@ const verifyToolResponseRoundtrip = async (baseUrl: string): Promise<void> => {
   ws.close();
 };
 
+const verifyAutoApprovedToolRequestIsClosed = async (baseUrl: string): Promise<void> => {
+  const run = await postJson<{ id: string; status: string }>(baseUrl, "/api/runs", {
+    domain: "BI",
+    roundId: "ROUNDTRIP-AUTO-APPROVAL-001",
+    location: "數據中心",
+    featureMain: "BI工具",
+    featureSub: "auto approval smoke",
+    runName: "Auto Approval Smoke",
+    devUrl: "https://example.com",
+    executionMode: "interactive"
+  });
+  assert.equal(run.status, "READY");
+
+  const token = await postBootstrapJson<{ token: string }>(baseUrl, "/api/agents/tokens", { deviceName: "Auto Approval Agent" });
+  const wsUrl = baseUrl.replace(/^http/, "ws");
+  const ws = new WebSocket(`${wsUrl}/agent-ws`, {
+    headers: { Authorization: `Bearer ${token.token}` }
+  });
+  let seq = 1;
+  const send = (type: string, payload: JsonObject, ackRequired = false): void => {
+    ws.send(JSON.stringify({
+      id: `msg_auto_approval_${seq}`,
+      seq: seq++,
+      type,
+      timestamp: new Date().toISOString(),
+      ack_required: ackRequired,
+      payload
+    }));
+  };
+
+  await new Promise<void>((resolve, reject) => {
+    ws.once("open", () => resolve());
+    ws.once("error", reject);
+  });
+  send("agent.online", {
+    device_name: "Auto Approval Agent",
+    agent_version: "smoke",
+    status: "busy",
+    current_run_id: run.id
+  });
+  send("run.tool_request", {
+    run_id: run.id,
+    request_id: "roundtrip-auto-req-1",
+    request: {
+      type: "irreversible_operation",
+      request_id: "roundtrip-auto-req-1",
+      case: "A-01",
+      action: "Save temporary report",
+      reason: "Roundtrip auto approval smoke"
+    },
+    raw: "{}",
+    auto_approval: {
+      policy: "mac_agent_non_sso_login_auto_approval_v1",
+      approved: true,
+      resolved_by: "mac_agent_auto_policy",
+      note: "Auto approval smoke"
+    }
+  }, true);
+  send("tool_response.delivered", {
+    run_id: run.id,
+    request_id: "roundtrip-auto-req-1",
+    approved: true,
+    resolved_by: "mac_agent_auto_policy",
+    auto_approved_by: "mac_agent",
+    auto_approval_policy: "mac_agent_non_sso_login_auto_approval_v1"
+  }, true);
+
+  await sleep(300);
+  const pendingApprovals = await requestJson<{ items: Array<{ status: string }> }>(
+    baseUrl,
+    `/api/runs/${run.id}/approvals?status=PENDING`
+  );
+  assert.equal(pendingApprovals.items.length, 0, "auto-approved tool request should not leave a pending approval");
+
+  const approvals = await requestJson<{ items: Array<{ status: string; resolved_by: string | null; reason: string }> }>(
+    baseUrl,
+    `/api/runs/${run.id}/approvals`
+  );
+  assert.equal(approvals.items.length, 1, "auto-approved tool request should create one approval audit row");
+  assert.equal(approvals.items[0]?.status, "APPROVED");
+  assert.equal(approvals.items[0]?.resolved_by, "mac_agent_auto_policy");
+  assert.match(approvals.items[0]?.reason ?? "", /request_id: roundtrip-auto-req-1/);
+
+  const summary = await requestJson<{ runStatus: string; pendingApprovals: number }>(baseUrl, `/api/runs/${run.id}/summary`);
+  assert.equal(summary.runStatus, "RUNNING");
+  assert.equal(summary.pendingApprovals, 0);
+
+  ws.close();
+};
+
 const verifyAgentDisconnectMarksRunFailed = async (baseUrl: string): Promise<void> => {
   const run = await postJson<{ id: string; status: string }>(baseUrl, "/api/runs", {
     domain: "BI",
@@ -528,6 +618,7 @@ const main = async (): Promise<void> => {
   try {
     await verifyDomainPackEndpoints(baseUrl);
     await verifyToolResponseRoundtrip(baseUrl);
+    await verifyAutoApprovedToolRequestIsClosed(baseUrl);
     await verifyAgentDisconnectMarksRunFailed(baseUrl);
     await verifyAgentHeartbeatTimeoutMarksRunFailed(baseUrl);
     await verifyAgentRunSnapshotIsRecorded(baseUrl);

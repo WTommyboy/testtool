@@ -51,7 +51,7 @@ const templateGuidance: Record<string, string[]> = {
   ],
   save_load_flow: [
     "儲存前確認是本輪臨時資源名稱，不覆蓋既有主資源。",
-    "Agent 模式遇到 native alert/confirm 或不可逆操作需 Tool Bridge response。",
+    "Agent 模式遇到 native alert/confirm 或不可逆操作需 Tool Bridge response；非 SSO/login request 會由 Mac Agent 依 policy 自動回覆。",
     "重開後用 DOM/network/chart evidence 驗證設定真的還原。"
   ],
   manual_ai: [
@@ -165,7 +165,7 @@ export const writeBiUiHelperGuidance = (runDir: string, options: WriteBiUiHelper
     "### 儲存/刪除/原生 Dialog",
     "",
     "1. 儲存、刪除、接受 native alert/confirm 前,先輸出 Tool Bridge request。",
-    "2. 未收到本 run 的 Tool Bridge response 前不可處理 dialog。",
+    "2. 未收到本 run 的 Tool Bridge response 前不可處理 dialog；非 SSO/login request 由 Mac Agent 自動 deliver response。",
     "3. 儲存新報表要用 timestamped 臨時名稱,不可覆蓋既有主測試資源。",
     "",
     "## One Case Guard",

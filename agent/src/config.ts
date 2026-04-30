@@ -30,6 +30,7 @@ export const defaultAgentConfig = (overrides: Partial<AgentConfig> = {}): AgentC
     process.env.UAT_AGENT_CODEX_REASONING_EFFORT === "xhigh"
     ? process.env.UAT_AGENT_CODEX_REASONING_EFFORT
     : "low",
+  auto_approve_tool_requests: process.env.UAT_AGENT_AUTO_APPROVE_TOOL_REQUESTS !== "false",
   codex_workspace_root: detectWorkspaceRoot(),
   workdir_root: path.join(os.homedir(), ".uat-agent", "runs"),
   chrome_profile_dir: path.join(os.homedir(), ".uat-agent", "chrome-profile"),

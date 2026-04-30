@@ -55,6 +55,13 @@ const getToolRequest = (message: AgentMessage): Record<string, unknown> => {
   return request && typeof request === "object" && !Array.isArray(request) ? request as Record<string, unknown> : {};
 };
 
+const getAutoApproval = (message: AgentMessage): Record<string, unknown> | null => {
+  const autoApproval = message.payload.auto_approval;
+  return autoApproval && typeof autoApproval === "object" && !Array.isArray(autoApproval)
+    ? autoApproval as Record<string, unknown>
+    : null;
+};
+
 const getRunSnapshot = (message: AgentMessage): Record<string, unknown> | null => {
   const snapshot = message.payload.run_snapshot;
   return snapshot && typeof snapshot === "object" && !Array.isArray(snapshot)
@@ -80,22 +87,24 @@ const formatToolRequestReason = (message: AgentMessage): string => {
   ].filter(Boolean).join("\n");
 };
 
-const insertToolRequestApproval = (runId: string, message: AgentMessage): void => {
+const insertToolRequestApproval = (runId: string, message: AgentMessage): { autoApproved: boolean; requestId: string } => {
   const now = nowIso();
   const request = getToolRequest(message);
+  const autoApproval = getAutoApproval(message);
+  const autoApproved = autoApproval?.approved === true;
   const caseNo = asString(request.case) ?? "TOOL_REQUEST";
   const requestId = asString(request.request_id) ?? asString(message.payload.request_id) ?? message.id;
   const existing = db
-    .prepare("SELECT id FROM approvals WHERE run_id = ? AND reason LIKE ? AND status = 'PENDING'")
+    .prepare("SELECT id FROM approvals WHERE run_id = ? AND reason LIKE ? AND status IN ('PENDING', 'APPROVED')")
     .get(runId, `%request_id: ${requestId}%`) as { id: string } | undefined;
-  if (existing) return;
+  if (existing) return { autoApproved, requestId };
 
   db.prepare(
     `
       INSERT INTO approvals (
-        id, run_id, case_no, step_no, reason, status, snapshot_path, created_at
+        id, run_id, case_no, step_no, reason, status, snapshot_path, created_at, resolved_at, resolved_by, resolution_note
       ) VALUES (
-        @id, @run_id, @case_no, @step_no, @reason, 'PENDING', NULL, @created_at
+        @id, @run_id, @case_no, @step_no, @reason, @status, NULL, @created_at, @resolved_at, @resolved_by, @resolution_note
       )
     `
   ).run({
@@ -104,8 +113,13 @@ const insertToolRequestApproval = (runId: string, message: AgentMessage): void =
     case_no: caseNo,
     step_no: 0,
     reason: formatToolRequestReason(message),
-    created_at: now
+    status: autoApproved ? "APPROVED" : "PENDING",
+    created_at: now,
+    resolved_at: autoApproved ? now : null,
+    resolved_by: autoApproved ? asString(autoApproval?.resolved_by) ?? "mac_agent_auto_policy" : null,
+    resolution_note: autoApproved ? asString(autoApproval?.note) ?? "Auto-approved by Mac Agent." : null
   });
+  return { autoApproved, requestId };
 };
 
 const setRunStatus = (runId: string, status: string): void => {
@@ -183,10 +197,16 @@ const handleAgentRunMessage = (agentId: string, message: AgentMessage): void => 
   }
 
   if (message.type === "run.tool_request") {
-    setRunStatus(runId, "WAITING_APPROVAL");
-    insertToolRequestApproval(runId, message);
+    const approval = insertToolRequestApproval(runId, message);
+    if (!approval.autoApproved) {
+      setRunStatus(runId, "WAITING_APPROVAL");
+    }
     insertRunEvent(runId, "tool_request.created", { agentId, payload: message.payload }, message.seq);
-    insertRunLog(runId, "WARN", "Agent requested PM action", { agentId, payload: message.payload });
+    insertRunLog(runId, approval.autoApproved ? "INFO" : "WARN", approval.autoApproved ? "Agent auto-approved Tool Bridge request" : "Agent requested PM action", {
+      agentId,
+      requestId: approval.requestId,
+      payload: message.payload
+    });
     return;
   }
 
