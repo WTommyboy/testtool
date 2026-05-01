@@ -13,6 +13,7 @@ type ResultWriterInput = {
 };
 
 export type AgentResultSourceCase = {
+  groupId: string | null;
   groupName: string | null;
   caseNo: string;
   caseTitle: string | null;
@@ -65,6 +66,7 @@ export const readFirstInputCase = async (
 
   const header = sheet.getRow(1);
   const columns = {
+    groupId: findColumn(header, ["群組ID", "group_id", "groupid", "group id"]),
     groupName: findColumn(header, ["群組", "group", "group_name"]),
     caseNo: findColumn(header, ["編號", "case_no", "caseno", "案例編號"]),
     caseTitle: findColumn(header, ["測試項目", "case_title", "title"]),
@@ -79,6 +81,7 @@ export const readFirstInputCase = async (
     const caseNo = cellText(row.getCell(columns.caseNo).value);
     if (!caseNo) continue;
     const sourceCase = {
+      groupId: columns.groupId ? nullable(cellText(row.getCell(columns.groupId).value)) : null,
       groupName: columns.groupName ? nullable(cellText(row.getCell(columns.groupName).value)) : null,
       caseNo,
       caseTitle: columns.caseTitle ? nullable(cellText(row.getCell(columns.caseTitle).value)) : null,
@@ -107,6 +110,7 @@ export const writeAgentResultXlsx = async (input: ResultWriterInput): Promise<st
 
   const cases = workbook.addWorksheet("測試案例");
   cases.columns = [
+    { header: "群組ID", key: "groupId", width: 12 },
     { header: "群組", key: "groupName", width: 18 },
     { header: "編號", key: "caseNo", width: 18 },
     { header: "測試項目", key: "caseTitle", width: 36 },
@@ -117,6 +121,7 @@ export const writeAgentResultXlsx = async (input: ResultWriterInput): Promise<st
     { header: "詳細紀錄JSON", key: "detailJson", width: 72 }
   ];
   cases.addRow({
+    groupId: input.sourceCase?.groupId ?? "",
     groupName: input.sourceCase?.groupName ?? "M1",
     caseNo: input.sourceCase?.caseNo ?? "AGENT-RESULT",
     caseTitle: input.sourceCase?.caseTitle ?? "Mac Agent Codex execution result",

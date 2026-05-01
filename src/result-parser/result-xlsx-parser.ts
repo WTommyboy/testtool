@@ -5,6 +5,7 @@ import { parseDetailJson } from "./detail-json";
 export const RESULT_XLSX_PARSER_VERSION = "result-xlsx-parser-v1";
 
 export type ParsedResultCase = {
+  groupId: string | null;
   groupName: string | null;
   caseNo: string;
   caseTitle: string | null;
@@ -75,6 +76,13 @@ const nullable = (value: string): string | null => {
   return value ? value : null;
 };
 
+const deriveGroupId = (groupId: string | null, groupName: string | null, caseNo: string): string | null => {
+  if (groupId) return groupId;
+  const fromGroupName = groupName?.match(/^([A-Za-z0-9_-]+)\s*[:：]/)?.[1];
+  if (fromGroupName) return fromGroupName;
+  return caseNo.match(/^[A-Za-z]+-([A-Za-z0-9]+)-\d+/)?.[1] ?? caseNo.match(/^([A-Za-z0-9]+)-\d+/)?.[1] ?? null;
+};
+
 const readSchemaVersion = (sheet: ExcelJS.Worksheet): string | null => {
   const schemaKeys = new Set(["schemaversion", "schema_version"]);
   const maxRows = Math.min(sheet.rowCount, 20);
@@ -106,6 +114,7 @@ export const parseResultXlsx = async (filePath: string): Promise<ParsedResultXls
   if (!caseSheet) throw new Error("RESULT_CASE_SHEET_NOT_FOUND");
   const caseHeader = caseSheet.getRow(1);
   const c = {
+    groupId: optionalHeader(caseHeader, ["群組ID", "group_id", "groupid", "group id"]),
     groupName: requireHeader(caseHeader, "groupName", ["群組", "group", "group_name"]),
     caseNo: requireHeader(caseHeader, "caseNo", ["編號", "case_no", "caseno", "案例編號"]),
     caseTitle: requireHeader(caseHeader, "caseTitle", ["測試項目", "case_title", "title"]),
@@ -122,8 +131,11 @@ export const parseResultXlsx = async (filePath: string): Promise<ParsedResultXls
     const caseNo = text(row.getCell(c.caseNo).value);
     if (!caseNo) continue;
     const detail = parseDetailJson(text(row.getCell(c.detailJson).value));
+    const groupName = nullable(text(row.getCell(c.groupName).value));
+    const groupId = c.groupId ? nullable(text(row.getCell(c.groupId).value)) : null;
     cases.push({
-      groupName: nullable(text(row.getCell(c.groupName).value)),
+      groupId: deriveGroupId(groupId, groupName, caseNo),
+      groupName,
       caseNo,
       caseTitle: nullable(text(row.getCell(c.caseTitle).value)),
       testType: nullable(text(row.getCell(c.testType).value)),

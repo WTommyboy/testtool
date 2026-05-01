@@ -34,6 +34,7 @@ const cleanupRequiresFeature = (value: string | null | undefined): boolean => !n
 
 const fullTextBlob = (item: CaseManifestCase | null, helperHints: HelperHints | null): string =>
   [
+    item?.groupId,
     item?.groupName,
     item?.caseNo,
     item?.caseTitle,

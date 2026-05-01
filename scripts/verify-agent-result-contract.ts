@@ -14,8 +14,9 @@ const writeBadLegacyWorkbook = async (filePath: string): Promise<void> => {
   workbook.addWorksheet("索引").addRow(["欄位", "值"]);
 
   const cases = workbook.addWorksheet("測試案例");
-  cases.addRow(["群組", "編號", "測試項目", "測試類型", "執行方式", "結果", "失敗分類", "詳細紀錄JSON"]);
+  cases.addRow(["群組ID", "群組", "編號", "測試項目", "測試類型", "執行方式", "結果", "失敗分類", "詳細紀錄JSON"]);
   cases.addRow([
+    "A",
     "A",
     "DEMO-A-01",
     "fixture",
@@ -45,8 +46,9 @@ const writeBlockedWorkbookWithoutEvidence = async (filePath: string): Promise<vo
   index.getCell("B1").value = "fixture-result-v1";
 
   const cases = workbook.addWorksheet("測試案例");
-  cases.addRow(["群組", "編號", "測試項目", "測試類型", "執行方式", "結果", "失敗分類", "詳細紀錄JSON"]);
+  cases.addRow(["群組ID", "群組", "編號", "測試項目", "測試類型", "執行方式", "結果", "失敗分類", "詳細紀錄JSON"]);
   cases.addRow([
+    "A",
     "A",
     "TOOL-A-01",
     "blocked fixture",

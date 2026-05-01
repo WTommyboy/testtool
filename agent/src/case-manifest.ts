@@ -6,6 +6,7 @@ import JSZip from "jszip";
 export type CaseManifestCase = {
   order: number;
   rowNumber: number;
+  groupId: string | null;
   groupName: string | null;
   caseNo: string;
   caseTitle: string | null;
@@ -31,7 +32,7 @@ export type CaseManifest = {
   currentCaseNo: string | null;
   currentCaseSelection: CaseManifestCurrentCaseSelection;
   totalCases: number;
-  groups: Array<{ name: string; caseCount: number; caseNos: string[] }>;
+  groups: Array<{ id: string | null; name: string; caseCount: number; caseNos: string[] }>;
   cases: CaseManifestCase[];
   warnings: string[];
 };
@@ -60,6 +61,7 @@ export type CaseManifestOptions = {
 };
 
 type HeaderColumns = {
+  groupId: number | null;
   groupName: number | null;
   caseNo: number | null;
   caseTitle: number | null;
@@ -110,6 +112,14 @@ const safeFilePart = (value: string): string => {
 
 const normalizeCaseNo = (value: string): string => value.trim().replace(/\s+/g, "").toUpperCase();
 
+const deriveGroupId = (groupId: string | null, groupName: string | null, caseNo: string): string | null => {
+  const explicit = groupId?.trim();
+  if (explicit) return explicit;
+  const fromGroupName = groupName?.trim().match(/^([A-Za-z0-9_-]+)\s*[:：]/)?.[1];
+  if (fromGroupName) return fromGroupName;
+  return caseNo.match(/^[A-Za-z]+-([A-Za-z0-9]+)-\d+/)?.[1] ?? caseNo.match(/^([A-Za-z0-9]+)-\d+/)?.[1] ?? null;
+};
+
 const findPreferredCase = (cases: CaseManifestCase[], preferred: string): { caseItem: CaseManifestCase | null; ambiguous: boolean } => {
   const target = normalizeCaseNo(preferred);
   const exact = cases.find((item) => normalizeCaseNo(item.caseNo) === target);
@@ -122,6 +132,7 @@ const findPreferredCase = (cases: CaseManifestCase[], preferred: string): { case
 };
 
 const aliases: Record<keyof HeaderColumns, string[]> = {
+  groupId: ["群組ID", "群組id", "group_id", "groupid", "group id"],
   groupName: ["群組", "group", "groupname", "group_name", "分類", "章節"],
   caseNo: ["編號", "案例編號", "case_no", "caseno", "caseid", "case_id", "id"],
   caseTitle: ["測試項目", "測試案例", "案例名稱", "case_title", "title", "name"],
@@ -169,7 +180,8 @@ const getCell = (row: ExcelJS.Row, column: number | null): string => {
   return column ? cellText(row.getCell(column).value) : "";
 };
 
-const caseGroupKey = (name: string | null): string => name?.trim() || "未分組";
+const caseGroupKey = (id: string | null, name: string | null): string => `${id?.trim() || "NO_GROUP_ID"}::${name?.trim() || "未分組"}`;
+const caseGroupName = (name: string | null): string => name?.trim() || "未分組";
 
 type MinimalXlsxSheet = {
   name: string;
@@ -318,10 +330,15 @@ const writeManifestFiles = (
   warnings: string[],
   options: CaseManifestOptions = {}
 ): CaseManifestResult => {
-  const grouped = new Map<string, string[]>();
+  const grouped = new Map<string, { id: string | null; name: string; caseNos: string[] }>();
   for (const item of cases) {
-    const key = caseGroupKey(item.groupName);
-    grouped.set(key, [...(grouped.get(key) ?? []), item.caseNo]);
+    const key = caseGroupKey(item.groupId, item.groupName);
+    const existing = grouped.get(key);
+    if (existing) {
+      existing.caseNos.push(item.caseNo);
+    } else {
+      grouped.set(key, { id: item.groupId, name: caseGroupName(item.groupName), caseNos: [item.caseNo] });
+    }
   }
 
   const requestedCaseNo = options.preferredStartCaseNo?.trim() ? normalizeCaseNo(options.preferredStartCaseNo) : null;
@@ -345,7 +362,12 @@ const writeManifestFiles = (
     currentCaseNo: selectedCase?.caseNo ?? null,
     currentCaseSelection,
     totalCases: cases.length,
-    groups: [...grouped.entries()].map(([name, caseNos]) => ({ name, caseCount: caseNos.length, caseNos })),
+    groups: [...grouped.values()].map((group) => ({
+      id: group.id,
+      name: group.name,
+      caseCount: group.caseNos.length,
+      caseNos: group.caseNos
+    })),
     cases,
     warnings
   };
@@ -390,22 +412,28 @@ const writeMinimalCaseManifest = async (
   fs.mkdirSync(casesDir, { recursive: true });
 
   const cases: CaseManifestCase[] = [];
+  let currentGroupId: string | null = null;
   let currentGroup: string | null = null;
   for (let rowIndex = header.rowIndex + 1; rowIndex < sheet.rows.length; rowIndex += 1) {
     const row = sheet.rows[rowIndex];
+    const groupIdText = nullable(getArrayCell(row, header.columns.groupId));
     const groupText = nullable(getArrayCell(row, header.columns.groupName));
     const caseNo = getArrayCell(row, header.columns.caseNo);
     if (!caseNo) {
+      if (groupIdText) currentGroupId = groupIdText;
       if (groupText) currentGroup = groupText;
       continue;
     }
 
+    currentGroupId = groupIdText ?? currentGroupId;
     currentGroup = groupText ?? currentGroup;
+    const groupId = deriveGroupId(currentGroupId, currentGroup, caseNo);
     const caseFileName = `${String(cases.length + 1).padStart(3, "0")}-${safeFilePart(caseNo)}.json`;
     const currentCaseFile = path.join(casesDir, caseFileName);
     const item: CaseManifestCase = {
       order: cases.length + 1,
       rowNumber: rowIndex + 1,
+      groupId,
       groupName: currentGroup,
       caseNo,
       caseTitle: nullable(getArrayCell(row, header.columns.caseTitle)),
@@ -479,29 +507,36 @@ export const writeCaseManifest = async (
   }
 
   if (!header.columns.groupName) warnings.push("GROUP_COLUMN_NOT_FOUND");
+  if (!header.columns.groupId) warnings.push("GROUP_ID_COLUMN_NOT_FOUND");
   if (!header.columns.caseTitle) warnings.push("CASE_TITLE_COLUMN_NOT_FOUND");
 
   const casesDir = path.join(outputDir, "cases");
   fs.mkdirSync(casesDir, { recursive: true });
 
   const cases: CaseManifestCase[] = [];
+  let currentGroupId: string | null = null;
   let currentGroup: string | null = null;
   for (let rowNumber = header.rowNumber + 1; rowNumber <= sheet.rowCount; rowNumber += 1) {
     const row = sheet.getRow(rowNumber);
+    const groupIdText = nullable(getCell(row, header.columns.groupId));
     const groupText = nullable(getCell(row, header.columns.groupName));
     const caseNo = getCell(row, header.columns.caseNo);
 
     if (!caseNo) {
+      if (groupIdText) currentGroupId = groupIdText;
       if (groupText) currentGroup = groupText;
       continue;
     }
 
+    currentGroupId = groupIdText ?? currentGroupId;
     currentGroup = groupText ?? currentGroup;
+    const groupId = deriveGroupId(currentGroupId, currentGroup, caseNo);
     const caseFileName = `${String(cases.length + 1).padStart(3, "0")}-${safeFilePart(caseNo)}.json`;
     const currentCaseFile = path.join(casesDir, caseFileName);
     const item: CaseManifestCase = {
       order: cases.length + 1,
       rowNumber,
+      groupId,
       groupName: currentGroup,
       caseNo,
       caseTitle: nullable(getCell(row, header.columns.caseTitle)),

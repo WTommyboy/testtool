@@ -103,6 +103,7 @@ Artifact upload 是附加 observability，不得改變 case PASS/FAIL/BLOCKED �
 
 `測試案例` sheet 至少包含：
 
+- `群組ID`
 - `群組`
 - `編號`
 - `測試項目`

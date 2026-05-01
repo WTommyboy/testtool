@@ -1332,7 +1332,7 @@ const buildPrompt = (
     "Result workbook contract:",
     `- Use ${guides.resultTemplatePath} as a column/shape reference when useful; do not edit the template in place.`,
     "- Preferred: create output/result.xlsx yourself with sheets named 索引, 測試案例, Bug.",
-    "- 測試案例 sheet should include at minimum: 群組, 編號, 測試項目, 測試類型, 執行方式, 結果, 失敗分類, 詳細紀錄JSON.",
+    "- 測試案例 sheet should include at minimum: 群組ID, 群組, 編號, 測試項目, 測試類型, 執行方式, 結果, 失敗分類, 詳細紀錄JSON.",
     "- Bug sheet should include at minimum: 嚴重度, Bug ID, 關聯編號, 標題, 描述, 建議, 狀態. You may add Evidence as an extra column.",
     "- 詳細紀錄JSON required fields: PASS => 測試目的, 設定條件, 預期行為, 實際行為; FAIL => PASS fields plus 錯誤原因, 根因層級, 驗證方法, RD 分派; BLOCKED => blocked_reason; PARTIAL => 部分符合的子項清單, 不符的子項清單.",
     "- Every result status, including BLOCKED, must include current-run evidence in detail_json under a meaningful key such as `currentRunEvidence`; cite helper report paths, preflight DOM/url/title, mcp-output snapshot/session files, screenshot paths, network/chart evidence, or Tool Bridge response ids.",

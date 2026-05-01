@@ -23,6 +23,7 @@ export const writeRunStateGuide = (runDir: string, runId: string, caseManifest: 
           caseNo: currentCase.caseNo,
           order: currentCase.order,
           caseFile: currentCase.currentCaseFile,
+          groupId: currentCase.groupId,
           groupName: currentCase.groupName
         }
       : null,

@@ -9,6 +9,7 @@ import type { CaseManifestCase } from "../agent/src/case-manifest";
 const collageSaveReopenCase: CaseManifestCase = {
   order: 1,
   rowNumber: 2,
+  groupId: "A",
   groupName: "A:拼貼模式工具測試",
   caseNo: "TOOL-A-01",
   caseTitle: "拼貼模式 — 完整建制流程(建立→執行→儲存→重新檢視 4 項設定還原)",

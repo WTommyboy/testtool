@@ -141,6 +141,7 @@ type RunCase = {
   id: string;
   case_no: string;
   case_title: string;
+  group_id?: string | null;
   group_name?: string | null;
   execution_type: string;
   result_status: string;

@@ -35,6 +35,7 @@ const writeWorkbook = async (xlsxPath: string): Promise<void> => {
   const sheet = workbook.addWorksheet("測試案例");
   sheet.addRow([
     "輪次ID",
+    "群組ID",
     "群組",
     "編號",
     "測試類型",
@@ -53,6 +54,7 @@ const writeWorkbook = async (xlsxPath: string): Promise<void> => {
   ]);
   sheet.addRow([
     "FIXTURE",
+    "H",
     "H:Helper hints fixture",
     caseId,
     "前後端整合",
@@ -137,6 +139,7 @@ const writeToolPrefixedWorkbook = async (xlsxPath: string): Promise<void> => {
   const sheet = workbook.addWorksheet("測試案例");
   sheet.addRow([
     "輪次ID",
+    "群組ID",
     "群組",
     "編號",
     "測試類型",
@@ -156,6 +159,7 @@ const writeToolPrefixedWorkbook = async (xlsxPath: string): Promise<void> => {
   for (const caseNo of ["TOOL-A-01", "TOOL-A-02"]) {
     sheet.addRow([
       "FIXTURE",
+      "A",
       "A:TOOL prefixed cases",
       caseNo,
       "功能流程",

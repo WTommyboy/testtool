@@ -24,6 +24,7 @@ import {
   type ResultEvidenceGateReport
 } from "./result-parser/result-evidence-gate";
 import { readOptionalDomainPackFile } from "./domain-loader";
+import { writeFinalAggregateResultXlsx, type AggregateBug, type AggregateCase, type AggregateRun } from "./result-aggregate-writer";
 
 const router = Router();
 
@@ -80,6 +81,7 @@ const createCasesSchema = z.object({
     .array(
       z.object({
         caseNo: z.string().min(1),
+        groupId: z.string().optional(),
         groupName: z.string().optional(),
         caseTitle: z.string().min(1),
         executionType: z.enum(CASE_EXECUTION_TYPE),
@@ -157,6 +159,8 @@ type RunInputPaths = {
 
 type RunOutputPaths = {
   result_xlsx_path?: string | null;
+  aggregate_result_xlsx_path?: string | null;
+  aggregate_result_generated_at?: string | null;
   log_path?: string | null;
   timing_summary_path?: string | null;
   diagnostic_summary_path?: string | null;
@@ -267,6 +271,7 @@ type MdRun = {
 type MdCase = {
   case_no: string;
   case_title: string;
+  group_id: string | null;
   group_name: string | null;
   execution_type: string | null;
   result_status: string | null;
@@ -397,10 +402,12 @@ const generateMd = (
   md += "## 詳細執行紀錄\n\n";
   let lastGroup = "";
   for (const c of cases) {
+    const groupId = c.group_id?.trim();
     const groupName = c.group_name?.trim() || "未分組";
-    if (groupName !== lastGroup) {
-      lastGroup = groupName;
-      md += `### ${mdEscape(groupName)}\n\n`;
+    const groupHeading = groupId ? `${groupId}｜${groupName}` : groupName;
+    if (groupHeading !== lastGroup) {
+      lastGroup = groupHeading;
+      md += `### ${mdEscape(groupHeading)}\n\n`;
     }
 
     md += `#### ${mdEscape(c.case_no)}｜${mdEscape(c.case_title)}\n\n`;
@@ -780,11 +787,12 @@ const prepareUpsertCaseStmt = () =>
   db.prepare(
     `
       INSERT INTO run_cases (
-        id, run_id, case_no, group_name, case_title, execution_type, result_status, detail_json, created_at, updated_at
+        id, run_id, case_no, group_id, group_name, case_title, execution_type, result_status, detail_json, created_at, updated_at
       ) VALUES (
-        @id, @run_id, @case_no, @group_name, @case_title, @execution_type, @result_status, @detail_json, @created_at, @updated_at
+        @id, @run_id, @case_no, @group_id, @group_name, @case_title, @execution_type, @result_status, @detail_json, @created_at, @updated_at
       )
       ON CONFLICT(run_id, case_no) DO UPDATE SET
+        group_id = excluded.group_id,
         group_name = excluded.group_name,
         case_title = excluded.case_title,
         execution_type = excluded.execution_type,
@@ -914,6 +922,7 @@ const upsertImportedTestcase = (
         id: randomUUID(),
         run_id: runId,
         case_no: item.caseNo,
+        group_id: item.groupId ?? null,
         group_name: item.groupName ?? null,
         case_title: item.caseTitle,
         execution_type: item.executionType,
@@ -1052,9 +1061,85 @@ const deleteBugsForParsedResult = (runId: string, parsed: { cases: ParsedResultC
 
 const expectedCaseNosForRun = (runId: string): string[] => {
   const rows = db
-    .prepare("SELECT case_no FROM run_cases WHERE run_id = ? ORDER BY created_at ASC, case_no ASC")
+    .prepare("SELECT case_no FROM run_cases WHERE run_id = ? ORDER BY COALESCE(group_id, ''), created_at ASC, case_no ASC")
     .all(runId) as Array<{ case_no: string }>;
   return uniqueCaseNosForGate(rows.map((item) => item.case_no));
+};
+
+const aggregateResultPathForRun = (runId: string): string => path.join(outputRoot, `${runId}-final-aggregate-result.xlsx`);
+
+const listAggregateCases = (runId: string): AggregateCase[] =>
+  db
+    .prepare(
+      `
+        SELECT group_id, group_name, case_no, case_title, execution_type, result_status, fail_category,
+               detail_json, created_at, updated_at
+        FROM run_cases
+        WHERE run_id = ?
+        ORDER BY COALESCE(group_id, ''), COALESCE(group_name, ''), case_no
+      `
+    )
+    .all(runId) as AggregateCase[];
+
+const listAggregateBugs = (runId: string): AggregateBug[] =>
+  db
+    .prepare(
+      `
+        SELECT id, severity, related_case_no, description, suggestion, created_at
+        FROM bugs
+        WHERE run_id = ?
+        ORDER BY related_case_no ASC, created_at ASC
+      `
+    )
+    .all(runId) as AggregateBug[];
+
+const casesReadyForFinalAggregate = (cases: AggregateCase[]): boolean => {
+  if (cases.length === 0) return false;
+  return !cases.some((item) => {
+    const status = normalizeParsedResultStatus(item.result_status ?? "PENDING");
+    return status === "PENDING" || status === "MANUAL_PENDING";
+  });
+};
+
+const generateFinalAggregateResult = async (runId: string): Promise<string | null> => {
+  const run = getRun(runId) as (AggregateRun & RunOutputPaths) | undefined;
+  if (!run) return null;
+  const cases = listAggregateCases(runId);
+  if (!casesReadyForFinalAggregate(cases)) return null;
+
+  const filePath = aggregateResultPathForRun(runId);
+  await writeFinalAggregateResultXlsx({
+    filePath,
+    run,
+    cases,
+    bugs: listAggregateBugs(runId)
+  });
+
+  const now = nowIso();
+  db.prepare("UPDATE runs SET aggregate_result_xlsx_path = ?, aggregate_result_generated_at = ?, updated_at = ? WHERE id = ?").run(
+    filePath,
+    now,
+    now,
+    runId
+  );
+  insertRunEvent(runId, "result.aggregate_generated", {
+    filePath,
+    caseCount: cases.length,
+    source: "normalized-server-state"
+  });
+  insertRunLog(runId, "INFO", "Final aggregate result xlsx generated", {
+    filePath,
+    caseCount: cases.length
+  });
+  return filePath;
+};
+
+const getDownloadResultXlsxPath = async (runId: string, run: RunOutputPaths): Promise<string | null> => {
+  if (run.aggregate_result_xlsx_path && fs.existsSync(run.aggregate_result_xlsx_path)) {
+    return run.aggregate_result_xlsx_path;
+  }
+  const aggregatePath = await generateFinalAggregateResult(runId);
+  return aggregatePath ?? run.result_xlsx_path ?? null;
 };
 
 const writeResultEvidenceGateReport = (filePath: string, report: ResultEvidenceGateReport): string => {
@@ -1107,13 +1192,14 @@ const ingestResultXlsx = async (
   const upsertCaseStmt = db.prepare(
     `
       INSERT INTO run_cases (
-        id, run_id, case_no, group_name, case_title, execution_type, result_status, fail_category,
+        id, run_id, case_no, group_id, group_name, case_title, execution_type, result_status, fail_category,
         detail_json, created_at, updated_at
       ) VALUES (
-        @id, @run_id, @case_no, @group_name, @case_title, @execution_type, @result_status, @fail_category,
+        @id, @run_id, @case_no, @group_id, @group_name, @case_title, @execution_type, @result_status, @fail_category,
         @detail_json, @created_at, @updated_at
       )
       ON CONFLICT(run_id, case_no) DO UPDATE SET
+        group_id = excluded.group_id,
         group_name = excluded.group_name,
         case_title = excluded.case_title,
         execution_type = excluded.execution_type,
@@ -1144,6 +1230,7 @@ const ingestResultXlsx = async (
         id: randomUUID(),
         run_id: runId,
         case_no: item.caseNo,
+        group_id: item.groupId,
         group_name: item.groupName,
         case_title: item.caseTitle ?? item.caseNo,
         execution_type: item.executionMethod ?? "agent",
@@ -1197,6 +1284,9 @@ const ingestResultXlsx = async (
 
   const runStatus = terminalStatusForRunCases(runId, parsed.cases);
   setRunStatusWithMeta(runId, runStatus, "Mac Agent");
+  if (TERMINAL_STATUSES.has(runStatus)) {
+    await generateFinalAggregateResult(runId);
+  }
 
   return {
     cases: parsed.cases.length,
@@ -1468,6 +1558,7 @@ router.post("/:id/cases", (req, res) => {
         id: randomUUID(),
         run_id: req.params.id,
         case_no: item.caseNo,
+        group_id: item.groupId ?? null,
         group_name: item.groupName ?? null,
         case_title: item.caseTitle,
         execution_type: item.executionType,
@@ -1885,7 +1976,7 @@ router.post("/:id/manual-fill", (req, res) => {
   });
 });
 
-router.post("/:id/pm-review", (req, res) => {
+router.post("/:id/pm-review", async (req, res) => {
   const run = getRun(req.params.id);
   if (!run) {
     return res.status(404).json({ error: "RUN_NOT_FOUND" });
@@ -1936,6 +2027,9 @@ router.post("/:id/pm-review", (req, res) => {
 
   const runStatus = terminalStatusForRunCases(req.params.id, []);
   setRunStatusWithMeta(req.params.id, runStatus, "Mac Agent + PM Review");
+  if (TERMINAL_STATUSES.has(runStatus)) {
+    await generateFinalAggregateResult(req.params.id);
+  }
   insertRunEvent(req.params.id, "pm_review.updated", {
     caseNo: parsed.data.caseNo,
     originalStatus,
@@ -2204,14 +2298,15 @@ router.post("/:id/ingest-result", async (req, res) => {
   }
 });
 
-router.get("/:id/output/result-xlsx", (req, res) => {
-  const run = getRun(req.params.id);
+router.get("/:id/output/result-xlsx", async (req, res) => {
+  const run = getRun(req.params.id) as (Record<string, unknown> & RunOutputPaths) | undefined;
   if (!run) {
     return res.status(404).json({ error: "RUN_NOT_FOUND" });
   }
+  const resultPath = await getDownloadResultXlsxPath(req.params.id, run);
   return safeSendRunOutputFile(
     res,
-    run.result_xlsx_path,
+    resultPath,
     `${String(run.round_id ?? req.params.id)}_result.xlsx`
   );
 });
@@ -2471,7 +2566,9 @@ router.get("/:id/cases", (req, res) => {
     return res.status(404).json({ error: "RUN_NOT_FOUND" });
   }
 
-  const items = db.prepare("SELECT * FROM run_cases WHERE run_id = ? ORDER BY created_at ASC").all(req.params.id);
+  const items = db
+    .prepare("SELECT * FROM run_cases WHERE run_id = ? ORDER BY COALESCE(group_id, ''), created_at ASC")
+    .all(req.params.id);
   return res.json({ items });
 });
 
@@ -2543,7 +2640,9 @@ router.get("/:id/summary", (req, res) => {
     location: run.location ?? null,
     featureMain: run.feature_main ?? null,
     featureSub: run.feature_sub ?? null,
-    resultXlsxAvailable: typeof run.result_xlsx_path === "string" && run.result_xlsx_path.trim().length > 0,
+    resultXlsxAvailable:
+      (typeof run.aggregate_result_xlsx_path === "string" && run.aggregate_result_xlsx_path.trim().length > 0) ||
+      (typeof run.result_xlsx_path === "string" && run.result_xlsx_path.trim().length > 0),
     resultIngestedAt: run.result_ingested_at ?? null,
     resultParserVersion: run.result_xlsx_parser_version ?? null,
     logAvailable: typeof run.log_path === "string" && run.log_path.trim().length > 0,
@@ -2613,7 +2712,7 @@ router.post("/:id/export-md", (req, res) => {
         SELECT *
         FROM run_cases
         WHERE run_id = ?
-        ORDER BY COALESCE(group_name, ''), case_no
+        ORDER BY COALESCE(group_id, ''), COALESCE(group_name, ''), case_no
       `
     )
     .all(req.params.id) as MdCase[];

@@ -11,6 +11,7 @@ type EvidenceTemplateId =
 
 const textBlob = (item: CaseManifestCase): string =>
   [
+    item.groupId,
     item.groupName,
     item.caseNo,
     item.caseTitle,
@@ -233,6 +234,7 @@ export const writeCurrentCasePack = (
       "",
       `- case_no: ${currentCase?.caseNo ?? "(unavailable)"}`,
       `- title: ${currentCase?.caseTitle ?? "(unavailable)"}`,
+      `- group_id: ${currentCase?.groupId ?? "(unavailable)"}`,
       `- group: ${currentCase?.groupName ?? "(unavailable)"}`,
       `- risk_level: ${currentCase?.riskLevel ?? "(unavailable)"}`,
       `- test_target: ${currentCase?.testTarget ?? "(unavailable)"}`,

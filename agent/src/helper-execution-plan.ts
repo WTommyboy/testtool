@@ -57,6 +57,7 @@ type WriteHelperExecutionPlanOptions = {
 
 const textBlob = (item: CaseManifestCase | null): string =>
   [
+    item?.groupId,
     item?.groupName,
     item?.caseNo,
     item?.caseTitle,

@@ -70,6 +70,7 @@ const currentCaseSection = (options: WriteBiUiHelperGuidanceOptions): string[] =
     "## Current Case Helper",
     "",
     `- case_no: ${currentCase?.caseNo ?? "(unavailable)"}`,
+    `- group_id: ${currentCase?.groupId ?? "(unavailable)"}`,
     `- risk_level: ${currentCase?.riskLevel ?? "(unavailable)"}`,
     `- test_target: ${currentCase?.testTarget ?? "(unavailable)"}`,
     `- cleanup_checklist: ${currentCase?.cleanupChecklist ?? "(unavailable)"}`

@@ -19,6 +19,8 @@ export const runs = pgTable("runs", {
   baselineData: jsonb("baseline_data").$type<Record<string, unknown>>().notNull().default({}),
   resultXlsxUrl: text("result_xlsx_url"),
   resultXlsxParserVersion: text("result_xlsx_parser_version"),
+  aggregateResultXlsxPath: text("aggregate_result_xlsx_path"),
+  aggregateResultGeneratedAt: timestamp("aggregate_result_generated_at", { withTimezone: true }),
   logPath: text("log_path"),
   diagnosticConfigJson: jsonb("diagnostic_config_json").$type<Record<string, unknown> | null>(),
   notes: text("notes"),
@@ -86,6 +88,7 @@ export const runCaseResults = pgTable(
       .notNull()
       .references(() => runs.id, { onDelete: "cascade" }),
     caseNo: text("case_no").notNull(),
+    groupId: text("group_id"),
     groupName: text("group_name"),
     testType: text("test_type"),
     caseTitle: text("case_title"),

@@ -32,6 +32,8 @@ export const migrate = (): void => {
       result_xlsx_path TEXT,
       result_ingested_at TEXT,
       result_xlsx_parser_version TEXT,
+      aggregate_result_xlsx_path TEXT,
+      aggregate_result_generated_at TEXT,
       log_path TEXT,
       log_uploaded_at TEXT,
 	      timing_summary_path TEXT,
@@ -48,6 +50,7 @@ export const migrate = (): void => {
       id TEXT PRIMARY KEY,
       run_id TEXT NOT NULL,
       case_no TEXT NOT NULL,
+      group_id TEXT,
       group_name TEXT,
       case_title TEXT NOT NULL,
       execution_type TEXT NOT NULL,
@@ -276,7 +279,16 @@ export const migrate = (): void => {
 	  if (!hasColumn("runs", "diagnostic_config_json")) {
 	    db.exec("ALTER TABLE runs ADD COLUMN diagnostic_config_json TEXT");
 	  }
+  if (!hasColumn("run_cases", "group_id")) {
+    db.exec("ALTER TABLE run_cases ADD COLUMN group_id TEXT");
+  }
   if (!hasColumn("run_cases", "group_name")) {
     db.exec("ALTER TABLE run_cases ADD COLUMN group_name TEXT");
+  }
+  if (!hasColumn("runs", "aggregate_result_xlsx_path")) {
+    db.exec("ALTER TABLE runs ADD COLUMN aggregate_result_xlsx_path TEXT");
+  }
+  if (!hasColumn("runs", "aggregate_result_generated_at")) {
+    db.exec("ALTER TABLE runs ADD COLUMN aggregate_result_generated_at TEXT");
   }
 };

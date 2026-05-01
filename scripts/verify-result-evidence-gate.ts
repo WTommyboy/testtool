@@ -46,9 +46,10 @@ const writeWorkbook = async (filePath: string, cases: FixtureCase[], schemaVersi
   index.getCell("B1").value = schemaVersion;
 
   const sheet = workbook.addWorksheet("測試案例");
-  sheet.addRow(["群組", "編號", "測試項目", "測試類型", "執行方式", "結果", "失敗分類", "詳細紀錄JSON"]);
+  sheet.addRow(["群組ID", "群組", "編號", "測試項目", "測試類型", "執行方式", "結果", "失敗分類", "詳細紀錄JSON"]);
   for (const item of cases) {
     sheet.addRow([
+      "H",
       "H:Fixture",
       item.caseNo,
       `${item.caseNo} result evidence gate fixture`,
@@ -72,8 +73,9 @@ const writeLegacyBugHeaderWorkbook = async (filePath: string): Promise<void> => 
   index.addRow(["schemaVersion", "legacy-bug-header-fixture-v1"]);
 
   const sheet = workbook.addWorksheet("測試案例");
-  sheet.addRow(["群組", "編號", "測試項目", "測試類型", "執行方式", "結果", "失敗分類", "詳細紀錄JSON"]);
+  sheet.addRow(["群組ID", "群組", "編號", "測試項目", "測試類型", "執行方式", "結果", "失敗分類", "詳細紀錄JSON"]);
   sheet.addRow([
+    "H",
     "H:Fixture",
     "FIX-H-01",
     "legacy bug header parser fixture",

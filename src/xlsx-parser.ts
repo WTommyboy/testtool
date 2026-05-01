@@ -4,6 +4,7 @@ import JSZip from "jszip";
 
 export type ParsedCase = {
   caseNo: string;
+  groupId?: string;
   groupName?: string;
   caseTitle: string;
   testType?: string;
@@ -29,14 +30,15 @@ export type ParsedStep = {
 };
 
 const CASE_FALLBACK_COL = {
-  groupName: 2,
-  caseNo: 3,
-  testType: 4,
-  caseTitle: 5,
-  precondition: 6,
-  stepText: 7,
-  expectedResult: 8,
-  executionType: 10
+  groupId: 2,
+  groupName: 3,
+  caseNo: 4,
+  testType: 5,
+  caseTitle: 6,
+  precondition: 10,
+  stepText: 11,
+  expectedResult: 12,
+  executionType: 14
 } as const;
 
 const extractText = (value: unknown): string => {
@@ -61,6 +63,13 @@ const normalizeExecutionType = (value: unknown): "auto" | "semi" | "manual" => {
   if (["auto", "playwright mcp", "playwright", "自動"].includes(raw)) return "auto";
   if (["semi", "半自動", "claude in chrome"].includes(raw)) return "semi";
   return "auto";
+};
+
+const deriveGroupId = (groupId: string, groupName: string, caseNo: string): string => {
+  if (groupId) return groupId;
+  const fromGroupName = groupName.match(/^([A-Za-z0-9_-]+)\s*[:：]/)?.[1];
+  if (fromGroupName) return fromGroupName;
+  return caseNo.match(/^[A-Za-z]+-([A-Za-z0-9]+)-\d+/)?.[1] ?? caseNo.match(/^([A-Za-z0-9]+)-\d+/)?.[1] ?? "";
 };
 
 const getCellValue = (row: ExcelJS.Row, index: number): string => extractText(row.getCell(index).value);
@@ -96,6 +105,7 @@ export const parseTestcaseXlsx = async (
   caseHeaderRow.eachCell((cell, col) => caseHeaderMap.set(normalizeHeader(cell.value), col));
 
   const caseNoIdx = headerIndex(caseHeaderMap, "caseno", "case_no", "測試案例", "案例編號", "編號", "case");
+  const groupIdIdx = headerIndex(caseHeaderMap, "groupid", "group_id", "group id", "群組id", "群組ID");
   const groupNameIdx = headerIndex(caseHeaderMap, "group", "group_name", "群組", "分類");
   const testTypeIdx = headerIndex(caseHeaderMap, "testtype", "test_type", "測試類型", "類型");
   const caseTitleIdx = headerIndex(caseHeaderMap, "casetitle", "case_title", "測試項目", "測試案例名稱", "title");
@@ -106,6 +116,7 @@ export const parseTestcaseXlsx = async (
   const stepsTextIdx = headerIndex(caseHeaderMap, "steps", "步驟", "測試步驟");
 
   const resolvedCaseNoIdx = caseNoIdx ?? CASE_FALLBACK_COL.caseNo;
+  const resolvedGroupIdIdx = groupIdIdx ?? CASE_FALLBACK_COL.groupId;
   const resolvedGroupNameIdx = groupNameIdx ?? CASE_FALLBACK_COL.groupName;
   const resolvedTestTypeIdx = testTypeIdx ?? CASE_FALLBACK_COL.testType;
   const resolvedCaseTitleIdx = caseTitleIdx ?? CASE_FALLBACK_COL.caseTitle;
@@ -124,6 +135,7 @@ export const parseTestcaseXlsx = async (
     const caseNo = getCellValue(row, resolvedCaseNoIdx);
     if (!caseNo) continue;
 
+    const groupId = getCellValue(row, resolvedGroupIdIdx);
     const groupName = getCellValue(row, resolvedGroupNameIdx);
     const testType = getCellValue(row, resolvedTestTypeIdx);
     const caseTitle = getCellValue(row, resolvedCaseTitleIdx);
@@ -167,6 +179,7 @@ export const parseTestcaseXlsx = async (
 
     cases.push({
       caseNo,
+      groupId: deriveGroupId(groupId, groupName, caseNo) || undefined,
       groupName: groupName || undefined,
       caseTitle,
       testType: testType || undefined,
@@ -381,6 +394,7 @@ const parseMinimalXlsx = async (filePath: string): Promise<{ cases: ParsedCase[]
   });
 
   const caseNoIdx = headerIndex(caseHeaderMap, "caseno", "case_no", "測試案例", "案例編號", "編號", "case");
+  const groupIdIdx = headerIndex(caseHeaderMap, "groupid", "group_id", "group id", "群組id", "群組ID");
   const groupNameIdx = headerIndex(caseHeaderMap, "group", "group_name", "群組", "分類");
   const testTypeIdx = headerIndex(caseHeaderMap, "testtype", "test_type", "測試類型", "類型");
   const caseTitleIdx = headerIndex(caseHeaderMap, "casetitle", "case_title", "測試項目", "測試案例名稱", "title");
@@ -391,6 +405,7 @@ const parseMinimalXlsx = async (filePath: string): Promise<{ cases: ParsedCase[]
   const stepsTextIdx = headerIndex(caseHeaderMap, "steps", "步驟", "測試步驟");
 
   const resolvedCaseNoIdx = caseNoIdx ?? CASE_FALLBACK_COL.caseNo;
+  const resolvedGroupIdIdx = groupIdIdx ?? CASE_FALLBACK_COL.groupId;
   const resolvedGroupNameIdx = groupNameIdx ?? CASE_FALLBACK_COL.groupName;
   const resolvedTestTypeIdx = testTypeIdx ?? CASE_FALLBACK_COL.testType;
   const resolvedCaseTitleIdx = caseTitleIdx ?? CASE_FALLBACK_COL.caseTitle;
@@ -408,6 +423,7 @@ const parseMinimalXlsx = async (filePath: string): Promise<{ cases: ParsedCase[]
     const caseNo = getArrayCellValue(row, resolvedCaseNoIdx);
     if (!caseNo) continue;
 
+    const groupId = getArrayCellValue(row, resolvedGroupIdIdx);
     const groupName = getArrayCellValue(row, resolvedGroupNameIdx);
     const testType = getArrayCellValue(row, resolvedTestTypeIdx);
     const caseTitle = getArrayCellValue(row, resolvedCaseTitleIdx);
@@ -444,6 +460,7 @@ const parseMinimalXlsx = async (filePath: string): Promise<{ cases: ParsedCase[]
 
     cases.push({
       caseNo,
+      groupId: deriveGroupId(groupId, groupName, caseNo) || undefined,
       groupName: groupName || undefined,
       caseTitle,
       testType: testType || undefined,

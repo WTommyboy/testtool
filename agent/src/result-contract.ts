@@ -44,7 +44,7 @@ const defaultAdapter: ResultParserAdapter = {
     bugs: "Bug"
   },
   headers: {
-    cases: ["群組", "編號", "測試項目", "測試類型", "執行方式", "結果", "失敗分類", "詳細紀錄JSON"],
+    cases: ["群組ID", "群組", "編號", "測試項目", "測試類型", "執行方式", "結果", "失敗分類", "詳細紀錄JSON"],
     bugs: ["嚴重度", "Bug ID", "關聯編號", "標題", "描述", "建議", "狀態"],
     optionalBugHeaders: ["Evidence"]
   },
