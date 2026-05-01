@@ -781,3 +781,12 @@ Tommy 曾討論是否改成腳本。最後決策是採「半腳本化 / helper �
 - 日期工具補強：`collage.configureMetric` 會在 `configureMetric.before/after`、`dateRange.popupOpened`、`dateRange.staticTabRequested`、`dateRange.staticCalendar`、`dateRange.afterStartDay`、`dateRange.endCalendarReady`、`dateRange.afterEndDay`、`dateRange.afterConfirm` 等節點留下 profile ref。若再遇到類似「點 start 後 end calendar 被重算」的情境，helper report 可直接顯示 widget 結構與 signature/state 變化。
 - Artifact pipeline：`evidence-artifacts` 將 `dom-profiles/*.json` 標為 `ui_dom_profile`，線上 artifact list 可追溯。Profile 是 current-run diagnostic/evidence context，可輔助 Codex 判斷 locator drift 與 UI 結構；但不可取代 visible UI action、postcondition、network/chart/table evidence，也不可直接作為 PASS/FAIL 判定。
 - 修改檔案：`agent/src/bi-ui-helper-executor.ts`、`agent/src/evidence-artifacts.ts`、`agent-skills/uat-tool/rules/helper-protocol.md`、本 planning log。
+
+### 2026-05-01 08:48 - 修正 OTTEST002_08：BI save 已知第二彈窗卡住
+
+- 背景：OTTEST002 run `e4ad1b3f-31d2-4fd6-af98-439df1d1c86e` 顯示前一版優化已生效，helper pre-run 以 16 秒完成 `openProject/createReport/configureMetric/runPreviewAndCollectEvidence` 4/4，速度明顯改善。但 save Tool Bridge auto approval 後，畫面卡在原生 confirm「是否返回報表列表？」。本機 artifact `saved-report.json` 證實 helper 已捕捉到兩個 dialog：`報表儲存成功！` 與 `是否返回報表列表？`，但舊 dialog guard 只接受第一個 dialog，第二個只設 recovery flag 卻未 accept/dismiss，導致 Playwright action 無法返回，也沒有產出 `helper-continuation-summary.json`。
+- 根因判定：這不是測試文件沒說該點哪個按鈕，而是 runtime 對 BI save flow 的已知 dialog chain 太保守。`是否返回報表列表？` 是 save/reopen 流程的必要且可辨認步驟，而且該 action 已有本 run 的 Tool Bridge response（Mac Agent auto approval），應由 helper 在同一個已授權 save action 內處理。
+- 本次修正：`collage.saveReport` 新增 dialog decision：收到 Tool Bridge response 後，已知 BI save dialog（儲存成功、是否新增/建立報表、是否返回報表列表）可自動 accept；SSO/login/auth 類或未知 follow-up dialog 不 auto-accept，改 dismiss 後標記 recovery，避免卡死。save submit 與整段 save flow 也加 timeout guard，避免 dialog handler 或 actionability 問題再次造成 5 分鐘以上無輸出。
+- 規則同步：更新 Codex prompt、helper execution plan、BI helper guidance 與 Layer 1 `tool-bridge.md`，把規則改成「未收到 Tool Bridge response 前不可處理 native dialog；收到後只可處理已知 BI save dialog；未知 follow-up native dialog 走 recovery」。避免文件仍要求第二彈窗一律不可處理，和 runtime 互相衝突。
+- 回滾方式：若 known dialog whitelist 誤按非預期 dialog，先把 `UAT_AGENT_AUTO_APPROVE_TOOL_REQUESTS=false` 關掉 auto approval 並重啟本機 Agent；必要時回滾本 commit，使 save 後第二 dialog 回到 recovery/人工處理。不可移除 save flow timeout guard，否則會回到 OTTEST002_08 的長時間卡住問題。
+- 修改檔案：`agent/src/bi-ui-helper-executor.ts`、`agent/src/task-runner.ts`、`agent/src/helper-execution-plan.ts`、`agent/src/bi-ui-helper-guidance.ts`、`agent-skills/uat-tool/rules/tool-bridge.md`、本 planning log。

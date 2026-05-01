@@ -83,12 +83,14 @@ native confirm/alert 與不可逆操作一律需要 Tool Bridge。
 
 同一個 save/delete/overwrite/native flow 中，如果已處理第一個 native alert/confirm，接著偵測到或合理推定還有第二個 native dialog：
 
-- 不要再嘗試用 Playwright accept/dismiss 第二個 dialog。
+- 未收到 Tool Bridge response 前，不要嘗試用 Playwright accept/dismiss 任何 dialog。
+- 收到 Tool Bridge response 後，Agent helper 只可自動處理已知 BI save flow dialog，例如「報表儲存成功」與「是否返回報表列表？」。
+- 未知第二個 dialog 不可直接 accept；需轉成 recovery。
 - 不要用 repeated snapshot/read_page 去賭頁面是否已恢復，dialog chain 會讓這些操作 timeout。
 - 立即 emit `playwright_recovery` Tool Bridge request。
-- 由 Tommy 在 persistent Chrome 手動處理第二個 dialog，再按 UAT Tool 的 continue。
+- 由 Tommy 或 Mac Agent auto approval policy 處理 recovery 後，再繼續同一題。
 
-目的：避免連續 native dialog 在 Playwright MCP 層 timeout，造成 60-120 秒無效等待。
+目的：避免連續 native dialog 在 Playwright MCP 層 timeout，造成 60-120 秒無效等待；同時允許已知且必要的 BI save return-to-list confirm 在同一個已授權 action 內完成。
 
 request 必須說明：
 

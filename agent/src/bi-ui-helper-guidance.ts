@@ -17,7 +17,7 @@ const templateGuidance: Record<string, string[]> = {
   collage_build_preview_save_reopen: [
     "建立拼貼報表時，每次新增欄位/條件後立刻用 DOM 或 snapshot 驗證狀態。",
     "preview 後以 network/chart/table evidence 證明本次 UI action 有生效。",
-    "儲存、重開、刪除臨時報表若涉及 irreversible/native dialog，Agent 模式必須走 Tool Bridge。"
+    "儲存、重開、刪除臨時報表若涉及 irreversible/native dialog，Agent 模式必須先走 Tool Bridge；核准後 helper 只可處理已知 BI save dialog。"
   ],
   record_static_fields_date_payload: [
     "用 UI 進入明細模式並設定指定靜態欄位與日期。",
@@ -168,7 +168,7 @@ export const writeBiUiHelperGuidance = (runDir: string, options: WriteBiUiHelper
     "### 儲存/刪除/原生 Dialog",
     "",
     "1. 儲存、刪除、接受 native alert/confirm 前,先輸出 Tool Bridge request。",
-    "2. 未收到本 run 的 Tool Bridge response 前不可處理 dialog；非 SSO/login request 由 Mac Agent 自動 deliver response。",
+    "2. 未收到本 run 的 Tool Bridge response 前不可處理 dialog；非 SSO/login request 由 Mac Agent 自動 deliver response。收到 response 後，helper 可處理已知 BI save success / return-to-list dialog，未知 dialog 必須 recovery。",
     "3. 儲存新報表要用 timestamped 臨時名稱,不可覆蓋既有主測試資源。",
     "",
     "## One Case Guard",

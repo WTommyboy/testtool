@@ -2,7 +2,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { chromium, type Browser, type Page, type Request, type Response } from "playwright";
+import { chromium, type Browser, type Dialog, type Page, type Request, type Response } from "playwright";
 import { closeChromeDebugSession, diagnoseChromeDebugSession, ensureChromeDebugSession, ensureSingleUserPageTab } from "./browser-session";
 import { readConfig } from "./config";
 
@@ -54,6 +54,22 @@ class HelperBlockedError extends Error {
     this.reason = reason;
   }
 }
+
+const withTimeout = async <T>(promise: Promise<T>, timeoutMs: number, reason: string): Promise<T> => {
+  return await new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new HelperBlockedError(`${reason}:${timeoutMs}ms`)), timeoutMs);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error) => {
+        clearTimeout(timer);
+        reject(error);
+      }
+    );
+  });
+};
 
 const isActionabilityFailure = (error: unknown): boolean => {
   const message = error instanceof Error ? error.message : String(error);
@@ -1431,30 +1447,91 @@ const clickModalSaveButton = async (page: Page): Promise<void> => {
   if (!clicked) throw new HelperBlockedError("SAVE_MODAL_SUBMIT_BUTTON_NOT_CLICKABLE");
 };
 
+type NativeDialogHandling = {
+  action: "accept" | "dismiss";
+  reason: string;
+  requiresRecovery: boolean;
+};
+
+const decideSaveDialogHandling = (dialogRecord: Record<string, unknown>, sequence: number): NativeDialogHandling => {
+  const type = String(dialogRecord.type ?? "");
+  const message = String(dialogRecord.message ?? "");
+  if (/sso|login|登入|密碼|password|驗證|認證/i.test(message)) {
+    return { action: "dismiss", reason: "auth_like_dialog_not_auto_approved", requiresRecovery: true };
+  }
+  if (/是否\s*(?:返回|回到)\s*報表列表|(?:返回|回到)\s*列表/.test(message)) {
+    return { action: "accept", reason: "known_bi_save_return_to_list_confirm", requiresRecovery: false };
+  }
+  if (/報表儲存成功|儲存成功|保存成功/.test(message)) {
+    return { action: "accept", reason: "known_bi_save_success_dialog", requiresRecovery: false };
+  }
+  if (/是否.*(?:新增|建立).*報表|(?:新增|建立)報表/.test(message)) {
+    return { action: "accept", reason: "known_bi_save_create_report_confirm", requiresRecovery: false };
+  }
+  if (sequence === 1 && type === "alert") {
+    return { action: "accept", reason: "first_save_alert_after_tool_bridge_approval", requiresRecovery: false };
+  }
+  return { action: "dismiss", reason: "unknown_native_dialog_dismissed_for_recovery", requiresRecovery: true };
+};
+
+type SaveReportObservedResult = {
+  nameInputEvidence: Record<string, unknown>;
+  saveModalProfile: UiDomProfileRef;
+  saveModalAfterFillProfile: UiDomProfileRef;
+};
+
 const saveReport = async (options: CliOptions, page: Page, startedAt: string): Promise<HelperReport> => {
   if (!options.approvedToolRequestId) return approvalRequired(options, "save current temporary report", startedAt);
   const reportName = resolveReportName(options);
   const dialogs: Record<string, unknown>[] = [];
   let dialogChainRequiresApproval = false;
   const uiProfileBefore = await captureUiDomProfile(options, page, "saveReport.before");
-  page.on("dialog", async (dialog) => {
-    dialogs.push({ type: dialog.type(), message: dialog.message(), defaultValue: dialog.defaultValue() });
-    if (dialogs.length === 1) {
-      await dialog.accept();
-      return;
+  const dialogHandler = async (dialog: Dialog) => {
+    const sequence = dialogs.length + 1;
+    const record: Record<string, unknown> = {
+      sequence,
+      type: dialog.type(),
+      message: dialog.message(),
+      defaultValue: dialog.defaultValue()
+    };
+    const handling = decideSaveDialogHandling(record, sequence);
+    record.handledAction = handling.action;
+    record.handledReason = handling.reason;
+    dialogs.push(record);
+    if (handling.requiresRecovery) dialogChainRequiresApproval = true;
+    try {
+      if (handling.action === "accept") {
+        await dialog.accept();
+      } else {
+        await dialog.dismiss();
+      }
+      record.handledAt = new Date().toISOString();
+    } catch (error) {
+      record.handledError = error instanceof Error ? error.message : String(error);
+      dialogChainRequiresApproval = true;
     }
-    dialogChainRequiresApproval = true;
-  });
-  const observed = await observeDuring(page, async () => {
-    await page.getByText("儲存報表", { exact: false }).first().click({ timeout: 15000 });
-    await page.waitForTimeout(600);
-    const saveModalProfile = await captureUiDomProfile(options, page, "saveReport.modalOpened");
-    const nameInputEvidence = await fillVisibleReportNameInput(page, reportName);
-    const saveModalAfterFillProfile = await captureUiDomProfile(options, page, "saveReport.modalAfterFill");
-    await clickModalSaveButton(page);
-    await page.waitForTimeout(1800);
-    return { nameInputEvidence, saveModalProfile, saveModalAfterFillProfile };
-  });
+  };
+  page.on("dialog", dialogHandler);
+  let observed: { result: SaveReportObservedResult; requests: Record<string, unknown>[]; responses: Record<string, unknown>[] } | null = null;
+  try {
+    observed = await withTimeout(
+      observeDuring(page, async (): Promise<SaveReportObservedResult> => {
+        await page.getByText("儲存報表", { exact: false }).first().click({ timeout: 15000 });
+        await page.waitForTimeout(600);
+        const saveModalProfile = await captureUiDomProfile(options, page, "saveReport.modalOpened");
+        const nameInputEvidence = await fillVisibleReportNameInput(page, reportName);
+        const saveModalAfterFillProfile = await captureUiDomProfile(options, page, "saveReport.modalAfterFill");
+        await withTimeout(clickModalSaveButton(page), 20000, "SAVE_MODAL_SUBMIT_TIMEOUT");
+        await page.waitForTimeout(1800);
+        return { nameInputEvidence, saveModalProfile, saveModalAfterFillProfile };
+      }),
+      45000,
+      "SAVE_REPORT_FLOW_TIMEOUT"
+    );
+  } finally {
+    page.off("dialog", dialogHandler);
+  }
+  if (!observed) throw new HelperBlockedError("SAVE_REPORT_FLOW_DID_NOT_COMPLETE");
   writeSavedReportState(options, reportName, { approvedToolRequestId: options.approvedToolRequestId, dialogs });
   if (dialogChainRequiresApproval) {
     const uiProfileAfterDialog = await captureUiDomProfile(options, page, "saveReport.dialogChain");
@@ -1475,14 +1552,14 @@ const saveReport = async (options: CliOptions, page: Page, startedAt: string): P
         nameInput: observed.result.nameInputEvidence
       },
       {},
-      ["NATIVE_DIALOG_CHAIN_REQUIRES_TOOL_BRIDGE", "SECOND_NATIVE_DIALOG_LEFT_FOR_PM_RECOVERY"],
+      ["NATIVE_DIALOG_CHAIN_REQUIRES_TOOL_BRIDGE", "UNKNOWN_NATIVE_DIALOG_RECOVERY_REQUIRED"],
       {
         toolRequest: {
           type: "playwright_recovery",
           request_id: `${options.caseId}-${sanitize(options.action)}-dialog-chain`,
           case: options.caseId,
-          error: "NATIVE_DIALOG_CHAIN: helper handled the first save dialog and detected a follow-up native dialog.",
-          proposed_action: "Tommy handles the visible follow-up native dialog in persistent Chrome, returns to the report list, then continues the UAT Tool run."
+          error: "NATIVE_DIALOG_CHAIN: helper handled known save dialog(s) and detected an unknown or auth-like follow-up native dialog.",
+          proposed_action: "Review the persistent Chrome state, resolve any remaining blocker if visible, then continue the UAT Tool run."
         }
       }
     );
