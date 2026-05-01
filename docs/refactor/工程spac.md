@@ -1,7 +1,7 @@
 # UAT Tool 最新工程 Spec
 
-**版本**: v2026-04-28  
-**狀態**: Mac Agent MVP / Indexed Guidance + Preflight Safeguards 已部署
+**版本**: v2026-05-02
+**狀態**: Mac Agent MVP / Indexed Guidance + Preflight Safeguards + groupId schema + final aggregate result 已部署
 **適用分支**: `refactor/mac-agent-mvp` / `codex/uat-tool-mvp`  
 **說明**: 檔名沿用 Tommy 提供的 `工程spac.md`;本文內容為工程 spec。
 
@@ -20,8 +20,10 @@
 - Tool Bridge
 - Layer 1 Skill
 - BI Domain Pack / generated guidance
-- result.xlsx ingestion
+- per-case result.xlsx ingestion
+- final aggregate result xlsx
 - phase / log / artifact
+- docs maintenance discipline
 
 不涵蓋:
 
@@ -107,6 +109,8 @@ GET  /api/runs/:id/cases
 POST /api/runs/:id/start
 POST /api/runs/:id/cancel
 POST /api/runs/:id/tool-response
+POST /api/runs/:id/output/result-xlsx
+GET  /api/runs/:id/output/result-xlsx
 ```
 
 WebSocket:
@@ -193,6 +197,13 @@ Inputs:
 - `domain`
 - `executionMode=interactive`
 - selected `agentId`
+
+Current testcase workbook contract:
+
+- `測試案例` sheet uses 17 columns for new BI online runs.
+- `群組ID / groupId` is required and must appear before `群組 / groupName`.
+- Parser still accepts older workbooks without `群組ID`; in that case it derives a fallback from `groupName` prefix or `caseNo`, but new authoring must not rely on fallback.
+- `groupId` is the machine grouping key for manifest groups, progress, ordering, group downloads, and final aggregate result sorting.
 
 Backend actions:
 
@@ -373,6 +384,7 @@ type CaseManifest = {
   sheetName: string | null;
   totalCases: number;
   groups: Array<{
+    id: string | null;
     name: string;
     caseCount: number;
     caseNos: string[];
@@ -384,6 +396,7 @@ type CaseManifest = {
 type CaseManifestCase = {
   order: number;
   rowNumber: number;
+  groupId: string | null;
   groupName: string | null;
   caseNo: string;
   caseTitle: string | null;
@@ -403,6 +416,7 @@ Parser behavior:
 - Prefer ExcelJS.
 - If ExcelJS fails, fallback to minimal JSZip xlsx XML reader.
 - Missing optional headers become `null`.
+- Missing `groupId / 群組ID` produces a warning and a fallback derived from group name or case number for backward compatibility.
 - Parse failure must not crash the entire run; warnings are written.
 
 ### 4.3 `input/current-case.json`
@@ -522,6 +536,7 @@ type RunState = {
     caseNo: string;
     order: number;
     caseFile: string;
+    groupId: string | null;
     groupName: string | null;
   } | null;
   carryover: {
@@ -657,13 +672,15 @@ Rules:
 Purpose:
 
 - Provide workbook column/shape reference.
-- Keep Codex responsible for authoring `output/result.xlsx`.
+- Keep Codex responsible for authoring the current case `output/result.xlsx`.
 
 Rules:
 
 - Do not edit template in place.
 - Do not switch to Agent-writing-results without a separate architecture decision.
 - Codex writes one case result at a time.
+- The template includes `群組ID` before `群組`.
+- The template must not contain sample `EX-*` rows; only headers are allowed, so Codex cannot accidentally copy fixture rows into formal output.
 
 ### 4.12 `input/network-observation-guidance.md`
 
@@ -1034,6 +1051,12 @@ Codex should write:
 output/result.xlsx
 ```
 
+Important:
+
+- `output/result.xlsx` is a single-case workbook for the current case only.
+- Codex must not accumulate multiple case rows in memory and write them at the end.
+- Agent uploads and backend ingests each case independently before advancing.
+
 Required sheets:
 
 ```text
@@ -1045,6 +1068,7 @@ Bug
 Minimum `測試案例` columns:
 
 ```text
+群組ID
 群組
 編號
 測試項目
@@ -1093,10 +1117,66 @@ This prevents the old bug where Codex ran some UI but only wrote `AGENT-RESULT P
 Backend result parser must:
 
 - parse case rows independently
+- parse optional `群組ID` and derive fallback only for legacy workbooks
 - preserve invalid detail_json raw value
 - not fail entire workbook for one bad detail_json row
 - ingest Bug sheet rows
 - save parser version
+
+### 9.4 Final Aggregate Workbook
+
+Backend generates the final downloadable xlsx from normalized server state, not from the last uploaded raw workbook.
+
+Generation trigger:
+
+- after a successful single-case result ingest, if all cases in the run are no longer `PENDING` / `MANUAL_PENDING`
+- on download request if the run is already complete and the aggregate file is missing
+
+Stored fields:
+
+```text
+runs.aggregate_result_xlsx_path
+runs.aggregate_result_generated_at
+```
+
+Raw upload retention:
+
+- `runs.result_xlsx_url` / raw result path still points to the latest uploaded single-case workbook for audit and manual re-ingest.
+- It must not be overwritten with the aggregate workbook path.
+
+Workbook contract:
+
+```text
+schema_version = uat-final-aggregate-result-v1
+source = normalized-server-state
+```
+
+Sheets:
+
+```text
+索引
+測試案例
+Bug
+```
+
+Final `測試案例` columns:
+
+```text
+群組ID
+群組
+編號
+測試項目
+測試類型
+執行方式
+結果
+失敗分類
+詳細紀錄JSON
+```
+
+Download behavior:
+
+- `GET /api/runs/:id/output/result-xlsx` first returns final aggregate if available.
+- If the run is not complete or aggregate generation is not possible, it falls back to the latest raw `result.xlsx`.
 
 ---
 
@@ -1301,6 +1381,8 @@ Known sources:
 - `evidence-templates/`
 - `result-template.xlsx`
 - `network-observation-guidance.md`
+- `groupId / 群組ID` schema in parser, manifest, current-case-pack, run-state and result parser
+- final aggregate result xlsx generated from normalized server state
 - structured evidence priority
 - batch-case policy detector
 - phase duration UI
@@ -1362,6 +1444,16 @@ Expected:
 - web build
 - Tool Bridge parser fixtures
 - Agent roundtrip smoke
+
+For schema/result artifact changes, also run the focused result checks:
+
+```bash
+npm run verify:agent-result-contract
+npm run verify:result-evidence-gate
+npm run verify:final-aggregate-result
+npm run verify:package-consistency
+git diff --check
+```
 
 ### 14.2 Agent Specific
 
@@ -1518,15 +1610,13 @@ Recommended:
 
 ### 16.1 Dirty Files
 
-Known pre-existing dirty files:
+Before editing, check:
 
-```text
-.env.example
-src/config.ts
-src/runner.ts
+```bash
+git status --short --branch
 ```
 
-Unless explicitly requested, do not stage or revert them.
+Pre-existing untracked local demo/output files are common in this workspace. Unless explicitly requested, do not stage, delete, or revert unrelated files.
 
 ### 16.2 Commit Discipline
 
@@ -1539,7 +1629,18 @@ npm run verify:all
 
 Only stage files related to the current change.
 
-### 16.3 Deployment Branches
+### 16.3 Documentation Sync Discipline
+
+Every runtime/schema/deployment/authoring change must update tracked docs in the same commit:
+
+- `docs/planning/online-uat-tool-development-log.md`
+- `docs/refactor/規劃說明.md`
+- `docs/refactor/工程spac.md`
+- any affected Layer 1, BI domain, authoring, or round source files
+
+`uat-tool/AGENTS.md` records this as a standing repo instruction so future sessions do not rely on chat memory.
+
+### 16.4 Deployment Branches
 
 Push both:
 
@@ -1566,11 +1667,12 @@ codex/uat-tool-mvp
 
 ### P0
 
-1. Add backend guard: imported cases > 0 but result only contains `AGENT-RESULT` should not mark run as `SUCCEEDED`.
-2. Add per-case progress events.
-3. Add current-case pointer update.
-4. Add Tool Bridge UI schema error display.
-5. Add Web UI display for `BATCH_CASE_POLICY_VIOLATION` with clear explanation.
+1. Add `collage.configureMetric` composite field support for strings such as `新增帳號數 + MAU(帳號) + 總營收(TWD)`.
+2. Add existing-report modification flow for `TOOL-A-05`: open report from A-01, add fields, preview, overwrite save, reopen.
+3. Add CSV download / preview comparison for `TOOL-A-04`, and adjust functional-flow judgment so known core restore failures are not hidden by later evidence gaps.
+4. Reduce recovery noise when no real recovery handler exists; write a direct BLOCKED reason instead of request-then-skipped loops.
+5. Add Web UI display for `BATCH_CASE_POLICY_VIOLATION`, result gate errors, and Tool Bridge schema errors with clear explanation.
+6. Add per-case progress events and current-case pointer visibility.
 
 ### P1
 
@@ -1604,9 +1706,10 @@ The current MVP is acceptable if:
 8. Codex performs UI operation for at least one real case.
 9. Tool Bridge request appears for save/confirm or SSO.
 10. After approval, Codex resumes same thread.
-11. Agent uploads real result.xlsx or safe fallback.
+11. Agent uploads real single-case result.xlsx or safe fallback.
 12. Backend does not mark fake/fallback result as trusted PASS.
-13. Web UI shows phase duration and useful logs.
+13. Backend ingests each case into normalized state and can generate final aggregate result xlsx after all cases terminal.
+14. Web UI shows phase duration and useful logs.
 
 ---
 
@@ -1632,6 +1735,7 @@ Optimize:
 - domain helper guidance
 - preflight-first
 - explicit run-state carryover
+- server-side final aggregate from normalized state
 - structured evidence priority
 - phase duration
 - case pointer

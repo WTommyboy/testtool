@@ -820,3 +820,12 @@ Tommy 曾討論是否改成腳本。最後決策是採「半腳本化 / helper �
 - 修改檔案：`src/xlsx-parser.ts`、`agent/src/case-manifest.ts`、`agent/src/current-case-pack.ts`、`agent/src/run-state-guide.ts`、`agent/src/result-writer.ts`、`agent/src/result-contract.ts`、`src/result-parser/result-xlsx-parser.ts`、`src/result-aggregate-writer.ts`、`src/runs.ts`、`src/db.ts`、`src/db/schema.ts`、`domain-packs/BI/result_parser_adapter.json`、`agent-skills/uat-tool/rules/artifacts-and-results.md`、fixture scripts、`package.json`、OTTEST002 source files、authoring rules。
 - 驗證：`npm run typecheck`、`npm run typecheck --prefix agent`、`npm run build`、`npm run build --prefix agent`、`npm run build --prefix web`、`npm run verify:agent-result-contract`、`npm run verify:result-evidence-gate`、`npm run verify:final-aggregate-result`、`npm run verify:helper-hints`、`npm run verify:package-consistency`、`npm run verify:capability-gate`、`npm run verify:case-advance-policy`、`npm run verify:tool-bridge`、`npm run verify:agent-resume`、`npm run verify:helper-report-gate`、`npm run verify:agent-roundtrip`、`git diff --check` 均通過。
 - 後續影響：下一輪 production run 完成後，UI 的 XLSX 下載應為多題 final aggregate workbook，不再只拿最後一題 raw `result.xlsx`。P0 後續仍需依 handoff 繼續處理 `collage.configureMetric` composite fields、`TOOL-A-05` existing-report flow、A-04 CSV / partial subcondition judgment、recovery noise。
+
+### 2026-05-02 05:12 - 文件維護紀律入 git：同步更新規劃說明與工程 spec
+
+- 背景：Tommy 指出本次調整雖已更新 planning log，但 `docs/refactor/規劃說明.md` 與 `docs/refactor/工程spac.md` 已久未同步線上版實況；也希望「每次更新調整完都要同步更新文件」不要只靠聊天記憶。
+- 決策：新增 tracked `uat-tool/AGENTS.md`，把 uat-tool 工程文件維護列為 repo 常駐指令。任何 runtime/schema/result artifact/Agent/helper/deployment/authoring 變更，需在同一 commit 更新 planning log、規劃說明、工程 spec 與受影響規則文件；若判斷不需更新文件，收尾回報必須明確說明原因。
+- 規劃說明更新：`docs/refactor/規劃說明.md` 版本更新為 `v2026-05-02`，補上 production 已部署 `b977784` 後的狀態、`groupId / 群組ID` schema、per-case result ingest、server final aggregate result xlsx、Web UI 下載行為、目前 P0 後續項目與文件維護紀律。
+- 工程 spec 更新：`docs/refactor/工程spac.md` 版本更新為 `v2026-05-02`，補上 17 欄 testcase schema、`groupId` manifest/current-case/run-state contract、單題 result workbook contract、final aggregate workbook contract、`runs.aggregate_result_xlsx_path / aggregate_result_generated_at`、result download fallback、verification 與 deployment/doc sync discipline。
+- 修改檔案：`AGENTS.md`、`docs/refactor/規劃說明.md`、`docs/refactor/工程spac.md`、本 planning log。
+- 驗證：本次是文件與 repo instruction 更新，需至少跑 markdown/doc diff 檢查、`git diff --check`，並以 git commit/push 固定。若後續同 commit 夾帶 runtime 變更，必須回到完整 typecheck/build/verify 流程。
