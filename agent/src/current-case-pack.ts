@@ -154,7 +154,13 @@ const inferMustReadRuleKeys = (
     "run-state",
     "evidence-policy",
     "artifacts-and-results",
-    "codex-runtime"
+    "codex-runtime",
+    "platform-skill",
+    "domain-routing",
+    "bi-project-agents-full",
+    "bi-rule-BI測試標準_共通方法論",
+    "bi-rule-BI測試_系統背景知識",
+    "bi-rule-BI系統_metadata摘要"
   ]);
   const operationTemplate = helperHints?.operationTemplate ?? "";
   const caseText = JSON.stringify(item ?? {});

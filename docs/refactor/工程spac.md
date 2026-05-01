@@ -498,6 +498,7 @@ Current-case behavior:
 
 - `input/current-case-pack.json.mustReadRuleKeys` is the mandatory first-pass rule bundle.
 - `rule-index.currentCaseRecommendations.ruleIds` merges the mandatory bundle with existing recommendation logic and filters it to available files.
+- Every BI case mandatory bundle includes platform skill, domain-routing, `PROJECT_AGENTS_FULL.md`, and the three canonical `BI_TEST_RULES/*.md` rulebooks before result judgment.
 - CSV/download cases add `reference-index`, `evidence-template-index` and BI helper guidance.
 - Metadata/dropdown cases add `reference-index` and the BI metadata rule; canonical CSV path is `rules/BI_DATA/metadata.csv`.
 
