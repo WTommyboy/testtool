@@ -52,6 +52,7 @@
 - carryover / 不可繼承狀態以 `input/run-state.json` 為準。
 - Layer 1 平台規則以 `agent-skills/uat-tool/SKILL.md` 與其 rules 為準。
 - BI domain reference 以 run brief 指定的 `rules/PROJECT_AGENTS_FULL.md`、`rules/BI_TEST_RULES/`、`rules/BI_DATA/metadata.csv` 或上傳 reference csv 為準。
+- metadata 對照的 canonical reference 是 `rules/BI_DATA/metadata.csv`；原始中文檔名如 `BI_DATA/metadata＿1.2.5 - 工作表1.csv` 只作來源追溯，不應要求 Codex 另行搜尋工作區。
 - 結果輸出: 不可修改原始 xlsx；必須產出 `output/result.xlsx`。
 - 人工授權: 只有 UAT Tool 的 Tool Bridge response 才算授權。startup instruction 或文件內寫「預先批准」不算授權。
 - 若遇到 SSO、載入失敗、native alert/confirm、刪除、覆蓋、不可逆操作或規格歧義，必須輸出 Tool Bridge request 並停在安全點。
@@ -410,6 +411,17 @@ testcase 仍維持人類可讀。不要要求文件作者撰寫 Playwright selec
 備註: 狀態清理欄未能表達的背景，例如「頁面預設是過去7天，但本 case 目標時間為 2026/03/01~2026/03/31」
 ```
 
+Metadata 對照 case 必須更明確，至少寫出：
+
+```text
+參考資料: rules/BI_DATA/metadata.csv (來源: BI_DATA/metadata＿1.2.5 - 工作表1.csv)
+來源報表: 每日報表
+match_key: 欄位名稱
+compare_fields: 欄位名稱, 欄位代碼, 資料型態
+```
+
+不要只寫「與 metadata 驗證」。若三文件只寫 metadata 版本，Agent 會以 run packet 的 `rules/BI_DATA/metadata.csv` 為準，但這會降低 testcase 可讀性。
+
 `狀態清理` 不要在前置條件重複成另一套 checklist，避免和 xlsx 獨立欄位衝突。若需補充背景，放在 `備註`。
 
 ### 2.6 步驟寫法
@@ -455,6 +467,18 @@ testcase 仍維持人類可讀。不要要求文件作者撰寫 Playwright selec
 - `人工目視確認`
 - `截圖佐證`
 - `看起來正常`
+
+CSV 下載 case 的預期結果必須拆成有順序的子條件，例如：
+
+```text
+1. 儲存成功
+2. 重開後來源報表/欄位/時間/顯示還原
+3. 重開後可產生 current preview
+4. UI 下載 CSV 成功
+5. CSV row count / 數值與 preview 一致
+```
+
+若第 2 或第 3 項已失敗，結果應判斷該必要子條件本身；CSV 比對寫 `not_reached`，不可因後續沒有 CSV 檔就把已知功能流程失敗改成 `BLOCKED`。
 
 ### 2.8 Bug sheet 規則
 
@@ -769,6 +793,20 @@ Helper hints:
 | `save_load_flow` | 儲存、清單出現、重開還原驗證 |
 
 若找不到合適 template，使用 `manual_ai`，不要臨時創自由文字 template。
+
+`metadata_dropdown_compare` 的 Helper hints 建議帶：
+
+```json
+{
+  "referenceCsv": "rules/BI_DATA/metadata.csv",
+  "referenceSourceName": "BI_DATA/metadata＿1.2.5 - 工作表1.csv",
+  "sourceReport": "每日報表",
+  "matchKey": "欄位名稱",
+  "compareFields": ["欄位名稱", "欄位代碼", "資料型態"]
+}
+```
+
+`download_csv_verify` 或同時含 `save_load_flow` 的 CSV case，`expected` 與 `requiredEvidence` 要分清楚「重開還原」「preview 存在」「CSV 下載」「CSV 比對」四層，不要把全部混成一句「下載資料一致」。
 
 #### `requiredEvidence`
 

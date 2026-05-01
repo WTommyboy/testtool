@@ -95,6 +95,10 @@ Artifact upload 是附加 observability，不得改變 case PASS/FAIL/BLOCKED �
 
 如果 helper 被 capability gate 跳過、且 Codex turn 沒有可用 browser automation tool 或 UI path 不可達，這仍是目前 current case 的可信平台阻塞。Codex 必須寫單題 `BLOCKED` result workbook，`失敗分類` 使用 `TOOL_EXECUTION_UNAVAILABLE` 或 `EVIDENCE_INSUFFICIENT`，並在 `detail_json.currentRunEvidence` 引用本 run 的 capability gate、helper skipped summary、preflight/browser tool 狀態或 agent log 摘要。不可把這種情境丟給 Agent fallback，因為 fallback 不會上傳成可信 UAT result。
 
+CSV/download case 若已透過 UI 成功下載檔案，Agent/Codex 可以讀本機下載的 CSV 作 structured evidence。若儲存、重開、設定還原或 current preview 已先失敗，CSV 比對應在 `detail_json` 標 `csv_comparison_status = not_reached` 並記 failed subcondition；不可因後續沒有 CSV 檔就把已知功能流程 regression 改判 `BLOCKED`。
+
+Metadata/dropdown case 的 reference 應以 run packet 的 `rules/BI_DATA/metadata.csv` 為 canonical CSV。`detail_json` 應寫 `reference_csv`、`source_report`、`match_key`、`compare_fields` 與命名正規化後的差異，避免只寫「metadata v1.2.5」。
+
 ## Result Workbook Contract
 
 `output/result.xlsx` 至少需要三個 sheet：

@@ -935,6 +935,50 @@ const visibleExactTextTargets = async (page: Page, expectedText: string): Promis
   }, expectedText);
 };
 
+const visibleTextTargetsMatching = async (page: Page, patternSource: string, flags = "i"): Promise<VisibleTextTarget[]> => {
+  return page.evaluate(({ source, flags: regexFlags }) => {
+    const pattern = new RegExp(source, regexFlags);
+    const normalize = (value: string | null | undefined) => (value ?? "").trim().replace(/\s+/g, " ");
+    const elements = Array.from(document.querySelectorAll("body *"));
+    const isVisible = (element: Element): boolean => {
+      const rect = element.getBoundingClientRect();
+      const style = window.getComputedStyle(element);
+      return rect.width > 0 && rect.height > 0 && style.visibility !== "hidden" && style.display !== "none" && style.opacity !== "0";
+    };
+    return elements.flatMap((element, index) => {
+      if (!(element instanceof HTMLElement)) return [];
+      const text = normalize(element.textContent);
+      if (!text || text.length > 80 || !pattern.test(text)) return [];
+      const hasMatchingVisibleChild = Array.from(element.children).some((child) => {
+        const childText = normalize(child.textContent);
+        return childText.length > 0 && childText.length <= 80 && pattern.test(childText) && isVisible(child);
+      });
+      if (hasMatchingVisibleChild) return [];
+      const rect = element.getBoundingClientRect();
+      const style = window.getComputedStyle(element);
+      const className = typeof element.className === "string" ? element.className : "";
+      const ariaDisabled = element.getAttribute("aria-disabled") === "true";
+      const disabled = "disabled" in element && Boolean((element as HTMLButtonElement).disabled);
+      const visuallyDisabled = /disabled|disable|unavailable|outside|other-month/i.test(className) || Number.parseFloat(style.opacity || "1") < 0.35;
+      const visible = rect.width > 0 && rect.height > 0 && style.visibility !== "hidden" && style.display !== "none";
+      if (!visible || ariaDisabled || disabled || visuallyDisabled) return [];
+      return [
+        {
+          index,
+          text,
+          tagName: element.tagName.toLowerCase(),
+          role: element.getAttribute("role"),
+          className,
+          x: rect.x,
+          y: rect.y,
+          width: rect.width,
+          height: rect.height
+        }
+      ];
+    });
+  }, { source: patternSource, flags });
+};
+
 const visibleCalendarMonths = async (page: Page): Promise<VisibleMonthLabel[]> => {
   return page.evaluate(() => {
     const monthMap: Record<string, number> = {
@@ -1480,28 +1524,63 @@ const openExistingReport = async (options: CliOptions, page: Page, startedAt: st
 const selectedFieldText = async (page: Page): Promise<string> => {
   const dom = await readDomState(page).catch(() => null);
   const cleanupState = dom?.cleanupState && typeof dom.cleanupState === "object" ? dom.cleanupState as Record<string, unknown> : {};
-  return String(cleanupState.fieldSelectionText ?? dom?.bodyTextExcerpt ?? "");
+  return String(cleanupState.fieldSelectionText ?? "");
+};
+
+const clickMetricAddFieldControl = async (page: Page, field: string): Promise<string> => {
+  const addPattern = /(?:\+\s*)?新增(?:欄位|指標|資料)|(?:欄位|指標).{0,6}(?:新增|選擇)|選擇(?:欄位|指標)|\+.*欄位/i;
+  const clickedByLocator = await clickFirstVisible([
+    page.getByRole("button", { name: addPattern }),
+    page.getByText("+ 新增欄位", { exact: false }),
+    page.locator("button").filter({ hasText: addPattern }),
+    page.locator("[role=button]").filter({ hasText: addPattern }),
+    page.locator("[class*=btn], [class*=button], [class*=Button]").filter({ hasText: addPattern })
+  ], 15000);
+  if (clickedByLocator) return "addField:locator";
+
+  const buttons = await visibleButtons(page).catch(() => []);
+  const buttonMatch = buttons.find((button) => addPattern.test(button.text) && !/報表|專案|儲存|保存|執行|查詢|搜尋|刪除|取消/.test(button.text));
+  if (buttonMatch) {
+    await clickVisibleButtonByIndex(page, buttonMatch.index, 8000);
+    return `addField:visibleButton:${buttonMatch.text}`;
+  }
+
+  const bodyText = await page.locator("body").innerText({ timeout: 3000 }).catch(() => "");
+  if (normalizeUiText(bodyText).includes(normalizeUiText(field))) {
+    return `addField:pickerAlreadyOpen:${field}`;
+  }
+
+  const textTargets = await visibleTextTargetsMatching(page, addPattern.source, "i").catch(() => []);
+  const clickableTarget = textTargets.find((target) =>
+    target.tagName === "button" ||
+    target.role === "button" ||
+    /btn|button|click|select|add|field|metric|control/i.test(target.className)
+  );
+  if (clickableTarget) {
+    await clickVisibleBodyElementByIndex(page, clickableTarget.index, 8000);
+    return `addField:visibleTextTarget:${clickableTarget.tagName}:${clickableTarget.text}`;
+  }
+
+  throw new HelperBlockedError(
+    `ADD_FIELD_BUTTON_NOT_CLICKABLE:${field}; visibleButtons=${JSON.stringify(buttons.slice(0, 20)).slice(0, 1200)}; visibleTargets=${JSON.stringify(textTargets.slice(0, 20)).slice(0, 1200)}`
+  );
 };
 
 const selectMetricFieldThroughUi = async (page: Page, field: string): Promise<string> => {
   const currentText = await selectedFieldText(page);
   if (normalizeUiText(currentText).includes(normalizeUiText(field))) return `field:already_visible:${field}`;
 
-  const addClicked = await clickFirstVisible([
-    page.getByText("+ 新增欄位", { exact: false }),
-    page.locator("button").filter({ hasText: /新增欄位|\+.*欄位/ })
-  ], 15000);
-  if (!addClicked) throw new HelperBlockedError(`ADD_FIELD_BUTTON_NOT_CLICKABLE:${field}`);
+  const addOperation = await clickMetricAddFieldControl(page, field);
   await page.waitForTimeout(500);
 
   await clickByText(page, field, 12000);
   await page.waitForTimeout(800);
 
-  const afterText = await selectedFieldText(page);
+  const afterText = `${await selectedFieldText(page)}\n${await page.locator("body").innerText({ timeout: 3000 }).catch(() => "")}`;
   if (!normalizeUiText(afterText).includes(normalizeUiText(field))) {
     throw new HelperBlockedError(`FIELD_VERIFY_FAILED_AFTER_CLICK:${field}`);
   }
-  return `field:set:${field}`;
+  return `${addOperation};field:set:${field}`;
 };
 
 const configureMetric = async (options: CliOptions, page: Page, startedAt: string): Promise<HelperReport> => {
@@ -1715,6 +1794,7 @@ const summarizeCsvAgainstPreview = (csvText: string, preview: Record<string, unk
 
 const downloadCsvAndComparePreview = async (options: CliOptions, page: Page, startedAt: string): Promise<HelperReport> => {
   const uiProfileBefore = await captureUiDomProfile(options, page, "downloadCsv.before");
+  const domStateBefore: Record<string, unknown> = await readDomState(page).catch((error) => ({ readError: error instanceof Error ? error.message : String(error) }));
   const downloadDir = path.join(artifactRoot(options), "downloads");
   ensureDir(downloadDir);
   const downloadPromise = page.waitForEvent("download", { timeout: 20000 });
@@ -1724,7 +1804,16 @@ const downloadCsvAndComparePreview = async (options: CliOptions, page: Page, sta
   ], 12000);
   if (!clicked) {
     downloadPromise.catch(() => undefined);
-    throw new HelperBlockedError("CSV_DOWNLOAD_BUTTON_NOT_CLICKABLE");
+    const bodyText = typeof domStateBefore.bodyTextExcerpt === "string" ? domStateBefore.bodyTextExcerpt : "";
+    const cleanupState = domStateBefore.cleanupState && typeof domStateBefore.cleanupState === "object"
+      ? domStateBefore.cleanupState as Record<string, unknown>
+      : {};
+    const precondition = /請選擇欄位|點擊「?執行」?查看|尚無資料|沒有資料|無預覽/i.test(bodyText)
+      ? "CSV_PRECONDITION_NOT_MET_NO_CURRENT_PREVIEW"
+      : "CSV_DOWNLOAD_BUTTON_NOT_CLICKABLE";
+    throw new HelperBlockedError(
+      `${precondition}; dateRange=${String(cleanupState.dateRangeText ?? "(unknown)")}; fields=${String(cleanupState.fieldSelectionText ?? "(unknown)")}; buttons=${JSON.stringify(domStateBefore.buttons ?? []).slice(0, 800)}`
+    );
   }
   const download = await downloadPromise;
   const suggested = sanitize(download.suggestedFilename() || `${sanitize(options.caseId)}.csv`);

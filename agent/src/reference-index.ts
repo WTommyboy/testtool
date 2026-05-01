@@ -60,7 +60,7 @@ export const writeReferenceIndex = ({ runDir, inputs, generated }: ReferenceInde
   const localReferences = [
     {
       key: "bi_metadata_csv",
-      role: "authoritative copied BI metadata CSV when present",
+      role: "canonical copied BI metadata CSV when present; original localized filename is traceability only",
       path: metadataPath,
       exists: exists(metadataPath)
     },

@@ -175,6 +175,7 @@ const main = async (): Promise<void> => {
         params?: Record<string, unknown>;
       };
       requiredEvidence?: string[];
+      mustReadRuleKeys?: string[];
     };
     assert.equal(packJson.helperHints?.found, true, "current-case-pack.json should mark helper hints found");
     assert.equal(packJson.helperHints?.operationTemplate, operationTemplate, "current-case-pack.json operationTemplate");
@@ -183,10 +184,14 @@ const main = async (): Promise<void> => {
       packJson.requiredEvidence?.includes("network.requestBody.dateRange"),
       "current-case-pack.json should include explicit requiredEvidence"
     );
+    assert.ok(packJson.mustReadRuleKeys?.includes("helper-protocol"), "current-case-pack.json should include helper-protocol in mustReadRuleKeys");
+    assert.ok(packJson.mustReadRuleKeys?.includes("bi-ui-helper-guidance"), "current-case-pack.json should include bi-ui-helper-guidance in mustReadRuleKeys");
+    assert.ok(packJson.mustReadRuleKeys?.includes("network-observation-guidance"), "current-case-pack.json should include network-observation-guidance in mustReadRuleKeys");
 
     const packMarkdown = fs.readFileSync(currentCasePack.markdownPath, "utf8");
     mustInclude(packMarkdown, "## Helper Hints", "current-case-pack.md");
     mustInclude(packMarkdown, `- operationTemplate: ${operationTemplate}`, "current-case-pack.md");
+    mustInclude(packMarkdown, "## Must Read Rule Keys", "current-case-pack.md");
 
     const helperGuidance = fs.readFileSync(biUiHelperGuidancePath, "utf8");
     mustInclude(helperGuidance, `- operationTemplate: ${operationTemplate}`, "bi-ui-helper-guidance.md");

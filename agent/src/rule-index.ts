@@ -97,6 +97,7 @@ const buildCurrentCaseRecommendations = (runDir: string, entries: RuleIndexEntry
     const currentCase = getObject(pack.currentCase);
     const helperHints = getObject(pack.helperHints);
     const requiredEvidence = getStringArray(pack.requiredEvidence);
+    const mustReadRuleKeys = getStringArray(pack.mustReadRuleKeys);
     const operationTemplate =
       typeof helperHints?.operationTemplate === "string" ? helperHints.operationTemplate : null;
     const riskLevel = typeof currentCase?.riskLevel === "string" ? currentCase.riskLevel : "";
@@ -107,8 +108,13 @@ const buildCurrentCaseRecommendations = (runDir: string, entries: RuleIndexEntry
       `testTarget=${testTarget || "(missing)"}`,
       `cleanupChecklist=${cleanupChecklist || "(missing)"}`,
       `operationTemplate=${operationTemplate ?? "(missing)"}`,
-      `requiredEvidence=${requiredEvidence.join(", ") || "(missing)"}`
+      `requiredEvidence=${requiredEvidence.join(", ") || "(missing)"}`,
+      `mustReadRuleKeys=${mustReadRuleKeys.join(", ") || "(missing)"}`
     );
+    for (const id of mustReadRuleKeys) add(ids, id);
+    if (mustReadRuleKeys.length > 0) {
+      notes.push("Current-case pack provides mandatory rule keys; load these before testcase UI execution or result judgment.");
+    }
     if (operationTemplate) {
       add(ids, "bi-ui-helper-guidance");
       add(ids, "helper-execution-plan");
@@ -124,8 +130,15 @@ const buildCurrentCaseRecommendations = (runDir: string, entries: RuleIndexEntry
       notes.push("Risk level or evidence may require Tool Bridge for irreversible/native dialog actions.");
     }
     if (/metadata|dropdown/i.test(operationTemplate ?? "") || /metadata|欄位清單|可選欄位/i.test(JSON.stringify(currentCase))) {
+      add(ids, "reference-index");
       addMatching(ids, /metadata|metadata摘要|BI系統_metadata/i);
       notes.push("Metadata/dropdown behavior may require BI metadata reference.");
+    }
+    if (/csv|download|下載|匯出/i.test(`${operationTemplate ?? ""}\n${JSON.stringify(currentCase)}`)) {
+      add(ids, "reference-index");
+      add(ids, "evidence-template-index");
+      add(ids, "bi-ui-helper-guidance");
+      notes.push("CSV/download behavior requires UI-triggered download evidence or an explicit not-reached reason for earlier workflow failure.");
     }
     if (/前端呈現|前後端整合|功能流程/.test(testTarget)) {
       add(ids, "bi-project-agents-full");
@@ -392,6 +405,7 @@ export const writeRuleIndex = (runDir: string, domain: string): string => {
       "Use input/reference-index.json for exact paths before broad searches.",
       "Read input/run-state.json before using any carryover from prior case actions.",
       "Read input/current-case.json for the current case before the full workbook.",
+      "If input/current-case-pack.json has mustReadRuleKeys, load those rule files before testcase UI execution or result judgment.",
       "Use currentCaseRecommendations.ruleIds as the first-pass rule shortlist for the active case.",
       "Use this index to choose the smallest rule file that answers the current question.",
       "Do not read all BI rules before the first UI action unless a blocker requires exact policy text.",

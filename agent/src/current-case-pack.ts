@@ -7,6 +7,7 @@ type EvidenceTemplateId =
   | "metadata-dropdown"
   | "network-request"
   | "chart-datasets"
+  | "downloaded-csv"
   | "ui-workflow";
 
 const textBlob = (item: CaseManifestCase): string =>
@@ -48,6 +49,9 @@ const inferEvidenceTemplates = (item: CaseManifestCase): EvidenceTemplateId[] =>
   if (includesAny(blob, ["chart", "圖表", "datasets", "筆數", "sum", "max", "min", "平均", "趨勢"])) {
     templates.add("chart-datasets");
   }
+  if (includesAny(blob, ["csv", "下載", "download", "匯出", "downloaded csv"])) {
+    templates.add("downloaded-csv");
+  }
   if (includesAny(blob, ["建立", "儲存", "重開", "重新檢視", "刪除", "修改", "流程", "confirm", "alert", "報表"])) {
     templates.add("ui-workflow");
   }
@@ -85,6 +89,11 @@ const inferRequiredEvidence = (templates: EvidenceTemplateId[]): string[] => {
     evidence.add("numeric summary needed for the testcase");
     evidence.add("baseline/current-run comparison when the testcase requires it");
   }
+  if (templates.includes("downloaded-csv")) {
+    evidence.add("UI-triggered downloaded CSV file path and suggested filename");
+    evidence.add("CSV header, row count, and numeric summary");
+    evidence.add("preview-vs-CSV comparison, or not-reached reason when an earlier required workflow subcondition failed");
+  }
   if (templates.includes("ui-workflow")) {
     evidence.add("before-state snapshot/DOM read");
     evidence.add("after-action DOM/network evidence");
@@ -119,9 +128,59 @@ const inferRuleKeys = (
   if (requiredEvidence.some((evidence) => evidence.startsWith("network."))) keys.add("network-observation-guidance");
   if (requiredEvidence.includes("toolBridge.response") || /刪除|修改|建立/.test(riskLevel)) keys.add("tool-bridge");
   if (/metadata|dropdown/i.test(operationTemplate) || /metadata|欄位清單|可選欄位/.test(textBlob(item ?? ({} as CaseManifestCase)))) {
+    keys.add("reference-index");
     keys.add("bi-rule-BI系統_metadata摘要");
   }
+  if (/csv|download|下載|匯出/i.test(`${operationTemplate}\n${JSON.stringify(item ?? {})}`)) {
+    keys.add("reference-index");
+    keys.add("evidence-template-index");
+    keys.add("bi-ui-helper-guidance");
+  }
   if (/前端呈現|前後端整合|功能流程/.test(testTarget)) keys.add("bi-project-agents-full");
+  return [...keys];
+};
+
+const inferMustReadRuleKeys = (
+  item: CaseManifestCase | null,
+  helperHints: HelperHints | null,
+  requiredEvidence: string[],
+  templates: EvidenceTemplateId[]
+): string[] => {
+  const keys = new Set<string>([
+    "current-case",
+    "current-case-pack",
+    "current-case-pack-json",
+    "capability-gate",
+    "run-state",
+    "evidence-policy",
+    "artifacts-and-results",
+    "codex-runtime"
+  ]);
+  const operationTemplate = helperHints?.operationTemplate ?? "";
+  const caseText = JSON.stringify(item ?? {});
+
+  if (helperHints || operationTemplate || templates.includes("ui-workflow") || templates.includes("downloaded-csv")) {
+    keys.add("helper-execution-plan");
+    keys.add("helper-execution-plan-json");
+    keys.add("helper-protocol");
+    keys.add("bi-ui-helper-guidance");
+  }
+  if (requiredEvidence.some((item) => item.startsWith("network."))) {
+    keys.add("network-observation-guidance");
+  }
+  if (/儲存|覆寫|重開|重新檢視|刪除|confirm|alert/i.test(caseText) || requiredEvidence.includes("toolBridge.response")) {
+    keys.add("tool-bridge");
+  }
+  if (templates.includes("metadata-dropdown") || /metadata|dropdown/i.test(operationTemplate)) {
+    keys.add("reference-index");
+    keys.add("bi-rule-BI系統_metadata摘要");
+    keys.add("bi-project-agents-full");
+  }
+  if (templates.includes("downloaded-csv") || /csv|download|下載|匯出/i.test(`${operationTemplate}\n${caseText}`)) {
+    keys.add("reference-index");
+    keys.add("evidence-template-index");
+    keys.add("bi-ui-helper-guidance");
+  }
   return [...keys];
 };
 
@@ -151,6 +210,7 @@ export const writeCurrentCasePack = (
   const requiredEvidence = unique([...inferredRequiredEvidence, ...explicitRequiredEvidence]);
   const screenshotPolicy = currentCase ? inferScreenshotPolicy(templates, currentCase) : "unavailable";
   const recommendedRuleKeys = inferRuleKeys(currentCase, helperHints, requiredEvidence);
+  const mustReadRuleKeys = inferMustReadRuleKeys(currentCase, helperHints, requiredEvidence, templates);
   const jsonPath = path.join(runDir, "input", "current-case-pack.json");
   const markdownPath = path.join(runDir, "input", "current-case-pack.md");
 
@@ -188,6 +248,7 @@ export const writeCurrentCasePack = (
     explicitRequiredEvidence,
     requiredEvidence,
     screenshotPolicy,
+    mustReadRuleKeys,
     recommendedRuleKeys,
     executionRequirement:
       "Plan 完成不代表 case 完成。必須執行所有 required action 並 capture 對應 required evidence，結果與 expected 比對後才能寫 result。"
@@ -255,6 +316,10 @@ export const writeCurrentCasePack = (
       "## Required Evidence",
       "",
       requiredEvidence.length > 0 ? requiredEvidence.map((item) => `- ${item}`).join("\n") : "- (unavailable)",
+      "",
+      "## Must Read Rule Keys",
+      "",
+      mustReadRuleKeys.map((item) => `- ${item}`).join("\n"),
       "",
       "## Recommended Rule Keys",
       "",

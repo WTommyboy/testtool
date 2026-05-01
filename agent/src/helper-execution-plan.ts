@@ -225,7 +225,8 @@ const buildActions = (currentCase: CaseManifestCase | null, helperHints: HelperH
         notes: [
           "所有設定都必須透過 visible UI；不可使用內部 JS setter。",
           "可用 state delta planner 跳過已逐字/DOM 驗證對齊的項目；讀不到或不確定時必須操作 UI 或回 blocked。",
-          "多欄位字串必須拆成多個欄位逐一新增/驗證，不可把整段 composite string 當作單一 clickable text。"
+          "多欄位字串必須拆成多個欄位逐一新增/驗證，不可把整段 composite string 當作單一 clickable text。",
+          "若 `+ 新增欄位` 文字 locator 失敗，helper 可嘗試其他 visible button/role/class fallback 並留下 locator drift evidence；不可用 force click 或內部 JS setter。"
         ]
       }),
       action("H4", "collage.runPreviewAndCollectEvidence", "執行 preview 並收集 evidence", params, {
@@ -260,7 +261,10 @@ const buildActions = (currentCase: CaseManifestCase | null, helperHints: HelperH
         action("H7", "collage.downloadCsvAndComparePreview", "下載 CSV 並與 preview evidence 比對", params, {
           requiredEvidence: ["downloaded.csv", "csv.rows", "chart.datasets", "screenshot"],
           screenshotPolicy: "required_if_possible",
-          notes: ["下載是合法輸出，不需 Tool Bridge；helper 只產生 CSV/preview 比對 evidence，Codex 仍負責最終判定。"]
+          notes: [
+            "下載是合法輸出，不需 Tool Bridge；helper 只產生 CSV/preview 比對 evidence，Codex 仍負責最終判定。",
+            "若重開後設定或 preview 已不存在，helper 應 blocked 並標 `CSV_PRECONDITION_NOT_MET...`；Codex 應把 CSV 比對記為 not reached，先判斷前置流程失敗是否已構成 FAIL。"
+          ]
         })
       );
     }

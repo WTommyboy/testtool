@@ -76,6 +76,28 @@ export const writeEvidenceTemplates = (runDir: string): EvidenceTemplateFiles =>
       ]
     },
     {
+      id: "downloaded-csv",
+      file: "downloaded-csv-evidence.json",
+      summary: "For UI-triggered CSV download and preview consistency cases.",
+      requiredFields: [
+        "caseNo",
+        "uiDownloadAction",
+        "downloadedCsvPath",
+        "suggestedFilename",
+        "csvHeader",
+        "csvRowCount",
+        "previewEvidencePath",
+        "previewComparison",
+        "notReachedReason",
+        "verdict"
+      ],
+      policy: [
+        "CSV must be produced by a visible UI download action or an explicitly provided run packet file.",
+        "The Agent may read the downloaded local CSV file after the UI download succeeds.",
+        "If save/reopen or preview preconditions fail before download, record the failed earlier subcondition as the primary result and mark CSV comparison as not reached."
+      ]
+    },
+    {
       id: "ui-workflow",
       file: "ui-workflow-evidence.json",
       summary: "For create/save/reopen/delete or multi-step UI workflow cases.",
