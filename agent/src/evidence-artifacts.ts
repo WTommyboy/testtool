@@ -105,6 +105,7 @@ const inferArtifactType = (relativePath: string): string => {
   if ([".png", ".jpg", ".jpeg", ".webp"].includes(ext)) return "screenshot";
   if (/locator-drift/.test(base)) return "locator_drift";
   if (base === "helper-report.jsonl") return "helper_report";
+  if (relativePath.includes(`${path.sep}dom-profiles${path.sep}`) && ext === ".json") return "ui_dom_profile";
   if (relativePath.includes(`${path.sep}helper-artifacts${path.sep}`) && ext === ".json") return "helper_json";
   if (relativePath.includes(`${path.sep}mcp-output${path.sep}`)) return "mcp_artifact";
   if (ext === ".jsonl") return "jsonl";
@@ -118,6 +119,10 @@ const inferAction = (relativePath: string): string | null => {
   if (base === "helper-report.jsonl") return "helper-report";
   const latest = base.match(/^(.+)-latest\.json$/);
   if (latest?.[1]) return latest[1];
+  if (relativePath.includes(`${path.sep}dom-profiles${path.sep}`)) {
+    const profile = base.match(/^(.+)-[a-f0-9]{12}\.json$/i);
+    if (profile?.[1]) return `ui-dom-profile:${profile[1]}`;
+  }
   const screenshot = base.match(/^(.+?)\.(png|jpe?g|webp)$/i);
   if (screenshot?.[1]) return screenshot[1];
   if (/locator-drift/i.test(base)) return "locator-drift";

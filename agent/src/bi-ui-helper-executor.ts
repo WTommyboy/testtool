@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { chromium, type Browser, type Page, type Request, type Response } from "playwright";
@@ -210,6 +211,324 @@ const screenshot = async (options: CliOptions, page: Page, label: string): Promi
     return filePath;
   } catch {
     return null;
+  }
+};
+
+type UiDomProfileRef = {
+  schemaVersion: "ui-dom-profile-ref-v1";
+  context: string;
+  status: "ok" | "error";
+  signature?: string;
+  path?: string;
+  relativePath?: string;
+  reused?: boolean;
+  summary?: Record<string, unknown>;
+  error?: string;
+};
+
+type UiDomProfile = {
+  schemaVersion: "ui-dom-profile-v1";
+  generatedAt: string;
+  runId: string;
+  caseId: string;
+  action: string;
+  context: string;
+  signature: string;
+  url: string;
+  route: string;
+  title: string;
+  viewport: { width: number; height: number };
+  bodyTextExcerpt: string;
+  controls: {
+    buttons: Array<Record<string, unknown>>;
+    inputs: Array<Record<string, unknown>>;
+    selects: Array<Record<string, unknown>>;
+  };
+  widgets: {
+    datePicker: Record<string, unknown>;
+    dialogs: Array<Record<string, unknown>>;
+  };
+  limits: Record<string, unknown>;
+  policy: string;
+};
+
+const normalizeSignatureText = (value: unknown): unknown => {
+  if (typeof value !== "string") return value;
+  return value
+    .replace(/\d{4}[/-]\d{1,2}[/-]\d{1,2}/g, "<date>")
+    .replace(/\d{1,3}\s*天/g, "<n>天")
+    .replace(/\d{1,2}\s*月\s+\d{4}/g, "<month>")
+    .replace(/[一二三四五六七八九十]{1,2}月\s+\d{4}/g, "<month>")
+    .replace(/\s+/g, " ")
+    .trim();
+};
+
+const profileSignature = (profile: Omit<UiDomProfile, "signature">): string => {
+  const stable = {
+    route: profile.route,
+    title: profile.title,
+    buttons: profile.controls.buttons.map((button) => ({
+      selector: button.selector,
+      text: normalizeSignatureText(button.text),
+      role: button.role,
+      ariaLabel: button.ariaLabel,
+      onclick: normalizeSignatureText(button.onclick),
+      disabled: button.disabled
+    })),
+    inputs: profile.controls.inputs.map((input) => ({
+      selector: input.selector,
+      type: input.type,
+      name: input.name,
+      placeholder: input.placeholder,
+      role: input.role,
+      disabled: input.disabled,
+      readonly: input.readonly
+    })),
+    selects: profile.controls.selects.map((select) => ({
+      selector: select.selector,
+      name: select.name,
+      role: select.role,
+      optionTexts: Array.isArray(select.options)
+        ? select.options.map((option) => typeof option === "object" && option !== null ? normalizeSignatureText((option as { text?: unknown }).text) : null)
+        : []
+    })),
+    datePicker: {
+      exists: profile.widgets.datePicker.exists,
+      visible: profile.widgets.datePicker.visible,
+      hasStartCalendar: profile.widgets.datePicker.hasStartCalendar,
+      hasEndCalendar: profile.widgets.datePicker.hasEndCalendar,
+      tabButtons: profile.widgets.datePicker.tabButtons,
+      navButtons: profile.widgets.datePicker.navButtons,
+      startDayCellCount: profile.widgets.datePicker.startDayCellCount,
+      endDayCellCount: profile.widgets.datePicker.endDayCellCount
+    },
+    dialogs: profile.widgets.dialogs.map((dialog) => ({
+      selector: dialog.selector,
+      role: dialog.role,
+      title: dialog.title,
+      buttons: dialog.buttons
+    }))
+  };
+  return crypto.createHash("sha256").update(JSON.stringify(stable)).digest("hex");
+};
+
+const readUiDomProfile = async (options: CliOptions, page: Page, context: string): Promise<UiDomProfile> => {
+  const generatedAt = new Date().toISOString();
+  const runId = runIdFromOptions(options);
+  const base = await page.evaluate(({ generatedAt: profileGeneratedAt, runId: profileRunId, caseId, action, context: profileContext }) => {
+    const truncate = (value: string | null | undefined, length = 160): string | null => {
+      const normalized = (value ?? "").trim().replace(/\s+/g, " ");
+      if (!normalized) return null;
+      return normalized.length > length ? `${normalized.slice(0, length)}...` : normalized;
+    };
+    const isVisible = (element: Element): boolean => {
+      const rect = element.getBoundingClientRect();
+      const style = window.getComputedStyle(element);
+      return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden" && style.opacity !== "0";
+    };
+    const rectFor = (element: Element) => {
+      const rect = element.getBoundingClientRect();
+      return {
+        x: Math.round(rect.x),
+        y: Math.round(rect.y),
+        width: Math.round(rect.width),
+        height: Math.round(rect.height)
+      };
+    };
+    const selectorFor = (element: Element): string => {
+      const id = element.getAttribute("id");
+      if (id) return `#${id}`;
+      const testId = element.getAttribute("data-testid") ?? element.getAttribute("data-test") ?? element.getAttribute("data-cy");
+      if (testId) return `${element.tagName.toLowerCase()}[data-testid="${testId}"]`;
+      const name = element.getAttribute("name");
+      if (name) return `${element.tagName.toLowerCase()}[name="${name}"]`;
+      const aria = element.getAttribute("aria-label");
+      if (aria) return `${element.tagName.toLowerCase()}[aria-label="${aria}"]`;
+      const onclick = element.getAttribute("onclick");
+      if (onclick) return `${element.tagName.toLowerCase()}[onclick="${onclick.slice(0, 80)}"]`;
+      return element.tagName.toLowerCase();
+    };
+    const classTokensFor = (element: Element): string[] => {
+      const className = typeof (element as HTMLElement).className === "string" ? (element as HTMLElement).className : "";
+      return className.split(/\s+/).filter(Boolean).slice(0, 8);
+    };
+    const elementSummary = (element: HTMLElement, index: number): Record<string, unknown> => ({
+      index,
+      selector: selectorFor(element),
+      tagName: element.tagName.toLowerCase(),
+      id: element.id || null,
+      role: element.getAttribute("role"),
+      ariaLabel: element.getAttribute("aria-label"),
+      name: element.getAttribute("name"),
+      text: truncate(element.innerText || element.textContent, 120),
+      classTokens: classTokensFor(element),
+      onclick: truncate(element.getAttribute("onclick"), 140),
+      disabled: "disabled" in element ? Boolean((element as HTMLButtonElement).disabled) : element.getAttribute("aria-disabled") === "true",
+      rect: rectFor(element)
+    });
+    const visibleButtons = Array.from(document.querySelectorAll("button"))
+      .flatMap((button, index) => isVisible(button) ? [elementSummary(button, index)] : [])
+      .slice(0, 100);
+    const visibleInputs = Array.from(document.querySelectorAll("input, textarea"))
+      .flatMap((input, index) => {
+        if (!(input instanceof HTMLInputElement || input instanceof HTMLTextAreaElement) || !isVisible(input)) return [];
+        return [{
+          ...elementSummary(input, index),
+          type: input instanceof HTMLInputElement ? input.type : "textarea",
+          placeholder: truncate(input.placeholder, 120),
+          value: truncate(input.value, 120),
+          readonly: input.readOnly
+        }];
+      })
+      .slice(0, 80);
+    const visibleSelects = Array.from(document.querySelectorAll("select"))
+      .flatMap((select, index) => {
+        if (!(select instanceof HTMLSelectElement) || !isVisible(select)) return [];
+        return [{
+          ...elementSummary(select, index),
+          value: truncate(select.value, 120),
+          selectedText: truncate(select.selectedOptions?.[0]?.textContent, 120),
+          options: Array.from(select.options).slice(0, 40).map((option) => ({
+            value: truncate(option.value, 80),
+            text: truncate(option.textContent, 120),
+            selected: option.selected,
+            disabled: option.disabled
+          }))
+        }];
+      })
+      .slice(0, 40);
+    const text = (selector: string): string | null => truncate(document.querySelector(selector)?.textContent, 220);
+    const popup = document.querySelector("#datePickerPopup");
+    const popupVisible = popup ? isVisible(popup) : false;
+    const datePickerButtons = popup
+      ? Array.from(popup.querySelectorAll("button")).flatMap((button, index) => isVisible(button) ? [elementSummary(button, index)] : [])
+      : [];
+    const dialogSelectors = "[role='dialog'], .modal, .ant-modal, .MuiDialog-root, .swal2-popup";
+    const dialogs = Array.from(document.querySelectorAll(dialogSelectors))
+      .flatMap((dialog, index) => {
+        if (!(dialog instanceof HTMLElement) || !isVisible(dialog)) return [];
+        const buttons = Array.from(dialog.querySelectorAll("button"))
+          .flatMap((button, buttonIndex) => isVisible(button) ? [elementSummary(button, buttonIndex)] : [])
+          .slice(0, 20);
+        return [{
+          index,
+          selector: selectorFor(dialog),
+          role: dialog.getAttribute("role"),
+          title: truncate(dialog.querySelector("h1,h2,h3,.title,.modal-title")?.textContent, 160),
+          textExcerpt: truncate(dialog.innerText, 600),
+          buttons,
+          rect: rectFor(dialog)
+        }];
+      })
+      .slice(0, 10);
+    return {
+      schemaVersion: "ui-dom-profile-v1" as const,
+      generatedAt: profileGeneratedAt,
+      runId: profileRunId,
+      caseId,
+      action,
+      context: profileContext,
+      signature: "",
+      url: location.href,
+      route: `${location.origin}${location.pathname}`,
+      title: document.title,
+      viewport: { width: window.innerWidth, height: window.innerHeight },
+      bodyTextExcerpt: truncate(document.body.innerText, 1400) ?? "",
+      controls: {
+        buttons: visibleButtons,
+        inputs: visibleInputs,
+        selects: visibleSelects
+      },
+      widgets: {
+        datePicker: {
+          exists: Boolean(popup),
+          visible: popupVisible,
+          dateRangeButtonText: text("#dateRangeBtn"),
+          displayText: text("#dateRangeDisplay"),
+          hasStartCalendar: Boolean(document.querySelector("#startCalendar")),
+          hasEndCalendar: Boolean(document.querySelector("#endCalendar")),
+          startMonth: text("#startCalendarMonth"),
+          endMonth: text("#endCalendarMonth"),
+          startSelectedDays: Array.from(document.querySelectorAll("#startCalendar .calendar-day.selected")).map((item) => truncate(item.textContent, 20)),
+          endSelectedDays: Array.from(document.querySelectorAll("#endCalendar .calendar-day.selected")).map((item) => truncate(item.textContent, 20)),
+          startDayCellCount: document.querySelectorAll("#startCalendar .calendar-day").length,
+          endDayCellCount: document.querySelectorAll("#endCalendar .calendar-day").length,
+          tabButtons: datePickerButtons.filter((button) => /動態|靜態/.test(String(button.text ?? ""))).map((button) => ({
+            text: button.text,
+            selector: button.selector,
+            onclick: button.onclick,
+            classTokens: button.classTokens,
+            disabled: button.disabled
+          })),
+          navButtons: datePickerButtons.filter((button) => /prevMonth|nextMonth|‹|›/.test(`${button.onclick ?? ""}\n${button.text ?? ""}`)).map((button) => ({
+            text: button.text,
+            selector: button.selector,
+            onclick: button.onclick,
+            disabled: button.disabled
+          })),
+          buttons: datePickerButtons.slice(0, 60)
+        },
+        dialogs
+      },
+      limits: {
+        fullHtmlCaptured: false,
+        buttonLimit: 100,
+        inputLimit: 80,
+        selectLimit: 40,
+        optionLimitPerSelect: 40,
+        bodyTextExcerptChars: 1400
+      },
+      policy: "Normalized DOM profile captures visible structure only. It is current-run diagnostic/evidence context, not a substitute for visible UI actions or result judgment."
+    };
+  }, { generatedAt, runId, caseId: options.caseId, action: options.action, context });
+
+  const signature = profileSignature(base);
+  return { ...base, signature };
+};
+
+const captureUiDomProfile = async (options: CliOptions, page: Page, context: string): Promise<UiDomProfileRef> => {
+  try {
+    const profile = await readUiDomProfile(options, page, context);
+    const dir = path.join(artifactRoot(options), "dom-profiles");
+    const filePath = path.join(dir, `${sanitize(context)}-${profile.signature.slice(0, 12)}.json`);
+    ensureDir(dir);
+    const reused = fs.existsSync(filePath);
+    if (!reused) {
+      fs.writeFileSync(filePath, `${JSON.stringify(profile, null, 2)}\n`);
+    }
+    return {
+      schemaVersion: "ui-dom-profile-ref-v1",
+      context,
+      status: "ok",
+      signature: profile.signature,
+      path: filePath,
+      relativePath: path.relative(options.runDir, filePath),
+      reused,
+      summary: {
+        url: profile.url,
+        title: profile.title,
+        route: profile.route,
+        visibleButtonCount: profile.controls.buttons.length,
+        visibleInputCount: profile.controls.inputs.length,
+        visibleSelectCount: profile.controls.selects.length,
+        dialogCount: profile.widgets.dialogs.length,
+        datePicker: {
+          exists: profile.widgets.datePicker.exists,
+          visible: profile.widgets.datePicker.visible,
+          startMonth: profile.widgets.datePicker.startMonth,
+          endMonth: profile.widgets.datePicker.endMonth,
+          startSelectedDays: profile.widgets.datePicker.startSelectedDays,
+          endSelectedDays: profile.widgets.datePicker.endSelectedDays
+        }
+      }
+    };
+  } catch (error) {
+    return {
+      schemaVersion: "ui-dom-profile-ref-v1",
+      context,
+      status: "error",
+      error: error instanceof Error ? error.message : String(error)
+    };
   }
 };
 
@@ -674,10 +993,14 @@ const clickCalendarDay = async (page: Page, side: CalendarSide, day: number): Pr
   return true;
 };
 
+type DateRangeUiResult = { ok: boolean; warning?: string; observedAfter?: string; inputs?: unknown; uiProfiles?: UiDomProfileRef[] };
+
 const setStaticDateRangeByCalendar = async (
+  options: CliOptions,
   page: Page,
   parsed: { startIso: string; endIso: string; display: string }
-): Promise<{ ok: boolean; warning?: string; observedAfter?: string; inputs?: unknown }> => {
+): Promise<DateRangeUiResult> => {
+  const uiProfiles: UiDomProfileRef[] = [];
   const start = new Date(`${parsed.startIso}T00:00:00Z`);
   const end = new Date(`${parsed.endIso}T00:00:00Z`);
   const startYear = start.getUTCFullYear();
@@ -688,64 +1011,77 @@ const setStaticDateRangeByCalendar = async (
   const endDay = end.getUTCDate();
 
   await ensureStaticCalendarTabs(page);
+  uiProfiles.push(await captureUiDomProfile(options, page, "dateRange.staticCalendar"));
   const startMonthReady = await moveCalendarToMonth(page, "left", startYear, startMonth);
   if (!startMonthReady) {
     return {
       ok: false,
       warning: `DATE_RANGE_START_CALENDAR_MONTH_NOT_REACHED:startMonth=${startYear}-${startMonth}`,
-      observedAfter: (await page.locator("body").innerText({ timeout: 5000 }).catch(() => "")).slice(0, 1000)
+      observedAfter: (await page.locator("body").innerText({ timeout: 5000 }).catch(() => "")).slice(0, 1000),
+      uiProfiles
     };
   }
+  uiProfiles.push(await captureUiDomProfile(options, page, "dateRange.startCalendarReady"));
 
   const startClicked = await clickCalendarDay(page, "left", startDay);
   if (!startClicked) {
     return {
       ok: false,
       warning: `DATE_RANGE_START_DAY_NOT_CLICKABLE:startDay=${startDay};startMonth=${startYear}-${startMonth}`,
-      observedAfter: (await page.locator("body").innerText({ timeout: 5000 }).catch(() => "")).slice(0, 1200)
+      observedAfter: (await page.locator("body").innerText({ timeout: 5000 }).catch(() => "")).slice(0, 1200),
+      uiProfiles
     };
   }
   await page.waitForTimeout(250);
+  uiProfiles.push(await captureUiDomProfile(options, page, "dateRange.afterStartDay"));
 
   const endMonthReady = await moveCalendarToMonth(page, "right", endYear, endMonth);
   if (!endMonthReady) {
     return {
       ok: false,
       warning: `DATE_RANGE_END_CALENDAR_MONTH_NOT_REACHED:endMonth=${endYear}-${endMonth}`,
-      observedAfter: (await page.locator("body").innerText({ timeout: 5000 }).catch(() => "")).slice(0, 1000)
+      observedAfter: (await page.locator("body").innerText({ timeout: 5000 }).catch(() => "")).slice(0, 1000),
+      uiProfiles
     };
   }
+  uiProfiles.push(await captureUiDomProfile(options, page, "dateRange.endCalendarReady"));
 
   const endClicked = await clickCalendarDay(page, "right", endDay);
   if (!endClicked) {
     return {
       ok: false,
       warning: `DATE_RANGE_END_DAY_NOT_CLICKABLE:endDay=${endDay};endMonth=${endYear}-${endMonth}`,
-      observedAfter: (await page.locator("body").innerText({ timeout: 5000 }).catch(() => "")).slice(0, 1200)
+      observedAfter: (await page.locator("body").innerText({ timeout: 5000 }).catch(() => "")).slice(0, 1200),
+      uiProfiles
     };
   }
+  uiProfiles.push(await captureUiDomProfile(options, page, "dateRange.afterEndDay"));
 
   const confirmed = await clickFirstVisible([page.getByText("確認", { exact: true }), page.locator("button").filter({ hasText: "確認" })], 5000);
   if (!confirmed) {
     return {
       ok: false,
       warning: "DATE_RANGE_CONFIRM_NOT_CLICKABLE",
-      observedAfter: (await page.locator("body").innerText({ timeout: 5000 }).catch(() => "")).slice(0, 1200)
+      observedAfter: (await page.locator("body").innerText({ timeout: 5000 }).catch(() => "")).slice(0, 1200),
+      uiProfiles
     };
   }
   await page.waitForTimeout(800);
   const ok = await bodyContainsDateRange(page, parsed.display);
+  uiProfiles.push(await captureUiDomProfile(options, page, "dateRange.afterConfirm"));
   return {
     ok,
     warning: ok ? undefined : "DATE_RANGE_VERIFY_FAILED_AFTER_CALENDAR_CLICK",
-    observedAfter: (await page.locator("body").innerText({ timeout: 5000 }).catch(() => "")).slice(0, 1200)
+    observedAfter: (await page.locator("body").innerText({ timeout: 5000 }).catch(() => "")).slice(0, 1200),
+    uiProfiles
   };
 };
 
-const setDateRange = async (page: Page, dateRange: string): Promise<{ ok: boolean; warning?: string; observedAfter?: string; inputs?: unknown }> => {
+const setDateRange = async (options: CliOptions, page: Page, dateRange: string): Promise<DateRangeUiResult> => {
+  const uiProfiles: UiDomProfileRef[] = [];
   const parsed = parseDateRange(dateRange);
-  if (!parsed) return setDatePreset(page, dateRange);
-  if (await bodyContainsDateRange(page, parsed.display)) return { ok: true, observedAfter: parsed.display };
+  if (!parsed) return setDatePreset(options, page, dateRange);
+  if (await bodyContainsDateRange(page, parsed.display)) return { ok: true, observedAfter: parsed.display, uiProfiles };
 
   if (!(await isDatePickerOpen(page))) {
     const opened = await clickFirstVisible([
@@ -753,20 +1089,25 @@ const setDateRange = async (page: Page, dateRange: string): Promise<{ ok: boolea
       page.locator("button").filter({ hasText: /過去|最近|今日|昨日|本週|上週|本月|上月|\d{4}[/-]\d{1,2}[/-]\d{1,2}/ }),
       page.getByText(/過去7天|最近7天|過去30天|最近30天|\d{4}[/-]\d{1,2}[/-]\d{1,2}/, { exact: false })
     ], 8000);
-    if (!opened) return { ok: false, warning: "DATE_RANGE_CONTROL_NOT_CLICKABLE" };
+    if (!opened) return { ok: false, warning: "DATE_RANGE_CONTROL_NOT_CLICKABLE", uiProfiles };
     await page.waitForTimeout(400);
   }
+  uiProfiles.push(await captureUiDomProfile(options, page, "dateRange.popupOpened"));
 
   await clickFirstVisible([page.getByText("靜態時間", { exact: true }), page.locator("button").filter({ hasText: "靜態時間" })], 5000);
   await page.waitForTimeout(400);
+  uiProfiles.push(await captureUiDomProfile(options, page, "dateRange.staticTabRequested"));
 
   const inputs = await visibleInputIndexes(page);
   const dateInputs = inputs.filter((item) => item.type === "date");
   const textInputs = inputs.filter((item) => item.type === "text" && !/報表名稱/.test(item.placeholder));
   const targets = dateInputs.length >= 2 ? dateInputs.slice(0, 2) : textInputs.slice(0, 2);
   if (targets.length < 2) {
-    const calendarResult = await setStaticDateRangeByCalendar(page, parsed);
-    return calendarResult.ok ? { ...calendarResult, inputs } : { ...calendarResult, inputs, warning: `${calendarResult.warning ?? "DATE_RANGE_CALENDAR_FAILED"};DATE_RANGE_INPUTS_NOT_FOUND` };
+    const calendarResult = await setStaticDateRangeByCalendar(options, page, parsed);
+    const combinedProfiles = [...uiProfiles, ...(calendarResult.uiProfiles ?? [])];
+    return calendarResult.ok
+      ? { ...calendarResult, inputs, uiProfiles: combinedProfiles }
+      : { ...calendarResult, inputs, uiProfiles: combinedProfiles, warning: `${calendarResult.warning ?? "DATE_RANGE_CALENDAR_FAILED"};DATE_RANGE_INPUTS_NOT_FOUND` };
   }
 
   const values = targets[0].type === "date"
@@ -783,14 +1124,16 @@ const setDateRange = async (page: Page, dateRange: string): Promise<{ ok: boolea
     ok,
     warning: ok ? undefined : "DATE_RANGE_VERIFY_FAILED_AFTER_UI_INPUT",
     observedAfter: (await page.locator("body").innerText({ timeout: 5000 }).catch(() => "")).slice(0, 1000),
-    inputs
+    inputs,
+    uiProfiles: [...uiProfiles, await captureUiDomProfile(options, page, "dateRange.afterInputConfirm")]
   };
 };
 
-const setDatePreset = async (page: Page, preset: string): Promise<{ ok: boolean; warning?: string; observedAfter?: string; inputs?: unknown }> => {
+const setDatePreset = async (options: CliOptions, page: Page, preset: string): Promise<DateRangeUiResult> => {
+  const uiProfiles: UiDomProfileRef[] = [];
   const normalizedPreset = preset.trim();
-  if (!normalizedPreset) return { ok: false, warning: "DATE_RANGE_PRESET_EMPTY" };
-  if (await bodyContainsText(page, normalizedPreset)) return { ok: true, observedAfter: normalizedPreset };
+  if (!normalizedPreset) return { ok: false, warning: "DATE_RANGE_PRESET_EMPTY", uiProfiles };
+  if (await bodyContainsText(page, normalizedPreset)) return { ok: true, observedAfter: normalizedPreset, uiProfiles };
 
   if (!(await isDatePickerOpen(page))) {
     const opened = await clickFirstVisible([
@@ -798,9 +1141,10 @@ const setDatePreset = async (page: Page, preset: string): Promise<{ ok: boolean;
       page.locator("button").filter({ hasText: /過去|最近|今日|昨日|本週|上週|本月|上月|\d{4}[/-]\d{1,2}[/-]\d{1,2}/ }),
       page.getByText(/過去7天|最近7天|過去30天|最近30天|今日|昨日|本週|上週|本月|上月/, { exact: false })
     ], 8000);
-    if (!opened) return { ok: false, warning: "DATE_RANGE_CONTROL_NOT_CLICKABLE" };
+    if (!opened) return { ok: false, warning: "DATE_RANGE_CONTROL_NOT_CLICKABLE", uiProfiles };
     await page.waitForTimeout(400);
   }
+  uiProfiles.push(await captureUiDomProfile(options, page, "datePreset.popupOpened"));
 
   const selected = await clickFirstVisible([
     page.getByText(normalizedPreset, { exact: true }),
@@ -810,7 +1154,8 @@ const setDatePreset = async (page: Page, preset: string): Promise<{ ok: boolean;
     return {
       ok: false,
       warning: `DATE_RANGE_PRESET_NOT_FOUND:${normalizedPreset}`,
-      observedAfter: (await page.locator("body").innerText({ timeout: 5000 }).catch(() => "")).slice(0, 1000)
+      observedAfter: (await page.locator("body").innerText({ timeout: 5000 }).catch(() => "")).slice(0, 1000),
+      uiProfiles
     };
   }
   await clickFirstVisible([page.getByText("確認", { exact: true }), page.locator("button").filter({ hasText: "確認" })], 3000).catch(() => false);
@@ -820,7 +1165,8 @@ const setDatePreset = async (page: Page, preset: string): Promise<{ ok: boolean;
   return {
     ok,
     warning: ok ? undefined : "DATE_RANGE_PRESET_VERIFY_FAILED_AFTER_UI_CLICK",
-    observedAfter: (await page.locator("body").innerText({ timeout: 5000 }).catch(() => "")).slice(0, 1000)
+    observedAfter: (await page.locator("body").innerText({ timeout: 5000 }).catch(() => "")).slice(0, 1000),
+    uiProfiles: [...uiProfiles, await captureUiDomProfile(options, page, "datePreset.afterConfirm")]
   };
 };
 
@@ -923,11 +1269,12 @@ const openProject = async (options: CliOptions, page: Page, startedAt: string): 
     await page.waitForTimeout(1200);
   }
   const shot = await screenshot(options, page, "open-project");
+  const uiProfile = await captureUiDomProfile(options, page, "openProject.after");
   return createReport(
     options,
     "ok",
     startedAt,
-    { domState: await readDomState(page) },
+    { domState: await readDomState(page), uiProfile },
     shot ? { screenshot: shot } : {},
     shot ? [] : ["SCREENSHOT_UNAVAILABLE"]
   );
@@ -943,16 +1290,19 @@ const createCollageReport = async (options: CliOptions, page: Page, startedAt: s
   await page.getByText("+ 新增報表", { exact: false }).first().click({ timeout: 15000 });
   await page.waitForTimeout(1200);
   const shot = await screenshot(options, page, "create-report");
-  return createReport(options, "ok", startedAt, { domState: await readDomState(page) }, shot ? { screenshot: shot } : {}, shot ? [] : ["SCREENSHOT_UNAVAILABLE"]);
+  const uiProfile = await captureUiDomProfile(options, page, "createReport.after");
+  return createReport(options, "ok", startedAt, { domState: await readDomState(page), uiProfile }, shot ? { screenshot: shot } : {}, shot ? [] : ["SCREENSHOT_UNAVAILABLE"]);
 };
 
 const configureMetric = async (options: CliOptions, page: Page, startedAt: string): Promise<HelperReport> => {
   const warnings: string[] = [];
   const field = stringParam(options.params, "field");
   const dateRange = stringParam(options.params, "dateRange");
+  const uiProfileBefore = await captureUiDomProfile(options, page, "configureMetric.before");
   const stateDeltaBefore = await readStateDelta(page, options.params);
   const operations: string[] = [];
   let dateRangeEvidence: Record<string, unknown> | null = null;
+  let dateRangeUiProfiles: UiDomProfileRef[] = [];
   if (field) {
     const bodyText = await page.locator("body").innerText({ timeout: 5000 }).catch(() => "");
     if (!bodyText.includes(field)) {
@@ -966,8 +1316,10 @@ const configureMetric = async (options: CliOptions, page: Page, startedAt: strin
     }
   }
   if (dateRange) {
-    const result = await setDateRange(page, dateRange);
-    dateRangeEvidence = result;
+    const result = await setDateRange(options, page, dateRange);
+    const { uiProfiles, ...resultEvidence } = result;
+    dateRangeUiProfiles = uiProfiles ?? [];
+    dateRangeEvidence = resultEvidence;
     if (!result.ok) {
       warnings.push(`DATE_RANGE_UI_SETTING_NOT_COMPLETED:${result.warning ?? "unknown"}`);
       operations.push(`dateRange:blocked:${dateRange}`);
@@ -977,12 +1329,18 @@ const configureMetric = async (options: CliOptions, page: Page, startedAt: strin
   }
   const stateDeltaAfter = await readStateDelta(page, options.params);
   const shot = await screenshot(options, page, "configure-metric");
+  const uiProfileAfter = await captureUiDomProfile(options, page, "configureMetric.after");
   return createReport(
     options,
     warnings.some((warning) => warning.startsWith("DATE_RANGE_UI_SETTING_NOT_COMPLETED")) ? "blocked" : "ok",
     startedAt,
     {
       domState: await readDomState(page),
+      uiProfiles: {
+        before: uiProfileBefore,
+        after: uiProfileAfter,
+        dateRange: dateRangeUiProfiles
+      },
       requestedDateRange: dateRange,
       dateRangeEvidence,
       stateDelta: {
@@ -997,12 +1355,14 @@ const configureMetric = async (options: CliOptions, page: Page, startedAt: strin
 };
 
 const runPreview = async (options: CliOptions, page: Page, startedAt: string): Promise<HelperReport> => {
+  const uiProfileBefore = await captureUiDomProfile(options, page, "runPreview.before");
   const observed = await observeDuring(page, async () => {
     await page.getByText("執行", { exact: true }).first().click({ timeout: 15000 });
     await page.waitForTimeout(2500);
   });
   const chart = await readChartSummary(page);
   const shot = await screenshot(options, page, "run-preview");
+  const uiProfileAfter = await captureUiDomProfile(options, page, "runPreview.after");
   const hasPreviewEvidence = observed.requests.length > 0 || observed.responses.length > 0 || chart !== null;
   return createReport(
     options,
@@ -1010,6 +1370,10 @@ const runPreview = async (options: CliOptions, page: Page, startedAt: string): P
     startedAt,
     {
       domState: await readDomState(page),
+      uiProfiles: {
+        before: uiProfileBefore,
+        after: uiProfileAfter
+      },
       network: { requests: observed.requests, responses: observed.responses },
       chart,
       stateDelta: await readStateDelta(page, options.params)
@@ -1072,6 +1436,7 @@ const saveReport = async (options: CliOptions, page: Page, startedAt: string): P
   const reportName = resolveReportName(options);
   const dialogs: Record<string, unknown>[] = [];
   let dialogChainRequiresApproval = false;
+  const uiProfileBefore = await captureUiDomProfile(options, page, "saveReport.before");
   page.on("dialog", async (dialog) => {
     dialogs.push({ type: dialog.type(), message: dialog.message(), defaultValue: dialog.defaultValue() });
     if (dialogs.length === 1) {
@@ -1083,13 +1448,16 @@ const saveReport = async (options: CliOptions, page: Page, startedAt: string): P
   const observed = await observeDuring(page, async () => {
     await page.getByText("儲存報表", { exact: false }).first().click({ timeout: 15000 });
     await page.waitForTimeout(600);
+    const saveModalProfile = await captureUiDomProfile(options, page, "saveReport.modalOpened");
     const nameInputEvidence = await fillVisibleReportNameInput(page, reportName);
+    const saveModalAfterFillProfile = await captureUiDomProfile(options, page, "saveReport.modalAfterFill");
     await clickModalSaveButton(page);
     await page.waitForTimeout(1800);
-    return nameInputEvidence;
+    return { nameInputEvidence, saveModalProfile, saveModalAfterFillProfile };
   });
   writeSavedReportState(options, reportName, { approvedToolRequestId: options.approvedToolRequestId, dialogs });
   if (dialogChainRequiresApproval) {
+    const uiProfileAfterDialog = await captureUiDomProfile(options, page, "saveReport.dialogChain");
     return createReport(
       options,
       "requires_approval",
@@ -1097,8 +1465,14 @@ const saveReport = async (options: CliOptions, page: Page, startedAt: string): P
       {
         reportName,
         dialogs,
+        uiProfiles: {
+          before: uiProfileBefore,
+          modalOpened: observed.result.saveModalProfile,
+          modalAfterFill: observed.result.saveModalAfterFillProfile,
+          dialogChain: uiProfileAfterDialog
+        },
         network: { requests: observed.requests, responses: observed.responses },
-        nameInput: observed.result
+        nameInput: observed.result.nameInputEvidence
       },
       {},
       ["NATIVE_DIALOG_CHAIN_REQUIRES_TOOL_BRIDGE", "SECOND_NATIVE_DIALOG_LEFT_FOR_PM_RECOVERY"],
@@ -1114,17 +1488,24 @@ const saveReport = async (options: CliOptions, page: Page, startedAt: string): P
     );
   }
   const shot = await screenshot(options, page, "save-report");
+  const uiProfileAfter = await captureUiDomProfile(options, page, "saveReport.after");
   return createReport(
     options,
     "ok",
     startedAt,
     {
       domState: await readDomState(page),
+      uiProfiles: {
+        before: uiProfileBefore,
+        modalOpened: observed.result.saveModalProfile,
+        modalAfterFill: observed.result.saveModalAfterFillProfile,
+        after: uiProfileAfter
+      },
       dialogs,
       approvedToolRequestId: options.approvedToolRequestId,
       reportName,
       network: { requests: observed.requests, responses: observed.responses },
-      nameInput: observed.result
+      nameInput: observed.result.nameInputEvidence
     },
     shot ? { screenshot: shot } : {},
     shot ? [] : ["SCREENSHOT_UNAVAILABLE"]
@@ -1156,6 +1537,7 @@ const reopenReport = async (options: CliOptions, page: Page, startedAt: string):
   await clickByText(page, reportName, 12000);
   await page.waitForTimeout(1800);
   const shot = await screenshot(options, page, "reopen-report");
+  const uiProfile = await captureUiDomProfile(options, page, "reopenReport.after");
   return createReport(
     options,
     "ok",
@@ -1167,7 +1549,8 @@ const reopenReport = async (options: CliOptions, page: Page, startedAt: string):
         dateRange: stringParam(options.params, "dateRange"),
         display: stringParam(options.params, "display")
       },
-      domState: await readDomState(page)
+      domState: await readDomState(page),
+      uiProfile
     },
     shot ? { screenshot: shot } : {},
     shot ? [] : ["SCREENSHOT_UNAVAILABLE"]
@@ -1176,11 +1559,12 @@ const reopenReport = async (options: CliOptions, page: Page, startedAt: string):
 
 const notImplemented = async (options: CliOptions, page: Page, reason: string, startedAt: string): Promise<HelperReport> => {
   const shot = await screenshot(options, page, sanitize(options.action));
+  const uiProfile = await captureUiDomProfile(options, page, `${sanitize(options.action)}.notImplemented`);
   return createReport(
     options,
     "not_implemented",
     startedAt,
-    { domState: await readDomState(page), reason },
+    { domState: await readDomState(page), uiProfile, reason },
     shot ? { screenshot: shot } : {},
     ["HELPER_TEMPLATE_NOT_IMPLEMENTED_IN_V1"]
   );
@@ -1272,6 +1656,7 @@ const run = async (): Promise<void> => {
       evidence.domState = await readDomState(page).catch((domError) => ({
         readError: domError instanceof Error ? domError.message : String(domError)
       }));
+      evidence.uiProfile = await captureUiDomProfile(options, page, isBlocked ? "blocked" : "error");
     }
     report = createReport(
       options,

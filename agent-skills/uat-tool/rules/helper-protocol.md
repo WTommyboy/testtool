@@ -102,6 +102,38 @@ Mac Agent 在 Tool Bridge auto approval 後，若 current case 還有 pending he
 - `artifacts`
 - `warnings[]`
 
+Helper report 的 `evidence` 可引用 `ui-dom-profile-ref-v1`。它是 Helper 在進入 page / modal / widget context 後抓到的精簡 DOM 結構索引，不是完整 HTML dump。
+
+### `output/helper-artifacts/<case>/dom-profiles/*.json`
+
+必要欄位：
+
+- `schemaVersion = ui-dom-profile-v1`
+- `runId`
+- `caseId`
+- `action`
+- `context`
+- `signature`
+- `url`
+- `route`
+- `title`
+- `viewport`
+- `controls.buttons[]`
+- `controls.inputs[]`
+- `controls.selects[]`
+- `widgets.datePicker`
+- `widgets.dialogs[]`
+- `limits`
+- `policy`
+
+DOM profile 原則：
+
+- 只保存 visible structure：button / input / select / modal / widget 的 id、role、name、text、disabled、onclick attribute、selected value、少量 option text、bounding box。
+- 不保存完整 HTML，不保存非 visible 大型 DOM tree。
+- 每個 profile 以 normalized structure 產生 `signature`；同一 page/modal/widget 結構未變時可重用同一 artifact path。
+- Helper 進入新 page、打開 modal/popup、切換 widget tab、或操作會重建 widget 的關鍵節點後，應抓 profile 或 state delta。
+- Helper 點擊後仍必須做 postcondition 驗證；DOM profile 只協助辨認元件與診斷 locator drift，不可取代 visible UI action、network/chart/table evidence 或 final PASS/FAIL 判定。
+
 `evidenceMetadata` 必須包含：
 
 - `source = mac-agent-bi-ui-helper`
@@ -138,6 +170,22 @@ Helper 可讀取目前 UI state 並計算 delta，以減少重複操作。但只
 - report 必須寫出 `stateDelta.before`、`stateDelta.after`、`checks` 與實際執行/跳過的 `operations`。
 
 若 state delta 為 `false` 或 `unknown`，Helper 必須透過 visible UI 操作修正；修正後仍驗證不到則回 `blocked`。State delta evidence 只證明 UI setup 是否對齊，不代表 testcase 結果已 PASS。
+
+## DOM Profile Policy
+
+Helper 應在以下時機抓取 normalized DOM profile：
+
+- 進入新的 application page 或 report editor。
+- 打開 modal、date picker、dropdown、field picker 等 widget context。
+- 切換 widget tab 或會改變 widget 結構的控制項，例如日期工具的「動態時間 / 靜態時間」。
+- 關鍵點擊後如果該 widget 會自動重算 DOM，例如日期工具點 start day 後 end calendar 可能被重算。
+- Helper action blocked / error 前，若 page 仍可讀，必須嘗試抓一份 failure profile。
+
+Profile 的使用邊界：
+
+- Codex 可讀 profile 判斷「Helper 看到的 UI 結構」與 locator drift。
+- Codex 不可把 profile 當成已完成測試步驟的證明；完成證明仍需 state delta、network/chart/table/DOM read、screenshot 等 current-run evidence。
+- 若 profile signature 與同 action 先前成功 profile 相同，可避免重抓完整結構，只做局部 state delta；若 signature 改變，Helper 必須保守執行 visible UI 操作或 blocked，不可猜測。
 
 ## Warm Session Policy
 

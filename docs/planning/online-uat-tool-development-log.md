@@ -773,3 +773,11 @@ Tommy 曾討論是否改成腳本。最後決策是採「半腳本化 / helper �
 - 本次修正：月曆定位改用 DOM id：`#startCalendarMonth/#endCalendarMonth`、`prevMonth('start'/'end')`、`#startCalendar .calendar-day`、`#endCalendar .calendar-day`。即使起訖同月，也會把右側 end calendar 移到目標月份，然後左側點 start day、右側點 end day；不再用左右座標或同側點兩次猜測。另補 `#datePickerPopup` 開啟狀態檢查，避免面板已開時再點日期按鈕反而把面板關掉。
 - 二次診斷補充：實測發現只要點左側 start day，前端會把右側 end calendar 自動重算回下一個月，因此 helper 必須在「點完 start day 之後」再移動 end calendar 並點 end day；不能先把兩邊月份都移好再點。流程已改為 `move start month -> click start day -> move end month -> click end day -> confirm`。
 - 修改檔案：`agent/src/bi-ui-helper-executor.ts`、本 planning log。
+
+### 2026-05-01 08:21 - 新增 Helper normalized DOM profile：進頁/彈窗/Widget 後先辨認結構
+
+- 背景：Tommy 指出只靠截圖仍可能看得到日期工具卻誤解互動模型，並提出「每進到一頁或叫出視窗後抓一次 HTML，通過的就不用再抓」的方向。採納其核心概念，但不抓完整 HTML，避免 payload 過大、雜訊過多、拖慢 Codex。
+- 本次設計：Helper 新增 `ui-dom-profile-v1` artifact，寫到 `output/helper-artifacts/<case>/dom-profiles/*.json`。profile 只保存 visible structure：buttons、inputs、selects、modal/dialog、date picker widget、id/name/role/text/disabled/onclick attribute、selected value、少量 options 與 bounding box；不保存完整 DOM tree。每份 profile 以 normalized structure 產生 `signature`，同樣 page/modal/widget 結構可重用 artifact，操作後仍以局部 state delta 驗證。
+- 日期工具補強：`collage.configureMetric` 會在 `configureMetric.before/after`、`dateRange.popupOpened`、`dateRange.staticTabRequested`、`dateRange.staticCalendar`、`dateRange.afterStartDay`、`dateRange.endCalendarReady`、`dateRange.afterEndDay`、`dateRange.afterConfirm` 等節點留下 profile ref。若再遇到類似「點 start 後 end calendar 被重算」的情境，helper report 可直接顯示 widget 結構與 signature/state 變化。
+- Artifact pipeline：`evidence-artifacts` 將 `dom-profiles/*.json` 標為 `ui_dom_profile`，線上 artifact list 可追溯。Profile 是 current-run diagnostic/evidence context，可輔助 Codex 判斷 locator drift 與 UI 結構；但不可取代 visible UI action、postcondition、network/chart/table evidence，也不可直接作為 PASS/FAIL 判定。
+- 修改檔案：`agent/src/bi-ui-helper-executor.ts`、`agent/src/evidence-artifacts.ts`、`agent-skills/uat-tool/rules/helper-protocol.md`、本 planning log。
