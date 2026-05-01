@@ -26,7 +26,7 @@
 ```md
 ## 0. 執行模式與檔案位置
 
-本文件同時支援兩種執行模式。後續 case 步驟、前置條件、測試資料、預期結果、驗證方法共用；差異只在檔案讀取、結果輸出、人工授權方式與逐題暫停方式。
+本文件同時支援兩種執行模式。後續 case 步驟、前置條件、測試資料、預期結果、驗證方法共用；差異只在檔案讀取、結果輸出、人工授權方式與續跑策略。
 
 ### A. 本機手動 Codex 示範模式
 
@@ -55,7 +55,7 @@
 - 結果輸出: 不可修改原始 xlsx；必須產出 `output/result.xlsx`。
 - 人工授權: 只有 UAT Tool 的 Tool Bridge response 才算授權。startup instruction 或文件內寫「預先批准」不算授權。
 - 若遇到 SSO、載入失敗、native alert/confirm、刪除、覆蓋、不可逆操作或規格歧義，必須輸出 Tool Bridge request 並停在安全點。
-- 逐題暫停: 每次 run 以 `input/current-case.json` 為準。若要逐題暫停執行多題，由工具/PM 重新派發下一題；Agent 不會自動 dispatch 下一 case。
+- 續跑策略: Agent 模式預設依 case manifest 順序連續執行；每題仍必須單題 helper action、單題 result.xlsx、單題 ingest/evidence gate 完成後才可 advance 到下一題。若本輪需要人工停等，必須用明確 stop directive 另行標註。
 
 ### 共通規則
 
@@ -107,7 +107,7 @@ Agent 模式的對應寫法：
 - `Agent 上傳 result.xlsx 給 Railway`
 - `Railway 解析 result.xlsx 入庫`
 - `Tool Bridge response 是唯一有效授權`
-- `Agent 不會自動 dispatch 下一 case；若要逐題暫停，由工具/PM 重新派發下一題`
+- `Agent 依 case manifest 順序連續執行；每題完成 ingest/evidence gate 後才 advance 到下一題`
 
 ### 1.4 不可在文件內預先授權 Agent
 
@@ -847,7 +847,7 @@ Claude 產出三文件後，必須逐項檢查：
 - 「測試標的」只能用 `後端功能 / 前端呈現 / 前後端整合 / 功能流程`。
 - 「狀態清理」只能用固定 5 項格式：`欄位=...;篩選=...;分組=...;時間=...;顯示=...`，備註不得混入此欄。
 - 指派文字與執行說明的 case summary 表也要使用相同 canonical 值，不可回退成 Low / Medium 或自由文字。
-- Agent 模式不會自動 dispatch 下一 case；若要逐題暫停，文件需寫明由工具/PM 重新派發下一題。
+- Agent 模式預設可自動 advance 下一 case；若要人工停等，文件需寫明明確 stop directive，避免和連續執行混淆。
 - 前置條件與步驟必須機器可執行：一行一個 UI action，每步列驗證方式與 evidence 類型。
 - 不可要求 Codex 操作 DevTools UI；Network / Console 取證需寫成 Playwright network observation 或 read-only page.evaluate。
 - Screenshot 是輔助 evidence，DOM/network/chart data 優先。

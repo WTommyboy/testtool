@@ -790,3 +790,11 @@ Tommy 曾討論是否改成腳本。最後決策是採「半腳本化 / helper �
 - 規則同步：更新 Codex prompt、helper execution plan、BI helper guidance 與 Layer 1 `tool-bridge.md`，把規則改成「未收到 Tool Bridge response 前不可處理 native dialog；收到後只可處理已知 BI save dialog；未知 follow-up native dialog 走 recovery」。避免文件仍要求第二彈窗一律不可處理，和 runtime 互相衝突。
 - 回滾方式：若 known dialog whitelist 誤按非預期 dialog，先把 `UAT_AGENT_AUTO_APPROVE_TOOL_REQUESTS=false` 關掉 auto approval 並重啟本機 Agent；必要時回滾本 commit，使 save 後第二 dialog 回到 recovery/人工處理。不可移除 save flow timeout guard，否則會回到 OTTEST002_08 的長時間卡住問題。
 - 修改檔案：`agent/src/bi-ui-helper-executor.ts`、`agent/src/task-runner.ts`、`agent/src/helper-execution-plan.ts`、`agent/src/bi-ui-helper-guidance.ts`、`agent-skills/uat-tool/rules/tool-bridge.md`、本 planning log。
+
+### 2026-05-01 09:20 - 更新 OTTEST002 文件：Agent 模式改回連續 advance
+
+- 背景：OTTEST002_09 第一題已完整跑完並成功 ingest，但 Agent 依文件中的「每次 run 以 current-case 為準 / 跑完輸出結果即停止 / Agent 不會自動 dispatch 下一 case」等 stop directive 停在 A-01。這不是 runtime 失敗，而是 OTTEST002 來源文件仍保留舊版單題派工寫法。
+- 本次文件修正：更新 `BI_UAT_ROUNDS/onlinetest/OTTEST002/Codex_指派文字_TOOL001_v1_0.md` 與 `拼貼工具測試_測試執行說明_for_v1_0.md`，將 Agent 模式改成依 case manifest 連續執行 `TOOL-A-01 → TOOL-A-05`。每題仍要求單題 helper action、單題 `result.xlsx`、單題 ingest/evidence gate 完成後才可 advance，不允許把多題合併在同一次 UI helper action 或同一份結果寫入。
+- Authoring 規則同步：`docs/authoring/UAT_三文件撰寫規則.md` 改為 Agent 模式預設可 auto-advance；若某輪真的需要人工停等，需寫明明確 stop directive，避免默認模板繼續產出舊句子。
+- 驗證方式：用 `case-advance-policy` 的 stop pattern 對 OTTEST002 兩份來源檔與 authoring 規則掃描，確認不再命中 `Agent 不會自動 dispatch 下一 case`、`每次 run 以 input/current-case.json 為準`、`跑完輸出結果即停止`、`由工具/PM 重新派發下一題`、`每個 case 跑完必停`。
+- 修改檔案：`BI_UAT_ROUNDS/onlinetest/OTTEST002/Codex_指派文字_TOOL001_v1_0.md`、`BI_UAT_ROUNDS/onlinetest/OTTEST002/拼貼工具測試_測試執行說明_for_v1_0.md`、`docs/authoring/UAT_三文件撰寫規則.md`、本 planning log。
