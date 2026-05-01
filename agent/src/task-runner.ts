@@ -7,6 +7,7 @@ import type { AgentConnection } from "./connection";
 import { readFirstInputCase, writeAgentResultXlsx } from "./result-writer";
 import { validateResultWorkbookContract } from "./result-contract";
 import { ensureBlockedResultCurrentRunEvidence } from "./result-evidence-enricher";
+import { repairSingleCaseResultWorkbook } from "./result-workbook-repair";
 import { parseToolRequests, type ParsedToolRequest } from "./tool-bridge";
 import { writeBiUiHelperGuidance } from "./bi-ui-helper-guidance";
 import { writeCapabilityGate } from "./capability-gate";
@@ -624,6 +625,7 @@ const removeStaleCaseOutput = (runDir: string): void => {
     "result.xlsx",
     "result-xlsx.json",
     "result-xlsx-self-check.json",
+    "result-xlsx-repair.json",
     "tool-requests.json",
     "tool-requests-resume.json"
   ];
@@ -2364,9 +2366,10 @@ const uploadRunArtifacts = async (options: UploadArtifactsOptions): Promise<Uplo
   const codexGeneratedResultXlsx = preferCodexGeneratedResult ? getCodexGeneratedResultXlsx(runDir) : null;
   const resultSource = codexGeneratedResultXlsx ? "codex_generated" : "agent_fallback";
   const resultUploadMetadata = readResultUploadMetadata(runDir, resultSource);
+  const currentSourceCase = await readFirstInputCase(inputs.xlsx, resultUploadMetadata.currentCaseNo);
   const sourceCase = codexGeneratedResultXlsx
     ? null
-    : await readFirstInputCase(inputs.xlsx, resultUploadMetadata.currentCaseNo);
+    : currentSourceCase;
   const missingRealUatResult = !codexGeneratedResultXlsx && Boolean(sourceCase) && !failCategory && result.exitCode === 0;
   const effectiveFailCategory = failCategory
     ?? (result.exitCode !== 0 ? "CODEX_RUN_FAILED" : null)
@@ -2441,6 +2444,27 @@ const uploadRunArtifacts = async (options: UploadArtifactsOptions): Promise<Uplo
           {
             run_id: runId,
             text: "uat-agent enriched BLOCKED result detail_json with current-run evidence pointers before upload."
+          },
+          false
+        );
+      }
+    }
+    const repairReport = resultSource === "codex_generated"
+      ? await repairSingleCaseResultWorkbook({
+        filePath: resultXlsxPath,
+        currentCase: currentSourceCase,
+        expectedCaseNos: resultUploadMetadata.expectedCaseNos
+      })
+      : null;
+    if (repairReport) {
+      writeJson(path.join(runDir, "output", "result-xlsx-repair.json"), repairReport);
+      if (repairReport.status === "updated") {
+        sendBestEffort(
+          connection,
+          "run.stdout",
+          {
+            run_id: runId,
+            text: "uat-agent repaired single-case result.xlsx legacy schema by inserting 群組ID before upload."
           },
           false
         );

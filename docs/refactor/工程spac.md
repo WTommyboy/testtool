@@ -1,7 +1,7 @@
 # UAT Tool 最新工程 Spec
 
 **版本**: v2026-05-02
-**狀態**: Mac Agent MVP / Indexed Guidance + Preflight Safeguards + groupId schema + final aggregate result + OTTEST002 Collage helper P0 已部署
+**狀態**: Mac Agent MVP / Indexed Guidance + Preflight Safeguards + groupId schema + final aggregate result + OTTEST002 Collage helper P0 + result repair guard 已部署
 **適用分支**: `refactor/mac-agent-mvp` / `codex/uat-tool-mvp`  
 **說明**: 檔名沿用 Tommy 提供的 `工程spac.md`;本文內容為工程 spec。
 
@@ -1112,6 +1112,25 @@ CODEX_NO_RESULT_XLSX
 
 This prevents the old bug where Codex ran some UI but only wrote `AGENT-RESULT PASS`.
 
+### 9.2.1 Pre-upload Repair Guard
+
+Agent may repair exactly one Codex-generated legacy workbook shape before self-check:
+
+- `測試案例` sheet is missing `群組ID`
+- the remaining headers match the previous 8-column single-case result layout
+- there is exactly one non-empty case row
+- that case row matches the current dispatch case
+- `expectedCaseNos` contains at most the current case
+
+Repair behavior:
+
+- insert `群組ID` before `群組`
+- populate it from the current input case `groupId`, with group-name / case-no inference only as fallback
+- write `output/result-xlsx-repair.json`
+- continue through the normal `result-xlsx-self-check.json` and server evidence gate
+
+The guard must not repair multi-case workbooks, wrong-case workbooks, missing non-`群組ID` headers, or non-legacy layouts. Those remain hard failures.
+
 ### 9.3 Parser
 
 Backend result parser must:
@@ -1674,9 +1693,10 @@ codex/uat-tool-mvp
 ### P0
 
 1. Run OTTEST002 production regression against the deployed helper P0 and final aggregate pipeline.
-2. Add Web UI display for `BATCH_CASE_POLICY_VIOLATION`, result gate errors, and Tool Bridge schema errors with clear explanation.
-3. Add per-case progress events and current-case pointer visibility.
-4. If OTTEST002 exposes BI locator drift or CSV format mismatch, tune `collage.openExistingReport` / `collage.downloadCsvAndComparePreview` using the helper DOM profile artifacts.
+2. Verify the Agent pre-upload repair guard with OTTEST002 Codex-generated result workbooks that still omit `群組ID`.
+3. Add Web UI display for `BATCH_CASE_POLICY_VIOLATION`, result gate errors, and Tool Bridge schema errors with clear explanation.
+4. Add per-case progress events and current-case pointer visibility.
+5. If OTTEST002 exposes BI locator drift or CSV format mismatch, tune `collage.openExistingReport` / `collage.downloadCsvAndComparePreview` using the helper DOM profile artifacts.
 
 ### P1
 
@@ -1710,7 +1730,7 @@ The current MVP is acceptable if:
 8. Codex performs UI operation for at least one real case.
 9. Tool Bridge request appears for save/confirm or SSO.
 10. After approval, Codex resumes same thread.
-11. Agent uploads real single-case result.xlsx or safe fallback.
+11. Agent repairs only safe legacy single-case `群組ID` drift, then uploads real single-case result.xlsx or safe fallback.
 12. Backend does not mark fake/fallback result as trusted PASS.
 13. Backend ingests each case into normalized state and can generate final aggregate result xlsx after all cases terminal.
 14. Web UI shows phase duration and useful logs.

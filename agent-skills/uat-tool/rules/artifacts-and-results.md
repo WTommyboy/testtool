@@ -134,6 +134,24 @@ Artifact upload 是附加 observability，不得改變 case PASS/FAIL/BLOCKED �
 
 缺少上述欄位時，result ingest 會失敗；不視為 case 完成。
 
+## Result Workbook Repair Guard
+
+Agent 可在上傳前修復一種 schema transition case：
+
+- `output/result.xlsx` 來自 Codex，而不是 Agent fallback
+- `測試案例` sheet 缺 `群組ID`
+- 其餘 header 正好符合舊 8 欄單題格式
+- workbook 只有目前 current case 一筆結果
+- case no 與 dispatch metadata 相符
+
+符合時，Agent 在 `群組` 前插入 `群組ID`，值取自 input current case，並寫出：
+
+```text
+output/result-xlsx-repair.json
+```
+
+此 guard 只處理單題 legacy header 漂移。多題 workbook、錯題、缺其他必要欄位、或無法確認 current case 時不可修復，必須繼續由 self-check / server gate 擋下。
+
 ## Logs
 
 Agent 應維持 execution log，至少包含：

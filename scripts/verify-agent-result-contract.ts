@@ -6,6 +6,7 @@ import ExcelJS from "exceljs";
 import { writeResultTemplate } from "../agent/src/result-template";
 import { validateResultWorkbookContract } from "../agent/src/result-contract";
 import { ensureBlockedResultCurrentRunEvidence } from "../agent/src/result-evidence-enricher";
+import { repairSingleCaseResultWorkbook } from "../agent/src/result-workbook-repair";
 import { parseResultXlsx } from "../src/result-parser/result-xlsx-parser";
 import { evaluateResultEvidenceGate } from "../src/result-parser/result-evidence-gate";
 
@@ -66,6 +67,39 @@ const writeBlockedWorkbookWithoutEvidence = async (filePath: string): Promise<vo
   await workbook.xlsx.writeFile(filePath);
 };
 
+const writeLegacySingleCaseWithoutGroupId = async (filePath: string): Promise<void> => {
+  const workbook = new ExcelJS.Workbook();
+  const index = workbook.addWorksheet("索引");
+  index.getCell("A1").value = "schema_version";
+  index.getCell("B1").value = "fixture-result-v1";
+
+  const cases = workbook.addWorksheet("測試案例");
+  cases.addRow(["群組", "編號", "測試項目", "測試類型", "執行方式", "結果", "失敗分類", "詳細紀錄JSON"]);
+  cases.addRow([
+    "A:拼貼模式工具測試",
+    "TOOL-A-01",
+    "儲存並重新開啟拼貼報表",
+    "功能流程",
+    "agent",
+    "FAIL",
+    "FUNCTIONAL_REGRESSION",
+    JSON.stringify({
+      測試目的: "fixture",
+      設定條件: {},
+      預期行為: "重新開啟後應保留日期區間",
+      實際行為: "重新開啟後日期區間顯示為過去7天",
+      錯誤原因: "date range was reset after reopen",
+      根因層級: "frontend_state_persistence",
+      驗證方法: "helper pre-run + Codex reopen observation",
+      "RD 分派": "frontend"
+    })
+  ]);
+
+  const bugs = workbook.addWorksheet("Bug");
+  bugs.addRow(["嚴重度", "Bug ID", "關聯編號", "標題", "描述", "建議", "狀態"]);
+  await workbook.xlsx.writeFile(filePath);
+};
+
 const main = async (): Promise<void> => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "uat-agent-result-contract-"));
   try {
@@ -83,6 +117,29 @@ const main = async (): Promise<void> => {
     assert.ok(badReport.issues.some((item) => item.message.includes("關聯編號")));
     assert.ok(badReport.issues.some((item) => item.message.includes("狀態")));
     assert.ok(badReport.issues.some((item) => item.message.includes("錯誤原因")));
+
+    const legacySingleCase = path.join(tempRoot, "legacy-single-case-missing-group-id.xlsx");
+    await writeLegacySingleCaseWithoutGroupId(legacySingleCase);
+    const legacyReport = await validateResultWorkbookContract(legacySingleCase);
+    assert.equal(legacyReport.status, "error");
+    assert.ok(legacyReport.issues.some((item) => item.message.includes("群組ID")));
+    const repairReport = await repairSingleCaseResultWorkbook({
+      filePath: legacySingleCase,
+      currentCase: {
+        groupId: "A",
+        groupName: "A:拼貼模式工具測試",
+        caseNo: "TOOL-A-01",
+        caseTitle: "儲存並重新開啟拼貼報表",
+        testType: "功能流程",
+        executionMethod: "agent"
+      },
+      expectedCaseNos: ["TOOL-A-01"]
+    });
+    assert.equal(repairReport.status, "updated", JSON.stringify(repairReport));
+    const repairedReport = await validateResultWorkbookContract(legacySingleCase);
+    assert.equal(repairedReport.status, "ok", JSON.stringify(repairedReport.issues));
+    const repairedParsed = await parseResultXlsx(legacySingleCase);
+    assert.equal(repairedParsed.cases[0]?.groupId, "A");
 
     fs.mkdirSync(path.join(tempRoot, "output", "helper-artifacts", "TOOL-A-01"), { recursive: true });
     fs.writeFileSync(path.join(tempRoot, "output", "helper-pre-run-summary.json"), JSON.stringify({
@@ -125,6 +182,7 @@ const main = async (): Promise<void> => {
         "generated result-template contains no EX-* example result rows",
         "legacy Bug header 來源 Case is rejected by agent self-check",
         "FAIL detail_json missing required fields is rejected before upload",
+        "single-case legacy result workbook missing 群組ID is repaired before self-check",
         "BLOCKED detail_json without current-run evidence is enriched before upload"
       ]
     }, null, 2));
