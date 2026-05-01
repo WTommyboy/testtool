@@ -1,7 +1,7 @@
 # UAT Tool 最新工程 Spec
 
 **版本**: v2026-05-02
-**狀態**: Mac Agent MVP / Indexed Guidance + Preflight Safeguards + groupId schema + final aggregate result 已部署
+**狀態**: Mac Agent MVP / Indexed Guidance + Preflight Safeguards + groupId schema + final aggregate result + OTTEST002 Collage helper P0 已部署
 **適用分支**: `refactor/mac-agent-mvp` / `codex/uat-tool-mvp`  
 **說明**: 檔名沿用 Tommy 提供的 `工程spac.md`;本文內容為工程 spec。
 
@@ -1383,6 +1383,12 @@ Known sources:
 - `network-observation-guidance.md`
 - `groupId / 群組ID` schema in parser, manifest, current-case-pack, run-state and result parser
 - final aggregate result xlsx generated from normalized server state
+- Collage helper P0:
+  - composite metric fields are split and added one by one
+  - existing report modification opens `TOOL_A01_<timestamp>` instead of creating a replacement report
+  - overwrite save reuses the existing temporary report name
+  - CSV download is triggered through visible UI and compared to current preview evidence
+  - unknown native dialog chains are blocked with evidence when no real recovery handler exists
 - structured evidence priority
 - batch-case policy detector
 - phase duration UI
@@ -1667,12 +1673,10 @@ codex/uat-tool-mvp
 
 ### P0
 
-1. Add `collage.configureMetric` composite field support for strings such as `新增帳號數 + MAU(帳號) + 總營收(TWD)`.
-2. Add existing-report modification flow for `TOOL-A-05`: open report from A-01, add fields, preview, overwrite save, reopen.
-3. Add CSV download / preview comparison for `TOOL-A-04`, and adjust functional-flow judgment so known core restore failures are not hidden by later evidence gaps.
-4. Reduce recovery noise when no real recovery handler exists; write a direct BLOCKED reason instead of request-then-skipped loops.
-5. Add Web UI display for `BATCH_CASE_POLICY_VIOLATION`, result gate errors, and Tool Bridge schema errors with clear explanation.
-6. Add per-case progress events and current-case pointer visibility.
+1. Run OTTEST002 production regression against the deployed helper P0 and final aggregate pipeline.
+2. Add Web UI display for `BATCH_CASE_POLICY_VIOLATION`, result gate errors, and Tool Bridge schema errors with clear explanation.
+3. Add per-case progress events and current-case pointer visibility.
+4. If OTTEST002 exposes BI locator drift or CSV format mismatch, tune `collage.openExistingReport` / `collage.downloadCsvAndComparePreview` using the helper DOM profile artifacts.
 
 ### P1
 

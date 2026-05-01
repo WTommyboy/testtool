@@ -66,8 +66,10 @@ export const evaluateCapabilityGate = (
       "collage.configureMetric",
       "collage.runPreviewAndCollectEvidence"
     );
-    if (/儲存/.test(text)) supportedHelperTemplates.push("collage.saveReport");
+    if (/修改既有|既有報表|已儲存報表|儲存覆寫|覆寫/.test(text)) supportedHelperTemplates.push("collage.openExistingReport");
+    if (/儲存|覆寫/.test(text)) supportedHelperTemplates.push("collage.saveReport");
     if (/重開|重新檢視|還原|載入/.test(text)) supportedHelperTemplates.push("collage.reopenReport");
+    if (/下載|CSV/i.test(text)) supportedHelperTemplates.push("collage.downloadCsvAndComparePreview");
   }
 
   let supportStatus: CapabilityGateReport["supportStatus"] = "degraded";

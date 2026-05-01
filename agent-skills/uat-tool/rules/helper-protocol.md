@@ -19,6 +19,8 @@
 - Helper 點不到、actionability 失敗、postcondition 驗證不到時，必須回 `blocked` 或 `requires_approval`，並留下 reason / DOM / screenshot evidence。
 - Irreversible action、native alert/confirm、overwrite/delete/save 等流程必須先有 Tool Bridge response；非 SSO/login/auth request 可由 Mac Agent auto approval policy 回覆。
 - Helper executor 只能由 Mac Agent 執行；Codex 不可用 shell `command_execution` 直接呼叫 helper executor 或自行連 persistent Chrome CDP。Codex 的職責是讀 helper report、必要時發 Tool Bridge request、再判定並寫 result。
+- Helper 若支援多欄位選取,必須把 composite field string 拆成多個欄位逐一透過 visible UI 新增與驗證。
+- Helper 若支援 CSV 下載,只能透過 visible UI 觸發下載,再讀本機下載檔作 evidence；不可直接打 BI API 取得 CSV。
 
 ## Artifacts
 

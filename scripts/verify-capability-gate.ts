@@ -60,6 +60,36 @@ const collageMultiFieldPreviewCase: CaseManifestCase = {
   validationMethod: "Evidence: network request body + network response body + DOM read"
 };
 
+const collageCsvDownloadCase: CaseManifestCase = {
+  ...collageSaveReopenCase,
+  order: 4,
+  rowNumber: 5,
+  caseNo: "TOOL-A-04",
+  caseTitle: "拼貼模式 — 建制 + 儲存 + 重開 + 下載 CSV,驗證下載資料與 preview 一致",
+  testType: "功能流程(含下載)",
+  riskLevel: "🟡 建立",
+  testTarget: "功能流程",
+  cleanupChecklist: "欄位=MAU(帳號);篩選=不影響;分組=不影響;時間=2026/03/01~2026/03/31;顯示=每天",
+  stepsSummary: "1. 進入拼貼模式新增報表頁\n2. 加欄位「MAU(帳號)」\n3. 按執行\n4. 儲存報表(報表名: TOOL_A04_<timestamp>)\n5. 重新開啟該報表\n6. 點下載 CSV\n7. 讀 CSV 內容比對 preview 數值",
+  expected: "preview 與 CSV 下載資料完全一致(列數、數值)\n重開後 4 項設定還原",
+  validationMethod: "Evidence: DOM read + network response body + downloaded CSV"
+};
+
+const collageExistingReportCase: CaseManifestCase = {
+  ...collageSaveReopenCase,
+  order: 5,
+  rowNumber: 6,
+  caseNo: "TOOL-A-05",
+  caseTitle: "拼貼模式 — 開啟 TOOL-A-01 已儲存報表,修改欄位後儲存覆寫",
+  testType: "功能流程(修改既有)",
+  riskLevel: "🟠 修改",
+  testTarget: "功能流程",
+  cleanupChecklist: "欄位=新增帳號數 + 總營收(TWD);篩選=不影響;分組=不影響;時間=2026/03/01~2026/03/31;顯示=每天",
+  preconditions: "建構模式: 拼貼\n必須先執行 TOOL-A-01 並建立 TOOL_A01_<timestamp> 報表才能跑本 case",
+  stepsSummary: "1. 從清單找到 TOOL_A01_<timestamp> 報表\n2. 點該報表進入編輯\n3. 加欄位「總營收(TWD)」\n4. 按執行\n5. 儲存覆寫(維持原報表名)\n6. 重新開啟該報表",
+  expected: "覆寫成功且重開後欄位列為 2 欄(新增帳號數 + 總營收(TWD))"
+};
+
 const collageMetadataCompareCase: CaseManifestCase = {
   ...collageSaveReopenCase,
   order: 3,
@@ -101,6 +131,18 @@ const main = (): void => {
     assert.ok(plan.actions.some((item) => item.template === "collage.configureMetric"), "helper plan should include collage.configureMetric");
     assert.ok(plan.actions.some((item) => item.template === "collage.saveReport"), "helper plan should include collage.saveReport");
     assert.ok(plan.actions.some((item) => item.template === "collage.reopenReport"), "helper plan should include collage.reopenReport");
+
+    const multiFieldPlan = buildHelperExecutionPlan({ runDir, currentCase: collageMultiFieldPreviewCase, helperHints: null });
+    const multiFieldConfigure = multiFieldPlan.actions.find((item) => item.template === "collage.configureMetric");
+    assert.deepEqual(multiFieldConfigure?.params.fields, ["新增帳號數", "MAU(帳號)", "總營收(TWD)"], "multi-field helper params should split composite metric string");
+
+    const csvPlan = buildHelperExecutionPlan({ runDir, currentCase: collageCsvDownloadCase, helperHints: null });
+    assert.ok(csvPlan.actions.some((item) => item.template === "collage.downloadCsvAndComparePreview"), "CSV case should include download/compare helper action");
+
+    const existingPlan = buildHelperExecutionPlan({ runDir, currentCase: collageExistingReportCase, helperHints: null });
+    assert.ok(existingPlan.actions.some((item) => item.template === "collage.openExistingReport"), "A-05 should open an existing report instead of creating a new report");
+    assert.ok(!existingPlan.actions.some((item) => item.template === "collage.createReport"), "A-05 should not create a new report");
+    assert.equal(existingPlan.actions.find((item) => item.template === "collage.saveReport")?.params.overwriteExisting, true, "A-05 save should be overwriteExisting");
   } finally {
     fs.rmSync(runDir, { recursive: true, force: true });
   }
@@ -118,6 +160,9 @@ const main = (): void => {
           "neutral cleanup targets do not trigger unsupported filter/group gate",
           "metadata references alone do not trigger metadata-dropdown gate",
           "collage multi-field preview is not misclassified as metric mode",
+          "collage multi-field helper params split composite metric strings",
+          "collage CSV case includes download/compare helper action",
+          "collage existing-report modification opens existing report and overwrites",
           "collage metadata compare is not misclassified as record/detail mode",
           "active filter cases remain blocked until helper support exists"
         ]

@@ -102,10 +102,49 @@ const cleanReportNamePattern = (value: string | null): string | null => {
   return cleaned || null;
 };
 
+const splitCompositeMetricFields = (value: string | null): string[] => {
+  if (!value) return [];
+  const parts: string[] = [];
+  let current = "";
+  let depth = 0;
+  for (const char of value) {
+    if (char === "(" || char === "（" || char === "[" || char === "【") depth += 1;
+    if (char === ")" || char === "）" || char === "]" || char === "】") depth = Math.max(0, depth - 1);
+    if (depth === 0 && (char === "+" || char === "＋" || char === "、" || char === "," || char === "，")) {
+      const part = current.trim();
+      if (part) parts.push(part);
+      current = "";
+      continue;
+    }
+    current += char;
+  }
+  const tail = current.trim();
+  if (tail) parts.push(tail);
+  return [...new Set(parts)];
+};
+
+const inferReportNamePattern = (text: string, params: Record<string, unknown>): string | null =>
+  cleanReportNamePattern(
+    stringParam(params, ["reportName", "reportNamePattern"]) ??
+      firstMatch(text, [/報表名[：:]\s*([^\n]+)/, /報表名稱[：:]\s*([^\n]+)/, /(TOOL_[A-Z]\d{2}_<timestamp>)/i, /(TOOL_[A-Z]\d{2}_[A-Za-z0-9_-]+)/i])
+  );
+
+const inferExistingReportNamePattern = (text: string, params: Record<string, unknown>, fallbackReportNamePattern: string | null): string | null =>
+  cleanReportNamePattern(
+    stringParam(params, ["existingReportName", "existingReportNamePattern", "savedReportName"]) ??
+      firstMatch(text, [/(TOOL_A01_<timestamp>)/i, /(TOOL_A01_[A-Za-z0-9_-]+)/i, /(TOOL_[A-Z]\d{2}_<timestamp>)/i]) ??
+      fallbackReportNamePattern
+  );
+
 const inferCollageParams = (currentCase: CaseManifestCase | null, helperHints: HelperHints | null): Record<string, unknown> => {
   const text = textBlob(currentCase);
   const cleanup = parseCleanupTargets(currentCase?.cleanupChecklist);
   const params = paramsObject(helperHints);
+  const field = stringParam(params, ["field", "metric", "metricField"]) ?? cleanup["欄位"] ?? firstMatch(text, [/欄位[「=：: ]+([^」\n,，]+)/]);
+  const fields = splitCompositeMetricFields(field);
+  const reportNamePattern = inferReportNamePattern(text, params);
+  const modifiesExistingReport = /修改既有|既有報表|已儲存報表|儲存覆寫|覆寫/.test(text);
+  const existingReportNamePattern = inferExistingReportNamePattern(text, params, reportNamePattern);
   const dateRangeText =
     stringParam(params, ["dateRange", "timeRange"]) ??
     cleanup["時間"] ??
@@ -115,15 +154,17 @@ const inferCollageParams = (currentCase: CaseManifestCase | null, helperHints: H
     devUrl: stringParam(params, ["devUrl"]) ?? null,
     projectName: stringParam(params, ["projectName", "project"]) ?? firstMatch(text, [/(拼貼test[_\d]+)/i]),
     source: stringParam(params, ["source", "sourceReport"]) ?? firstMatch(text, [/來源報表[=：: ]*「?([^」\n,， ]+)/]),
-    field: stringParam(params, ["field", "metric", "metricField"]) ?? cleanup["欄位"] ?? firstMatch(text, [/欄位[「=：: ]+([^」\n,，]+)/]),
+    field,
+    fields,
     dateRange: dateRangeText,
     display: stringParam(params, ["display", "displayMode"]) ?? cleanup["顯示"] ?? null,
     cleanupChecklist: currentCase?.cleanupChecklist ?? null,
     cleanupTargets: cleanup,
-    reportNamePattern: cleanReportNamePattern(
-      stringParam(params, ["reportName", "reportNamePattern"]) ??
-      firstMatch(text, [/報表名[：:]\s*([^\n]+)/, /報表名稱[：:]\s*([^\n]+)/])
-    )
+    reportNamePattern,
+    existingReportNamePattern,
+    existingReportSourceCaseNo: modifiesExistingReport ? "TOOL-A-01" : null,
+    openExistingReport: modifiesExistingReport,
+    overwriteExisting: modifiesExistingReport
   };
 };
 
@@ -163,6 +204,7 @@ const buildActions = (currentCase: CaseManifestCase | null, helperHints: HelperH
   const metadataOnly = features.isMetadataDropdown;
   if (unsupportedHelperTarget || metadataOnly) return [];
   const isCollageFlow = /collage_build_preview_save_reopen/.test(operationTemplate) || /拼貼|新增報表|儲存報表|重開|重新檢視/.test(text);
+  const modifiesExistingReport = params.openExistingReport === true;
 
   if (isCollageFlow) {
     actions.push(
@@ -170,14 +212,20 @@ const buildActions = (currentCase: CaseManifestCase | null, helperHints: HelperH
         requiredEvidence: ["dom.url", "dom.pageTitle", "dom.state", "screenshot"],
         notes: ["只開啟/切換專案，不判斷 testcase 結果。"]
       }),
-      action("H2", "collage.createReport", "進入新增報表頁", params, {
-        requiredEvidence: ["dom.url", "dom.pageTitle", "dom.state", "screenshot"]
-      }),
+      modifiesExistingReport
+        ? action("H2", "collage.openExistingReport", "開啟既有報表進入編輯", params, {
+            requiredEvidence: ["dom.state", "screenshot"],
+            notes: ["若找不到 TOOL-A-01 建立的報表，helper 必須 blocked 並標記前置失敗，不可改建新報表替代。"]
+          })
+        : action("H2", "collage.createReport", "進入新增報表頁", params, {
+            requiredEvidence: ["dom.url", "dom.pageTitle", "dom.state", "screenshot"]
+          }),
       action("H3", "collage.configureMetric", "設定來源、欄位、日期與顯示", params, {
         requiredEvidence: ["dom.state", "state.delta", "screenshot"],
         notes: [
           "所有設定都必須透過 visible UI；不可使用內部 JS setter。",
-          "可用 state delta planner 跳過已逐字/DOM 驗證對齊的項目；讀不到或不確定時必須操作 UI 或回 blocked。"
+          "可用 state delta planner 跳過已逐字/DOM 驗證對齊的項目；讀不到或不確定時必須操作 UI 或回 blocked。",
+          "多欄位字串必須拆成多個欄位逐一新增/驗證，不可把整段 composite string 當作單一 clickable text。"
         ]
       }),
       action("H4", "collage.runPreviewAndCollectEvidence", "執行 preview 並收集 evidence", params, {
@@ -187,13 +235,13 @@ const buildActions = (currentCase: CaseManifestCase | null, helperHints: HelperH
       })
     );
 
-    if (/儲存/.test(text)) {
+    if (/儲存|覆寫/.test(text)) {
       actions.push(
-        action("H5", "collage.saveReport", "儲存本輪臨時報表", params, {
+        action("H5", "collage.saveReport", modifiesExistingReport ? "覆寫既有報表" : "儲存本輪臨時報表", params, {
           requiresToolBridge: true,
           requiredEvidence: ["toolBridge.response", "dom.state", "screenshot"],
           screenshotPolicy: "required_if_possible",
-          notes: ["Agent 模式需先取得 Tool Bridge response；非 SSO/login request 由 Mac Agent 自動回覆；helper 只可處理已知 BI save dialog，未知 native dialog 必須回 recovery。"]
+          notes: ["Agent 模式需先取得 Tool Bridge response；非 SSO/login request 由 Mac Agent 自動回覆；helper 只可處理已知 BI save/overwrite dialog；未知 native dialog 若沒有實際 recovery handler 必須 blocked 並留下 evidence。"]
         })
       );
     }
@@ -203,6 +251,16 @@ const buildActions = (currentCase: CaseManifestCase | null, helperHints: HelperH
         action("H6", "collage.reopenReport", "從清單重開報表並驗證設定", params, {
           requiredEvidence: ["dom.state", "network.requestBody", "screenshot"],
           screenshotPolicy: "required_if_possible"
+        })
+      );
+    }
+
+    if (/下載|CSV/i.test(text)) {
+      actions.push(
+        action("H7", "collage.downloadCsvAndComparePreview", "下載 CSV 並與 preview evidence 比對", params, {
+          requiredEvidence: ["downloaded.csv", "csv.rows", "chart.datasets", "screenshot"],
+          screenshotPolicy: "required_if_possible",
+          notes: ["下載是合法輸出，不需 Tool Bridge；helper 只產生 CSV/preview 比對 evidence，Codex 仍負責最終判定。"]
         })
       );
     }
@@ -252,7 +310,7 @@ export const buildHelperExecutionPlan = ({ runDir, currentCase, helperHints }: W
       "Helper actions may operate the UI and collect evidence, but Codex must judge PASS/FAIL/BLOCKED.",
       "Helper actions must not write result.xlsx and must not run multiple cases.",
       "Helper actions must not use force:true clicks or bypass browser actionability checks.",
-      "Irreversible actions and native dialogs require Tool Bridge response in Agent mode; non-SSO/login authorization requests may be auto-approved by Mac Agent policy, and only known BI save dialogs may be handled by helper after approval."
+      "Irreversible actions and native dialogs require Tool Bridge response in Agent mode; non-SSO/login authorization requests may be auto-approved by Mac Agent policy, and only known BI save/overwrite dialogs may be handled by helper after approval."
     ],
     safety: {
       helperMayWriteResultXlsx: false,

@@ -137,6 +137,39 @@ const firstStringParam = (params: Record<string, unknown>, keys: string[]): stri
   return null;
 };
 
+const stringArrayParam = (params: Record<string, unknown>, key: string): string[] => {
+  const value = params[key];
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is string => typeof item === "string" && item.trim().length > 0).map((item) => item.trim());
+};
+
+const splitCompositeMetricFields = (value: string | null): string[] => {
+  if (!value) return [];
+  const parts: string[] = [];
+  let current = "";
+  let depth = 0;
+  for (const char of value) {
+    if (char === "(" || char === "（" || char === "[" || char === "【") depth += 1;
+    if (char === ")" || char === "）" || char === "]" || char === "】") depth = Math.max(0, depth - 1);
+    if (depth === 0 && (char === "+" || char === "＋" || char === "、" || char === "," || char === "，")) {
+      const part = current.trim();
+      if (part) parts.push(part);
+      current = "";
+      continue;
+    }
+    current += char;
+  }
+  const tail = current.trim();
+  if (tail) parts.push(tail);
+  return [...new Set(parts)];
+};
+
+const metricFieldsFromParams = (params: Record<string, unknown>): string[] => {
+  const explicit = stringArrayParam(params, "fields");
+  if (explicit.length > 0) return [...new Set(explicit)];
+  return splitCompositeMetricFields(firstStringParam(params, ["field", "metric", "metricField"]));
+};
+
 const timestampId = (): string => new Date().toISOString().replace(/[-:T.Z]/g, "").slice(0, 12);
 
 const resolveReportName = (options: CliOptions): string => {
@@ -146,6 +179,7 @@ const resolveReportName = (options: CliOptions): string => {
 };
 
 const savedReportStatePath = (options: CliOptions): string => path.join(artifactRoot(options), "saved-report.json");
+const previewEvidencePath = (options: CliOptions): string => path.join(artifactRoot(options), "preview-evidence.json");
 
 const writeSavedReportState = (options: CliOptions, reportName: string, extra: Record<string, unknown> = {}): void => {
   ensureDir(artifactRoot(options));
@@ -166,6 +200,79 @@ const readSavedReportName = (options: CliOptions): string | null => {
   } catch {
     return null;
   }
+};
+
+const wildcardPatternToRegExp = (value: string): RegExp => {
+  const escaped = value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const pattern = escaped
+    .replace(/<timestamp>/gi, "[A-Za-z0-9_-]+")
+    .replace(/\\\*/g, ".*");
+  return new RegExp(`^${pattern}$`, "i");
+};
+
+const reportNameMatchesPattern = (reportName: string, pattern: string): boolean => {
+  if (reportName === pattern) return true;
+  return wildcardPatternToRegExp(pattern).test(reportName);
+};
+
+const readSavedReportStateFiles = (options: CliOptions): Array<{ caseId: string; reportName: string; path: string; savedAt: string | null }> => {
+  const root = path.join(options.runDir, "output", "helper-artifacts");
+  if (!fs.existsSync(root)) return [];
+  const result: Array<{ caseId: string; reportName: string; path: string; savedAt: string | null }> = [];
+  for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    const filePath = path.join(root, entry.name, "saved-report.json");
+    if (!fs.existsSync(filePath)) continue;
+    try {
+      const parsed = JSON.parse(fs.readFileSync(filePath, "utf8")) as Record<string, unknown>;
+      const reportName = typeof parsed.reportName === "string" ? parsed.reportName.trim() : "";
+      if (!reportName) continue;
+      result.push({
+        caseId: typeof parsed.caseId === "string" && parsed.caseId.trim() ? parsed.caseId.trim() : entry.name,
+        reportName,
+        path: filePath,
+        savedAt: typeof parsed.savedAt === "string" ? parsed.savedAt : null
+      });
+    } catch {
+      // Ignore malformed historical helper artifacts.
+    }
+  }
+  return result.sort((a, b) => String(b.savedAt ?? "").localeCompare(String(a.savedAt ?? "")));
+};
+
+const resolveExistingReportName = async (options: CliOptions, page: Page): Promise<{ reportName: string; source: string; candidates: unknown[] }> => {
+  const explicit = firstStringParam(options.params, ["existingReportName", "savedReportName"]);
+  if (explicit) return { reportName: explicit, source: "params.existingReportName", candidates: [] };
+
+  const pattern = firstStringParam(options.params, ["existingReportNamePattern", "reportNamePattern"]) ?? "TOOL_A01_<timestamp>";
+  const sourceCaseNo = stringParam(options.params, "existingReportSourceCaseNo");
+  const savedReports = readSavedReportStateFiles(options);
+  const matchedSaved = savedReports.find((item) => {
+    const caseMatches = !sourceCaseNo || item.caseId === sourceCaseNo || item.path.includes(sanitize(sourceCaseNo));
+    return caseMatches && reportNameMatchesPattern(item.reportName, pattern);
+  }) ?? savedReports.find((item) => reportNameMatchesPattern(item.reportName, pattern));
+  if (matchedSaved) {
+    return {
+      reportName: matchedSaved.reportName,
+      source: "helper-artifacts.saved-report",
+      candidates: savedReports.map((item) => ({ caseId: item.caseId, reportName: item.reportName, savedAt: item.savedAt }))
+    };
+  }
+
+  const bodyText = await page.locator("body").innerText({ timeout: 5000 }).catch(() => "");
+  const bodyCandidate = bodyText
+    .split(/\s+/)
+    .map((item) => item.trim())
+    .find((item) => reportNameMatchesPattern(item, pattern));
+  if (bodyCandidate) {
+    return {
+      reportName: bodyCandidate,
+      source: "visible-report-list-text",
+      candidates: savedReports.map((item) => ({ caseId: item.caseId, reportName: item.reportName, savedAt: item.savedAt }))
+    };
+  }
+
+  throw new HelperBlockedError(`EXISTING_REPORT_ROW_NOT_FOUND_PRECONDITION:pattern=${pattern};savedReports=${JSON.stringify(savedReports).slice(0, 1000)}`);
 };
 
 const createReport = (
@@ -672,10 +779,13 @@ const parseCleanupTargets = (value: unknown): Record<string, string> => {
   return result;
 };
 
-const targetStateFromParams = (params: Record<string, unknown>): Record<string, string | null> => {
+const targetStateFromParams = (params: Record<string, unknown>): Record<string, string | string[] | null> => {
   const cleanup = parseCleanupTargets(params.cleanupChecklist);
+  const field = stringParam(params, "field") ?? cleanup["欄位"] ?? null;
+  const fields = metricFieldsFromParams({ ...params, field });
   return {
-    field: stringParam(params, "field") ?? cleanup["欄位"] ?? null,
+    field,
+    fields,
     filter: cleanup["篩選"] ?? null,
     group: cleanup["分組"] ?? null,
     dateRange: stringParam(params, "dateRange") ?? cleanup["時間"] ?? null,
@@ -710,6 +820,8 @@ const readStateDelta = async (page: Page, params: Record<string, unknown>): Prom
     if (typeof value !== "string") return false;
     return normalizeUiText(value).includes(normalizeUiText(expected));
   };
+  const fieldText = `${observed.fieldSelectionText ?? ""}\n${observed.bodyText}`;
+  const targetFields = Array.isArray(targets.fields) ? targets.fields.filter((item): item is string => typeof item === "string") : [];
   return {
     targets,
     observed: {
@@ -717,15 +829,17 @@ const readStateDelta = async (page: Page, params: Record<string, unknown>): Prom
       bodyText: observed.bodyText.slice(0, 1200)
     },
     checks: {
-      field: contains(`${observed.fieldSelectionText ?? ""}\n${observed.bodyText}`, targets.field),
+      field: targetFields.length > 1
+        ? targetFields.every((item) => contains(fieldText, item) === true)
+        : contains(fieldText, typeof targets.field === "string" ? targets.field : null),
       filter: targets.filter === "0組" || targets.filter === "空"
         ? null
-        : contains(observed.filterText, targets.filter),
+        : contains(observed.filterText, typeof targets.filter === "string" ? targets.filter : null),
       group: targets.group === "0組" || targets.group === "空"
         ? null
-        : contains(observed.groupText, targets.group),
-      dateRange: contains(`${observed.dateRangeText ?? ""}\n${observed.bodyText}`, targets.dateRange),
-      display: contains(`${observed.displayModeText ?? ""}\n${observed.displayModeValue ?? ""}\n${observed.bodyText}`, targets.display)
+        : contains(observed.groupText, typeof targets.group === "string" ? targets.group : null),
+      dateRange: contains(`${observed.dateRangeText ?? ""}\n${observed.bodyText}`, typeof targets.dateRange === "string" ? targets.dateRange : null),
+      display: contains(`${observed.displayModeText ?? ""}\n${observed.displayModeValue ?? ""}\n${observed.bodyText}`, typeof targets.display === "string" ? targets.display : null)
     },
     policy: "delta planner may skip only when visible UI text/value verifies the target; unknown or false must fall back to UI action or blocked"
   };
@@ -1205,7 +1319,8 @@ const readChartSummary = async (page: Page): Promise<Record<string, unknown> | n
         datasets: datasets.map((dataset) => ({
           label: dataset.label ?? null,
           count: dataset.data?.length ?? 0,
-          sample: (dataset.data ?? []).slice(0, 10)
+          sample: (dataset.data ?? []).slice(0, 10),
+          values: (dataset.data ?? []).map((item) => Number(item)).filter(Number.isFinite)
         })),
         numericSummary:
           numeric.length > 0
@@ -1310,25 +1425,97 @@ const createCollageReport = async (options: CliOptions, page: Page, startedAt: s
   return createReport(options, "ok", startedAt, { domState: await readDomState(page), uiProfile }, shot ? { screenshot: shot } : {}, shot ? [] : ["SCREENSHOT_UNAVAILABLE"]);
 };
 
+const openExistingReport = async (options: CliOptions, page: Page, startedAt: string): Promise<HelperReport> => {
+  const projectName = stringParam(options.params, "projectName");
+  const uiProfileBefore = await captureUiDomProfile(options, page, "openExistingReport.before");
+  if (projectName) {
+    const bodyText = await page.locator("body").innerText({ timeout: 5000 }).catch(() => "");
+    if (!bodyText.includes(projectName) || /報表設定|儲存報表|執行/.test(bodyText)) {
+      await clickByText(page, projectName, 8000).catch(() => undefined);
+      await page.waitForTimeout(1000);
+    }
+  }
+
+  let resolved = await resolveExistingReportName(options, page);
+  let listText = await page.locator("body").innerText({ timeout: 5000 }).catch(() => "");
+  if (!listText.includes(resolved.reportName)) {
+    await page.reload({ waitUntil: "domcontentloaded", timeout: 15000 }).catch(() => undefined);
+    await page.waitForTimeout(1200);
+    if (projectName) {
+      await clickByText(page, projectName, 8000).catch(() => undefined);
+      await page.waitForTimeout(1000);
+    }
+    resolved = await resolveExistingReportName(options, page);
+    listText = await page.locator("body").innerText({ timeout: 5000 }).catch(() => "");
+  }
+  if (!listText.includes(resolved.reportName)) {
+    throw new HelperBlockedError(`EXISTING_REPORT_ROW_NOT_VISIBLE:${resolved.reportName}`);
+  }
+
+  await clickByText(page, resolved.reportName, 12000);
+  await page.waitForTimeout(1800);
+  writeSavedReportState(options, resolved.reportName, {
+    openedFromExistingReport: true,
+    existingReportSource: resolved.source,
+    existingReportCandidates: resolved.candidates
+  });
+  const shot = await screenshot(options, page, "open-existing-report");
+  const uiProfileAfter = await captureUiDomProfile(options, page, "openExistingReport.after");
+  return createReport(
+    options,
+    "ok",
+    startedAt,
+    {
+      reportName: resolved.reportName,
+      existingReportSource: resolved.source,
+      existingReportCandidates: resolved.candidates,
+      domState: await readDomState(page),
+      uiProfiles: { before: uiProfileBefore, after: uiProfileAfter }
+    },
+    shot ? { screenshot: shot } : {},
+    shot ? [] : ["SCREENSHOT_UNAVAILABLE"]
+  );
+};
+
+const selectedFieldText = async (page: Page): Promise<string> => {
+  const dom = await readDomState(page).catch(() => null);
+  const cleanupState = dom?.cleanupState && typeof dom.cleanupState === "object" ? dom.cleanupState as Record<string, unknown> : {};
+  return String(cleanupState.fieldSelectionText ?? dom?.bodyTextExcerpt ?? "");
+};
+
+const selectMetricFieldThroughUi = async (page: Page, field: string): Promise<string> => {
+  const currentText = await selectedFieldText(page);
+  if (normalizeUiText(currentText).includes(normalizeUiText(field))) return `field:already_visible:${field}`;
+
+  const addClicked = await clickFirstVisible([
+    page.getByText("+ 新增欄位", { exact: false }),
+    page.locator("button").filter({ hasText: /新增欄位|\+.*欄位/ })
+  ], 15000);
+  if (!addClicked) throw new HelperBlockedError(`ADD_FIELD_BUTTON_NOT_CLICKABLE:${field}`);
+  await page.waitForTimeout(500);
+
+  await clickByText(page, field, 12000);
+  await page.waitForTimeout(800);
+
+  const afterText = await selectedFieldText(page);
+  if (!normalizeUiText(afterText).includes(normalizeUiText(field))) {
+    throw new HelperBlockedError(`FIELD_VERIFY_FAILED_AFTER_CLICK:${field}`);
+  }
+  return `field:set:${field}`;
+};
+
 const configureMetric = async (options: CliOptions, page: Page, startedAt: string): Promise<HelperReport> => {
   const warnings: string[] = [];
-  const field = stringParam(options.params, "field");
+  const fields = metricFieldsFromParams(options.params);
   const dateRange = stringParam(options.params, "dateRange");
   const uiProfileBefore = await captureUiDomProfile(options, page, "configureMetric.before");
   const stateDeltaBefore = await readStateDelta(page, options.params);
   const operations: string[] = [];
   let dateRangeEvidence: Record<string, unknown> | null = null;
   let dateRangeUiProfiles: UiDomProfileRef[] = [];
-  if (field) {
-    const bodyText = await page.locator("body").innerText({ timeout: 5000 }).catch(() => "");
-    if (!bodyText.includes(field)) {
-      await page.getByText("+ 新增欄位", { exact: false }).first().click({ timeout: 15000 });
-      await page.waitForTimeout(800);
-      await clickByText(page, field);
-      await page.waitForTimeout(800);
-      operations.push(`field:set:${field}`);
-    } else {
-      operations.push(`field:already_visible:${field}`);
+  if (fields.length > 0) {
+    for (const field of fields) {
+      operations.push(await selectMetricFieldThroughUi(page, field));
     }
   }
   if (dateRange) {
@@ -1377,6 +1564,11 @@ const runPreview = async (options: CliOptions, page: Page, startedAt: string): P
     await page.waitForTimeout(2500);
   });
   const chart = await readChartSummary(page);
+  ensureDir(artifactRoot(options));
+  fs.writeFileSync(
+    previewEvidencePath(options),
+    `${JSON.stringify({ generatedAt: new Date().toISOString(), caseId: options.caseId, chart, network: { requests: observed.requests, responses: observed.responses } }, null, 2)}\n`
+  );
   const shot = await screenshot(options, page, "run-preview");
   const uiProfileAfter = await captureUiDomProfile(options, page, "runPreview.after");
   const hasPreviewEvidence = observed.requests.length > 0 || observed.responses.length > 0 || chart !== null;
@@ -1394,10 +1586,177 @@ const runPreview = async (options: CliOptions, page: Page, startedAt: string): P
       chart,
       stateDelta: await readStateDelta(page, options.params)
     },
-    shot ? { screenshot: shot } : {},
+    { ...(shot ? { screenshot: shot } : {}), previewEvidence: previewEvidencePath(options) },
     [
       ...(shot ? [] : ["SCREENSHOT_UNAVAILABLE"]),
       ...(hasPreviewEvidence ? [] : ["PREVIEW_UI_ACTION_NOT_VERIFIED_NO_NETWORK_OR_CHART_EVIDENCE"])
+    ]
+  );
+};
+
+const parseCsv = (text: string): string[][] => {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let cell = "";
+  let quoted = false;
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index];
+    const next = text[index + 1];
+    if (quoted) {
+      if (char === '"' && next === '"') {
+        cell += '"';
+        index += 1;
+      } else if (char === '"') {
+        quoted = false;
+      } else {
+        cell += char;
+      }
+      continue;
+    }
+    if (char === '"') {
+      quoted = true;
+      continue;
+    }
+    if (char === ",") {
+      row.push(cell);
+      cell = "";
+      continue;
+    }
+    if (char === "\n") {
+      row.push(cell);
+      rows.push(row);
+      row = [];
+      cell = "";
+      continue;
+    }
+    if (char !== "\r") cell += char;
+  }
+  row.push(cell);
+  if (row.some((item) => item.trim().length > 0)) rows.push(row);
+  return rows;
+};
+
+const numericSummary = (values: number[]): Record<string, unknown> | null => {
+  if (values.length === 0) return null;
+  return {
+    count: values.length,
+    sum: values.reduce((total, value) => total + value, 0),
+    max: Math.max(...values),
+    min: Math.min(...values)
+  };
+};
+
+const approxEqual = (a: number, b: number): boolean => Math.abs(a - b) <= Math.max(0.000001, Math.abs(a) * 0.000001, Math.abs(b) * 0.000001);
+
+const readPreviewEvidence = (options: CliOptions): Record<string, unknown> | null => {
+  const filePath = previewEvidencePath(options);
+  if (!fs.existsSync(filePath)) return null;
+  try {
+    return JSON.parse(fs.readFileSync(filePath, "utf8")) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+};
+
+const chartSeriesFromPreview = (preview: Record<string, unknown> | null): { labelCount: number | null; series: number[][] } => {
+  const chart = preview?.chart && typeof preview.chart === "object" && !Array.isArray(preview.chart) ? preview.chart as Record<string, unknown> : null;
+  const labelCount = typeof chart?.labelCount === "number" ? chart.labelCount : null;
+  const datasets = Array.isArray(chart?.datasets) ? chart.datasets : [];
+  const series = datasets.flatMap((item) => {
+    if (!item || typeof item !== "object" || Array.isArray(item)) return [];
+    const values = (item as Record<string, unknown>).values;
+    if (!Array.isArray(values)) return [];
+    const numeric = values.map((value) => Number(value)).filter(Number.isFinite);
+    return numeric.length > 0 ? [numeric] : [];
+  });
+  return { labelCount, series };
+};
+
+const summarizeCsvAgainstPreview = (csvText: string, preview: Record<string, unknown> | null): Record<string, unknown> => {
+  const rows = parseCsv(csvText);
+  const header = rows[0] ?? [];
+  const dataRows = rows.slice(1).filter((row) => row.some((cell) => cell.trim().length > 0));
+  const numericColumns = header.map((_header, columnIndex) => {
+    const values = dataRows.map((row) => Number(String(row[columnIndex] ?? "").replace(/,/g, ""))).filter(Number.isFinite);
+    return { columnIndex, header: header[columnIndex] ?? `column_${columnIndex}`, values, summary: numericSummary(values) };
+  }).filter((item) => item.values.length > 0);
+  const previewSeries = chartSeriesFromPreview(preview);
+  const comparisons = previewSeries.series.map((series, seriesIndex) => {
+    const expected = numericSummary(series);
+    const match = numericColumns.find((column) => {
+      if (column.values.length !== series.length) return false;
+      return series.every((value, index) => approxEqual(value, column.values[index] ?? Number.NaN));
+    });
+    return {
+      seriesIndex,
+      expected,
+      matchedCsvColumn: match ? { columnIndex: match.columnIndex, header: match.header, summary: match.summary } : null
+    };
+  });
+  const rowCountMatchesPreview = previewSeries.labelCount === null ? null : dataRows.length === previewSeries.labelCount;
+  const allSeriesMatched = comparisons.length === 0 ? null : comparisons.every((item) => item.matchedCsvColumn !== null);
+  return {
+    csv: {
+      header,
+      dataRowCount: dataRows.length,
+      numericColumns: numericColumns.map((item) => ({ columnIndex: item.columnIndex, header: item.header, summary: item.summary }))
+    },
+    preview: {
+      labelCount: previewSeries.labelCount,
+      seriesCount: previewSeries.series.length
+    },
+    comparisons,
+    checks: {
+      rowCountMatchesPreview,
+      allSeriesMatched
+    }
+  };
+};
+
+const downloadCsvAndComparePreview = async (options: CliOptions, page: Page, startedAt: string): Promise<HelperReport> => {
+  const uiProfileBefore = await captureUiDomProfile(options, page, "downloadCsv.before");
+  const downloadDir = path.join(artifactRoot(options), "downloads");
+  ensureDir(downloadDir);
+  const downloadPromise = page.waitForEvent("download", { timeout: 20000 });
+  const clicked = await clickFirstVisible([
+    page.getByText(/下載.*CSV|CSV.*下載|匯出.*CSV|CSV|下載/i),
+    page.locator("button").filter({ hasText: /下載|CSV|匯出/ })
+  ], 12000);
+  if (!clicked) {
+    downloadPromise.catch(() => undefined);
+    throw new HelperBlockedError("CSV_DOWNLOAD_BUTTON_NOT_CLICKABLE");
+  }
+  const download = await downloadPromise;
+  const suggested = sanitize(download.suggestedFilename() || `${sanitize(options.caseId)}.csv`);
+  const csvPath = path.join(downloadDir, suggested);
+  await download.saveAs(csvPath);
+  const csvText = fs.readFileSync(csvPath, "utf8");
+  const preview = readPreviewEvidence(options);
+  const comparison = summarizeCsvAgainstPreview(csvText, preview);
+  const shot = await screenshot(options, page, "download-csv");
+  const uiProfileAfter = await captureUiDomProfile(options, page, "downloadCsv.after");
+  const checks = comparison.checks as Record<string, unknown>;
+  const failedComparison = checks.rowCountMatchesPreview === false || checks.allSeriesMatched === false;
+  return createReport(
+    options,
+    failedComparison ? "blocked" : "ok",
+    startedAt,
+    {
+      domState: await readDomState(page),
+      uiProfiles: { before: uiProfileBefore, after: uiProfileAfter },
+      downloadedCsv: {
+        path: csvPath,
+        relativePath: path.relative(options.runDir, csvPath),
+        suggestedFilename: download.suggestedFilename()
+      },
+      previewEvidencePath: fs.existsSync(previewEvidencePath(options)) ? previewEvidencePath(options) : null,
+      comparison
+    },
+    { ...(shot ? { screenshot: shot } : {}), csv: csvPath },
+    [
+      ...(shot ? [] : ["SCREENSHOT_UNAVAILABLE"]),
+      ...(preview ? [] : ["PREVIEW_EVIDENCE_NOT_FOUND_FOR_CSV_COMPARISON"]),
+      ...(failedComparison ? ["CSV_PREVIEW_COMPARISON_MISMATCH"] : [])
     ]
   );
 };
@@ -1447,6 +1806,13 @@ const clickModalSaveButton = async (page: Page): Promise<void> => {
   if (!clicked) throw new HelperBlockedError("SAVE_MODAL_SUBMIT_BUTTON_NOT_CLICKABLE");
 };
 
+const clickDialogOnlySaveButton = async (page: Page): Promise<boolean> => {
+  return clickFirstVisible([
+    page.locator(".modal button").filter({ hasText: /儲存|確認|確定|保存/ }),
+    page.locator("[role=dialog] button").filter({ hasText: /儲存|確認|確定|保存/ })
+  ], 5000);
+};
+
 type NativeDialogHandling = {
   action: "accept" | "dismiss";
   reason: string;
@@ -1465,6 +1831,9 @@ const decideSaveDialogHandling = (dialogRecord: Record<string, unknown>, sequenc
   if (/報表儲存成功|儲存成功|保存成功/.test(message)) {
     return { action: "accept", reason: "known_bi_save_success_dialog", requiresRecovery: false };
   }
+  if (/覆寫|覆蓋|更新|是否.*儲存|是否.*保存/.test(message)) {
+    return { action: "accept", reason: "known_bi_overwrite_save_confirm", requiresRecovery: false };
+  }
   if (/是否.*(?:新增|建立).*報表|(?:新增|建立)報表/.test(message)) {
     return { action: "accept", reason: "known_bi_save_create_report_confirm", requiresRecovery: false };
   }
@@ -1475,14 +1844,16 @@ const decideSaveDialogHandling = (dialogRecord: Record<string, unknown>, sequenc
 };
 
 type SaveReportObservedResult = {
-  nameInputEvidence: Record<string, unknown>;
+  nameInputEvidence: Record<string, unknown> | null;
   saveModalProfile: UiDomProfileRef;
-  saveModalAfterFillProfile: UiDomProfileRef;
+  saveModalAfterFillProfile: UiDomProfileRef | null;
 };
 
 const saveReport = async (options: CliOptions, page: Page, startedAt: string): Promise<HelperReport> => {
   if (!options.approvedToolRequestId) return approvalRequired(options, "save current temporary report", startedAt);
-  const reportName = resolveReportName(options);
+  const overwriteExisting = options.params.overwriteExisting === true;
+  const existingReportName = overwriteExisting ? readSavedReportName(options) : null;
+  const reportName = existingReportName ?? resolveReportName(options);
   const dialogs: Record<string, unknown>[] = [];
   let dialogChainRequiresApproval = false;
   const uiProfileBefore = await captureUiDomProfile(options, page, "saveReport.before");
@@ -1519,9 +1890,22 @@ const saveReport = async (options: CliOptions, page: Page, startedAt: string): P
         await page.getByText("儲存報表", { exact: false }).first().click({ timeout: 15000 });
         await page.waitForTimeout(600);
         const saveModalProfile = await captureUiDomProfile(options, page, "saveReport.modalOpened");
-        const nameInputEvidence = await fillVisibleReportNameInput(page, reportName);
-        const saveModalAfterFillProfile = await captureUiDomProfile(options, page, "saveReport.modalAfterFill");
-        await withTimeout(clickModalSaveButton(page), 20000, "SAVE_MODAL_SUBMIT_TIMEOUT");
+        let nameInputEvidence: Record<string, unknown> | null = null;
+        let saveModalAfterFillProfile: UiDomProfileRef | null = null;
+        try {
+          nameInputEvidence = await fillVisibleReportNameInput(page, reportName);
+          saveModalAfterFillProfile = await captureUiDomProfile(options, page, "saveReport.modalAfterFill");
+          await withTimeout(clickModalSaveButton(page), 20000, "SAVE_MODAL_SUBMIT_TIMEOUT");
+        } catch (error) {
+          if (!overwriteExisting) throw error;
+          const dialogButtonClicked = await clickDialogOnlySaveButton(page).catch(() => false);
+          nameInputEvidence = {
+            skipped: true,
+            reason: "REPORT_NAME_INPUT_NOT_PRESENT_FOR_OVERWRITE_FLOW",
+            dialogButtonClicked,
+            error: error instanceof Error ? error.message : String(error)
+          };
+        }
         await page.waitForTimeout(1800);
         return { nameInputEvidence, saveModalProfile, saveModalAfterFillProfile };
       }),
@@ -1537,7 +1921,7 @@ const saveReport = async (options: CliOptions, page: Page, startedAt: string): P
     const uiProfileAfterDialog = await captureUiDomProfile(options, page, "saveReport.dialogChain");
     return createReport(
       options,
-      "requires_approval",
+      "blocked",
       startedAt,
       {
         reportName,
@@ -1552,16 +1936,7 @@ const saveReport = async (options: CliOptions, page: Page, startedAt: string): P
         nameInput: observed.result.nameInputEvidence
       },
       {},
-      ["NATIVE_DIALOG_CHAIN_REQUIRES_TOOL_BRIDGE", "UNKNOWN_NATIVE_DIALOG_RECOVERY_REQUIRED"],
-      {
-        toolRequest: {
-          type: "playwright_recovery",
-          request_id: `${options.caseId}-${sanitize(options.action)}-dialog-chain`,
-          case: options.caseId,
-          error: "NATIVE_DIALOG_CHAIN: helper handled known save dialog(s) and detected an unknown or auth-like follow-up native dialog.",
-          proposed_action: "Review the persistent Chrome state, resolve any remaining blocker if visible, then continue the UAT Tool run."
-        }
-      }
+      ["NATIVE_DIALOG_CHAIN_BLOCKED", "UNKNOWN_NATIVE_DIALOG_NO_RECOVERY_HANDLER"]
     );
   }
   const shot = await screenshot(options, page, "save-report");
@@ -1690,6 +2065,9 @@ const run = async (): Promise<void> => {
       case "collage.createReport":
         report = await createCollageReport(options, page, startedAt);
         break;
+      case "collage.openExistingReport":
+        report = await openExistingReport(options, page, startedAt);
+        break;
       case "collage.configureMetric":
         report = await configureMetric(options, page, startedAt);
         break;
@@ -1701,6 +2079,9 @@ const run = async (): Promise<void> => {
         break;
       case "collage.reopenReport":
         report = await reopenReport(options, page, startedAt);
+        break;
+      case "collage.downloadCsvAndComparePreview":
+        report = await downloadCsvAndComparePreview(options, page, startedAt);
         break;
       case "collage.deleteTemporaryReport":
         report = options.approvedToolRequestId

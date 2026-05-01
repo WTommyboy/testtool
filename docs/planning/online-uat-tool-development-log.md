@@ -829,3 +829,14 @@ Tommy 曾討論是否改成腳本。最後決策是採「半腳本化 / helper �
 - 工程 spec 更新：`docs/refactor/工程spac.md` 版本更新為 `v2026-05-02`，補上 17 欄 testcase schema、`groupId` manifest/current-case/run-state contract、單題 result workbook contract、final aggregate workbook contract、`runs.aggregate_result_xlsx_path / aggregate_result_generated_at`、result download fallback、verification 與 deployment/doc sync discipline。
 - 修改檔案：`AGENTS.md`、`docs/refactor/規劃說明.md`、`docs/refactor/工程spac.md`、本 planning log。
 - 驗證：本次是文件與 repo instruction 更新，需至少跑 markdown/doc diff 檢查、`git diff --check`，並以 git commit/push 固定。若後續同 commit 夾帶 runtime 變更，必須回到完整 typecheck/build/verify 流程。
+
+### 2026-05-02 05:37 - OTTEST002 P0 helper 補齊：多欄位、既有報表覆寫、CSV evidence
+
+- 背景：Tommy 追問 A-02/A-04/A-05 相關 helper 缺口為何不先做完。前一個 commit 只完成 handoff 第一批 P0(groupId + final aggregate);若此時直接重跑 production，只能驗證 aggregate pipeline，A-02/A-05 仍可能因 helper 能力缺口 BLOCKED。因此本次補剩餘 OTTEST002 P0 helper/runtime。
+- 多欄位 helper：`collage.configureMetric` 現在會把 `新增帳號數 + MAU(帳號) + 總營收(TWD)` 這類 composite string 拆成多個欄位，逐一點 `+ 新增欄位`、逐一選取、逐一用 DOM state 驗證。splitter 會保留括號內的 `+`，避免把 `總金額(A+B)` 錯拆。
+- 既有報表修改：新增 `collage.openExistingReport`。A-05 類 case 會走 `openProject -> openExistingReport -> configureMetric -> runPreview -> saveReport(overwriteExisting) -> reopenReport`，不再誤走 `createReport`。openExisting 會優先讀本 run 前置 case 的 `saved-report.json` 找 `TOOL_A01_<timestamp>`，找不到或清單不可見就 blocked 並標前置失敗，不會新建報表替代。
+- 覆寫儲存與 recovery noise：`saveReport` 支援 overwriteExisting，優先沿用既有報表名；已知 BI save/overwrite/return-to-list dialog 在 Tool Bridge response 後可由 helper 處理。未知 native dialog 若沒有實際 recovery handler，helper 直接 `blocked` 並留下 dialog evidence，不再發 recovery 後立刻 `PREVIOUS_HELPER_ACTION_NOT_OK` skipped。
+- CSV evidence：新增 `collage.downloadCsvAndComparePreview`。helper 透過 visible UI 觸發 CSV download，保存下載檔，讀回 CSV row count / numeric columns，與同 case `preview-evidence.json` 中 Chart.js series 比對。helper 只產生 evidence，不直接判 PASS/FAIL。
+- 規則同步：更新 helper guidance、Layer 1 helper protocol、Tool Bridge dialog chain 規則、Codex run brief/native dialog prompt、capability gate 與 fixture verification。
+- 修改檔案：`agent/src/bi-ui-helper-executor.ts`、`agent/src/helper-execution-plan.ts`、`agent/src/capability-gate.ts`、`agent/src/bi-ui-helper-guidance.ts`、`agent/src/task-runner.ts`、`agent-skills/uat-tool/rules/helper-protocol.md`、`agent-skills/uat-tool/rules/tool-bridge.md`、`scripts/verify-capability-gate.ts`、本 planning log、refactor 規劃與工程 spec。
+- 驗證：`npm run typecheck --prefix agent`、`npm run typecheck`、`npm run build --prefix agent`、`npm run build`、`npm run verify:capability-gate`、`npm run verify:helper-hints`、`npm run verify:helper-report-gate`、`npm run verify:agent-result-contract`、`npm run verify:result-evidence-gate`、`npm run verify:tool-bridge`、`git diff --check` 已先通過；收尾前需再跑 deployment 需要的 build/verify 組合並確認 Railway `/version`、`/health`。
