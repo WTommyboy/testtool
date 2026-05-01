@@ -124,6 +124,7 @@ const main = (): void => {
   assert.equal(metadataCompare.detected.isMetadataDropdown, true, "metadata compare case should be recognized as dropdown/metadata observation");
   assert.equal(metadataCompare.supportStatus, "degraded", JSON.stringify(metadataCompare));
   assert.deepEqual(metadataCompare.unsupportedFeatures, []);
+  assert.match(metadataCompare.codexInstruction, /TOOL_EXECUTION_UNAVAILABLE/, "degraded cases should instruct Codex to write BLOCKED instead of relying on Agent fallback when browser tools are unavailable");
 
   const runDir = fs.mkdtempSync(path.join(os.tmpdir(), "uat-capability-gate-fixture-"));
   try {
@@ -164,6 +165,7 @@ const main = (): void => {
           "collage CSV case includes download/compare helper action",
           "collage existing-report modification opens existing report and overwrites",
           "collage metadata compare is not misclassified as record/detail mode",
+          "degraded metadata compare instructs BLOCKED/TOOL_EXECUTION_UNAVAILABLE when browser tools are unavailable",
           "active filter cases remain blocked until helper support exists"
         ]
       },

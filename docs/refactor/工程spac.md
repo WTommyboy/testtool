@@ -1,7 +1,7 @@
 # UAT Tool 最新工程 Spec
 
 **版本**: v2026-05-02
-**狀態**: Mac Agent MVP / Indexed Guidance + Preflight Safeguards + groupId schema + final aggregate result + OTTEST002 Collage helper P0 + result repair guard 已部署
+**狀態**: Mac Agent MVP / Indexed Guidance + Preflight Safeguards + groupId schema + final aggregate result + OTTEST002 Collage helper P0 + result repair guard + degraded BLOCKED result guard 已部署
 **適用分支**: `refactor/mac-agent-mvp` / `codex/uat-tool-mvp`  
 **說明**: 檔名沿用 Tommy 提供的 `工程spac.md`;本文內容為工程 spec。
 
@@ -1088,6 +1088,15 @@ BLOCKED
 PARTIAL
 ```
 
+Degraded capability behavior:
+
+- If `capability-gate.supportStatus = degraded`, helper pre-run is skipped.
+- Codex may continue only if visible browser automation / read-only UI evidence is available.
+- If browser automation is unavailable or the UI path is unreachable, Codex must still write a single-case `BLOCKED` workbook.
+- Use `失敗分類 = TOOL_EXECUTION_UNAVAILABLE` or `EVIDENCE_INSUFFICIENT`.
+- `detail_json` must include `blocked_reason` and `currentRunEvidence` pointing to this run's capability gate, helper skipped summary, preflight/tool state, or agent log.
+- Do not use Agent fallback for this path; fallback remains a local diagnostic artifact and is not uploaded as trusted UAT output.
+
 ### 9.2 Fallback Workbook
 
 Agent may create fallback result.xlsx when:
@@ -1693,10 +1702,11 @@ codex/uat-tool-mvp
 ### P0
 
 1. Run OTTEST002 production regression against the deployed helper P0 and final aggregate pipeline.
-2. Verify the Agent pre-upload repair guard with OTTEST002 Codex-generated result workbooks that still omit `群組ID`.
-3. Add Web UI display for `BATCH_CASE_POLICY_VIOLATION`, result gate errors, and Tool Bridge schema errors with clear explanation.
-4. Add per-case progress events and current-case pointer visibility.
-5. If OTTEST002 exposes BI locator drift or CSV format mismatch, tune `collage.openExistingReport` / `collage.downloadCsvAndComparePreview` using the helper DOM profile artifacts.
+2. Verify A-03 degraded metadata compare writes `BLOCKED/TOOL_EXECUTION_UNAVAILABLE` instead of falling into `CODEX_NO_RESULT_XLSX`.
+3. Verify the Agent pre-upload repair guard with OTTEST002 Codex-generated result workbooks that still omit `群組ID`.
+4. Add Web UI display for `BATCH_CASE_POLICY_VIOLATION`, result gate errors, and Tool Bridge schema errors with clear explanation.
+5. Add per-case progress events and current-case pointer visibility.
+6. If OTTEST002 exposes BI locator drift or CSV format mismatch, tune `collage.openExistingReport` / `collage.downloadCsvAndComparePreview` using the helper DOM profile artifacts.
 
 ### P1
 

@@ -97,7 +97,7 @@ export const evaluateCapabilityGate = (
     ? "Do not execute trusted browser testcase steps for this case. Write a single-case BLOCKED result with fail_category=UNSUPPORTED_ONLINE_CAPABILITY and detail_json.blocked_reason from this capability gate."
     : supportStatus === "supported"
       ? "Use helper pre-run evidence when status=ok and matching this case; continue with visible UI only for incomplete evidence. Codex still judges PASS/FAIL/BLOCKED."
-      : "Do not run helper pre-run. Codex may perform visible UI/read-only evidence collection one case at a time, or mark BLOCKED if the UI path is not reachable.";
+      : "Do not run helper pre-run. Codex may perform visible UI/read-only evidence collection one case at a time. If browser automation is unavailable or the UI path is not reachable, write a single-case BLOCKED result with fail_category=TOOL_EXECUTION_UNAVAILABLE and cite this capability gate/helper skipped state as current-run evidence.";
 
   return {
     schemaVersion: "uat-capability-gate-v1",
