@@ -1,6 +1,6 @@
 # 線上 UAT Tool 開發與規劃日誌
 
-最後更新：2026-04-29
+最後更新：2026-05-02
 
 本文件記錄「UAT Tool 線上派工 + Mac Agent」這條路徑的歷史決策、設計理由、目前架構與後續待辦。它的用途是跨聊天室、跨 session 交接，不取代 `AGENTS.md`、Layer rules、authoring spec 或實作 spec。
 
@@ -798,3 +798,14 @@ Tommy 曾討論是否改成腳本。最後決策是採「半腳本化 / helper �
 - Authoring 規則同步：`docs/authoring/UAT_三文件撰寫規則.md` 改為 Agent 模式預設可 auto-advance；若某輪真的需要人工停等，需寫明明確 stop directive，避免默認模板繼續產出舊句子。
 - 驗證方式：用 `case-advance-policy` 的 stop pattern 對 OTTEST002 兩份來源檔與 authoring 規則掃描，確認不再命中 `Agent 不會自動 dispatch 下一 case`、`每次 run 以 input/current-case.json 為準`、`跑完輸出結果即停止`、`由工具/PM 重新派發下一題`、`每個 case 跑完必停`。
 - 修改檔案：`BI_UAT_ROUNDS/onlinetest/OTTEST002/Codex_指派文字_TOOL001_v1_0.md`、`BI_UAT_ROUNDS/onlinetest/OTTEST002/拼貼工具測試_測試執行說明_for_v1_0.md`、`docs/authoring/UAT_三文件撰寫規則.md`、本 planning log。
+
+### 2026-05-02 04:35 - OTTEST002_10 後續 P0 handoff：聚合結果、groupId、多欄位 helper
+
+- 背景：`019dd9b2-2372-72b3-aa90-706ab5bacb02` 與 `019de250-8046-7222-b886-a2eac014e6e1` 兩個聊天都因舊上下文過大，多次接近 context 上限並觸發 remote compact；其中 `019de250...` 表面上很短，但每輪仍帶約 230k input tokens，最後在 `/backend-api/codex/responses/compact` 串流中斷。為避免新 session 再讀 29MB JSONL，新增短交接檔 `docs/planning/session-handoff-2026-05-02-ottest002-p0.md`。後續新聊天應優先讀此 handoff 與本 planning log，不要直接讀完整 session JSONL。
+- 是否納入兩個 session：應納入兩者。`019dd9b2...` 是主要工程歷史串，包含 helper pre-run/timing、diagnostic mode、DOM profile、日期工具、BI save dialog、auto advance 等 runtime 變更；`019de250...` 是短續接串，包含 OTTEST002_10 後的最新 P0 決策與 `groupId` 討論。只保留 `019de250...` 會缺掉前面 runtime 決策，只保留 `019dd9b2...` 會缺掉最新 P0 schema/聚合決策。
+- OTTEST002_10 觀察：5 題已連續跑完；`TOOL-A-01` 判 FAIL 合理，因 preview/save 使用 `2026-03-01~2026-03-31`，但 reopen 回到 `過去7天`；`TOOL-A-03` 因 metadata 差距 12 個而 BLOCKED 站得住；`TOOL-A-02` 與 `TOOL-A-05` 的 BLOCKED 主要是工具/helper 能力缺口，不是產品不可測；`TOOL-A-04` 雖缺 CSV evidence，但已觀察到 reopen 日期回退，若 case 預期包含 4 項還原，後續應避免把已知功能失敗蓋成 BLOCKED。
+- P0 結果產物決策：仍維持每題單題 `output/result.xlsx`、單題 ingest、單題 evidence gate，不允許 Codex 累積多題後一次寫。但 run/group 完成後，server 應從 normalized run state 產生 group aggregate xlsx 與 final aggregate xlsx；UI 下載應指向 final aggregate，而不是最後一題 raw `result.xlsx`。必要時 Agent 可保留 append-only `output/case-results.jsonl` 作 debug sidecar，但 server DB 是正式來源。
+- P0 testcase schema 決策：在目前 `groupName` 前新增 `groupId`，例如 `A/B/C/D`。建議 schema 為 `groupId`、`groupName`、`caseOrder`、`caseNo`。同步更新 testcase xlsx、OTTEST002 companion md、parser/manifest、aggregation builder 與 `docs/authoring/UAT_三文件撰寫規則.md`。`groupId` 用於機器分組、群組進度、群組下載與 final aggregate 排序。
+- P0 helper 決策：`collage.configureMetric` 必須能解析 `新增帳號數 + MAU(帳號) + 總營收(TWD)` 這類 composite metric string，依序執行 `+ 新增欄位`、逐欄選取、逐欄驗證；不可再把整段字串當單一 clickable text。`TOOL-A-05` 應走既有報表修改流程：`openProject -> openExistingReport(TOOL_A01_*) -> addFields -> runPreview -> overwriteSave -> reopenReport`，找不到 A-01 報表時才以前置失敗 BLOCKED。
+- P1/P2 後續：A-04 判定規則需調整為功能流程 case 只要必要子條件已直接失敗，即可 FAIL，不應因後續 CSV evidence 缺失改成 BLOCKED；另需新增 `collage.downloadCsvAndComparePreview`。若沒有真正的 recovery handler，不要發 Tool Bridge recovery 後又立刻 `PREVIOUS_HELPER_ACTION_NOT_OK` skipped，應直接 BLOCKED 並寫明原因。
+- 當前 production snapshot：`refactor/mac-agent-mvp` 與 `codex/uat-tool-mvp` 均在 `c506699`；Railway `/version` 回 `c5066991269c6860d66e41b66289188ff558254d`、deployment `b18bd607-9fa2-4601-887c-a2a026ef816f`；`/health` healthy。
