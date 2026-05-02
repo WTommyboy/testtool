@@ -138,7 +138,7 @@ const buildCurrentCaseRecommendations = (runDir: string, entries: RuleIndexEntry
       add(ids, "reference-index");
       add(ids, "evidence-template-index");
       add(ids, "bi-ui-helper-guidance");
-      notes.push("CSV/download behavior requires UI-triggered download evidence or an explicit not-reached reason for earlier workflow failure.");
+      notes.push("CSV/download behavior requires UI-triggered CSV evidence, including UI-triggered response-body fallback when needed, or an explicit not-reached reason for earlier workflow failure.");
     }
     if (/前端呈現|前後端整合|功能流程/.test(testTarget)) {
       add(ids, "bi-project-agents-full");

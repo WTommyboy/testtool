@@ -2,7 +2,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { chromium, type Browser, type Dialog, type Page, type Request, type Response } from "playwright";
+import { chromium, type Browser, type Dialog, type Download, type Page, type Request, type Response } from "playwright";
 import { closeChromeDebugSession, diagnoseChromeDebugSession, ensureChromeDebugSession, ensureSingleUserPageTab } from "./browser-session";
 import { readConfig } from "./config";
 
@@ -1382,6 +1382,61 @@ const readChartSummary = async (page: Page): Promise<Record<string, unknown> | n
   }
 };
 
+const readPreviewTableSummary = async (page: Page): Promise<Record<string, unknown> | null> => {
+  try {
+    return await page.evaluate(() => {
+      const normalize = (value: string | null | undefined): string => (value ?? "").trim().replace(/\s+/g, " ");
+      const isVisible = (element: Element): boolean => {
+        const rect = element.getBoundingClientRect();
+        const style = window.getComputedStyle(element);
+        return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden" && style.opacity !== "0";
+      };
+      const tables = Array.from(document.querySelectorAll("table"))
+        .filter((table) => isVisible(table))
+        .map((table, tableIndex) => {
+          const rows = Array.from(table.querySelectorAll("tr"))
+            .filter((row) => isVisible(row))
+            .map((row) => Array.from(row.querySelectorAll("th,td")).map((cell) => normalize(cell.textContent)));
+          const explicitHeader = Array.from(table.querySelectorAll("thead tr th")).map((cell) => normalize(cell.textContent));
+          const header = explicitHeader.length > 0 ? explicitHeader : rows[0] ?? [];
+          const dataRows = (explicitHeader.length > 0 ? rows : rows.slice(1)).filter((row) => row.some((cell) => cell.length > 0));
+          const numericColumns = header.map((_label, columnIndex) => {
+            const values = dataRows.map((row) => Number(String(row[columnIndex] ?? "").replace(/,/g, ""))).filter(Number.isFinite);
+            return values.length > 0
+              ? {
+                  columnIndex,
+                  header: header[columnIndex] ?? `column_${columnIndex}`,
+                  values,
+                  summary: {
+                    count: values.length,
+                    sum: values.reduce((total, value) => total + value, 0),
+                    max: Math.max(...values),
+                    min: Math.min(...values)
+                  }
+                }
+              : null;
+          }).filter((item): item is NonNullable<typeof item> => item !== null);
+          const rect = table.getBoundingClientRect();
+          return {
+            tableIndex,
+            header,
+            rows: dataRows,
+            dataRowCount: dataRows.length,
+            sampleRows: dataRows.slice(0, 5),
+            tailRows: dataRows.slice(-3),
+            numericColumns,
+            rect: { x: Math.round(rect.x), y: Math.round(rect.y), width: Math.round(rect.width), height: Math.round(rect.height) }
+          };
+        })
+        .filter((table) => table.header.length > 0 || table.dataRowCount > 0)
+        .sort((a, b) => b.dataRowCount - a.dataRowCount);
+      return tables[0] ?? null;
+    });
+  } catch {
+    return null;
+  }
+};
+
 const observeDuring = async <T>(page: Page, fn: () => Promise<T>): Promise<{ result: T; requests: Record<string, unknown>[]; responses: Record<string, unknown>[] }> => {
   const requests: Record<string, unknown>[] = [];
   const responses: Record<string, unknown>[] = [];
@@ -1643,14 +1698,15 @@ const runPreview = async (options: CliOptions, page: Page, startedAt: string): P
     await page.waitForTimeout(2500);
   });
   const chart = await readChartSummary(page);
+  const table = await readPreviewTableSummary(page);
   ensureDir(artifactRoot(options));
   fs.writeFileSync(
     previewEvidencePath(options),
-    `${JSON.stringify({ generatedAt: new Date().toISOString(), caseId: options.caseId, chart, network: { requests: observed.requests, responses: observed.responses } }, null, 2)}\n`
+    `${JSON.stringify({ generatedAt: new Date().toISOString(), caseId: options.caseId, chart, table, network: { requests: observed.requests, responses: observed.responses } }, null, 2)}\n`
   );
   const shot = await screenshot(options, page, "run-preview");
   const uiProfileAfter = await captureUiDomProfile(options, page, "runPreview.after");
-  const hasPreviewEvidence = observed.requests.length > 0 || observed.responses.length > 0 || chart !== null;
+  const hasPreviewEvidence = observed.requests.length > 0 || observed.responses.length > 0 || chart !== null || table !== null;
   return createReport(
     options,
     hasPreviewEvidence ? "ok" : "blocked",
@@ -1663,6 +1719,7 @@ const runPreview = async (options: CliOptions, page: Page, startedAt: string): P
       },
       network: { requests: observed.requests, responses: observed.responses },
       chart,
+      table,
       stateDelta: await readStateDelta(page, options.params)
     },
     { ...(shot ? { screenshot: shot } : {}), previewEvidence: previewEvidencePath(options) },
@@ -1751,15 +1808,50 @@ const chartSeriesFromPreview = (preview: Record<string, unknown> | null): { labe
   return { labelCount, series };
 };
 
+const normalizeComparableCell = (value: unknown): string =>
+  String(value ?? "")
+    .replace(/^\uFEFF/, "")
+    .trim()
+    .replace(/\s+/g, " ")
+    .replace(/^(\d{4})\/(\d{1,2})\/(\d{1,2})$/, (_all, year: string, month: string, day: string) =>
+      `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`
+    );
+
+const comparableNumber = (value: unknown): number | null => {
+  const normalized = normalizeComparableCell(value).replace(/,/g, "");
+  if (!/^[+-]?\d+(?:\.\d+)?$/.test(normalized)) return null;
+  const numeric = Number(normalized);
+  return Number.isFinite(numeric) ? numeric : null;
+};
+
+const comparableCellsEqual = (actual: unknown, expected: unknown): boolean => {
+  const actualNumber = comparableNumber(actual);
+  const expectedNumber = comparableNumber(expected);
+  if (actualNumber !== null && expectedNumber !== null) return approxEqual(actualNumber, expectedNumber);
+  return normalizeComparableCell(actual) === normalizeComparableCell(expected);
+};
+
+const tableRowsFromPreview = (preview: Record<string, unknown> | null): { header: string[]; rows: string[][] } | null => {
+  const table = preview?.table && typeof preview.table === "object" && !Array.isArray(preview.table) ? preview.table as Record<string, unknown> : null;
+  if (!table) return null;
+  const header = Array.isArray(table.header) ? table.header.map((item) => normalizeComparableCell(item)) : [];
+  const rows = Array.isArray(table.rows)
+    ? table.rows.flatMap((row) => Array.isArray(row) ? [row.map((cell) => normalizeComparableCell(cell))] : [])
+    : [];
+  if (header.length === 0 && rows.length === 0) return null;
+  return { header, rows };
+};
+
 const summarizeCsvAgainstPreview = (csvText: string, preview: Record<string, unknown> | null): Record<string, unknown> => {
   const rows = parseCsv(csvText);
-  const header = rows[0] ?? [];
-  const dataRows = rows.slice(1).filter((row) => row.some((cell) => cell.trim().length > 0));
+  const header = (rows[0] ?? []).map((cell) => normalizeComparableCell(cell));
+  const dataRows = rows.slice(1).map((row) => row.map((cell) => normalizeComparableCell(cell))).filter((row) => row.some((cell) => cell.trim().length > 0));
   const numericColumns = header.map((_header, columnIndex) => {
     const values = dataRows.map((row) => Number(String(row[columnIndex] ?? "").replace(/,/g, ""))).filter(Number.isFinite);
     return { columnIndex, header: header[columnIndex] ?? `column_${columnIndex}`, values, summary: numericSummary(values) };
   }).filter((item) => item.values.length > 0);
   const previewSeries = chartSeriesFromPreview(preview);
+  const previewTable = tableRowsFromPreview(preview);
   const comparisons = previewSeries.series.map((series, seriesIndex) => {
     const expected = numericSummary(series);
     const match = numericColumns.find((column) => {
@@ -1772,22 +1864,46 @@ const summarizeCsvAgainstPreview = (csvText: string, preview: Record<string, unk
       matchedCsvColumn: match ? { columnIndex: match.columnIndex, header: match.header, summary: match.summary } : null
     };
   });
-  const rowCountMatchesPreview = previewSeries.labelCount === null ? null : dataRows.length === previewSeries.labelCount;
-  const allSeriesMatched = comparisons.length === 0 ? null : comparisons.every((item) => item.matchedCsvColumn !== null);
+  const tableHeaderMatches = previewTable === null || previewTable.header.length === 0
+    ? null
+    : previewTable.header.every((expected, index) => comparableCellsEqual(header[index], expected));
+  const tableRowsMatched = previewTable === null
+    ? null
+    : dataRows.length === previewTable.rows.length
+      && previewTable.rows.every((expectedRow, rowIndex) => {
+        const actualRow = dataRows[rowIndex] ?? [];
+        return expectedRow.every((expectedCell, cellIndex) => comparableCellsEqual(actualRow[cellIndex], expectedCell));
+      });
+  const rowCountMatchesPreview = previewSeries.labelCount !== null
+    ? dataRows.length === previewSeries.labelCount
+    : previewTable !== null
+      ? dataRows.length === previewTable.rows.length
+      : null;
+  const allSeriesMatched = comparisons.length > 0
+    ? comparisons.every((item) => item.matchedCsvColumn !== null)
+    : tableRowsMatched;
   return {
     csv: {
       header,
       dataRowCount: dataRows.length,
+      sampleRows: dataRows.slice(0, 5),
+      tailRows: dataRows.slice(-3),
       numericColumns: numericColumns.map((item) => ({ columnIndex: item.columnIndex, header: item.header, summary: item.summary }))
     },
     preview: {
       labelCount: previewSeries.labelCount,
-      seriesCount: previewSeries.series.length
+      seriesCount: previewSeries.series.length,
+      tableRowCount: previewTable?.rows.length ?? null,
+      tableHeader: previewTable?.header ?? null,
+      tableSampleRows: previewTable?.rows.slice(0, 5) ?? null,
+      tableTailRows: previewTable?.rows.slice(-3) ?? null
     },
     comparisons,
     checks: {
       rowCountMatchesPreview,
-      allSeriesMatched
+      allSeriesMatched,
+      tableHeaderMatches,
+      tableRowsMatched
     }
   };
 };
@@ -2137,15 +2253,162 @@ const extractMetadataDropdownFields = async (options: CliOptions, page: Page, st
   );
 };
 
-const clickReportListCsvDownload = async (page: Page, reportName: string): Promise<{ clicked: boolean; trigger: string; candidates?: unknown[] }> => {
-  const rowClicked = await clickFirstVisible([
-    page.locator("tr").filter({ hasText: reportName }).locator("button, a, [role=button]").filter({ hasText: /下載|CSV|匯出/i }),
-    page.locator("[class*=row], [class*=Row], [class*=card], [class*=Card], [class*=item], [class*=Item], [class*=list], [class*=List]")
-      .filter({ hasText: reportName })
-      .locator("button, a, [role=button]")
-      .filter({ hasText: /下載|CSV|匯出/i })
-  ], 8000);
-  if (rowClicked) return { clicked: true, trigger: "report-list-row-text-button" };
+type ReportListRowState = {
+  found: boolean;
+  reportName: string;
+  url: string;
+  bodyTextExcerpt: string;
+  rowText: string | null;
+  downloadControls: Array<Record<string, unknown>>;
+};
+
+type CsvDownloadTriggerEvidence = {
+  clicked: boolean;
+  trigger: string;
+  candidates?: unknown[];
+  rowState?: ReportListRowState;
+  selectedControl?: Record<string, unknown>;
+  clickError?: string;
+  [key: string]: unknown;
+};
+
+const readReportListRowState = async (page: Page, reportName: string): Promise<ReportListRowState> => {
+  return await page.evaluate((targetReportName) => {
+    const normalize = (value: string | null | undefined) => (value ?? "").trim().replace(/\s+/g, " ");
+    const isVisible = (element: Element): boolean => {
+      const rect = element.getBoundingClientRect();
+      const style = window.getComputedStyle(element);
+      return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden" && style.opacity !== "0";
+    };
+    const downloadPattern = /下載|CSV|匯出|download|export|⬇/i;
+    const allBodyElements = Array.from(document.querySelectorAll<HTMLElement>("body *"));
+    const rowElements = Array.from(document.querySelectorAll<HTMLElement>(
+      "tr, [class*=row], [class*=Row], [class*=card], [class*=Card], [class*=item], [class*=Item]"
+    ));
+    const matchingRows = rowElements
+      .filter((element) => isVisible(element) && normalize(element.innerText || element.textContent).includes(targetReportName))
+      .map((row) => {
+        const controls = Array.from(row.querySelectorAll<HTMLElement>("button, a, [role=button]")).flatMap((control) => {
+          if (!isVisible(control)) return [];
+          const text = normalize(control.innerText || control.textContent);
+          const attrs = [
+            control.getAttribute("aria-label"),
+            control.getAttribute("title"),
+            control.getAttribute("download"),
+            control.getAttribute("href"),
+            control.getAttribute("onclick"),
+            typeof control.className === "string" ? control.className : ""
+          ].join(" ");
+          if (!downloadPattern.test(`${text} ${attrs}`)) return [];
+          const rect = control.getBoundingClientRect();
+          return [{
+            bodyIndex: allBodyElements.indexOf(control),
+            text,
+            tagName: control.tagName.toLowerCase(),
+            role: control.getAttribute("role"),
+            ariaLabel: control.getAttribute("aria-label"),
+            title: control.getAttribute("title"),
+            onclick: control.getAttribute("onclick"),
+            rect: { x: Math.round(rect.x), y: Math.round(rect.y), width: Math.round(rect.width), height: Math.round(rect.height) }
+          }];
+        });
+        const rect = row.getBoundingClientRect();
+        return {
+          text: normalize(row.innerText || row.textContent),
+          downloadControls: controls,
+          rect: { x: Math.round(rect.x), y: Math.round(rect.y), width: Math.round(rect.width), height: Math.round(rect.height) }
+        };
+      })
+      .sort((a, b) => a.text.length - b.text.length || b.downloadControls.length - a.downloadControls.length);
+    const row = matchingRows[0] ?? null;
+    return {
+      found: row !== null,
+      reportName: targetReportName,
+      url: window.location.href,
+      bodyTextExcerpt: normalize(document.body?.innerText ?? "").slice(0, 3000),
+      rowText: row?.text ?? null,
+      downloadControls: row?.downloadControls ?? []
+    };
+  }, reportName);
+};
+
+const ensureSavedReportListRowVisible = async (
+  options: CliOptions,
+  page: Page,
+  reportName: string
+): Promise<{ state: ReportListRowState; attempts: Array<ReportListRowState & { label: string }>; recoveryActions: string[] }> => {
+  const attempts: Array<ReportListRowState & { label: string }> = [];
+  const recoveryActions: string[] = [];
+  const projectName = stringParam(options.params, "projectName");
+  const capture = async (label: string): Promise<ReportListRowState> => {
+    const state = await readReportListRowState(page, reportName);
+    attempts.push({ ...state, label });
+    return state;
+  };
+
+  let state = await capture("initial");
+  if (state.found) return { state, attempts, recoveryActions };
+
+  if (/報表設定|儲存報表|執行/.test(state.bodyTextExcerpt) && projectName) {
+    recoveryActions.push("click_project_from_editor");
+    await clickByText(page, projectName, 8000).catch((error) => {
+      recoveryActions.push(`click_project_from_editor_failed:${error instanceof Error ? error.message : String(error)}`);
+    });
+    await page.waitForTimeout(1200);
+    state = await capture("after_project_click_from_editor");
+    if (state.found) return { state, attempts, recoveryActions };
+  }
+
+  recoveryActions.push("reload_report_list");
+  await page.reload({ waitUntil: "domcontentloaded", timeout: 15000 }).catch((error) => {
+    recoveryActions.push(`reload_report_list_failed:${error instanceof Error ? error.message : String(error)}`);
+  });
+  await page.waitForTimeout(1500);
+  state = await capture("after_reload");
+  if (state.found) return { state, attempts, recoveryActions };
+
+  if (projectName) {
+    recoveryActions.push("click_project_after_reload");
+    await clickByText(page, projectName, 8000).catch((error) => {
+      recoveryActions.push(`click_project_after_reload_failed:${error instanceof Error ? error.message : String(error)}`);
+    });
+    await page.waitForTimeout(1200);
+    state = await capture("after_project_click");
+  }
+
+  return { state, attempts, recoveryActions };
+};
+
+const clickReportListCsvDownload = async (
+  page: Page,
+  reportName: string,
+  state: ReportListRowState | null = null
+): Promise<CsvDownloadTriggerEvidence> => {
+  const rowState = state ?? await readReportListRowState(page, reportName);
+  if (!rowState.found) return { clicked: false, trigger: "report-list-row-not-found", rowState };
+  const selectedControl = rowState.downloadControls[0];
+  if (typeof selectedControl?.bodyIndex === "number" && selectedControl.bodyIndex >= 0) {
+    try {
+      await clickVisibleBodyElementByIndex(page, selectedControl.bodyIndex, 8000);
+      return { clicked: true, trigger: "report-list-row-download-control", rowState, selectedControl };
+    } catch (error) {
+      const fallbackClicked = await clickFirstVisible([
+        page.locator("tr").filter({ hasText: reportName }).locator("button, a, [role=button]").filter({ hasText: /下載|CSV|匯出|⬇/i }),
+        page.locator("[class*=row], [class*=Row], [class*=card], [class*=Card], [class*=item], [class*=Item], [class*=list], [class*=List]")
+          .filter({ hasText: reportName })
+          .locator("button, a, [role=button]")
+          .filter({ hasText: /下載|CSV|匯出|⬇/i })
+      ], 8000);
+      if (fallbackClicked) return { clicked: true, trigger: "report-list-row-text-button", rowState, selectedControl };
+      return {
+        clicked: false,
+        trigger: "report-list-row-download-click-failed",
+        rowState,
+        selectedControl,
+        clickError: error instanceof Error ? error.message : String(error)
+      };
+    }
+  }
 
   const candidates = await page.evaluate((targetReportName) => {
     const normalize = (value: string | null | undefined) => (value ?? "").trim().replace(/\s+/g, " ");
@@ -2154,6 +2417,7 @@ const clickReportListCsvDownload = async (page: Page, reportName: string): Promi
       const style = window.getComputedStyle(element);
       return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden" && style.opacity !== "0";
     };
+    const downloadPattern = /下載|CSV|匯出|download|export|⬇/i;
     const all = Array.from(document.querySelectorAll<HTMLElement>("body *"));
     const reportElements = all.filter((element) => isVisible(element) && normalize(element.innerText || element.textContent).includes(targetReportName));
     const reportRects = reportElements.map((element) => element.getBoundingClientRect());
@@ -2168,7 +2432,7 @@ const clickReportListCsvDownload = async (page: Page, reportName: string): Promi
         element.getAttribute("onclick"),
         typeof element.className === "string" ? element.className : ""
       ].join(" ");
-      if (!/(下載|CSV|匯出|download|export)/i.test(`${text} ${attrs}`)) return [];
+      if (!downloadPattern.test(`${text} ${attrs}`)) return [];
       const tag = element.tagName.toLowerCase();
       const role = element.getAttribute("role");
       if (!["button", "a"].includes(tag) && role !== "button") return [];
@@ -2191,9 +2455,95 @@ const clickReportListCsvDownload = async (page: Page, reportName: string): Promi
   const target = candidates[0] as { index?: unknown } | undefined;
   if (typeof target?.index === "number") {
     await clickVisibleBodyElementByIndex(page, target.index, 8000);
-    return { clicked: true, trigger: "report-list-row-nearby-download-control", candidates };
+    return { clicked: true, trigger: "report-list-row-nearby-download-control", candidates, rowState };
   }
-  return { clicked: false, trigger: "report-list-row-download-not-found", candidates };
+  return { clicked: false, trigger: "report-list-row-download-not-found", candidates, rowState };
+};
+
+const isLikelyCsvDownloadResponse = (response: Response): boolean => {
+  const headers = response.headers();
+  const contentType = String(headers["content-type"] ?? "").toLowerCase();
+  const disposition = String(headers["content-disposition"] ?? "").toLowerCase();
+  const url = response.url().toLowerCase();
+  if (response.status() < 200 || response.status() >= 300) return false;
+  return /text\/csv|application\/csv|application\/octet-stream|application\/vnd\.ms-excel/.test(contentType)
+    || /attachment|\.csv/.test(disposition)
+    || /download|export|csv/.test(url);
+};
+
+const filenameFromContentDisposition = (value: string | undefined): string | null => {
+  if (!value) return null;
+  const utf8 = /filename\*=UTF-8''([^;]+)/i.exec(value)?.[1];
+  if (utf8) {
+    try {
+      return decodeURIComponent(utf8);
+    } catch {
+      return utf8;
+    }
+  }
+  return /filename="?([^";]+)"?/i.exec(value)?.[1]?.trim() ?? null;
+};
+
+const observeUiTriggeredCsvDownload = async (
+  page: Page,
+  trigger: () => Promise<CsvDownloadTriggerEvidence>
+): Promise<{
+  triggerEvidence: CsvDownloadTriggerEvidence;
+  download: Download | null;
+  downloadError: string | null;
+  csvResponse: Response | null;
+  requests: Record<string, unknown>[];
+  responses: Record<string, unknown>[];
+}> => {
+  const requests: Record<string, unknown>[] = [];
+  const responses: Record<string, unknown>[] = [];
+  const responseObjects: Response[] = [];
+  const onRequest = (request: Request) => {
+    if (!/biapi|preview|report|chart|custom|download|csv|export/i.test(request.url())) return;
+    requests.push({
+      url: request.url(),
+      method: request.method(),
+      postData: request.postData()?.slice(0, 4000) ?? null,
+      timestamp: new Date().toISOString()
+    });
+  };
+  const onResponse = (response: Response) => {
+    if (!/biapi|preview|report|chart|custom|download|csv|export/i.test(response.url())) return;
+    responseObjects.push(response);
+    responses.push({
+      url: response.url(),
+      status: response.status(),
+      contentType: response.headers()["content-type"] ?? null,
+      contentDisposition: response.headers()["content-disposition"] ?? null,
+      timestamp: new Date().toISOString()
+    });
+  };
+  page.on("request", onRequest);
+  page.on("response", onResponse);
+  let downloadError: string | null = null;
+  const downloadPromise: Promise<Download | null> = page.waitForEvent("download", { timeout: 20000 }).catch((error) => {
+    downloadError = error instanceof Error ? error.message : String(error);
+    return null;
+  });
+  try {
+    const triggerEvidence = await trigger();
+    if (!triggerEvidence.clicked) {
+      downloadPromise.catch(() => undefined);
+      return { triggerEvidence, download: null, downloadError: null, csvResponse: null, requests, responses };
+    }
+    const download = await downloadPromise;
+    return {
+      triggerEvidence,
+      download,
+      downloadError,
+      csvResponse: [...responseObjects].reverse().find(isLikelyCsvDownloadResponse) ?? null,
+      requests,
+      responses
+    };
+  } finally {
+    page.off("request", onRequest);
+    page.off("response", onResponse);
+  }
 };
 
 const downloadCsvAndComparePreview = async (options: CliOptions, page: Page, startedAt: string): Promise<HelperReport> => {
@@ -2201,26 +2551,60 @@ const downloadCsvAndComparePreview = async (options: CliOptions, page: Page, sta
   const domStateBefore: Record<string, unknown> = await readDomState(page).catch((error) => ({ readError: error instanceof Error ? error.message : String(error) }));
   const downloadDir = path.join(artifactRoot(options), "downloads");
   ensureDir(downloadDir);
-  const downloadPromise = page.waitForEvent("download", { timeout: 20000 });
   const savedReportName = readSavedReportName(options);
-  const bodyTextBefore = typeof domStateBefore.bodyTextExcerpt === "string" ? domStateBefore.bodyTextExcerpt : "";
   const downloadScope = stringParam(options.params, "downloadScope");
-  let triggerEvidence: Record<string, unknown> = { trigger: "global-download-control" };
-  let clicked = false;
-  if (savedReportName && (downloadScope === "report_list" || (bodyTextBefore.includes(savedReportName) && !/報表設定|儲存報表|執行/.test(bodyTextBefore)))) {
-    const rowDownload = await clickReportListCsvDownload(page, savedReportName);
-    clicked = rowDownload.clicked;
-    triggerEvidence = { ...rowDownload, reportName: savedReportName, requestedScope: downloadScope ?? "auto_report_list" };
+  const bodyTextBefore = typeof domStateBefore.bodyTextExcerpt === "string" ? domStateBefore.bodyTextExcerpt : "";
+  const wantsReportList = downloadScope === "report_list"
+    || Boolean(savedReportName && bodyTextBefore.includes(savedReportName) && !/報表設定|儲存報表|執行/.test(bodyTextBefore));
+  if (wantsReportList && !savedReportName) throw new HelperBlockedError("SAVED_REPORT_NAME_MISSING_FOR_REPORT_LIST_CSV");
+
+  let listRecovery: Awaited<ReturnType<typeof ensureSavedReportListRowVisible>> | null = null;
+  let reportListState: ReportListRowState | null = null;
+  if (wantsReportList && savedReportName) {
+    listRecovery = await ensureSavedReportListRowVisible(options, page, savedReportName);
+    reportListState = listRecovery.state;
+    if (!reportListState.found || reportListState.downloadControls.length === 0) {
+      const failedSubcondition = !reportListState.found ? "saved_report_row_missing" : "csv_button_missing_on_saved_report_row";
+      const shot = await screenshot(options, page, failedSubcondition);
+      const uiProfileAfterPrecondition = await captureUiDomProfile(options, page, `downloadCsv.${failedSubcondition}`);
+      return createReport(
+        options,
+        "ok",
+        startedAt,
+        {
+          workflowStatus: "failed_precondition",
+          failedSubcondition,
+          csv_comparison_status: "not_reached",
+          reportName: savedReportName,
+          requestedScope: downloadScope ?? "auto_report_list",
+          domState: await readDomState(page),
+          uiProfiles: { before: uiProfileBefore, precondition: uiProfileAfterPrecondition },
+          reportList: listRecovery
+        },
+        shot ? { screenshot: shot } : {},
+        [
+          ...(shot ? [] : ["SCREENSHOT_UNAVAILABLE"]),
+          failedSubcondition === "saved_report_row_missing" ? "CSV_SAVED_REPORT_ROW_NOT_FOUND_AFTER_REFRESH" : "CSV_SAVED_REPORT_ROW_DOWNLOAD_CONTROL_NOT_FOUND"
+        ]
+      );
+    }
   }
-  if (!clicked) {
-    clicked = await clickFirstVisible([
+
+  const observedDownload = await observeUiTriggeredCsvDownload(page, async () => {
+    if (wantsReportList && savedReportName) {
+      const rowDownload = await clickReportListCsvDownload(page, savedReportName, reportListState);
+      return { ...rowDownload, reportName: savedReportName, requestedScope: downloadScope ?? "auto_report_list" };
+    }
+    const clicked = await clickFirstVisible([
       page.getByText(/下載.*CSV|CSV.*下載|匯出.*CSV|CSV|下載/i),
       page.locator("button").filter({ hasText: /下載|CSV|匯出/ })
     ], 12000);
-    triggerEvidence = clicked ? { trigger: "global-download-control", reportName: savedReportName } : triggerEvidence;
-  }
-  if (!clicked) {
-    downloadPromise.catch(() => undefined);
+    return clicked
+      ? { clicked: true, trigger: "global-download-control", reportName: savedReportName ?? null }
+      : { clicked: false, trigger: "global-download-control-not-found", reportName: savedReportName ?? null };
+  });
+  const triggerEvidence = observedDownload.triggerEvidence;
+  if (!observedDownload.triggerEvidence.clicked) {
     const cleanupState = domStateBefore.cleanupState && typeof domStateBefore.cleanupState === "object"
       ? domStateBefore.cleanupState as Record<string, unknown>
       : {};
@@ -2228,13 +2612,46 @@ const downloadCsvAndComparePreview = async (options: CliOptions, page: Page, sta
       ? "CSV_PRECONDITION_NOT_MET_NO_CURRENT_PREVIEW"
       : "CSV_DOWNLOAD_BUTTON_NOT_CLICKABLE";
     throw new HelperBlockedError(
-      `${precondition}; downloadTrigger=${JSON.stringify(triggerEvidence).slice(0, 800)}; dateRange=${String(cleanupState.dateRangeText ?? "(unknown)")}; fields=${String(cleanupState.fieldSelectionText ?? "(unknown)")}; buttons=${JSON.stringify(domStateBefore.buttons ?? []).slice(0, 800)}`
+      `${precondition}; downloadTrigger=${JSON.stringify(triggerEvidence).slice(0, 1200)}; dateRange=${String(cleanupState.dateRangeText ?? "(unknown)")}; fields=${String(cleanupState.fieldSelectionText ?? "(unknown)")}; buttons=${JSON.stringify(domStateBefore.buttons ?? []).slice(0, 800)}`
     );
   }
-  const download = await downloadPromise;
-  const suggested = sanitize(download.suggestedFilename() || `${sanitize(options.caseId)}.csv`);
-  const csvPath = path.join(downloadDir, suggested);
-  await download.saveAs(csvPath);
+
+  let csvPath: string;
+  let downloadedCsv: Record<string, unknown>;
+  const csvWarnings: string[] = [];
+  if (observedDownload.download) {
+    const suggested = sanitize(observedDownload.download.suggestedFilename() || `${sanitize(options.caseId)}.csv`);
+    csvPath = path.join(downloadDir, suggested);
+    await observedDownload.download.saveAs(csvPath);
+    downloadedCsv = {
+      source: "browser_download_event",
+      path: csvPath,
+      relativePath: path.relative(options.runDir, csvPath),
+      suggestedFilename: observedDownload.download.suggestedFilename(),
+      trigger: triggerEvidence
+    };
+  } else if (observedDownload.csvResponse) {
+    const headers = observedDownload.csvResponse.headers();
+    const suggested = sanitize(filenameFromContentDisposition(headers["content-disposition"]) ?? `${sanitize(savedReportName ?? options.caseId)}_ui-response.csv`);
+    csvPath = path.join(downloadDir, suggested);
+    fs.writeFileSync(csvPath, await observedDownload.csvResponse.body());
+    csvWarnings.push("CSV_BROWSER_DOWNLOAD_EVENT_NOT_FIRED_USED_UI_RESPONSE_BODY");
+    downloadedCsv = {
+      source: "ui_triggered_network_response_body",
+      path: csvPath,
+      relativePath: path.relative(options.runDir, csvPath),
+      suggestedFilename: suggested,
+      responseUrl: observedDownload.csvResponse.url(),
+      responseStatus: observedDownload.csvResponse.status(),
+      responseContentType: headers["content-type"] ?? null,
+      responseContentDisposition: headers["content-disposition"] ?? null,
+      trigger: triggerEvidence
+    };
+  } else {
+    throw new HelperBlockedError(
+      `CSV_UI_DOWNLOAD_NOT_OBSERVED; downloadError=${observedDownload.downloadError ?? "(none)"}; trigger=${JSON.stringify(triggerEvidence).slice(0, 1200)}; network=${JSON.stringify(observedDownload.responses).slice(0, 1200)}`
+    );
+  }
   const csvText = fs.readFileSync(csvPath, "utf8");
   const preview = readPreviewEvidence(options);
   const comparison = summarizeCsvAgainstPreview(csvText, preview);
@@ -2244,23 +2661,22 @@ const downloadCsvAndComparePreview = async (options: CliOptions, page: Page, sta
   const failedComparison = checks.rowCountMatchesPreview === false || checks.allSeriesMatched === false;
   return createReport(
     options,
-    failedComparison ? "blocked" : "ok",
+    "ok",
     startedAt,
     {
       domState: await readDomState(page),
       uiProfiles: { before: uiProfileBefore, after: uiProfileAfter },
-      downloadedCsv: {
-        path: csvPath,
-        relativePath: path.relative(options.runDir, csvPath),
-        suggestedFilename: download.suggestedFilename(),
-        trigger: triggerEvidence
-      },
+      reportList: listRecovery,
+      downloadedCsv,
       previewEvidencePath: fs.existsSync(previewEvidencePath(options)) ? previewEvidencePath(options) : null,
-      comparison
+      comparison,
+      network: { requests: observedDownload.requests, responses: observedDownload.responses },
+      downloadEventError: observedDownload.downloadError
     },
     { ...(shot ? { screenshot: shot } : {}), csv: csvPath },
     [
       ...(shot ? [] : ["SCREENSHOT_UNAVAILABLE"]),
+      ...csvWarnings,
       ...(preview ? [] : ["PREVIEW_EVIDENCE_NOT_FOUND_FOR_CSV_COMPARISON"]),
       ...(failedComparison ? ["CSV_PREVIEW_COMPARISON_MISMATCH"] : [])
     ]

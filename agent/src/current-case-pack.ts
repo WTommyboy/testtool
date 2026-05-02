@@ -90,9 +90,9 @@ const inferRequiredEvidence = (templates: EvidenceTemplateId[]): string[] => {
     evidence.add("baseline/current-run comparison when the testcase requires it");
   }
   if (templates.includes("downloaded-csv")) {
-    evidence.add("UI-triggered downloaded CSV file path and suggested filename");
+    evidence.add("UI-triggered downloaded CSV file path/source and suggested filename");
     evidence.add("CSV header, row count, and numeric summary");
-    evidence.add("preview-vs-CSV comparison, or not-reached reason when an earlier required workflow subcondition failed");
+    evidence.add("preview table/chart vs CSV comparison, or not-reached reason when an earlier required workflow subcondition failed");
   }
   if (templates.includes("ui-workflow")) {
     evidence.add("before-state snapshot/DOM read");

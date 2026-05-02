@@ -288,11 +288,12 @@ const buildActions = (currentCase: CaseManifestCase | null, helperHints: HelperH
     if (/下載|CSV/i.test(text)) {
       actions.push(
         action("H7", "collage.downloadCsvAndComparePreview", "下載 CSV 並與 preview evidence 比對", params, {
-          requiredEvidence: ["downloaded.csv", "csv.rows", "chart.datasets", "screenshot"],
+          requiredEvidence: ["downloaded.csv", "csv.rows", "preview.table_or_chart", "screenshot"],
           screenshotPolicy: "required_if_possible",
           notes: [
             "下載是合法輸出，不需 Tool Bridge；helper 只產生 CSV/preview 比對 evidence，Codex 仍負責最終判定。",
-            "若重開後設定或 preview 已不存在，helper 應 blocked 並標 `CSV_PRECONDITION_NOT_MET...`；Codex 應把 CSV 比對記為 not reached，先判斷前置流程失敗是否已構成 FAIL。"
+            "若重開後設定或 preview 已不存在，helper 應記錄 failedSubcondition；Codex 應把 CSV 比對記為 not reached，先判斷前置流程失敗是否已構成 FAIL。",
+            "若專案/報表清單 stale，helper 應刷新/重定位本輪 saved report row；若 browser download event 未觸發但同一次 UI click 產生 CSV/attachment response，可保存 response body 作 CSV evidence。"
           ]
         })
       );

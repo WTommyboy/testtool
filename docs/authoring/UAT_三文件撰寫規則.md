@@ -818,8 +818,9 @@ Helper hints:
 若 CSV case 的目的只是驗證下載檔與 preview 一致,且已知 editor 重開會混入 date-range restore regression,建議改成「儲存後回專案/報表清單,從該報表列下載 CSV,比對儲存前 preview」。此時 testcase 要明寫:
 
 - 不重開 editor,不驗證儲存後設定還原。
-- 清單列必須對應本輪儲存的 report name,不可下載其他報表。
-- CSV 比對目標是儲存前 preview evidence。
+- 清單列必須對應本輪儲存的 report name,不可下載其他報表；若 save 後清單頁 stale,helper 應刷新/重定位清單列後再點該列下載控制。
+- CSV 比對目標是儲存前 preview table/chart evidence。
+- 若 browser `download` event 未觸發,但同一次可見 UI 點擊產生 CSV/attachment response,可保存該 UI-triggered response body 作 CSV evidence,並標示 evidence source。
 - 若儲存或清單列定位失敗,`csv_comparison_status=not_reached`,最終判定回到失敗的必要子條件。
 
 #### `requiredEvidence`

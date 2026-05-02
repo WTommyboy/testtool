@@ -41,7 +41,7 @@ The current line is the Mac Agent MVP. It supports:
 - Server-side normalized result state.
 - Final aggregate result workbook download after all cases finish.
 - `groupId / 群組ID` testcase schema.
-- OTTEST002 collage helper P0 coverage for multi-field preview, save/reopen, existing-report overwrite, metadata dropdown extraction, and UI-triggered CSV download evidence including report-list downloads.
+- OTTEST002 collage helper P0 coverage for multi-field preview, table preview evidence, save/reopen, existing-report overwrite, metadata dropdown extraction, and UI-triggered CSV download evidence including report-list row refresh/re-targeting.
 - Metadata dropdown evidence is source-group scoped when the BI picker exposes group headers such as `DAILY_REPORT`, and preserves both exact field-name diffs and normalized known-alias diffs.
 - Optional support files are indexed with lightweight profiles in `input/supporting-docs-manifest.json` so Codex can inspect CSV headers/row counts or markdown headings before choosing a full file to read.
 - Successful same-run helper browser evidence can satisfy preflight for helper-assisted cases; Codex should not mark `TOOL_EXECUTION_UNAVAILABLE` solely because Codex-side browser tools are absent.
@@ -175,7 +175,8 @@ Important current decisions:
 - `TOOL-A-03` actual fields must be scoped to the requested source group, currently `每日報表` / `DAILY_REPORT`, before comparing with metadata.
 - `TOOL-A-03` expected metadata must be confirmed by `input/reference-index.json` key `bi_metadata_csv` or source filename `metadata＿1.2.5 - 工作表1.csv`.
 - When multiple CSV/reference files are present, Codex must not bulk-read every file and guess which one is metadata.
-- `TOOL-A-04` CSV verification now targets the saved report row on the project/report list page and compares the downloaded CSV to pre-save preview evidence; it should not reopen the editor or test date-range restoration.
+- `TOOL-A-04` CSV verification now targets the saved report row on the project/report list page, refreshes/re-targets that row when the post-save list is stale, and compares the CSV to pre-save preview table/chart evidence; it should not reopen the editor or test date-range restoration.
+- If a visible row download click produces a CSV/attachment response but no browser `download` event, the Agent may save that UI-triggered response body as CSV evidence and label `downloadedCsv.source`.
 - Google Sheets is only a manual exploratory fallback, not a formal evidence path.
 - If save/list-row/download preconditions fail before CSV comparison, write `csv_comparison_status="not_reached"` and judge the failed necessary subcondition directly.
 
