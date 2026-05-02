@@ -95,7 +95,8 @@ Expected behavior:
 - It reconnects automatically if the WebSocket closes.
 - If the Railway API detects a stale heartbeat, the active run is marked `FAILED` with `run.interrupted`.
 - If the agent reconnects with a local unfinished run, it reports `run_snapshot` for diagnostics.
-- By default it keeps the dedicated Chrome process warm after successful terminal states, but each run/case still resets to a single DEV tab and must collect fresh current-run evidence. Failed/cancelled runs close dedicated Chrome to clear possible native dialogs or blockers.
+- By default it keeps the dedicated Chrome process warm after successful terminal states, but each run/case still resets to a single background DEV lease tab and must collect fresh current-run evidence. Failed/cancelled runs close dedicated Chrome to clear possible native dialogs or blockers.
+- Normal helper/Codex phases do not bring Chrome to the foreground. You can use Safari, Finder, or other apps while a run executes; do not operate the Agent dedicated Chrome test tab itself.
 
 Verify from another terminal:
 
@@ -189,6 +190,7 @@ Expected output files:
 - `input/dispatch.json`
 - `input/downloaded-inputs.json`
 - `input/codex-context.json`
+- `input/browser-session.json`
 - `AGENTS.md`
 - `rules/BI_TEST_RULES/*.md`
 - `output/result.xlsx`
@@ -211,6 +213,9 @@ The API ingests result xlsx into run cases, bugs, logs, and summary views.
 
 Helper artifact behavior:
 - Helper reports are accepted only when `runId`, `caseId`, `action`, timestamps, and `evidenceMetadata.currentRunEvidence=true` match the current run.
+- Helper browser actions bind to `input/browser-session.json`; reports should include browser-session, target-binding, and `foregroundPolicy.mode=no-activate` evidence.
+- Browser-session blockers such as `BROWSER_SESSION_TARGET_MISSING`, `BROWSER_SESSION_TOKEN_MISMATCH`, or `BROWSER_SESSION_STALE` mean the helper refused to guess at a tab.
+- Field-list loading blockers are separated from missing controls: `FIELD_LIST_LOAD_TIMEOUT` means the BI editor stayed on `載入欄位中...`; `ADD_FIELD_BUTTON_NOT_CLICKABLE` means loading finished but the control was still unavailable.
 - Helper `status=ok` means the UI action and postconditions were captured, not that the testcase passed.
 - State delta planner may skip repeated setup only when visible UI / DOM evidence proves alignment; unknown or failed checks fall back to UI action or `blocked`.
 

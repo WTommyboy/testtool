@@ -21,6 +21,18 @@ M0 已完成,本 spec 在實作時必須套用以下決議:
 6. M0-4 真 Railway/Postgres migration 尚未跑;M1.1 DB 完成前必須補跑 `M0_DATABASE_URL=<railway-dev-db> node spikes/m0/postgres-drizzle/run-spike.mjs`。
 7. M0-5 SSO 只驗證 persistent profile 機制;Galaxy SSO 24h persistence 需 Tommy 實際登入後再驗。
 
+## 2026-05-03 Runtime Addendum
+
+M1 production 線已從「前景可視化 Chrome」調整為 **background-safe Browser Session Lease**:
+
+1. 每個 run/case 產生 `input/browser-session.json`,記錄 `runId`、`caseNo`、`generation`、`sessionId`、CDP `targetId`、random token / tokenHash 與 `windowName`。
+2. Agent 在 dedicated Chrome tab 寫入 `window.name = uat-tool:<runId>:<caseNo>:<generation>:<token>` 與 `sessionStorage.__uatToolBrowserSession`。
+3. helper 只能用 marker/token resolve 目標 page;禁止 fallback 到第一個 Galaxy tab、active tab、OS foreground window 或 URL-only match。
+4. 正常 helper / Codex phase 不得 `page.bringToFront()` 或 CDP `/json/activate`;run/case 一開始建立 Chrome window/tab 仍允許。
+5. `collage.configureMetric` 必須等待 `載入欄位中...` 清除後才找 `+ 新增欄位`;timeout 回 `FIELD_LIST_LOAD_TIMEOUT`,載入完成後仍無控制項才回 `ADD_FIELD_BUTTON_NOT_CLICKABLE`。
+
+此 addendum 覆蓋本文早期「讓 Chrome 前景跟動」相關假設。未來若要完全隔離桌面,VM Runner 列為 M2 評估,不屬本 P0。
+
 ---
 
 ## 0. M1 定義

@@ -1,7 +1,7 @@
 # UAT Tool 最新工程 Spec
 
-**版本**: v2026-05-02
-**狀態**: Mac Agent MVP / Indexed Guidance + Preflight Safeguards + groupId schema + final aggregate result + OTTEST002 Collage helper P0 + metadata dropdown source-group scoping + list-page CSV row refresh + response-body fallback + preview table evidence + helper-evidence preflight replacement + support-file profile + result repair guard + degraded BLOCKED result guard + case-type must-read rules + CSV/metadata authoring contract + exact metadata source filename contract
+**版本**: v2026-05-03
+**狀態**: Mac Agent MVP / Indexed Guidance + Preflight Safeguards + groupId schema + final aggregate result + OTTEST002 Collage helper P0 + metadata dropdown source-group scoping + list-page CSV row refresh + response-body fallback + preview table evidence + helper-evidence preflight replacement + support-file profile + result repair guard + degraded BLOCKED result guard + case-type must-read rules + CSV/metadata authoring contract + exact metadata source filename contract + background-safe browser lease + no-foreground helper policy + field-list loading wait
 **適用分支**: `refactor/mac-agent-mvp` / `codex/uat-tool-mvp`  
 **說明**: 檔名沿用 Tommy 提供的 `工程spac.md`;本文內容為工程 spec。
 
@@ -328,12 +328,31 @@ Purpose:
 - Maintain Galaxy SSO.
 - Avoid opening fresh browser profile for every run.
 - Let Tommy manually login in the same browser when required.
+- Keep normal UAT execution background-safe so Tommy can use Safari/Finder/other apps while Agent operates the dedicated Chrome tab.
 
 If Chrome CDP unavailable:
 
 - Agent can fallback to default Playwright MCP browser.
 - This is lower confidence for SSO persistence.
 - Web UI should still surface phase/log clearly.
+
+Browser identity contract:
+
+```text
+input/browser-session.json
+```
+
+Schema `uat-browser-session-v1` includes `runId`, `caseNo`, `generation`, `sessionId`, `endpoint`, CDP `targetId`, random `token`, `tokenHash`, `windowName`, `devUrl`, `createdAt`, and `updatedAt`.
+
+Agent writes `window.name = uat-tool:<runId>:<caseNo>:<generation>:<token>` and `sessionStorage.__uatToolBrowserSession` into the dedicated tab. Helper actions must resolve the page by this marker before UI operations. URL-only matching, active-tab matching, foreground-window matching, and first-Galaxy-tab fallback are forbidden.
+
+Foreground policy:
+
+- `page.bringToFront()` is not used in normal helper execution.
+- CDP `/json/activate` is not used in normal run/case/continuation paths.
+- Tab cleanup may close extra page targets inside the dedicated Chrome profile, but it must not activate the remaining tab.
+- Opening the dedicated Chrome window/tab at run or case start is allowed.
+- Manual recovery is surfaced through Tool Bridge/log events, not foreground stealing.
 
 ---
 
@@ -493,6 +512,7 @@ Required entries:
 - `evidence-template-index`
 - `result-template`
 - `network-observation-guidance`
+- `browser-session`
 
 Current-case behavior:
 
@@ -502,6 +522,7 @@ Current-case behavior:
 - CSV/download cases add `reference-index`, `evidence-template-index` and BI helper guidance. Formal CSV evidence is a UI-triggered local CSV parsed by the Agent/Codex; Google Sheets is not part of the trusted evidence path. For list/project-page downloads, the helper targets the current run's saved report row, refreshes/re-targets the list when the post-save page is stale, and compares the CSV with pre-save preview table/chart evidence without reopening the editor. If a visible UI click yields a CSV/attachment response but no browser download event, the helper may persist that UI-triggered response body and labels the source in evidence.
 - Metadata/dropdown cases add `reference-index` and the BI metadata rule; canonical CSV path is `rules/BI_DATA/metadata.csv`, confirmed by `bi_metadata_csv` or the testcase source filename such as `metadata＿1.2.5 - 工作表1.csv`. `metadata_dropdown_compare` is helper-assisted by `collage.extractMetadataDropdownFields`, which opens the picker via visible UI, scopes actual fields to the requested source group when group headers such as `DAILY_REPORT` exist, and records DOM-extracted actual fields plus metadata expected fields. Evidence preserves both exact diff and known-alias normalized diff.
 - Optional support files are indexed in `input/supporting-docs-manifest.json` with lightweight profiles. CSV profiles include header, row count and role hints such as `metadata_candidate`; text profiles include headings and line count. Codex should use these profiles to choose which optional file to read, not bulk-read every support file at startup.
+- `input/browser-session.json` is generated before helper pre-run and referenced in the run prompt. Codex/browser actions must verify the lease marker before trusting a page.
 
 ### 4.5 `input/preflight-auth-check.md`
 
@@ -1433,6 +1454,8 @@ Known sources:
 - Collage helper P0:
   - composite metric fields are split and added one by one
   - `+ 新增欄位` action has visible UI fallback candidates and locator drift evidence, without force click or JS setter
+  - `collage.configureMetric` waits for `載入欄位中...` to clear before attempting `+ 新增欄位`; persistent loading becomes `FIELD_LIST_LOAD_TIMEOUT`, while a loaded page with no control remains `ADD_FIELD_BUTTON_NOT_CLICKABLE`
+  - helper reports include browser-session evidence, target-binding evidence, and `foregroundPolicy.mode=no-activate`
   - existing report modification opens `TOOL_A01_<timestamp>` instead of creating a replacement report
   - overwrite save reuses the existing temporary report name
   - CSV download is triggered through visible UI and compared to current preview table/chart evidence; for report-list downloads, refresh/re-target the current run's saved report row, compare against pre-save preview evidence, and do not reopen the editor

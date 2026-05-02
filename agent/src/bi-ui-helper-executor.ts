@@ -3,7 +3,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { chromium, type Browser, type Dialog, type Download, type Page, type Request, type Response } from "playwright";
-import { closeChromeDebugSession, diagnoseChromeDebugSession, ensureChromeDebugSession, ensureSingleUserPageTab } from "./browser-session";
+import { closeChromeDebugSession, diagnoseChromeDebugSession, ensureChromeDebugSession, readBrowserSessionLease, type BrowserSessionLease } from "./browser-session";
 import { readConfig } from "./config";
 
 type CliOptions = {
@@ -43,6 +43,32 @@ type HelperReport = {
   warnings: string[];
   error?: string;
   toolRequest?: Record<string, unknown>;
+};
+
+type BrowserSessionRuntimeEvidence = {
+  browserSession: {
+    schemaVersion: BrowserSessionLease["schemaVersion"];
+    runId: string;
+    caseNo: string;
+    generation: number;
+    sessionId: string;
+    targetId: string;
+    tokenHash: string;
+    windowNamePrefix: string;
+    endpoint: string;
+  };
+  targetBinding: {
+    resolvedBy: "window.name";
+    tokenMatch: boolean;
+    urlMatch: boolean;
+    targetIdMatch: boolean | "not_checked";
+    pageUrl: string;
+  };
+  foregroundPolicy: {
+    mode: "no-activate";
+    bringToFrontCalled: false;
+    cdpActivateCalled: false;
+  };
 };
 
 class HelperBlockedError extends Error {
@@ -317,11 +343,102 @@ const createReport = (
   };
 };
 
-const getGalaxyPage = async (browser: Browser): Promise<Page> => {
-  const context = browser.contexts()[0] ?? (await browser.newContext());
-  const pages = context.pages();
-  const applicationPages = pages.filter((page) => /^https?:\/\//i.test(page.url()));
-  return pages.find((page) => page.url().includes("galaxy.games.gamania.com")) ?? applicationPages[0] ?? (await context.newPage());
+const browserSessionWindowNamePrefix = (lease: BrowserSessionLease): string =>
+  `uat-tool:${lease.runId}:${lease.caseNo}:${lease.generation}`;
+
+const isGalaxyBiDevUrl = (url: string): boolean => /^https:\/\/galaxy\.games\.gamania\.com\/biapi-dev\//i.test(url);
+
+const readPageBrowserSessionMarker = async (page: Page): Promise<{ windowName: string; sessionRaw: string | null; url: string } | null> => {
+  try {
+    return await page.evaluate(() => ({
+      windowName: window.name || "",
+      sessionRaw: sessionStorage.getItem("__uatToolBrowserSession"),
+      url: location.href
+    }));
+  } catch {
+    return null;
+  }
+};
+
+const browserSessionEvidence = (
+  lease: BrowserSessionLease,
+  page: Page
+): BrowserSessionRuntimeEvidence => ({
+  browserSession: {
+    schemaVersion: lease.schemaVersion,
+    runId: lease.runId,
+    caseNo: lease.caseNo,
+    generation: lease.generation,
+    sessionId: lease.sessionId,
+    targetId: lease.targetId,
+    tokenHash: lease.tokenHash,
+    windowNamePrefix: browserSessionWindowNamePrefix(lease),
+    endpoint: lease.endpoint
+  },
+  targetBinding: {
+    resolvedBy: "window.name",
+    tokenMatch: true,
+    urlMatch: isGalaxyBiDevUrl(page.url()),
+    targetIdMatch: "not_checked",
+    pageUrl: page.url()
+  },
+  foregroundPolicy: {
+    mode: "no-activate",
+    bringToFrontCalled: false,
+    cdpActivateCalled: false
+  }
+});
+
+const attachBrowserSessionEvidence = (report: HelperReport, evidence: BrowserSessionRuntimeEvidence | null): HelperReport => {
+  if (!evidence) return report;
+  return {
+    ...report,
+    evidence: {
+      ...report.evidence,
+      ...evidence
+    }
+  };
+};
+
+const resolveBrowserSessionPage = async (
+  options: CliOptions,
+  browser: Browser
+): Promise<{ page: Page; runtimeEvidence: BrowserSessionRuntimeEvidence }> => {
+  const lease = readBrowserSessionLease(options.runDir);
+  if (!lease) throw new HelperBlockedError("BROWSER_SESSION_LEASE_MISSING");
+  if (lease.runId !== runIdFromOptions(options)) {
+    throw new HelperBlockedError(`BROWSER_SESSION_STALE:leaseRunId=${lease.runId};expectedRunId=${runIdFromOptions(options)}`);
+  }
+  if (lease.caseNo !== options.caseId) {
+    throw new HelperBlockedError(`BROWSER_SESSION_STALE:leaseCaseNo=${lease.caseNo};expectedCaseNo=${options.caseId}`);
+  }
+
+  const pages = browser.contexts().flatMap((context) => context.pages());
+  const mismatches: Array<{ url: string; windowName: string }> = [];
+  for (const page of pages) {
+    const marker = await readPageBrowserSessionMarker(page);
+    if (!marker) continue;
+    if (marker.windowName === lease.windowName) {
+      if (!isGalaxyBiDevUrl(marker.url)) {
+        throw new HelperBlockedError(`BROWSER_SESSION_URL_MISMATCH:url=${marker.url}`);
+      }
+      return {
+        page,
+        runtimeEvidence: browserSessionEvidence(lease, page)
+      };
+    }
+    if (marker.windowName.startsWith("uat-tool:")) {
+      mismatches.push({ url: marker.url, windowName: marker.windowName.slice(0, 180) });
+    }
+  }
+
+  const targetStillExists = pages.some((page) => page.url() === lease.devUrl || isGalaxyBiDevUrl(page.url()));
+  if (targetStillExists) {
+    throw new HelperBlockedError(
+      `BROWSER_SESSION_TOKEN_MISMATCH:expected=${browserSessionWindowNamePrefix(lease)};uatTargets=${JSON.stringify(mismatches).slice(0, 1000)}`
+    );
+  }
+  throw new HelperBlockedError(`BROWSER_SESSION_TARGET_MISSING:targetId=${lease.targetId};caseNo=${lease.caseNo};generation=${lease.generation}`);
 };
 
 const isApplicationPage = (page: Page): boolean => /^https?:\/\//i.test(page.url());
@@ -1582,19 +1699,52 @@ const selectedFieldText = async (page: Page): Promise<string> => {
   return String(cleanupState.fieldSelectionText ?? "");
 };
 
+const metricAddFieldPattern = /(?:\+\s*)?新增(?:欄位|指標|資料)|(?:欄位|指標).{0,6}(?:新增|選擇)|選擇(?:欄位|指標)|\+.*欄位/i;
+
+const metricFieldControlsVisible = async (page: Page): Promise<boolean> => {
+  const checks = [
+    page.getByRole("button", { name: metricAddFieldPattern }).first(),
+    page.getByText("+ 新增欄位", { exact: false }).first(),
+    page.locator("button").filter({ hasText: metricAddFieldPattern }).first(),
+    page.locator("[role=button]").filter({ hasText: metricAddFieldPattern }).first(),
+    page.locator("[class*=btn], [class*=button], [class*=Button]").filter({ hasText: metricAddFieldPattern }).first()
+  ];
+  for (const locator of checks) {
+    if (await locator.isVisible().catch(() => false)) return true;
+  }
+  return false;
+};
+
+const waitForMetricFieldControls = async (page: Page, timeoutMs = 30000): Promise<string> => {
+  const startedAt = Date.now();
+  let lastBodyText = "";
+  while (Date.now() - startedAt < timeoutMs) {
+    if (await metricFieldControlsVisible(page)) {
+      return `fieldControls:ready:${Date.now() - startedAt}ms`;
+    }
+    lastBodyText = await page.locator("body").innerText({ timeout: 1000 }).catch(() => "");
+    const normalized = normalizeUiText(lastBodyText);
+    const stillLoading = /載入欄位中|載入指標中|載入資料中/i.test(normalized);
+    if (!stillLoading && Date.now() - startedAt > 1500) {
+      return `fieldControls:notLoadingNoControl:${Date.now() - startedAt}ms`;
+    }
+    await page.waitForTimeout(300);
+  }
+  throw new HelperBlockedError(`FIELD_LIST_LOAD_TIMEOUT:${timeoutMs}ms; bodyText=${lastBodyText.slice(0, 1200)}`);
+};
+
 const clickMetricAddFieldControl = async (page: Page, field: string): Promise<string> => {
-  const addPattern = /(?:\+\s*)?新增(?:欄位|指標|資料)|(?:欄位|指標).{0,6}(?:新增|選擇)|選擇(?:欄位|指標)|\+.*欄位/i;
   const clickedByLocator = await clickFirstVisible([
-    page.getByRole("button", { name: addPattern }),
+    page.getByRole("button", { name: metricAddFieldPattern }),
     page.getByText("+ 新增欄位", { exact: false }),
-    page.locator("button").filter({ hasText: addPattern }),
-    page.locator("[role=button]").filter({ hasText: addPattern }),
-    page.locator("[class*=btn], [class*=button], [class*=Button]").filter({ hasText: addPattern })
+    page.locator("button").filter({ hasText: metricAddFieldPattern }),
+    page.locator("[role=button]").filter({ hasText: metricAddFieldPattern }),
+    page.locator("[class*=btn], [class*=button], [class*=Button]").filter({ hasText: metricAddFieldPattern })
   ], 15000);
   if (clickedByLocator) return "addField:locator";
 
   const buttons = await visibleButtons(page).catch(() => []);
-  const buttonMatch = buttons.find((button) => addPattern.test(button.text) && !/報表|專案|儲存|保存|執行|查詢|搜尋|刪除|取消/.test(button.text));
+  const buttonMatch = buttons.find((button) => metricAddFieldPattern.test(button.text) && !/報表|專案|儲存|保存|執行|查詢|搜尋|刪除|取消/.test(button.text));
   if (buttonMatch) {
     await clickVisibleButtonByIndex(page, buttonMatch.index, 8000);
     return `addField:visibleButton:${buttonMatch.text}`;
@@ -1605,7 +1755,7 @@ const clickMetricAddFieldControl = async (page: Page, field: string): Promise<st
     return `addField:pickerAlreadyOpen:${field}`;
   }
 
-  const textTargets = await visibleTextTargetsMatching(page, addPattern.source, "i").catch(() => []);
+  const textTargets = await visibleTextTargetsMatching(page, metricAddFieldPattern.source, "i").catch(() => []);
   const clickableTarget = textTargets.find((target) =>
     target.tagName === "button" ||
     target.role === "button" ||
@@ -1625,6 +1775,7 @@ const selectMetricFieldThroughUi = async (page: Page, field: string): Promise<st
   const currentText = await selectedFieldText(page);
   if (normalizeUiText(currentText).includes(normalizeUiText(field))) return `field:already_visible:${field}`;
 
+  const readiness = await waitForMetricFieldControls(page);
   const addOperation = await clickMetricAddFieldControl(page, field);
   await page.waitForTimeout(500);
 
@@ -1635,7 +1786,7 @@ const selectMetricFieldThroughUi = async (page: Page, field: string): Promise<st
   if (!normalizeUiText(afterText).includes(normalizeUiText(field))) {
     throw new HelperBlockedError(`FIELD_VERIFY_FAILED_AFTER_CLICK:${field}`);
   }
-  return `${addOperation};field:set:${field}`;
+  return `${readiness};${addOperation};field:set:${field}`;
 };
 
 const configureMetric = async (options: CliOptions, page: Page, startedAt: string): Promise<HelperReport> => {
@@ -2951,6 +3102,7 @@ const run = async (): Promise<void> => {
 
   let browser: Browser | null = null;
   let page: Page | null = null;
+  let runtimeEvidence: BrowserSessionRuntimeEvidence | null = null;
   let report: HelperReport;
   try {
     const endpoint = await ensureChromeDebugSession(config, null, {
@@ -2974,12 +3126,12 @@ const run = async (): Promise<void> => {
       return;
     }
     browser = await chromium.connectOverCDP(endpoint);
-    page = await getGalaxyPage(browser);
+    const resolved = await resolveBrowserSessionPage(options, browser);
+    page = resolved.page;
+    runtimeEvidence = resolved.runtimeEvidence;
     if (options.action !== "collage.openProject" && !isApplicationPage(page)) {
       throw new HelperBlockedError(`GALAXY_PAGE_NOT_FOUND_FOR_HELPER_ACTION:url=${page.url() || "blank"}`);
     }
-    await page.bringToFront();
-    await ensureSingleUserPageTab(endpoint, { closeNewTab: true });
     switch (options.action) {
       case "collage.openProject":
         report = await openProject(options, page, startedAt);
@@ -3021,6 +3173,7 @@ const run = async (): Promise<void> => {
         report = await notImplemented(options, page, `Unknown helper action: ${options.action}`, startedAt);
         break;
     }
+    report = attachBrowserSessionEvidence(report, runtimeEvidence);
     writeReport(options, report);
     console.log(JSON.stringify(report, null, 2));
   } catch (error) {
@@ -3052,6 +3205,7 @@ const run = async (): Promise<void> => {
         error: error instanceof Error ? error.stack ?? error.message : String(error)
       }
     );
+    report = attachBrowserSessionEvidence(report, runtimeEvidence);
     writeReport(options, report);
     console.error(JSON.stringify(report, null, 2));
     process.exitCode = 1;

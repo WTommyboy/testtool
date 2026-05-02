@@ -42,6 +42,8 @@ The current line is the Mac Agent MVP. It supports:
 - Final aggregate result workbook download after all cases finish.
 - `groupId / 群組ID` testcase schema.
 - OTTEST002 collage helper P0 coverage for multi-field preview, table preview evidence, save/reopen, existing-report overwrite, metadata dropdown extraction, and UI-triggered CSV download evidence including report-list row refresh/re-targeting.
+- Background-safe dedicated Chrome execution: each run/case writes `input/browser-session.json`, binds helper actions to a token-marked tab, and does not bring Chrome to the foreground during normal helper/Codex phases.
+- Helper field setup waits for BI field-list loading to complete before looking for `+ 新增欄位`, so slow `載入欄位中...` states are reported as loading timeouts instead of immediate button blockers.
 - Metadata dropdown evidence is source-group scoped when the BI picker exposes group headers such as `DAILY_REPORT`, and preserves both exact field-name diffs and normalized known-alias diffs.
 - Optional support files are indexed with lightweight profiles in `input/supporting-docs-manifest.json` so Codex can inspect CSV headers/row counts or markdown headings before choosing a full file to read.
 - Successful same-run helper browser evidence can satisfy preflight for helper-assisted cases; Codex should not mark `TOOL_EXECUTION_UNAVAILABLE` solely because Codex-side browser tools are absent.
@@ -102,6 +104,20 @@ Evidence priority:
 - chart/table structured data
 - downloaded local files produced by visible UI actions
 - screenshots as human-facing support
+
+### Browser Session Lease
+
+Mac Agent uses a dedicated Chrome profile, but foreground focus is not part of the trust model. Each run/case starts by creating or reusing one DEV tab and writing:
+
+```text
+input/browser-session.json
+```
+
+The lease records `runId`, `caseNo`, `generation`, `sessionId`, CDP `targetId`, a random token hash, and the expected `window.name`. The Agent marks the tab with that `window.name` plus `sessionStorage.__uatToolBrowserSession`.
+
+Helper actions must resolve the page by this marker before touching UI. They must not fall back to the first Galaxy tab, the active tab, or the OS foreground window. If the marker is missing or stale, helpers return `BROWSER_SESSION_*` blocked reasons instead of guessing.
+
+Normal runs do not call `page.bringToFront()` or CDP `/json/activate`. Opening the dedicated Chrome window/tab at run or case start is allowed; repeated foreground stealing during helper actions is not.
 
 ### Tool Bridge
 

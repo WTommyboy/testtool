@@ -1,7 +1,9 @@
 import { execFile, spawn } from "node:child_process";
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { promisify } from "node:util";
+import WebSocket from "ws";
 import type { AgentConfig } from "./types";
 
 const defaultDebugPort = 9222;
@@ -11,6 +13,7 @@ type CdpTarget = {
   type?: string;
   title?: string;
   url?: string;
+  webSocketDebuggerUrl?: string;
 };
 
 export type ChromeDebugSessionDiagnostics = {
@@ -28,6 +31,28 @@ export type ChromeDebugSessionDiagnostics = {
 type ChromeSessionOptions = {
   resetTabs?: boolean;
   openInitialUrl?: boolean;
+};
+
+export type BrowserSessionLease = {
+  schemaVersion: "uat-browser-session-v1";
+  runId: string;
+  caseNo: string;
+  generation: number;
+  sessionId: string;
+  endpoint: string;
+  targetId: string;
+  token: string;
+  tokenHash: string;
+  windowName: string;
+  devUrl: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type ChromeBrowserSessionPrepareResult = {
+  endpoint: string | null;
+  lease: BrowserSessionLease | null;
+  warning: string | null;
 };
 
 const chromeExecutableCandidates = [
@@ -75,17 +100,17 @@ const listCdpTargets = async (endpoint: string): Promise<CdpTarget[]> => {
   }
 };
 
-const requestCdpTargetAction = async (endpoint: string, action: "activate" | "close", targetId: string): Promise<void> => {
-  const url = `${endpoint}/json/${action}/${encodeURIComponent(targetId)}`;
+const requestCdpCloseTarget = async (endpoint: string, targetId: string): Promise<void> => {
+  const url = `${endpoint}/json/close/${encodeURIComponent(targetId)}`;
   try {
     const response = await withTimeout(fetch(url, { method: "PUT" }), 1000);
-    if (!response.ok) throw new Error(`CDP_${action.toUpperCase()}_${response.status}`);
+    if (!response.ok) throw new Error(`CDP_CLOSE_${response.status}`);
   } catch {
     try {
       const response = await withTimeout(fetch(url), 1000);
-      if (!response.ok) throw new Error(`CDP_${action.toUpperCase()}_${response.status}`);
+      if (!response.ok) throw new Error(`CDP_CLOSE_${response.status}`);
     } catch {
-      // CDP target actions are best-effort. Playwright MCP can still connect and navigate.
+      // CDP close is best-effort. Playwright MCP can still connect and navigate.
     }
   }
 };
@@ -114,10 +139,10 @@ const isClosableExtraPageTarget = (target: CdpTarget): boolean => {
 };
 
 const closeExistingPageTabs = async (endpoint: string): Promise<void> => {
-  const targets = (await listCdpTargets(endpoint)).filter(isApplicationPageTarget);
+  const targets = (await listCdpTargets(endpoint)).filter(isClosableExtraPageTarget);
   const targetIds = targets.map((target) => target.id as string);
   for (const targetId of targetIds) {
-    await requestCdpTargetAction(endpoint, "close", targetId);
+    await requestCdpCloseTarget(endpoint, targetId);
   }
 
   const deadline = Date.now() + 3000;
@@ -138,40 +163,37 @@ const pickBestVisibleTarget = (targets: CdpTarget[]): CdpTarget | null => {
   );
 };
 
-export const activateBestExistingTab = async (endpoint: string): Promise<void> => {
-  const target = pickBestVisibleTarget(await listCdpTargets(endpoint));
-  if (target?.id) await requestCdpTargetAction(endpoint, "activate", target.id);
+const findTargetById = async (endpoint: string, targetId: string): Promise<CdpTarget | null> => {
+  return (await listCdpTargets(endpoint)).find((target) => target.id === targetId) ?? null;
+};
+
+const closeExtraPageTabs = async (endpoint: string, keepTargetId: string, options: { closeNewTab?: boolean } = {}): Promise<void> => {
+  const targets = await listCdpTargets(endpoint);
+  const pages = targets.filter((target) => {
+    if (!isClosableExtraPageTarget(target)) return false;
+    if (target.id === keepTargetId) return false;
+    if (isChromeNewTabTarget(target)) return options.closeNewTab === true;
+    return true;
+  });
+
+  for (const page of pages) {
+    if (page.id) await requestCdpCloseTarget(endpoint, page.id);
+  }
 };
 
 export const ensureSingleUserPageTab = async (endpoint: string, options: { closeNewTab?: boolean } = {}): Promise<void> => {
   const targets = await listCdpTargets(endpoint);
   const keep = pickBestVisibleTarget(targets);
   if (!keep?.id) return;
-
-  const pages = targets.filter((target) => {
-    if (!isClosableExtraPageTarget(target)) return false;
-    if (isChromeNewTabTarget(target)) return options.closeNewTab === true;
-    return true;
-  });
-
-  for (const page of pages) {
-    if (page.id && page.id !== keep.id) {
-      await requestCdpTargetAction(endpoint, "close", page.id);
-    }
-  }
-
-  const remainingTargets = await listCdpTargets(endpoint);
-  const remainingKeep = remainingTargets.find((target) => target.id === keep.id) ?? pickBestVisibleTarget(remainingTargets);
-  if (remainingKeep?.id) await requestCdpTargetAction(endpoint, "activate", remainingKeep.id);
+  await closeExtraPageTabs(endpoint, keep.id, options);
 };
 
-const openCdpTab = async (endpoint: string, url: string): Promise<string | null> => {
+const openCdpTab = async (endpoint: string, url: string): Promise<CdpTarget | null> => {
   try {
     const response = await withTimeout(fetch(`${endpoint}/json/new?${encodeURIComponent(url)}`, { method: "PUT" }), 1000);
     if (!response.ok) return null;
     const target = (await response.json()) as CdpTarget;
-    if (target.id) await requestCdpTargetAction(endpoint, "activate", target.id);
-    return target.id ?? null;
+    return target.id ? target : null;
   } catch {
     // Opening the visible window is best-effort; Codex can still navigate through Playwright MCP.
     return null;
@@ -194,6 +216,136 @@ const waitForCdp = async (endpoint: string, timeoutMs: number): Promise<boolean>
 export const getChromeCdpEndpoint = (): string => {
   const port = Number(process.env.UAT_AGENT_CHROME_DEBUG_PORT || defaultDebugPort);
   return `http://127.0.0.1:${Number.isFinite(port) ? port : defaultDebugPort}`;
+};
+
+export const browserSessionLeasePath = (runDir: string): string => path.join(runDir, "input", "browser-session.json");
+
+export const readBrowserSessionLease = (runDir: string): BrowserSessionLease | null => {
+  const filePath = browserSessionLeasePath(runDir);
+  if (!fs.existsSync(filePath)) return null;
+  return JSON.parse(fs.readFileSync(filePath, "utf8")) as BrowserSessionLease;
+};
+
+const writeBrowserSessionLease = (runDir: string, lease: BrowserSessionLease): void => {
+  const filePath = browserSessionLeasePath(runDir);
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, `${JSON.stringify(lease, null, 2)}\n`);
+};
+
+const tokenHash = (token: string): string => crypto.createHash("sha256").update(token).digest("hex");
+
+const newBrowserSessionLease = (options: {
+  runDir: string;
+  caseNo: string | null;
+  endpoint: string;
+  targetId: string;
+  devUrl: string | null;
+}): BrowserSessionLease => {
+  const previous = readBrowserSessionLease(options.runDir);
+  const runId = path.basename(path.resolve(options.runDir));
+  const caseNo = options.caseNo?.trim() || "unknown-case";
+  const generation = previous ? Number(previous.generation || 0) + 1 : 1;
+  const sessionId = typeof previous?.sessionId === "string" && previous.sessionId.trim()
+    ? previous.sessionId
+    : `bs_${crypto.randomBytes(12).toString("hex")}`;
+  const token = crypto.randomBytes(16).toString("hex");
+  const now = new Date().toISOString();
+  return {
+    schemaVersion: "uat-browser-session-v1",
+    runId,
+    caseNo,
+    generation,
+    sessionId,
+    endpoint: options.endpoint,
+    targetId: options.targetId,
+    token,
+    tokenHash: tokenHash(token),
+    windowName: `uat-tool:${runId}:${caseNo}:${generation}:${token}`,
+    devUrl: options.devUrl,
+    createdAt: now,
+    updatedAt: now
+  };
+};
+
+const sendCdpCommand = async (
+  webSocketDebuggerUrl: string,
+  method: string,
+  params: Record<string, unknown> = {},
+  timeoutMs = 2500
+): Promise<unknown> => {
+  return await new Promise<unknown>((resolve, reject) => {
+    const ws = new WebSocket(webSocketDebuggerUrl);
+    const id = 1;
+    const timer = setTimeout(() => {
+      ws.close();
+      reject(new Error(`CDP_COMMAND_TIMEOUT:${method}`));
+    }, timeoutMs);
+
+    ws.once("open", () => {
+      ws.send(JSON.stringify({ id, method, params }));
+    });
+    ws.on("message", (data) => {
+      let parsed: Record<string, unknown>;
+      try {
+        parsed = JSON.parse(data.toString()) as Record<string, unknown>;
+      } catch {
+        return;
+      }
+      if (parsed.id !== id) return;
+      clearTimeout(timer);
+      ws.close();
+      if (parsed.error) {
+        reject(new Error(`CDP_COMMAND_ERROR:${method}:${JSON.stringify(parsed.error)}`));
+        return;
+      }
+      resolve(parsed.result);
+    });
+    ws.once("error", (error) => {
+      clearTimeout(timer);
+      reject(error);
+    });
+  });
+};
+
+const waitForTarget = async (endpoint: string, targetId: string, timeoutMs: number): Promise<CdpTarget | null> => {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const target = await findTargetById(endpoint, targetId);
+    if (target?.webSocketDebuggerUrl) return target;
+    await new Promise((resolve) => setTimeout(resolve, 150));
+  }
+  return await findTargetById(endpoint, targetId);
+};
+
+const markBrowserSessionTarget = async (endpoint: string, lease: BrowserSessionLease): Promise<string | null> => {
+  const target = await waitForTarget(endpoint, lease.targetId, 5000);
+  if (!target?.webSocketDebuggerUrl) return "BROWSER_SESSION_TARGET_WS_MISSING";
+  const sessionMarker = {
+    runId: lease.runId,
+    caseNo: lease.caseNo,
+    generation: lease.generation,
+    sessionId: lease.sessionId,
+    tokenHash: lease.tokenHash
+  };
+  const expression = [
+    "(() => {",
+    `  window.name = ${JSON.stringify(lease.windowName)};`,
+    "  try {",
+    `    sessionStorage.setItem("__uatToolBrowserSession", ${JSON.stringify(JSON.stringify(sessionMarker))});`,
+    "  } catch (error) {}",
+    "  return { windowName: window.name, href: location.href };",
+    "})()"
+  ].join("\n");
+  try {
+    await sendCdpCommand(target.webSocketDebuggerUrl, "Runtime.evaluate", {
+      expression,
+      awaitPromise: true,
+      returnByValue: true
+    });
+    return null;
+  } catch (error) {
+    return `BROWSER_SESSION_MARK_FAILED:${error instanceof Error ? error.message : String(error)}`;
+  }
 };
 
 const getChromeDebugPort = (): string => {
@@ -308,10 +460,8 @@ export const ensureChromeDebugSession = async (
   if (await isCdpAvailable(endpoint)) {
     if (options.resetTabs) await closeExistingPageTabs(endpoint);
     if (initialUrl && openInitialUrl) {
-      await openCdpTab(endpoint, initialUrl);
-      await ensureSingleUserPageTab(endpoint, { closeNewTab: true });
-    } else {
-      await activateBestExistingTab(endpoint);
+      const target = await openCdpTab(endpoint, initialUrl);
+      if (target?.id) await closeExtraPageTabs(endpoint, target.id, { closeNewTab: true });
     }
     return endpoint;
   }
@@ -340,11 +490,46 @@ export const ensureChromeDebugSession = async (
   if (ready) {
     if (options.resetTabs) await closeExistingPageTabs(endpoint);
     if (initialUrl && openInitialUrl) {
-      await openCdpTab(endpoint, initialUrl);
-      await ensureSingleUserPageTab(endpoint, { closeNewTab: true });
-    } else {
-      await activateBestExistingTab(endpoint);
+      const target = await openCdpTab(endpoint, initialUrl);
+      if (target?.id) await closeExtraPageTabs(endpoint, target.id, { closeNewTab: true });
     }
   }
   return ready ? endpoint : null;
+};
+
+export const prepareChromeBrowserSession = async (
+  config: AgentConfig,
+  runDir: string,
+  caseNo: string | null,
+  initialUrl?: string | null,
+  options: ChromeSessionOptions = {}
+): Promise<ChromeBrowserSessionPrepareResult> => {
+  const endpoint = await ensureChromeDebugSession(config, null, {
+    resetTabs: false,
+    openInitialUrl: false
+  });
+  if (!endpoint) return { endpoint: null, lease: null, warning: "CHROME_CDP_UNAVAILABLE" };
+
+  const openInitialUrl = options.openInitialUrl ?? true;
+  if (options.resetTabs) await closeExistingPageTabs(endpoint);
+
+  const target = initialUrl && openInitialUrl
+    ? await openCdpTab(endpoint, initialUrl)
+    : pickBestVisibleTarget(await listCdpTargets(endpoint));
+  if (!target?.id) {
+    return { endpoint, lease: null, warning: "BROWSER_SESSION_TARGET_CREATE_FAILED" };
+  }
+
+  await closeExtraPageTabs(endpoint, target.id, { closeNewTab: true });
+  const latestTarget = await waitForTarget(endpoint, target.id, 5000);
+  const lease = newBrowserSessionLease({
+    runDir,
+    caseNo,
+    endpoint,
+    targetId: latestTarget?.id ?? target.id,
+    devUrl: initialUrl ?? latestTarget?.url ?? target.url ?? null
+  });
+  const markWarning = await markBrowserSessionTarget(endpoint, lease);
+  writeBrowserSessionLease(runDir, lease);
+  return { endpoint, lease, warning: markWarning };
 };
