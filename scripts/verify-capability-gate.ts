@@ -65,13 +65,13 @@ const collageCsvDownloadCase: CaseManifestCase = {
   order: 4,
   rowNumber: 5,
   caseNo: "TOOL-A-04",
-  caseTitle: "拼貼模式 — 建制 + 儲存 + 重開 + 下載 CSV,驗證下載資料與 preview 一致",
+  caseTitle: "拼貼模式 — 建制 + 儲存 + 從報表清單下載 CSV,驗證下載資料與 preview 一致",
   testType: "功能流程(含下載)",
   riskLevel: "🟡 建立",
   testTarget: "功能流程",
   cleanupChecklist: "欄位=MAU(帳號);篩選=不影響;分組=不影響;時間=2026/03/01~2026/03/31;顯示=每天",
-  stepsSummary: "1. 進入拼貼模式新增報表頁\n2. 加欄位「MAU(帳號)」\n3. 按執行取得 current preview\n4. 儲存報表(報表名: TOOL_A04_<timestamp>)\n5. 重新開啟該報表並驗證 4 項設定還原\n6. 重開後確認 current preview 可讀\n7. 點 UI 下載 CSV\n8. 本機讀 CSV 內容比對 preview 數值",
-  expected: "儲存成功\n重開後 4 項設定還原\n重開後 current preview 存在\nUI 下載 CSV 成功且本機可讀\nCSV row count / 數值與 preview 完全一致",
+  stepsSummary: "1. 進入拼貼模式新增報表頁\n2. 加欄位「MAU(帳號)」\n3. 按執行取得 current preview\n4. 儲存報表(報表名: TOOL_A04_<timestamp>)\n5. 回到專案/報表清單頁\n6. 從已儲存報表列點 UI 下載 CSV\n7. 本機讀 CSV 內容比對儲存前 preview 數值",
+  expected: "儲存成功\n清單出現該報表\n從清單下載 CSV 成功且本機可讀\nCSV row count / 數值與儲存前 preview 完全一致",
   validationMethod: "Evidence: DOM read + network/chart/table evidence + UI-triggered downloaded CSV + local CSV parser"
 };
 
@@ -122,9 +122,12 @@ const main = (): void => {
   const metadataCompare = evaluateCapabilityGate(collageMetadataCompareCase, null);
   assert.equal(metadataCompare.detected.mode, "collage", "`detail_json` wording must not be treated as record/detail mode");
   assert.equal(metadataCompare.detected.isMetadataDropdown, true, "metadata compare case should be recognized as dropdown/metadata observation");
-  assert.equal(metadataCompare.supportStatus, "degraded", JSON.stringify(metadataCompare));
+  assert.equal(metadataCompare.supportStatus, "supported", JSON.stringify(metadataCompare));
   assert.deepEqual(metadataCompare.unsupportedFeatures, []);
-  assert.match(metadataCompare.codexInstruction, /TOOL_EXECUTION_UNAVAILABLE/, "degraded cases should instruct Codex to write BLOCKED instead of relying on Agent fallback when browser tools are unavailable");
+  assert.ok(
+    metadataCompare.supportedHelperTemplates.includes("collage.extractMetadataDropdownFields"),
+    "metadata compare should be helper-assisted by dedicated dropdown extraction"
+  );
 
   const runDir = fs.mkdtempSync(path.join(os.tmpdir(), "uat-capability-gate-fixture-"));
   try {
@@ -139,6 +142,12 @@ const main = (): void => {
 
     const csvPlan = buildHelperExecutionPlan({ runDir, currentCase: collageCsvDownloadCase, helperHints: null });
     assert.ok(csvPlan.actions.some((item) => item.template === "collage.downloadCsvAndComparePreview"), "CSV case should include download/compare helper action");
+    assert.ok(!csvPlan.actions.some((item) => item.template === "collage.reopenReport"), "list-page CSV case should not reopen the editor");
+    assert.equal(csvPlan.actions.find((item) => item.template === "collage.downloadCsvAndComparePreview")?.params.downloadScope, "report_list", "CSV helper should target saved report row/list-page download");
+
+    const metadataPlan = buildHelperExecutionPlan({ runDir, currentCase: collageMetadataCompareCase, helperHints: null });
+    assert.ok(metadataPlan.actions.some((item) => item.template === "collage.extractMetadataDropdownFields"), "metadata compare should include dropdown extraction helper action");
+    assert.ok(!metadataPlan.actions.some((item) => item.template === "collage.runPreviewAndCollectEvidence"), "metadata compare should not run preview");
 
     const existingPlan = buildHelperExecutionPlan({ runDir, currentCase: collageExistingReportCase, helperHints: null });
     assert.ok(existingPlan.actions.some((item) => item.template === "collage.openExistingReport"), "A-05 should open an existing report instead of creating a new report");
@@ -165,7 +174,8 @@ const main = (): void => {
           "collage CSV case includes download/compare helper action",
           "collage existing-report modification opens existing report and overwrites",
           "collage metadata compare is not misclassified as record/detail mode",
-          "degraded metadata compare instructs BLOCKED/TOOL_EXECUTION_UNAVAILABLE when browser tools are unavailable",
+          "collage metadata compare is helper-assisted by dedicated dropdown extraction",
+          "list-page CSV case does not reopen editor and targets saved report row download",
           "active filter cases remain blocked until helper support exists"
         ]
       },

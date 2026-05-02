@@ -154,6 +154,12 @@ const inferCollageParams = (currentCase: CaseManifestCase | null, helperHints: H
     devUrl: stringParam(params, ["devUrl"]) ?? null,
     projectName: stringParam(params, ["projectName", "project"]) ?? firstMatch(text, [/(拼貼test[_\d]+)/i]),
     source: stringParam(params, ["source", "sourceReport"]) ?? firstMatch(text, [/來源報表[=：: ]*「?([^」\n,， ]+)/]),
+    referenceCsv: stringParam(params, ["referenceCsv"]) ?? "rules/BI_DATA/metadata.csv",
+    referenceSourceName: stringParam(params, ["referenceSourceName"]) ?? firstMatch(text, [/原始指定檔名[=：: ]+`?([^`\n;]+)/, /source filename[=：: ]+`?([^`\n;]+)/i]),
+    referenceIndexKey: stringParam(params, ["referenceIndexKey"]) ?? firstMatch(text, [/reference-index key[=：: ]+`?([^`\n;]+)/i, /reference_index_key[=：: ]+`?([^`\n;]+)/i]) ?? "bi_metadata_csv",
+    matchKey: stringParam(params, ["matchKey"]) ?? "欄位名稱",
+    compareFields: Array.isArray(params.compareFields) ? params.compareFields : ["欄位名稱", "資料類型"],
+    downloadScope: stringParam(params, ["downloadScope"]) ?? (/清單|列表|專案頁|報表列|report list/i.test(text) ? "report_list" : null),
     field,
     fields,
     dateRange: dateRangeText,
@@ -202,9 +208,32 @@ const buildActions = (currentCase: CaseManifestCase | null, helperHints: HelperH
     features.hasFilter ||
     features.hasGroup;
   const metadataOnly = features.isMetadataDropdown;
-  if (unsupportedHelperTarget || metadataOnly) return [];
+  if (unsupportedHelperTarget) return [];
+
+  if (metadataOnly) {
+    return [
+      action("H1", "collage.openProject", "開啟指定拼貼專案", params, {
+        requiredEvidence: ["dom.url", "dom.pageTitle", "dom.state", "screenshot"],
+        notes: ["只開啟/切換專案，不判斷 testcase 結果。"]
+      }),
+      action("H2", "collage.createReport", "進入新增報表頁", params, {
+        requiredEvidence: ["dom.url", "dom.pageTitle", "dom.state", "screenshot"]
+      }),
+      action("H3", "collage.extractMetadataDropdownFields", "展開欄位 picker 並擷取 metadata 對照 evidence", params, {
+        requiredEvidence: ["dom.list", "metadata.csv", "comparison", "screenshot"],
+        screenshotPolicy: "required_if_possible",
+        notes: [
+          "helper 只能透過 visible `+ 新增欄位` 開啟 picker，之後用 read-only DOM extraction 擷取欄位清單。",
+          "expected list 必須來自 run packet 的 `rules/BI_DATA/metadata.csv` 或 reference-index 指向檔案；不可打 BI API 或 broad-read 所有 CSV。",
+          "helper 只產生 actual/expected/missing/extra evidence；Codex 仍需依 testcase 規則判 PASS/FAIL/BLOCKED。"
+        ]
+      })
+    ];
+  }
   const isCollageFlow = /collage_build_preview_save_reopen/.test(operationTemplate) || /拼貼|新增報表|儲存報表|重開|重新檢視/.test(text);
   const modifiesExistingReport = params.openExistingReport === true;
+  const explicitlyNoReopen = /不(?:需|要|應)?重開|不要重開|無需重開|不用重開|不重開\s*editor|不應產生\s*reopen/i.test(text);
+  const needsReopen = !explicitlyNoReopen && /重開|重新檢視|還原|載入/.test(text);
 
   if (isCollageFlow) {
     actions.push(
@@ -247,7 +276,7 @@ const buildActions = (currentCase: CaseManifestCase | null, helperHints: HelperH
       );
     }
 
-    if (/重開|重新檢視|還原|載入/.test(text)) {
+    if (needsReopen) {
       actions.push(
         action("H6", "collage.reopenReport", "從清單重開報表並驗證設定", params, {
           requiredEvidence: ["dom.state", "network.requestBody", "screenshot"],

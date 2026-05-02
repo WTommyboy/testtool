@@ -100,7 +100,10 @@ export const detectCaseFeatures = (
   const isMetadataDropdown =
     operationTemplate === "metadata_dropdown_compare" ||
     /(?:metadata|欄位清單).{0,24}(?:下拉|dropdown|比對|compare)|(?:下拉|dropdown).{0,24}(?:metadata|欄位清單)/i.test(behaviorText);
-  const isSaveReopenFlow = operationTemplate === "collage_build_preview_save_reopen" || /儲存報表|重開|重新檢視|還原|載入/.test(behaviorText);
+  const explicitlyNoReopen = /不(?:需|要|應)?重開|不要重開|無需重開|不用重開|不重開\s*editor|不應產生\s*reopen/i.test(behaviorText);
+  const isSaveReopenFlow =
+    operationTemplate === "collage_build_preview_save_reopen" ||
+    (!explicitlyNoReopen && /儲存報表|重開|重新檢視|還原|載入/.test(behaviorText));
 
   return {
     text,

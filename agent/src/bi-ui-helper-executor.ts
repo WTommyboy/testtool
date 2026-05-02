@@ -1792,27 +1792,349 @@ const summarizeCsvAgainstPreview = (csvText: string, preview: Record<string, unk
   };
 };
 
+const normalizeFieldIdentity = (value: string): string =>
+  value
+    .replace(/[（]/g, "(")
+    .replace(/[）]/g, ")")
+    .replace(/\s+/g, "")
+    .trim()
+    .toLowerCase();
+
+const resolveMetadataCsvPath = (options: CliOptions): { path: string | null; source: string; referenceIndexEntry?: unknown } => {
+  const referenceKey = stringParam(options.params, "referenceIndexKey") ?? "bi_metadata_csv";
+  const referenceIndexPath = path.join(options.runDir, "input", "reference-index.json");
+  if (fs.existsSync(referenceIndexPath)) {
+    try {
+      const parsed = JSON.parse(fs.readFileSync(referenceIndexPath, "utf8")) as Record<string, unknown>;
+      const localReferences = Array.isArray(parsed.localReferences) ? parsed.localReferences : [];
+      const entry = localReferences.find((item) => {
+        if (!item || typeof item !== "object" || Array.isArray(item)) return false;
+        return (item as Record<string, unknown>).key === referenceKey;
+      }) as Record<string, unknown> | undefined;
+      const indexedPath = typeof entry?.path === "string" ? entry.path : null;
+      if (indexedPath && fs.existsSync(indexedPath)) {
+        return { path: indexedPath, source: `reference-index:${referenceKey}`, referenceIndexEntry: entry };
+      }
+    } catch {
+      // Fall back to explicit/default path below.
+    }
+  }
+
+  const explicit = firstStringParam(options.params, ["referenceCsv", "referenceSourcePath"]) ?? "rules/BI_DATA/metadata.csv";
+  const candidates = [
+    path.isAbsolute(explicit) ? explicit : path.join(options.runDir, explicit),
+    path.join(options.runDir, "rules", "BI_DATA", "metadata.csv")
+  ];
+  const found = candidates.find((candidate) => fs.existsSync(candidate));
+  return { path: found ?? null, source: found ? "params.referenceCsv" : "not_found" };
+};
+
+const readExpectedMetadataFields = (
+  options: CliOptions
+): { metadataPath: string | null; source: string; referenceIndexEntry?: unknown; expectedFields: string[]; header: string[]; warnings: string[] } => {
+  const resolved = resolveMetadataCsvPath(options);
+  const warnings: string[] = [];
+  if (!resolved.path) {
+    return {
+      metadataPath: null,
+      source: resolved.source,
+      referenceIndexEntry: resolved.referenceIndexEntry,
+      expectedFields: [],
+      header: [],
+      warnings: ["METADATA_CSV_NOT_FOUND"]
+    };
+  }
+
+  const sourceReport = stringParam(options.params, "source") ?? stringParam(options.params, "sourceReport") ?? "每日報表";
+  const rows = parseCsv(fs.readFileSync(resolved.path, "utf8"));
+  const header = rows[0] ?? [];
+  const nameIndex = header.indexOf("欄位名稱");
+  const sourceIndex = header.indexOf("來源報表");
+  const collageAvailableIndex = header.indexOf("所屬報表是否可用於拼貼模式主選擇");
+  if (nameIndex === -1 || sourceIndex === -1 || collageAvailableIndex === -1) {
+    warnings.push("METADATA_REQUIRED_COLUMNS_NOT_FOUND");
+  }
+  const expectedFields = rows.slice(1)
+    .filter((row) => {
+      if (nameIndex === -1) return false;
+      const rowSource = sourceIndex === -1 ? "" : String(row[sourceIndex] ?? "").trim();
+      const available = collageAvailableIndex === -1 ? "" : String(row[collageAvailableIndex] ?? "").trim().toUpperCase();
+      return rowSource === sourceReport && available === "Y";
+    })
+    .map((row) => String(row[nameIndex] ?? "").trim())
+    .filter(Boolean);
+
+  return {
+    metadataPath: resolved.path,
+    source: resolved.source,
+    referenceIndexEntry: resolved.referenceIndexEntry,
+    expectedFields,
+    header,
+    warnings
+  };
+};
+
+const inferFieldLabel = (text: string, expectedFields: string[]): string => {
+  const normalizedText = normalizeFieldIdentity(text);
+  const matched = [...expectedFields]
+    .sort((a, b) => normalizeFieldIdentity(b).length - normalizeFieldIdentity(a).length)
+    .find((field) => normalizedText.includes(normalizeFieldIdentity(field)));
+  if (matched) return matched;
+
+  const lines = text
+    .split(/\n|\r| {2,}/)
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .filter((item) => !/^(數值|百分比|文字|日期|時間|加總|平均|最大|最小|COUNT|SUM|AVG|MAX|MIN|×|\+新增欄位)$/i.test(item));
+  return lines[0] ?? text.trim();
+};
+
+const extractFieldPickerDomItems = async (page: Page): Promise<Array<Record<string, unknown>>> => {
+  return page.evaluate(() => {
+    const normalize = (value: string | null | undefined) => (value ?? "").trim().replace(/\s+/g, " ");
+    const isVisible = (element: Element): boolean => {
+      const rect = element.getBoundingClientRect();
+      const style = window.getComputedStyle(element);
+      return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden" && style.opacity !== "0";
+    };
+    const rectFor = (element: Element) => {
+      const rect = element.getBoundingClientRect();
+      return {
+        x: Math.round(rect.x),
+        y: Math.round(rect.y),
+        width: Math.round(rect.width),
+        height: Math.round(rect.height)
+      };
+    };
+    const classNameFor = (element: Element): string => typeof (element as HTMLElement).className === "string" ? (element as HTMLElement).className : "";
+    const itemFor = (element: HTMLElement, index: number, source: string) => {
+      const text = normalize(element.innerText || element.textContent);
+      const onclick = element.getAttribute("onclick");
+      const codeMatch = onclick?.match(/addFieldToSelection\(['"]([^'"]+)['"]/i);
+      return {
+        index,
+        source,
+        text,
+        code: codeMatch?.[1] ?? element.getAttribute("data-field-code") ?? element.getAttribute("data-field") ?? element.getAttribute("data-value"),
+        tagName: element.tagName.toLowerCase(),
+        role: element.getAttribute("role"),
+        className: classNameFor(element),
+        onclick,
+        rect: rectFor(element)
+      };
+    };
+    const all = Array.from(document.querySelectorAll<HTMLElement>("body *"));
+    const primary = all.flatMap((element, index) => {
+      const onclick = element.getAttribute("onclick") ?? "";
+      if (!/addFieldToSelection/i.test(onclick) || !isVisible(element)) return [];
+      const text = normalize(element.innerText || element.textContent);
+      return text ? [itemFor(element, index, "onclick:addFieldToSelection")] : [];
+    });
+    if (primary.length > 0) return primary;
+
+    const containers = Array.from(document.querySelectorAll<HTMLElement>(
+      "[class*='dropdown'], [class*='Dropdown'], [class*='menu'], [class*='Menu'], [class*='picker'], [class*='Picker'], [class*='option'], [class*='Option'], [id*='dropdown'], [id*='Dropdown'], [id*='field'], [role='listbox'], [role='menu']"
+    )).filter((element) => isVisible(element) && !/fieldSelectionContainer|dataFilterContainer|groupDimensionContainer/i.test(element.id));
+    const container = containers
+      .map((element) => {
+        const leaves = Array.from(element.querySelectorAll<HTMLElement>("button, [role='option'], [role='menuitem'], li, div, span"))
+          .filter((child) => isVisible(child))
+          .filter((child) => {
+            const text = normalize(child.innerText || child.textContent);
+            if (!text || text.length > 90) return false;
+            if (/^(← 返回|拼貼|指標|明細|儲存報表|執行|\+ 新增欄位|\+ 新增運算欄位|時間區間|過去7天|每天|確認|取消|×)$/i.test(text)) return false;
+            return true;
+          });
+        return { element, leaves };
+      })
+      .sort((a, b) => b.leaves.length - a.leaves.length)[0];
+    if (!container || container.leaves.length === 0) return [];
+    const leafSet = new Set(container.leaves);
+    return all.flatMap((element, index) => leafSet.has(element) ? [itemFor(element, index, "dropdown-container-leaf")] : []);
+  });
+};
+
+const extractMetadataDropdownFields = async (options: CliOptions, page: Page, startedAt: string): Promise<HelperReport> => {
+  const warnings: string[] = [];
+  const uiProfileBefore = await captureUiDomProfile(options, page, "metadataDropdown.before");
+  const metadata = readExpectedMetadataFields(options);
+  warnings.push(...metadata.warnings);
+  const expectedFields = metadata.expectedFields;
+  const probeField = expectedFields[0] ?? "新增帳號數";
+  const addOperation = await clickMetricAddFieldControl(page, probeField);
+  await page.waitForTimeout(700);
+
+  const rawItems = await extractFieldPickerDomItems(page);
+  const actualItems = rawItems.map((item) => ({
+    ...item,
+    label: inferFieldLabel(String(item.text ?? ""), expectedFields)
+  }));
+  const seen = new Set<string>();
+  const actualVisibleItems = actualItems
+    .map((item) => String(item.label ?? "").trim())
+    .filter(Boolean)
+    .filter((label) => {
+      const key = normalizeFieldIdentity(label);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+
+  const expectedByKey = new Map(expectedFields.map((field) => [normalizeFieldIdentity(field), field]));
+  const actualByKey = new Map(actualVisibleItems.map((field) => [normalizeFieldIdentity(field), field]));
+  const missingFields = expectedFields.filter((field) => !actualByKey.has(normalizeFieldIdentity(field)));
+  const extraFields = actualVisibleItems.filter((field) => !expectedByKey.has(normalizeFieldIdentity(field)));
+  const matchedFields = expectedFields.filter((field) => actualByKey.has(normalizeFieldIdentity(field)));
+
+  const evidence = {
+    caseNo: options.caseId,
+    sourceGroupLabel: stringParam(options.params, "source") ?? stringParam(options.params, "sourceReport") ?? "每日報表",
+    pickerOpenAction: addOperation,
+    actualVisibleItems,
+    actualCount: actualVisibleItems.length,
+    actualRawItems: actualItems,
+    expectedSource: {
+      referenceCsv: metadata.metadataPath,
+      referenceCsvRelativePath: metadata.metadataPath ? path.relative(options.runDir, metadata.metadataPath) : null,
+      referenceIndexKey: stringParam(options.params, "referenceIndexKey") ?? "bi_metadata_csv",
+      referenceIndexEntry: metadata.referenceIndexEntry ?? null,
+      referenceSourceName: stringParam(options.params, "referenceSourceName") ?? "metadata＿1.2.5 - 工作表1.csv",
+      sourceReport: stringParam(options.params, "source") ?? stringParam(options.params, "sourceReport") ?? "每日報表",
+      matchKey: stringParam(options.params, "matchKey") ?? "欄位名稱",
+      compareFields: Array.isArray(options.params.compareFields) ? options.params.compareFields : ["欄位名稱", "資料類型"],
+      filter: "來源報表 == sourceReport && 所屬報表是否可用於拼貼模式主選擇 == Y"
+    },
+    expectedFields,
+    expectedCount: expectedFields.length,
+    missingFields,
+    extraFields,
+    normalizationNotes: [
+      "comparison normalizes whitespace and full-width/half-width parentheses",
+      "DOM extraction reads visible picker options / addFieldToSelection onclick metadata only; it does not call BI API"
+    ],
+    comparison: {
+      matchedFields,
+      missingFields,
+      extraFields,
+      trueDifferenceCount: missingFields.length + extraFields.length
+    },
+    verdict: missingFields.length === 0 && extraFields.length === 0 ? "matches" : "differences_found"
+  };
+  const evidencePath = path.join(artifactRoot(options), "metadata-dropdown-evidence.json");
+  ensureDir(path.dirname(evidencePath));
+  fs.writeFileSync(evidencePath, `${JSON.stringify(evidence, null, 2)}\n`);
+
+  if (actualVisibleItems.length === 0) warnings.push("METADATA_DROPDOWN_NO_VISIBLE_ITEMS_EXTRACTED");
+  if (expectedFields.length === 0) warnings.push("METADATA_EXPECTED_FIELDS_EMPTY");
+  const shot = await screenshot(options, page, "metadata-dropdown");
+  const uiProfileAfter = await captureUiDomProfile(options, page, "metadataDropdown.after");
+
+  return createReport(
+    options,
+    actualVisibleItems.length > 0 && expectedFields.length > 0 ? "ok" : "blocked",
+    startedAt,
+    {
+      domState: await readDomState(page),
+      uiProfiles: { before: uiProfileBefore, after: uiProfileAfter },
+      metadataDropdownEvidence: evidence
+    },
+    { ...(shot ? { screenshot: shot } : {}), metadataDropdownEvidence: evidencePath },
+    shot ? warnings : [...warnings, "SCREENSHOT_UNAVAILABLE"]
+  );
+};
+
+const clickReportListCsvDownload = async (page: Page, reportName: string): Promise<{ clicked: boolean; trigger: string; candidates?: unknown[] }> => {
+  const rowClicked = await clickFirstVisible([
+    page.locator("tr").filter({ hasText: reportName }).locator("button, a, [role=button]").filter({ hasText: /下載|CSV|匯出/i }),
+    page.locator("[class*=row], [class*=Row], [class*=card], [class*=Card], [class*=item], [class*=Item], [class*=list], [class*=List]")
+      .filter({ hasText: reportName })
+      .locator("button, a, [role=button]")
+      .filter({ hasText: /下載|CSV|匯出/i })
+  ], 8000);
+  if (rowClicked) return { clicked: true, trigger: "report-list-row-text-button" };
+
+  const candidates = await page.evaluate((targetReportName) => {
+    const normalize = (value: string | null | undefined) => (value ?? "").trim().replace(/\s+/g, " ");
+    const isVisible = (element: Element): boolean => {
+      const rect = element.getBoundingClientRect();
+      const style = window.getComputedStyle(element);
+      return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden" && style.opacity !== "0";
+    };
+    const all = Array.from(document.querySelectorAll<HTMLElement>("body *"));
+    const reportElements = all.filter((element) => isVisible(element) && normalize(element.innerText || element.textContent).includes(targetReportName));
+    const reportRects = reportElements.map((element) => element.getBoundingClientRect());
+    return all.flatMap((element, index) => {
+      if (!isVisible(element)) return [];
+      const text = normalize(element.innerText || element.textContent);
+      const attrs = [
+        element.getAttribute("aria-label"),
+        element.getAttribute("title"),
+        element.getAttribute("download"),
+        element.getAttribute("href"),
+        element.getAttribute("onclick"),
+        typeof element.className === "string" ? element.className : ""
+      ].join(" ");
+      if (!/(下載|CSV|匯出|download|export)/i.test(`${text} ${attrs}`)) return [];
+      const tag = element.tagName.toLowerCase();
+      const role = element.getAttribute("role");
+      if (!["button", "a"].includes(tag) && role !== "button") return [];
+      const rect = element.getBoundingClientRect();
+      const nearReport = reportRects.some((reportRect) => Math.abs((reportRect.y + reportRect.height / 2) - (rect.y + rect.height / 2)) < 90);
+      const ancestorHasReport = Boolean(element.closest("tr, [class*=row], [class*=Row], [class*=card], [class*=Card], [class*=item], [class*=Item]")?.textContent?.includes(targetReportName));
+      if (!nearReport && !ancestorHasReport) return [];
+      return [{
+        index,
+        text,
+        tagName: tag,
+        role,
+        ariaLabel: element.getAttribute("aria-label"),
+        title: element.getAttribute("title"),
+        onclick: element.getAttribute("onclick"),
+        rect: { x: Math.round(rect.x), y: Math.round(rect.y), width: Math.round(rect.width), height: Math.round(rect.height) }
+      }];
+    });
+  }, reportName);
+  const target = candidates[0] as { index?: unknown } | undefined;
+  if (typeof target?.index === "number") {
+    await clickVisibleBodyElementByIndex(page, target.index, 8000);
+    return { clicked: true, trigger: "report-list-row-nearby-download-control", candidates };
+  }
+  return { clicked: false, trigger: "report-list-row-download-not-found", candidates };
+};
+
 const downloadCsvAndComparePreview = async (options: CliOptions, page: Page, startedAt: string): Promise<HelperReport> => {
   const uiProfileBefore = await captureUiDomProfile(options, page, "downloadCsv.before");
   const domStateBefore: Record<string, unknown> = await readDomState(page).catch((error) => ({ readError: error instanceof Error ? error.message : String(error) }));
   const downloadDir = path.join(artifactRoot(options), "downloads");
   ensureDir(downloadDir);
   const downloadPromise = page.waitForEvent("download", { timeout: 20000 });
-  const clicked = await clickFirstVisible([
-    page.getByText(/下載.*CSV|CSV.*下載|匯出.*CSV|CSV|下載/i),
-    page.locator("button").filter({ hasText: /下載|CSV|匯出/ })
-  ], 12000);
+  const savedReportName = readSavedReportName(options);
+  const bodyTextBefore = typeof domStateBefore.bodyTextExcerpt === "string" ? domStateBefore.bodyTextExcerpt : "";
+  const downloadScope = stringParam(options.params, "downloadScope");
+  let triggerEvidence: Record<string, unknown> = { trigger: "global-download-control" };
+  let clicked = false;
+  if (savedReportName && (downloadScope === "report_list" || (bodyTextBefore.includes(savedReportName) && !/報表設定|儲存報表|執行/.test(bodyTextBefore)))) {
+    const rowDownload = await clickReportListCsvDownload(page, savedReportName);
+    clicked = rowDownload.clicked;
+    triggerEvidence = { ...rowDownload, reportName: savedReportName, requestedScope: downloadScope ?? "auto_report_list" };
+  }
+  if (!clicked) {
+    clicked = await clickFirstVisible([
+      page.getByText(/下載.*CSV|CSV.*下載|匯出.*CSV|CSV|下載/i),
+      page.locator("button").filter({ hasText: /下載|CSV|匯出/ })
+    ], 12000);
+    triggerEvidence = clicked ? { trigger: "global-download-control", reportName: savedReportName } : triggerEvidence;
+  }
   if (!clicked) {
     downloadPromise.catch(() => undefined);
-    const bodyText = typeof domStateBefore.bodyTextExcerpt === "string" ? domStateBefore.bodyTextExcerpt : "";
     const cleanupState = domStateBefore.cleanupState && typeof domStateBefore.cleanupState === "object"
       ? domStateBefore.cleanupState as Record<string, unknown>
       : {};
-    const precondition = /請選擇欄位|點擊「?執行」?查看|尚無資料|沒有資料|無預覽/i.test(bodyText)
+    const precondition = /請選擇欄位|點擊「?執行」?查看|尚無資料|沒有資料|無預覽/i.test(bodyTextBefore)
       ? "CSV_PRECONDITION_NOT_MET_NO_CURRENT_PREVIEW"
       : "CSV_DOWNLOAD_BUTTON_NOT_CLICKABLE";
     throw new HelperBlockedError(
-      `${precondition}; dateRange=${String(cleanupState.dateRangeText ?? "(unknown)")}; fields=${String(cleanupState.fieldSelectionText ?? "(unknown)")}; buttons=${JSON.stringify(domStateBefore.buttons ?? []).slice(0, 800)}`
+      `${precondition}; downloadTrigger=${JSON.stringify(triggerEvidence).slice(0, 800)}; dateRange=${String(cleanupState.dateRangeText ?? "(unknown)")}; fields=${String(cleanupState.fieldSelectionText ?? "(unknown)")}; buttons=${JSON.stringify(domStateBefore.buttons ?? []).slice(0, 800)}`
     );
   }
   const download = await downloadPromise;
@@ -1836,7 +2158,8 @@ const downloadCsvAndComparePreview = async (options: CliOptions, page: Page, sta
       downloadedCsv: {
         path: csvPath,
         relativePath: path.relative(options.runDir, csvPath),
-        suggestedFilename: download.suggestedFilename()
+        suggestedFilename: download.suggestedFilename(),
+        trigger: triggerEvidence
       },
       previewEvidencePath: fs.existsSync(previewEvidencePath(options)) ? previewEvidencePath(options) : null,
       comparison
@@ -2162,6 +2485,9 @@ const run = async (): Promise<void> => {
         break;
       case "collage.runPreviewAndCollectEvidence":
         report = await runPreview(options, page, startedAt);
+        break;
+      case "collage.extractMetadataDropdownFields":
+        report = await extractMetadataDropdownFields(options, page, startedAt);
         break;
       case "collage.saveReport":
         report = await saveReport(options, page, startedAt);

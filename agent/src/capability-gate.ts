@@ -53,13 +53,20 @@ export const evaluateCapabilityGate = (
   const isSaveReopenFlow = detectedFeatures.isSaveReopenFlow;
   const unsupportedFeatures: string[] = [];
   const supportedHelperTemplates: string[] = [];
+  const explicitlyNoReopen = /不(?:需|要|應)?重開|不要重開|無需重開|不用重開|不重開\s*editor|不應產生\s*reopen/i.test(text);
 
   if (mode === "record") unsupportedFeatures.push("record_mode_helper_not_supported");
   if (mode === "metric") unsupportedFeatures.push("metric_mode_helper_not_supported");
   if (hasFilter) unsupportedFeatures.push("filter_helper_not_implemented");
   if (hasGroup) unsupportedFeatures.push("group_helper_not_implemented");
 
-  if (mode === "collage" && !hasFilter && !hasGroup && !isMetadataDropdown) {
+  if (mode === "collage" && !hasFilter && !hasGroup && isMetadataDropdown) {
+    supportedHelperTemplates.push(
+      "collage.openProject",
+      "collage.createReport",
+      "collage.extractMetadataDropdownFields"
+    );
+  } else if (mode === "collage" && !hasFilter && !hasGroup) {
     supportedHelperTemplates.push(
       "collage.openProject",
       "collage.createReport",
@@ -68,7 +75,7 @@ export const evaluateCapabilityGate = (
     );
     if (/修改既有|既有報表|已儲存報表|儲存覆寫|覆寫/.test(text)) supportedHelperTemplates.push("collage.openExistingReport");
     if (/儲存|覆寫/.test(text)) supportedHelperTemplates.push("collage.saveReport");
-    if (/重開|重新檢視|還原|載入/.test(text)) supportedHelperTemplates.push("collage.reopenReport");
+    if (!explicitlyNoReopen && /重開|重新檢視|還原|載入/.test(text)) supportedHelperTemplates.push("collage.reopenReport");
     if (/下載|CSV/i.test(text)) supportedHelperTemplates.push("collage.downloadCsvAndComparePreview");
   }
 

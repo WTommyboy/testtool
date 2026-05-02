@@ -41,7 +41,7 @@ The current line is the Mac Agent MVP. It supports:
 - Server-side normalized result state.
 - Final aggregate result workbook download after all cases finish.
 - `groupId / 群組ID` testcase schema.
-- OTTEST002 collage helper P0 coverage for multi-field preview, save/reopen, existing-report overwrite, and UI-triggered CSV download evidence.
+- OTTEST002 collage helper P0 coverage for multi-field preview, save/reopen, existing-report overwrite, metadata dropdown extraction, and UI-triggered CSV download evidence including report-list downloads.
 - Degraded-case trusted `BLOCKED` result handling when browser/manual UI tools are unavailable.
 - Mandatory BI rule loading for each BI case.
 - Metadata reference and CSV download authoring contracts.
@@ -168,11 +168,12 @@ Important current decisions:
 - Agent mode runs cases continuously in manifest order, but still with one-case result ingest per case.
 - `TOOL-A-01` and `TOOL-A-05` expose a product behavior: reopening a saved report can restore date range as `過去7天` instead of `2026/03/01~2026/03/31`.
 - `TOOL-A-02` is the positive multi-field preview path and should remain a regression guard.
-- `TOOL-A-03` metadata comparison must use `rules/BI_DATA/metadata.csv`, confirmed by `input/reference-index.json` key `bi_metadata_csv` or source filename `metadata＿1.2.5 - 工作表1.csv`.
+- `TOOL-A-03` metadata comparison is helper-assisted: Mac Agent opens the field picker through visible UI, writes `metadata-dropdown-evidence.json`, and Codex judges against `rules/BI_DATA/metadata.csv`.
+- `TOOL-A-03` expected metadata must be confirmed by `input/reference-index.json` key `bi_metadata_csv` or source filename `metadata＿1.2.5 - 工作表1.csv`.
 - When multiple CSV/reference files are present, Codex must not bulk-read every file and guess which one is metadata.
-- `TOOL-A-04` CSV verification is valid: after a visible UI download succeeds, Codex/Agent can read the downloaded local CSV and compare it to preview evidence.
+- `TOOL-A-04` CSV verification now targets the saved report row on the project/report list page and compares the downloaded CSV to pre-save preview evidence; it should not reopen the editor or test date-range restoration.
 - Google Sheets is only a manual exploratory fallback, not a formal evidence path.
-- If save/reopen/current preview fails before CSV download, write `csv_comparison_status="not_reached"` and judge the failed necessary subcondition directly.
+- If save/list-row/download preconditions fail before CSV comparison, write `csv_comparison_status="not_reached"` and judge the failed necessary subcondition directly.
 
 ## Documentation Map
 

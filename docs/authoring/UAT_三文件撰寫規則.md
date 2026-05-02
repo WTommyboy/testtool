@@ -799,7 +799,7 @@ Helper hints:
 
 若找不到合適 template，使用 `manual_ai`，不要臨時創自由文字 template。
 
-`metadata_dropdown_compare` 的 Helper hints 建議帶：
+`metadata_dropdown_compare` 目前有 Mac Agent helper 支援。Helper 只會透過 visible UI 展開欄位 picker,再用 read-only DOM extraction 產生 `metadata-dropdown-evidence.json`;它不判 PASS/FAIL,不打 BI API,也不寫 result.xlsx。Helper hints 建議帶：
 
 ```json
 {
@@ -814,6 +814,13 @@ Helper hints:
 ```
 
 `download_csv_verify` 或同時含 `save_load_flow` 的 CSV case，`expected` 與 `requiredEvidence` 要分清楚「重開還原」「preview 存在」「CSV 下載」「CSV 比對」四層，不要把全部混成一句「下載資料一致」。若 helper plan 已產生 save/reopen/download actions，Codex 不可在只完成 preview 後直接判 `BLOCKED/EVIDENCE_INSUFFICIENT`；必須先要求 Tool Bridge/continuation 執行剩餘必要步驟，或明確記錄哪個前置必要子條件失敗。
+
+若 CSV case 的目的只是驗證下載檔與 preview 一致,且已知 editor 重開會混入 date-range restore regression,建議改成「儲存後回專案/報表清單,從該報表列下載 CSV,比對儲存前 preview」。此時 testcase 要明寫:
+
+- 不重開 editor,不驗證儲存後設定還原。
+- 清單列必須對應本輪儲存的 report name,不可下載其他報表。
+- CSV 比對目標是儲存前 preview evidence。
+- 若儲存或清單列定位失敗,`csv_comparison_status=not_reached`,最終判定回到失敗的必要子條件。
 
 #### `requiredEvidence`
 
