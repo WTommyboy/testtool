@@ -886,3 +886,10 @@ Tommy 曾討論是否改成腳本。最後決策是採「半腳本化 / helper �
 - Runtime/rules 更新：authoring 規則、Layer 1 artifacts/results、helper protocol、generated BI helper guidance、reference-index、evidence-template 與 task-runner prompt 同步：metadata 多檔案時只讀 `bi_metadata_csv` 或 exact filename；UI 下載後可讀本機 CSV；Google Sheet 只作人工探索 fallback；save/reopen/download helper plan 未完成前不可直接把 CSV path 判成 evidence insufficient。
 - Refactor 文件同步：`docs/refactor/規劃說明.md` 與 `docs/refactor/工程spac.md` 更新最新 planning/spec，將 exact metadata source filename contract、local CSV parser evidence 與 A-04 helper continuation 納入近期 P0 驗證重點。
 - 驗證：已跑 OTTEST002 package consistency check（status=warning，唯一 warning 為 legacy package 無 helper hints JSON，無 error）、`npm run typecheck --prefix agent`、`npm run typecheck`、`npm run build --prefix agent`、`npm run build`、`npm run verify:capability-gate`、`npm run verify:package-consistency`、`npm run verify:helper-hints`、`git diff --check` 通過。
+
+### 2026-05-02 08:35 - README 更新：目前最新版、歷程與 source-of-truth 分層
+
+- 背景：Tommy 詢問 `UAT_三文件撰寫規則.md` 與建議放入 git 的 testcase package 是否用途相同，並指出 Git README 很久沒有更新。釐清後決策：authoring rules 是「怎麼寫測試包」的規範；實際 xlsx/md 測試包是「某輪測試的版本化產物」，兩者用途不同。若要讓 Git 記住 OTTEST002 的實際上傳版本，需另設 tracked package 目錄，例如 `test-packages/OTTEST002/`。
+- README 更新：重寫 `README.md`，補上目前 production path、Vercel/Railway/Mac Agent/Codex/Playwright 架構、active branches、Mac Agent MVP 能力、one-case-at-a-time contract、result workbook/final aggregate contract、current-run evidence、Tool Bridge、test package source-of-truth 分層、OTTEST002 最新決策、文件地圖、local dev、Railway deployment notes、常用 API surface 與文件維護紀律。
+- 部署判斷：本次只改 README 與 planning log，不改 runtime、schema、Agent/helper 或 production 行為；因此不需要推 deployment branch 觸發 Railway redeploy。為了讓 GitHub default branch README 也更新，仍應將同一 docs-only commit 推到 `codex/uat-tool-mvp`。
+- 驗證：需跑 `git diff --check`，不需重跑 TypeScript/build/production health，因為沒有程式或部署行為變更。
