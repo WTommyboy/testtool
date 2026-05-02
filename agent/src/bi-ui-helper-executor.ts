@@ -1800,6 +1800,54 @@ const normalizeFieldIdentity = (value: string): string =>
     .trim()
     .toLowerCase();
 
+const fieldPickerSourceGroupLabels = (sourceReport: string): string[] => {
+  const direct = sourceReport.trim();
+  const known: Record<string, string[]> = {
+    "每日報表": ["DAILY_REPORT"]
+  };
+  return [...new Set([direct, ...(known[direct] ?? [])].filter(Boolean))];
+};
+
+const normalizeFieldPickerGroup = (value: string | null | undefined): string =>
+  String(value ?? "")
+    .trim()
+    .replace(/\s+/g, "_")
+    .toUpperCase();
+
+const cleanFieldPickerLabel = (text: string, code?: unknown): string => {
+  let label = text
+    .replace(/\b(NUMERIC|STRING|DATE|DATETIME|BOOLEAN|BOOL|TEXT|NUMBER)\b\s*$/i, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  const compact = label.replace(/\s+/g, "");
+  const compactCode = String(code ?? "").replace(/_/g, "").toUpperCase();
+  if (compactCode) {
+    const upper = compact.toUpperCase();
+    if (upper.endsWith(compactCode)) {
+      const prefix = compact.slice(0, compact.length - compactCode.length);
+      if (/[\u4e00-\u9fff]/.test(prefix) && prefix.length >= 2) label = prefix;
+    }
+  }
+  return label.trim();
+};
+
+const normalizeMetadataAlias = (fieldName: string): string => {
+  const key = normalizeFieldIdentity(fieldName);
+  const aliases: Record<string, string> = {
+    [normalizeFieldIdentity("iOS平台總營收")]: "iOS總營收",
+    [normalizeFieldIdentity("iOS平台付費帳號數")]: "iOS付費帳號數",
+    [normalizeFieldIdentity("iOS平台付費次數")]: "iOS付費次數",
+    [normalizeFieldIdentity("Android平台總營收")]: "Android總營收",
+    [normalizeFieldIdentity("Android平台付費帳號數")]: "Android付費帳號數",
+    [normalizeFieldIdentity("Android平台付費次數")]: "Android付費次數",
+    [normalizeFieldIdentity("線下商城平台總營收")]: "線下商城總營收",
+    [normalizeFieldIdentity("線下商城Coda總營收")]: "線下商城CODAPAY總營收",
+    [normalizeFieldIdentity("線下商城Coda付費帳號數")]: "線下商城CODAPAY付費帳號數",
+    [normalizeFieldIdentity("線下商城Coda付費次數")]: "線下商城CODAPAY付費次數"
+  };
+  return aliases[key] ?? fieldName;
+};
+
 const resolveMetadataCsvPath = (options: CliOptions): { path: string | null; source: string; referenceIndexEntry?: unknown } => {
   const referenceKey = stringParam(options.params, "referenceIndexKey") ?? "bi_metadata_csv";
   const referenceIndexPath = path.join(options.runDir, "input", "reference-index.json");
@@ -1874,7 +1922,10 @@ const readExpectedMetadataFields = (
   };
 };
 
-const inferFieldLabel = (text: string, expectedFields: string[]): string => {
+const inferFieldLabel = (text: string, expectedFields: string[], code?: unknown): string => {
+  const cleaned = cleanFieldPickerLabel(text, code);
+  if (cleaned) return cleaned;
+
   const normalizedText = normalizeFieldIdentity(text);
   const matched = [...expectedFields]
     .sort((a, b) => normalizeFieldIdentity(b).length - normalizeFieldIdentity(a).length)
@@ -1907,6 +1958,22 @@ const extractFieldPickerDomItems = async (page: Page): Promise<Array<Record<stri
       };
     };
     const classNameFor = (element: Element): string => typeof (element as HTMLElement).className === "string" ? (element as HTMLElement).className : "";
+    const isGroupHeaderText = (text: string): boolean => /^[A-Z][A-Z0-9_]{2,}$/.test(text) && !/^(NUMERIC|STRING|DATE|DATETIME|BOOLEAN|BOOL|TEXT|NUMBER)$/.test(text);
+    const all = Array.from(document.querySelectorAll<HTMLElement>("body *"));
+    const visibleMeta = all.map((element, index) => ({
+      element,
+      index,
+      text: normalize(element.innerText || element.textContent),
+      onclick: element.getAttribute("onclick") ?? ""
+    })).filter((item) => item.text && isVisible(item.element));
+    const groupForIndex = (index: number): string | null => {
+      for (let cursor = visibleMeta.length - 1; cursor >= 0; cursor -= 1) {
+        const item = visibleMeta[cursor];
+        if (item.index >= index || item.onclick) continue;
+        if (isGroupHeaderText(item.text)) return item.text;
+      }
+      return null;
+    };
     const itemFor = (element: HTMLElement, index: number, source: string) => {
       const text = normalize(element.innerText || element.textContent);
       const onclick = element.getAttribute("onclick");
@@ -1920,10 +1987,10 @@ const extractFieldPickerDomItems = async (page: Page): Promise<Array<Record<stri
         role: element.getAttribute("role"),
         className: classNameFor(element),
         onclick,
+        groupLabel: groupForIndex(index),
         rect: rectFor(element)
       };
     };
-    const all = Array.from(document.querySelectorAll<HTMLElement>("body *"));
     const primary = all.flatMap((element, index) => {
       const onclick = element.getAttribute("onclick") ?? "";
       if (!/addFieldToSelection/i.test(onclick) || !isVisible(element)) return [];
@@ -1965,9 +2032,18 @@ const extractMetadataDropdownFields = async (options: CliOptions, page: Page, st
   await page.waitForTimeout(700);
 
   const rawItems = await extractFieldPickerDomItems(page);
-  const actualItems = rawItems.map((item) => ({
+  const sourceReport = stringParam(options.params, "source") ?? stringParam(options.params, "sourceReport") ?? "每日報表";
+  const targetGroups = fieldPickerSourceGroupLabels(sourceReport).map(normalizeFieldPickerGroup);
+  const groupedItems = rawItems.filter((item) => {
+    const groupLabel = typeof item.groupLabel === "string" ? item.groupLabel : null;
+    return groupLabel ? targetGroups.includes(normalizeFieldPickerGroup(groupLabel)) : false;
+  });
+  const scopedRawItems = groupedItems.length > 0 ? groupedItems : rawItems;
+  if (rawItems.length > 0 && groupedItems.length === 0) warnings.push("METADATA_DROPDOWN_SOURCE_GROUP_SCOPE_NOT_FOUND_USING_ALL_ITEMS");
+
+  const actualItems = scopedRawItems.map((item) => ({
     ...item,
-    label: inferFieldLabel(String(item.text ?? ""), expectedFields)
+    label: inferFieldLabel(String(item.text ?? ""), expectedFields, item.code)
   }));
   const seen = new Set<string>();
   const actualVisibleItems = actualItems
@@ -1980,16 +2056,28 @@ const extractMetadataDropdownFields = async (options: CliOptions, page: Page, st
       return true;
     });
 
-  const expectedByKey = new Map(expectedFields.map((field) => [normalizeFieldIdentity(field), field]));
-  const actualByKey = new Map(actualVisibleItems.map((field) => [normalizeFieldIdentity(field), field]));
-  const missingFields = expectedFields.filter((field) => !actualByKey.has(normalizeFieldIdentity(field)));
-  const extraFields = actualVisibleItems.filter((field) => !expectedByKey.has(normalizeFieldIdentity(field)));
-  const matchedFields = expectedFields.filter((field) => actualByKey.has(normalizeFieldIdentity(field)));
+  const expectedByKey = new Map(expectedFields.map((field) => [normalizeFieldIdentity(normalizeMetadataAlias(field)), field]));
+  const actualByKey = new Map(actualVisibleItems.map((field) => [normalizeFieldIdentity(normalizeMetadataAlias(field)), field]));
+  const exactExpectedByKey = new Map(expectedFields.map((field) => [normalizeFieldIdentity(field), field]));
+  const exactActualByKey = new Map(actualVisibleItems.map((field) => [normalizeFieldIdentity(field), field]));
+  const missingFields = expectedFields.filter((field) => !actualByKey.has(normalizeFieldIdentity(normalizeMetadataAlias(field))));
+  const extraFields = actualVisibleItems.filter((field) => !expectedByKey.has(normalizeFieldIdentity(normalizeMetadataAlias(field))));
+  const exactMissingFields = expectedFields.filter((field) => !exactActualByKey.has(normalizeFieldIdentity(field)));
+  const exactExtraFields = actualVisibleItems.filter((field) => !exactExpectedByKey.has(normalizeFieldIdentity(field)));
+  const matchedFields = expectedFields.filter((field) => actualByKey.has(normalizeFieldIdentity(normalizeMetadataAlias(field))));
 
   const evidence = {
     caseNo: options.caseId,
-    sourceGroupLabel: stringParam(options.params, "source") ?? stringParam(options.params, "sourceReport") ?? "每日報表",
+    sourceGroupLabel: sourceReport,
+    sourceGroupDomLabels: fieldPickerSourceGroupLabels(sourceReport),
     pickerOpenAction: addOperation,
+    actualScope: {
+      mode: groupedItems.length > 0 ? "source_group" : "all_items_fallback",
+      requestedSourceReport: sourceReport,
+      targetGroupLabels: fieldPickerSourceGroupLabels(sourceReport),
+      allRawItemCount: rawItems.length,
+      scopedRawItemCount: scopedRawItems.length
+    },
     actualVisibleItems,
     actualCount: actualVisibleItems.length,
     actualRawItems: actualItems,
@@ -2008,14 +2096,20 @@ const extractMetadataDropdownFields = async (options: CliOptions, page: Page, st
     expectedCount: expectedFields.length,
     missingFields,
     extraFields,
+    exactMissingFields,
+    exactExtraFields,
     normalizationNotes: [
-      "comparison normalizes whitespace and full-width/half-width parentheses",
+      "comparison normalizes whitespace, full-width/half-width parentheses, and source-specific known naming aliases",
+      "actual picker fields are scoped to the requested source group when a DOM group header such as DAILY_REPORT is present",
+      "field labels remove UI type badges such as NUMERIC and trailing field codes such as RAU when they are appended to the visible label",
       "DOM extraction reads visible picker options / addFieldToSelection onclick metadata only; it does not call BI API"
     ],
     comparison: {
       matchedFields,
       missingFields,
       extraFields,
+      exactMissingFields,
+      exactExtraFields,
       trueDifferenceCount: missingFields.length + extraFields.length
     },
     verdict: missingFields.length === 0 && extraFields.length === 0 ? "matches" : "differences_found"

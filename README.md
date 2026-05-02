@@ -42,6 +42,9 @@ The current line is the Mac Agent MVP. It supports:
 - Final aggregate result workbook download after all cases finish.
 - `groupId / 群組ID` testcase schema.
 - OTTEST002 collage helper P0 coverage for multi-field preview, save/reopen, existing-report overwrite, metadata dropdown extraction, and UI-triggered CSV download evidence including report-list downloads.
+- Metadata dropdown evidence is source-group scoped when the BI picker exposes group headers such as `DAILY_REPORT`, and preserves both exact field-name diffs and normalized known-alias diffs.
+- Optional support files are indexed with lightweight profiles in `input/supporting-docs-manifest.json` so Codex can inspect CSV headers/row counts or markdown headings before choosing a full file to read.
+- Successful same-run helper browser evidence can satisfy preflight for helper-assisted cases; Codex should not mark `TOOL_EXECUTION_UNAVAILABLE` solely because Codex-side browser tools are absent.
 - Degraded-case trusted `BLOCKED` result handling when browser/manual UI tools are unavailable.
 - Mandatory BI rule loading for each BI case.
 - Metadata reference and CSV download authoring contracts.
@@ -169,6 +172,7 @@ Important current decisions:
 - `TOOL-A-01` and `TOOL-A-05` expose a product behavior: reopening a saved report can restore date range as `過去7天` instead of `2026/03/01~2026/03/31`.
 - `TOOL-A-02` is the positive multi-field preview path and should remain a regression guard.
 - `TOOL-A-03` metadata comparison is helper-assisted: Mac Agent opens the field picker through visible UI, writes `metadata-dropdown-evidence.json`, and Codex judges against `rules/BI_DATA/metadata.csv`.
+- `TOOL-A-03` actual fields must be scoped to the requested source group, currently `每日報表` / `DAILY_REPORT`, before comparing with metadata.
 - `TOOL-A-03` expected metadata must be confirmed by `input/reference-index.json` key `bi_metadata_csv` or source filename `metadata＿1.2.5 - 工作表1.csv`.
 - When multiple CSV/reference files are present, Codex must not bulk-read every file and guess which one is metadata.
 - `TOOL-A-04` CSV verification now targets the saved report row on the project/report list page and compares the downloaded CSV to pre-save preview evidence; it should not reopen the editor or test date-range restoration.

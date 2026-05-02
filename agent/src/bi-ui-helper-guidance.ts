@@ -11,7 +11,7 @@ type WriteBiUiHelperGuidanceOptions = {
 const templateGuidance: Record<string, string[]> = {
   metadata_dropdown_compare: [
     "用真實 UI 展開指定下拉或欄位 picker。",
-    "用 DOM read 擷取 visible list、來源群組、欄位名稱與 count。",
+    "用 DOM read 擷取 visible list、來源群組、欄位名稱與 count；若 picker 內有多個 source group，正式比較只限 testcase 指定來源群組。",
     "A-03 類 case 可使用 `collage.extractMetadataDropdownFields` helper 收集 current-run evidence；Codex 仍需自行判斷 PASS/FAIL/BLOCKED。",
     "需要 metadata 對照時優先讀 `rules/BI_DATA/metadata.csv`；並用 `input/reference-index.json` 的 `bi_metadata_csv` 或 testcase 指定來源檔名確認來源，不可打 BI API 補清單。"
   ],
@@ -191,7 +191,7 @@ export const writeBiUiHelperGuidance = (runDir: string, options: WriteBiUiHelper
     "1. Metadata/dropdown case 必須使用 run packet 的 canonical reference：`rules/BI_DATA/metadata.csv`。",
     "2. 若 testcase 寫原始檔名（例如 `metadata＿1.2.5 - 工作表1.csv`），用該檔名與 `input/reference-index.json` 的 `bi_metadata_csv` 確認來源；不要 broad-read 所有 reference CSV 來猜測。",
     "3. 若 capability gate 顯示 helper supported，優先讀 `output/helper-artifacts/<case>/metadata-dropdown-evidence.json`；該 helper 只抽 current-run DOM list 與 metadata expected list，不判 testcase 結果。",
-    "4. detail_json 需列 reference_csv、reference_source_name、reference_index_key、source_report、match_key、compare_fields，以及命名正規化後的缺少/多出清單。",
+    "4. detail_json 需列 reference_csv、reference_source_name、reference_index_key、source_report、match_key、compare_fields、actualScope，以及命名正規化/已知命名差異後的缺少/多出清單；若有 exactMissingFields/exactExtraFields，也要保留供 PM 判讀。",
     "",
     "## One Case Guard",
     "",

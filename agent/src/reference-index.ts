@@ -88,6 +88,7 @@ export const writeReferenceIndex = ({ runDir, inputs, generated }: ReferenceInde
           "Use exact paths from this file before doing broad filesystem search.",
           "Do not bulk-read every reference file during startup.",
           "For BI metadata comparison, prefer localReferences.bi_metadata_csv and the testcase source filename over scanning all uploaded CSV files.",
+          "For optional support files, inspect input/supporting-docs-manifest.json profiles before loading full files.",
           "Only load supporting documents that the current-case-pack or rule-index says are needed.",
           "If a referenced file is missing, report the missing file instead of guessing."
         ],

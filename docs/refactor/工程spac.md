@@ -1,7 +1,7 @@
 # UAT Tool 最新工程 Spec
 
 **版本**: v2026-05-02
-**狀態**: Mac Agent MVP / Indexed Guidance + Preflight Safeguards + groupId schema + final aggregate result + OTTEST002 Collage helper P0 + metadata dropdown helper + list-page CSV download helper + result repair guard + degraded BLOCKED result guard + case-type must-read rules + CSV/metadata authoring contract + exact metadata source filename contract
+**狀態**: Mac Agent MVP / Indexed Guidance + Preflight Safeguards + groupId schema + final aggregate result + OTTEST002 Collage helper P0 + metadata dropdown source-group scoping + list-page CSV download helper + helper-evidence preflight replacement + support-file profile + result repair guard + degraded BLOCKED result guard + case-type must-read rules + CSV/metadata authoring contract + exact metadata source filename contract
 **適用分支**: `refactor/mac-agent-mvp` / `codex/uat-tool-mvp`  
 **說明**: 檔名沿用 Tommy 提供的 `工程spac.md`;本文內容為工程 spec。
 
@@ -500,7 +500,8 @@ Current-case behavior:
 - `rule-index.currentCaseRecommendations.ruleIds` merges the mandatory bundle with existing recommendation logic and filters it to available files.
 - Every BI case mandatory bundle includes platform skill, domain-routing, `PROJECT_AGENTS_FULL.md`, and the three canonical `BI_TEST_RULES/*.md` rulebooks before result judgment.
 - CSV/download cases add `reference-index`, `evidence-template-index` and BI helper guidance. Formal CSV evidence is a UI-triggered local download parsed by the Agent/Codex; Google Sheets is not part of the trusted evidence path. For list/project-page downloads, the helper targets the current run's saved report row and compares the CSV with pre-save preview evidence without reopening the editor.
-- Metadata/dropdown cases add `reference-index` and the BI metadata rule; canonical CSV path is `rules/BI_DATA/metadata.csv`, confirmed by `bi_metadata_csv` or the testcase source filename such as `metadata＿1.2.5 - 工作表1.csv`. `metadata_dropdown_compare` is helper-assisted by `collage.extractMetadataDropdownFields`, which opens the picker via visible UI and records DOM-extracted actual fields plus metadata expected fields.
+- Metadata/dropdown cases add `reference-index` and the BI metadata rule; canonical CSV path is `rules/BI_DATA/metadata.csv`, confirmed by `bi_metadata_csv` or the testcase source filename such as `metadata＿1.2.5 - 工作表1.csv`. `metadata_dropdown_compare` is helper-assisted by `collage.extractMetadataDropdownFields`, which opens the picker via visible UI, scopes actual fields to the requested source group when group headers such as `DAILY_REPORT` exist, and records DOM-extracted actual fields plus metadata expected fields. Evidence preserves both exact diff and known-alias normalized diff.
+- Optional support files are indexed in `input/supporting-docs-manifest.json` with lightweight profiles. CSV profiles include header, row count and role hints such as `metadata_candidate`; text profiles include headings and line count. Codex should use these profiles to choose which optional file to read, not bulk-read every support file at startup.
 
 ### 4.5 `input/preflight-auth-check.md`
 
@@ -516,6 +517,7 @@ Allowed preflight behavior:
 - Confirm persistent Chrome / Playwright page is usable.
 - Detect app shell / title / current URL.
 - Detect SSO redirect, login page, 401/403, `載入失敗`, blank page, or obvious blocker.
+- Treat successful current-run Agent helper browser evidence for the same case as preflight replacement when it already covers the required UI/DOM/network evidence. Lack of Codex-side browser tools must not become `TOOL_EXECUTION_UNAVAILABLE` in that case.
 
 Forbidden preflight behavior:
 
@@ -1436,7 +1438,9 @@ Known sources:
   - CSV download is triggered through visible UI and compared to current preview evidence; for report-list downloads, compare against pre-save preview evidence and do not reopen the editor
   - CSV precondition failures such as missing current preview, missing saved report row, or missing list-page download control are reported as `CSV_PRECONDITION_NOT_MET...`; Codex records CSV comparison as `not_reached` when an earlier required workflow subcondition already failed
   - unknown native dialog chains are blocked with evidence when no real recovery handler exists
-- Metadata compare contract uses `rules/BI_DATA/metadata.csv` as canonical reference and requires reference_csv/source_report/match_key/compare_fields in detail_json; helper evidence should include actualVisibleItems, expectedFields, missingFields and extraFields
+- Metadata compare contract uses `rules/BI_DATA/metadata.csv` as canonical reference and requires reference_csv/source_report/match_key/compare_fields/actualScope in detail_json; helper evidence should include actualVisibleItems, expectedFields, missingFields, extraFields, exactMissingFields and exactExtraFields
+- Supporting docs manifest profiles decompose optional CSV/MD inputs into compact metadata before full-file loading.
+- Successful helper evidence can replace Codex-owned browser preflight for helper-assisted cases when the evidence is current-run/current-case and covers required steps.
 - structured evidence priority
 - batch-case policy detector
 - phase duration UI
@@ -1721,8 +1725,8 @@ codex/uat-tool-mvp
 
 ### P0
 
-1. Run OTTEST002 production regression against the deployed helper P0, metadata dropdown helper, list-page CSV helper, case-type must-read rules, exact metadata source filename contract and final aggregate pipeline.
-2. Verify A-01 field-add actionability fallback and A-03 metadata dropdown helper writes `metadata-dropdown-evidence.json` with DOM actual list plus metadata expected list.
+1. Run OTTEST002 production regression against the deployed helper P0, metadata dropdown source-group scoping, list-page CSV helper, helper-evidence preflight replacement, case-type must-read rules, exact metadata source filename contract and final aggregate pipeline.
+2. Verify A-01 field-add actionability fallback and A-03 metadata dropdown helper writes `metadata-dropdown-evidence.json` with source-group scoped DOM actual list, exact diff, normalized diff and metadata expected list.
 3. Verify the Agent pre-upload repair guard with OTTEST002 Codex-generated result workbooks that still omit `群組ID`.
 4. Add Web UI display for `BATCH_CASE_POLICY_VIOLATION`, result gate errors, and Tool Bridge schema errors with clear explanation.
 5. Add per-case progress events and current-case pointer visibility.
