@@ -51,7 +51,7 @@ const defaultAdapter: ResultParserAdapter = {
   detailJsonRequiredFields: {
     PASS: ["測試目的", "設定條件", "預期行為", "實際行為"],
     FAIL: ["測試目的", "設定條件", "預期行為", "實際行為", "錯誤原因", "根因層級", "驗證方法", "RD 分派"],
-    BLOCKED: ["blocked_reason"],
+    BLOCKED: ["測試目的", "設定條件", "預期行為", "實際行為", "blocked_reason"],
     PARTIAL: ["部分符合的子項清單", "不符的子項清單"]
   }
 };

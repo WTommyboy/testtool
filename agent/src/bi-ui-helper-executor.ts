@@ -1733,6 +1733,40 @@ const waitForMetricFieldControls = async (page: Page, timeoutMs = 30000): Promis
   throw new HelperBlockedError(`FIELD_LIST_LOAD_TIMEOUT:${timeoutMs}ms; bodyText=${lastBodyText.slice(0, 1200)}`);
 };
 
+const waitForReportEditorSettle = async (page: Page, timeoutMs = 30000): Promise<Record<string, unknown>> => {
+  const startedAt = Date.now();
+  let lastBodyText = "";
+  let lastDomState: Record<string, unknown> | null = null;
+  let lastFieldControlsVisible = false;
+  while (Date.now() - startedAt < timeoutMs) {
+    await page.waitForLoadState("domcontentloaded", { timeout: 1000 }).catch(() => undefined);
+    await page.waitForLoadState("networkidle", { timeout: 1000 }).catch(() => undefined);
+    lastBodyText = await page.locator("body").innerText({ timeout: 1500 }).catch(() => "");
+    lastDomState = await readDomState(page).catch(() => null);
+    lastFieldControlsVisible = await metricFieldControlsVisible(page).catch(() => false);
+    const normalized = normalizeUiText(lastBodyText);
+    const loading = /載入(?:欄位|指標|資料|報表)?中|載入中|loading|請稍候/i.test(normalized);
+    const editorVisible = /報表設定|儲存報表|執行|\+ 新增欄位|\+ 新增運算欄位|時間區間/i.test(normalized);
+    if (!loading && (editorVisible || lastFieldControlsVisible) && Date.now() - startedAt > 1200) {
+      return {
+        status: "settled",
+        elapsedMs: Date.now() - startedAt,
+        fieldControlsVisible: lastFieldControlsVisible,
+        editorVisible,
+        bodyTextExcerpt: lastBodyText.slice(0, 1200)
+      };
+    }
+    await page.waitForTimeout(400);
+  }
+  return {
+    status: "timeout",
+    elapsedMs: Date.now() - startedAt,
+    fieldControlsVisible: lastFieldControlsVisible,
+    domState: lastDomState,
+    bodyTextExcerpt: lastBodyText.slice(0, 1200)
+  };
+};
+
 const clickMetricAddFieldControl = async (page: Page, field: string): Promise<string> => {
   const clickedByLocator = await clickFirstVisible([
     page.getByRole("button", { name: metricAddFieldPattern }),
@@ -2295,6 +2329,7 @@ const extractMetadataDropdownFields = async (options: CliOptions, page: Page, st
   warnings.push(...metadata.warnings);
   const expectedFields = metadata.expectedFields;
   const probeField = expectedFields[0] ?? "新增帳號數";
+  const pickerReadiness = await waitForMetricFieldControls(page);
   const addOperation = await clickMetricAddFieldControl(page, probeField);
   await page.waitForTimeout(700);
 
@@ -2337,6 +2372,7 @@ const extractMetadataDropdownFields = async (options: CliOptions, page: Page, st
     caseNo: options.caseId,
     sourceGroupLabel: sourceReport,
     sourceGroupDomLabels: fieldPickerSourceGroupLabels(sourceReport),
+    pickerReadiness,
     pickerOpenAction: addOperation,
     actualScope: {
       mode: groupedItems.length > 0 ? "source_group" : "all_items_fallback",
@@ -3041,6 +3077,10 @@ const reopenReport = async (options: CliOptions, page: Page, startedAt: string):
   const reportName = readSavedReportName(options);
   const projectName = stringParam(options.params, "projectName");
   if (!reportName) throw new HelperBlockedError("SAVED_REPORT_NAME_MISSING");
+  const uiProfileBefore = await captureUiDomProfile(options, page, "reopenReport.before");
+  const stateBefore = await readStateDelta(page, options.params).catch((error) => ({
+    readError: error instanceof Error ? error.message : String(error)
+  }));
   const beforeText = await page.locator("body").innerText({ timeout: 5000 }).catch(() => "");
   if (!beforeText.includes(reportName) && projectName) {
     await clickByText(page, projectName, 8000);
@@ -3059,26 +3099,53 @@ const reopenReport = async (options: CliOptions, page: Page, startedAt: string):
   if (!finalListText.includes(reportName)) {
     throw new HelperBlockedError(`SAVED_REPORT_ROW_NOT_FOUND:${reportName}`);
   }
-  await clickByText(page, reportName, 12000);
-  await page.waitForTimeout(1800);
+  const observed = await observeDuring(page, async () => {
+    await clickByText(page, reportName, 12000);
+    const settle = await waitForReportEditorSettle(page);
+    await page.waitForTimeout(400);
+    return settle;
+  });
   const shot = await screenshot(options, page, "reopen-report");
   const uiProfile = await captureUiDomProfile(options, page, "reopenReport.after");
+  const domState = await readDomState(page);
+  const stateAfter = await readStateDelta(page, options.params).catch((error) => ({
+    readError: error instanceof Error ? error.message : String(error)
+  }));
+  const evidence = {
+    caseNo: options.caseId,
+    reportName,
+    expected: {
+      field: stringParam(options.params, "field"),
+      dateRange: stringParam(options.params, "dateRange"),
+      display: stringParam(options.params, "display")
+    },
+    settle: observed.result,
+    domState,
+    stateDelta: {
+      before: stateBefore,
+      after: stateAfter
+    },
+    network: {
+      requests: observed.requests,
+      responses: observed.responses
+    }
+  };
+  const evidencePath = path.join(artifactRoot(options), "reopen-report-evidence.json");
+  ensureDir(path.dirname(evidencePath));
+  fs.writeFileSync(evidencePath, `${JSON.stringify(evidence, null, 2)}\n`);
+  const warnings = observed.result.status === "settled" ? [] : ["REOPEN_REPORT_SETTLE_TIMEOUT"];
   return createReport(
     options,
-    "ok",
+    observed.result.status === "settled" ? "ok" : "blocked",
     startedAt,
     {
       reportName,
-      expected: {
-        field: stringParam(options.params, "field"),
-        dateRange: stringParam(options.params, "dateRange"),
-        display: stringParam(options.params, "display")
-      },
-      domState: await readDomState(page),
-      uiProfile
+      domState,
+      uiProfiles: { before: uiProfileBefore, after: uiProfile },
+      reopenReportEvidence: evidence
     },
-    shot ? { screenshot: shot } : {},
-    shot ? [] : ["SCREENSHOT_UNAVAILABLE"]
+    { ...(shot ? { screenshot: shot } : {}), reopenReportEvidence: evidencePath },
+    shot ? warnings : [...warnings, "SCREENSHOT_UNAVAILABLE"]
   );
 };
 

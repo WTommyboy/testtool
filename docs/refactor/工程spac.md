@@ -1,7 +1,7 @@
 # UAT Tool 最新工程 Spec
 
 **版本**: v2026-05-03
-**狀態**: Mac Agent MVP / Indexed Guidance + Preflight Safeguards + groupId schema + final aggregate result + OTTEST002 Collage helper P0 + metadata dropdown source-group scoping + list-page CSV row refresh + response-body fallback + preview table evidence + helper-evidence preflight replacement + support-file profile + result repair guard + degraded BLOCKED result guard + case-type must-read rules + CSV/metadata authoring contract + exact metadata source filename contract + background-safe browser lease + no-foreground helper policy + field-list loading wait
+**狀態**: Mac Agent MVP / App 1.1.0 + Agent 0.2.0 / Indexed Guidance + Preflight Safeguards + groupId schema + final aggregate result + complete archive MD export + OTTEST002 Collage helper P0 + metadata dropdown source-group scoping + list-page CSV row refresh + response-body fallback + preview table evidence + helper-evidence preflight replacement + support-file profile + result repair guard + degraded BLOCKED result guard + BLOCKED detail_json core-field gate + case-type must-read rules + CSV/metadata authoring contract + exact metadata source filename contract + background-safe browser lease + no-foreground helper policy + field-list loading wait
 **適用分支**: `refactor/mac-agent-mvp` / `codex/uat-tool-mvp`  
 **說明**: 檔名沿用 Tommy 提供的 `工程spac.md`;本文內容為工程 spec。
 
@@ -108,6 +108,8 @@ GET  /api/runs/:id/events
 GET  /api/runs/:id/cases
 POST /api/runs/:id/start
 POST /api/runs/:id/cancel
+POST /api/runs/:id/export-md
+POST /api/runs/:id/export-archive-md
 POST /api/runs/:id/tool-response
 POST /api/runs/:id/output/result-xlsx
 GET  /api/runs/:id/output/result-xlsx
@@ -148,7 +150,10 @@ package:
 ```text
 package name: uat-tool-agent
 binary: uat-agent
+version: 0.2.0
 ```
+
+The Agent WebSocket `X-Agent-Version` header and `agent.online.payload.agent_version` are read from `agent/package.json`; they must not be hard-coded in `agent/src/connection.ts`.
 
 本機路徑:
 
@@ -1133,7 +1138,7 @@ Degraded capability behavior:
 - Codex may continue only if visible browser automation / read-only UI evidence is available.
 - If browser automation is unavailable or the UI path is unreachable, Codex must still write a single-case `BLOCKED` workbook.
 - Use `失敗分類 = TOOL_EXECUTION_UNAVAILABLE` or `EVIDENCE_INSUFFICIENT`.
-- `detail_json` must include `blocked_reason` and `currentRunEvidence` pointing to this run's capability gate, helper skipped summary, preflight/tool state, or agent log.
+- `detail_json` must include the four core fields `測試目的` / `設定條件` / `預期行為` / `實際行為`, plus `blocked_reason` and `currentRunEvidence` pointing to this run's capability gate, helper skipped summary, preflight/tool state, or agent log.
 - Do not use Agent fallback for this path; fallback remains a local diagnostic artifact and is not uploaded as trusted UAT output.
 
 ### 9.2 Fallback Workbook
@@ -1245,6 +1250,15 @@ Download behavior:
 - `GET /api/runs/:id/output/result-xlsx` first returns final aggregate if available.
 - If the run is not complete or aggregate generation is not possible, it falls back to the latest raw `result.xlsx`.
 
+### 9.5 Markdown Downloads
+
+Backend exposes two distinct Markdown exports:
+
+- `POST /api/runs/:id/export-md`: concise PM/RD report with summary, case results, bug summary, and selected detail_json fields.
+- `POST /api/runs/:id/export-archive-md`: complete run archive with run metadata, per-case state, result counts, timing summary, artifact stats/list, combined timeline, full logs, and full events.
+
+The archive is generated from normalized database rows and uploaded timing/artifact metadata. It does not replace raw `result.xlsx` or evidence artifacts; it is a downloadable audit index for long 40-50 case runs.
+
 ---
 
 ## 10. Frontend UI Spec
@@ -1284,6 +1298,7 @@ Shows:
 - lastSeenAt
 - platform
 - Codex version
+- Agent version
 - Node version
 - doctor PASS/FAIL/SKIP counts
 - macOS permission reminder
@@ -1454,7 +1469,8 @@ Known sources:
 - Collage helper P0:
   - composite metric fields are split and added one by one
   - `+ 新增欄位` action has visible UI fallback candidates and locator drift evidence, without force click or JS setter
-  - `collage.configureMetric` waits for `載入欄位中...` to clear before attempting `+ 新增欄位`; persistent loading becomes `FIELD_LIST_LOAD_TIMEOUT`, while a loaded page with no control remains `ADD_FIELD_BUTTON_NOT_CLICKABLE`
+  - `collage.configureMetric` and `collage.extractMetadataDropdownFields` wait for `載入欄位中...` to clear before attempting `+ 新增欄位`; persistent loading becomes `FIELD_LIST_LOAD_TIMEOUT`, while a loaded page with no control remains `ADD_FIELD_BUTTON_NOT_CLICKABLE`
+  - `collage.reopenReport` waits for editor settle after reopening and writes `reopen-report-evidence.json` with DOM/state/network evidence
   - helper reports include browser-session evidence, target-binding evidence, and `foregroundPolicy.mode=no-activate`
   - existing report modification opens `TOOL_A01_<timestamp>` instead of creating a replacement report
   - overwrite save reuses the existing temporary report name

@@ -10,7 +10,7 @@ import { agentRegistry } from "./agent/agent-registry";
 import { db } from "./db";
 import { requestRunCancel, startRun } from "./runner";
 import { checkPlaywrightHealth } from "./playwright-health";
-import { insertRunEvent, listRunEvents } from "./run-events";
+import { insertRunEvent, listRunEvents, type RunEvent } from "./run-events";
 import { parseTestcaseXlsx, type ParsedCase, type ParsedStep } from "./xlsx-parser";
 import {
   parseResultXlsx,
@@ -258,14 +258,25 @@ const listRunLogsPage = (
 type MdRun = {
   id: string;
   round_id: string;
+  domain?: string | null;
   location: string | null;
   feature_main: string | null;
   feature_sub: string | null;
   run_name: string | null;
   dev_url: string | null;
+  execution_mode?: string | null;
+  date?: string | null;
+  tester?: string | null;
   status: string;
   created_at: string | null;
   updated_at: string | null;
+  finished_at?: string | null;
+  result_ingested_at?: string | null;
+  result_xlsx_parser_version?: string | null;
+  aggregate_result_generated_at?: string | null;
+  log_uploaded_at?: string | null;
+  timing_summary_path?: string | null;
+  timing_summary_uploaded_at?: string | null;
 };
 
 type MdCase = {
@@ -292,6 +303,32 @@ type MdBug = {
 const mdEscape = (input: unknown): string => {
   const text = String(input ?? "—");
   return text.replace(/\|/g, "\\|").replace(/\n/g, "<br>");
+};
+
+const safeFilenameSegment = (v: string | null | undefined): string =>
+  (v ?? "NA").trim().replace(/[\/\s]+/g, "_").replace(/[^a-zA-Z0-9_\-\u4e00-\u9fff]/g, "");
+
+const safeJsonText = (value: unknown): string => {
+  if (value === null || value === undefined || value === "") return "—";
+  if (typeof value !== "string") return JSON.stringify(value);
+  try {
+    return JSON.stringify(JSON.parse(value));
+  } catch {
+    return value;
+  }
+};
+
+const readRunOutputJson = (filePath: unknown): unknown | null => {
+  if (typeof filePath !== "string" || !filePath.trim()) return null;
+  const resolved = path.resolve(filePath);
+  const storageRoot = path.resolve(config.storageRoot);
+  if (!resolved.startsWith(storageRoot + path.sep) && resolved !== storageRoot) return null;
+  if (!fs.existsSync(resolved)) return null;
+  try {
+    return JSON.parse(fs.readFileSync(resolved, "utf8")) as unknown;
+  } catch {
+    return null;
+  }
 };
 
 const extractSummary = (c: MdCase): string => {
@@ -442,6 +479,146 @@ const generateMd = (
   md += "| 測試工具 | UAT Test Tool (Playwright) |\n";
   md += `| 報告生成時間 | ${mdEscape(nowText)} |\n`;
   md += `| 報告日期 | ${mdEscape(reportDate)} |\n`;
+
+  return md;
+};
+
+const generateArchiveMd = (
+  run: MdRun,
+  cases: MdCase[],
+  logs: RunLogRow[],
+  events: RunEvent[],
+  artifacts: RunArtifactRow[],
+  timingSummary: unknown | null
+): string => {
+  const generatedAt = new Date().toISOString();
+  const counts = cases.reduce<Record<string, number>>((acc, item) => {
+    const status = item.result_status || "PENDING";
+    acc[status] = (acc[status] ?? 0) + 1;
+    return acc;
+  }, {});
+  const artifactStats = artifacts.reduce<Record<string, { count: number; bytes: number }>>((acc, item) => {
+    const key = item.artifact_type || "artifact";
+    const current = acc[key] ?? { count: 0, bytes: 0 };
+    current.count += 1;
+    current.bytes += item.size_bytes ?? 0;
+    acc[key] = current;
+    return acc;
+  }, {});
+  const timeline = [
+    ...events.map((event) => ({
+      createdAt: event.created_at,
+      kind: "event",
+      marker: event.event_type,
+      detail: safeJsonText(event.payload_json),
+      seq: event.seq
+    })),
+    ...logs.map((log) => ({
+      createdAt: log.created_at,
+      kind: "log",
+      marker: log.level,
+      detail: `${log.message}${log.context_json ? ` ${safeJsonText(log.context_json)}` : ""}`,
+      seq: null
+    }))
+  ].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+
+  let md = "";
+  md += "# Galaxy UAT 完整執行紀錄\n\n";
+  md += "| 項目 | 內容 |\n";
+  md += "|------|------|\n";
+  md += `| Run ID | ${mdEscape(run.id)} |\n`;
+  md += `| 輪次ID | ${mdEscape(run.round_id)} |\n`;
+  md += `| Domain | ${mdEscape(run.domain ?? "BI")} |\n`;
+  md += `| 功能 | ${mdEscape(run.feature_main ?? "—")} / ${mdEscape(run.feature_sub ?? "—")} |\n`;
+  md += `| 輪次名稱 | ${mdEscape(run.run_name ?? "—")} |\n`;
+  md += `| Execution mode | ${mdEscape(run.execution_mode ?? "—")} |\n`;
+  md += `| Dev URL | ${mdEscape(run.dev_url ?? "—")} |\n`;
+  md += `| Run status | ${mdEscape(run.status)} |\n`;
+  md += `| Created / Updated / Finished | ${mdEscape(run.created_at ?? "—")} / ${mdEscape(run.updated_at ?? "—")} / ${mdEscape(run.finished_at ?? "—")} |\n`;
+  md += `| Result ingest / parser | ${mdEscape(run.result_ingested_at ?? "—")} / ${mdEscape(run.result_xlsx_parser_version ?? "—")} |\n`;
+  md += `| Aggregate generated | ${mdEscape(run.aggregate_result_generated_at ?? "—")} |\n`;
+  md += `| Generated at | ${mdEscape(generatedAt)} |\n\n`;
+
+  md += "## Case State\n\n";
+  md += "| Case | Group | Title | Status | Fail category | Updated | Detail summary |\n";
+  md += "|------|-------|-------|--------|---------------|---------|----------------|\n";
+  for (const c of cases) {
+    const group = c.group_id ? `${c.group_id}｜${c.group_name ?? ""}` : c.group_name ?? "—";
+    md += `| ${mdEscape(c.case_no)} | ${mdEscape(group)} | ${mdEscape(c.case_title)} | ${mdEscape(c.result_status ?? "—")} | ${mdEscape(c.fail_category ?? "—")} | ${mdEscape(c.updated_at ?? "—")} | ${mdEscape(extractSummary(c))} |\n`;
+  }
+  md += "\n";
+
+  md += "## Result Counts\n\n";
+  md += "| Status | Count |\n";
+  md += "|--------|-------|\n";
+  for (const [status, count] of Object.entries(counts).sort(([a], [b]) => a.localeCompare(b))) {
+    md += `| ${mdEscape(status)} | ${count} |\n`;
+  }
+  md += "\n";
+
+  md += "## Timing Summary\n\n";
+  if (timingSummary && typeof timingSummary === "object") {
+    const timing = timingSummary as { totalCompletedMs?: unknown; entryCount?: unknown; activeCount?: unknown; byName?: unknown };
+    md += `- totalCompletedMs: ${mdEscape(timing.totalCompletedMs ?? "—")}\n`;
+    md += `- entryCount: ${mdEscape(timing.entryCount ?? "—")}\n`;
+    md += `- activeCount: ${mdEscape(timing.activeCount ?? "—")}\n\n`;
+    if (timing.byName && typeof timing.byName === "object" && !Array.isArray(timing.byName)) {
+      md += "| Name | Count | Total ms | Max ms | P95 ms |\n";
+      md += "|------|-------|----------|--------|--------|\n";
+      for (const [name, raw] of Object.entries(timing.byName as Record<string, unknown>).sort(([a], [b]) => a.localeCompare(b))) {
+        const bucket = raw && typeof raw === "object" && !Array.isArray(raw) ? raw as Record<string, unknown> : {};
+        md += `| ${mdEscape(name)} | ${mdEscape(bucket.count ?? "—")} | ${mdEscape(bucket.totalMs ?? "—")} | ${mdEscape(bucket.maxMs ?? "—")} | ${mdEscape(bucket.p95Ms ?? "—")} |\n`;
+      }
+      md += "\n";
+    }
+  } else {
+    md += "Timing summary artifact not available.\n\n";
+  }
+
+  md += "## Artifact Stats\n\n";
+  md += "| Type | Count | Bytes |\n";
+  md += "|------|-------|-------|\n";
+  for (const [type, stat] of Object.entries(artifactStats).sort(([a], [b]) => a.localeCompare(b))) {
+    md += `| ${mdEscape(type)} | ${stat.count} | ${stat.bytes} |\n`;
+  }
+  if (artifacts.length === 0) md += "| — | 0 | 0 |\n";
+  md += "\n";
+
+  md += "## Artifacts\n\n";
+  md += "| Uploaded | Case | Action | Type | Name | Relative path | Bytes |\n";
+  md += "|----------|------|--------|------|------|---------------|-------|\n";
+  for (const artifact of artifacts) {
+    md += `| ${mdEscape(artifact.uploaded_at)} | ${mdEscape(artifact.case_no ?? "run")} | ${mdEscape(artifact.action ?? "—")} | ${mdEscape(artifact.artifact_type)} | ${mdEscape(artifact.original_name ?? "—")} | ${mdEscape(artifact.relative_path ?? artifact.local_path ?? "—")} | ${mdEscape(artifact.size_bytes ?? "—")} |\n`;
+  }
+  if (artifacts.length === 0) md += "| — | — | — | — | — | — | — |\n";
+  md += "\n";
+
+  md += "## Timeline\n\n";
+  md += "| Time | Kind | Marker | Seq | Detail |\n";
+  md += "|------|------|--------|-----|--------|\n";
+  for (const item of timeline) {
+    md += `| ${mdEscape(item.createdAt)} | ${mdEscape(item.kind)} | ${mdEscape(item.marker)} | ${mdEscape(item.seq ?? "—")} | ${mdEscape(item.detail)} |\n`;
+  }
+  if (timeline.length === 0) md += "| — | — | — | — | — |\n";
+  md += "\n";
+
+  md += "## Logs\n\n";
+  md += "| Time | Level | Message | Context |\n";
+  md += "|------|-------|---------|---------|\n";
+  for (const log of logs) {
+    md += `| ${mdEscape(log.created_at)} | ${mdEscape(log.level)} | ${mdEscape(log.message)} | ${mdEscape(safeJsonText(log.context_json))} |\n`;
+  }
+  if (logs.length === 0) md += "| — | — | — | — |\n";
+  md += "\n";
+
+  md += "## Events\n\n";
+  md += "| Time | Seq | Event | Payload |\n";
+  md += "|------|-----|-------|---------|\n";
+  for (const event of events) {
+    md += `| ${mdEscape(event.created_at)} | ${mdEscape(event.seq ?? "—")} | ${mdEscape(event.event_type)} | ${mdEscape(safeJsonText(event.payload_json))} |\n`;
+  }
+  if (events.length === 0) md += "| — | — | — | — |\n";
+  md += "\n";
 
   return md;
 };
@@ -2743,11 +2920,72 @@ router.post("/:id/export-md", (req, res) => {
   const total = cases.length;
   const content = generateMd(run, cases, bugs, counts, total);
 
-  const safe = (v: string | null | undefined): string =>
-    (v ?? "NA").trim().replace(/[\/\s]+/g, "_").replace(/[^a-zA-Z0-9_\-\u4e00-\u9fff]/g, "");
-  const filename = `UAT_${safe(run.round_id)}_${safe(run.feature_sub)}_${safe(run.run_name)}_${new Date().toISOString().slice(0, 10)}.md`;
+  const filename = `UAT_${safeFilenameSegment(run.round_id)}_${safeFilenameSegment(run.feature_sub)}_${safeFilenameSegment(run.run_name)}_${new Date().toISOString().slice(0, 10)}.md`;
 
   insertRunLog(req.params.id, "INFO", "Markdown report exported", { filename, totalCases: total, totalBugs: bugs.length });
+  res.setHeader("Content-Type", "text/markdown; charset=utf-8");
+  res.setHeader("Content-Disposition", `attachment; filename="${encodeURIComponent(filename)}"`);
+  return res.send(content);
+});
+
+router.post("/:id/export-archive-md", (req, res) => {
+  const run = db.prepare("SELECT * FROM runs WHERE id = ?").get(req.params.id) as MdRun | undefined;
+  if (!run) {
+    return res.status(404).json({ error: "RUN_NOT_FOUND" });
+  }
+
+  const cases = db
+    .prepare(
+      `
+        SELECT *
+        FROM run_cases
+        WHERE run_id = ?
+        ORDER BY COALESCE(group_id, ''), COALESCE(group_name, ''), case_no
+      `
+    )
+    .all(req.params.id) as MdCase[];
+  const logs = db
+    .prepare(
+      `
+        SELECT *
+        FROM run_logs
+        WHERE run_id = ?
+        ORDER BY rowid ASC
+      `
+    )
+    .all(req.params.id) as RunLogRow[];
+  const events = db
+    .prepare(
+      `
+        SELECT *
+        FROM run_events
+        WHERE run_id = ?
+        ORDER BY rowid ASC
+      `
+    )
+    .all(req.params.id) as RunEvent[];
+  const artifacts = db
+    .prepare(
+      `
+        SELECT *
+        FROM run_artifacts
+        WHERE run_id = ?
+        ORDER BY uploaded_at ASC
+      `
+    )
+    .all(req.params.id) as RunArtifactRow[];
+  const timingSummary = readRunOutputJson(run.timing_summary_path);
+  const content = generateArchiveMd(run, cases, logs, events, artifacts, timingSummary);
+  const filename = `UAT_ARCHIVE_${safeFilenameSegment(run.round_id)}_${safeFilenameSegment(run.feature_sub)}_${safeFilenameSegment(run.run_name)}_${new Date().toISOString().slice(0, 10)}.md`;
+
+  insertRunLog(req.params.id, "INFO", "Complete archive Markdown exported", {
+    filename,
+    totalCases: cases.length,
+    totalLogs: logs.length,
+    totalEvents: events.length,
+    totalArtifacts: artifacts.length,
+    timingSummaryAvailable: timingSummary !== null
+  });
   res.setHeader("Content-Type", "text/markdown; charset=utf-8");
   res.setHeader("Content-Disposition", `attachment; filename="${encodeURIComponent(filename)}"`);
   return res.send(content);
@@ -2790,26 +3028,31 @@ router.get("/:id/detail-health", (req, res) => {
   const items = db
     .prepare(
       `
-        SELECT case_no, case_title, detail_json
+        SELECT case_no, case_title, result_status, detail_json
         FROM run_cases
         WHERE run_id = ?
         ORDER BY case_no ASC
       `
     )
-    .all(req.params.id) as Array<{ case_no: string; case_title: string; detail_json: string | null }>;
+    .all(req.params.id) as Array<{ case_no: string; case_title: string; result_status: string | null; detail_json: string | null }>;
 
   const coreKeys = ["測試目的", "設定條件", "預期行為", "實際行為"];
   const cases = items.map((item) => {
     let parsed: Record<string, unknown> = {};
+    let parseError: string | null = null;
     if (item.detail_json) {
       try {
         parsed = JSON.parse(item.detail_json) as Record<string, unknown>;
-      } catch {
+      } catch (error) {
+        parseError = error instanceof Error ? error.message : String(error);
         parsed = {};
       }
     }
 
-    const missingKeys = coreKeys.filter((k) => {
+    const status = (item.result_status ?? "PENDING").trim().toUpperCase().replace(/\s+/g, "_");
+    const statusKeys = status === "BLOCKED" ? ["blocked_reason"] : [];
+    const requiredKeys = [...coreKeys, ...statusKeys];
+    const missingKeys = requiredKeys.filter((k) => {
       const v = parsed[k];
       return typeof v !== "string" || !v.trim();
     });
@@ -2817,8 +3060,10 @@ router.get("/:id/detail-health", (req, res) => {
     return {
       caseNo: item.case_no,
       caseTitle: item.case_title,
-      healthy: missingKeys.length === 0,
-      missingKeys
+      status,
+      healthy: missingKeys.length === 0 && !parseError,
+      missingKeys,
+      parseError
     };
   });
 

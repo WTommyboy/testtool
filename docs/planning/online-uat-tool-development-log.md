@@ -1,6 +1,6 @@
 # 線上 UAT Tool 開發與規劃日誌
 
-最後更新：2026-05-02
+最後更新：2026-05-03
 
 本文件記錄「UAT Tool 線上派工 + Mac Agent」這條路徑的歷史決策、設計理由、目前架構與後續待辦。它的用途是跨聊天室、跨 session 交接，不取代 `AGENTS.md`、Layer rules、authoring spec 或實作 spec。
 
@@ -940,3 +940,15 @@ Tommy 曾討論是否改成腳本。最後決策是採「半腳本化 / helper �
 - OTTEST002_23 結論：5 題跑完、單題 result xlsx ingest、final aggregate xlsx 產生、120 個 evidence artifacts 全部上傳，background-safe lease 生效，A-04 CSV list download/preview comparison 已通。正式放大到 40-50 題前，仍建議補 A-03 metadata helper wait、BLOCKED detail_json health、reopen settle/network evidence、Codex warning 降噪、完整紀錄 MD 下載與手機 RWD overflow。
 - 版本制度待辦：目前 root package 與 Railway `/version` 仍是 `1.0.0`，Agent package 與 WebSocket header/payload 仍是 `0.1.0`。下一輪 runtime/UI 變更應建立版本紀律，先評估 root `1.1.0`、Agent `0.2.0`，並讓 Agent version 不再硬寫在 `agent/src/connection.ts`。
 - 本次交接不含 runtime 行為變更；production 仍是 `16f938c`，`codex/uat-tool-mvp` 不需因本文件-only 交接重新部署。
+
+### 2026-05-03 03:10 - OTTEST002 P0 收斂：版本紀律、A-03 wait、BLOCKED health、reopen evidence、完整紀錄 MD、手機 RWD
+
+- 背景：前一個 `續接 OTTEST002 P0` session 在開始實作前 compact 失敗。依 handoff 接續處理 40-50 case 正式批次前的 P0 工程缺口，不讀 raw JSONL。
+- 版本紀律：root app 從 `1.0.0` 升到 `1.1.0`，Mac Agent 從 `0.1.0` 升到 `0.2.0`。`agent/src/connection.ts` 新增 `AGENT_VERSION`，從 `agent/package.json` 讀取並同步用於 WebSocket `X-Agent-Version` 與 `agent.online.payload.agent_version`，不再 hard-code。
+- A-03 metadata helper wait：`collage.extractMetadataDropdownFields` 在展開欄位 picker 前改用與 `collage.configureMetric` 相同的 `waitForMetricFieldControls()`。若 BI editor 持續顯示 `載入欄位中...`，helper blocker 會是 `FIELD_LIST_LOAD_TIMEOUT`，不會過早報 `ADD_FIELD_BUTTON_NOT_CLICKABLE`。
+- BLOCKED detail_json health：result evidence gate、Agent result contract、BI result adapter 與 generated prompt/模板契約同步加嚴。`BLOCKED` 現在必須包含 `測試目的`、`設定條件`、`預期行為`、`實際行為`、`blocked_reason` 與 current-run evidence；`/detail-health` 也會對 BLOCKED 檢查 core fields + `blocked_reason`。
+- reopenReport evidence：`collage.reopenReport` 重開報表後會等待 editor loader/network settle，保存 `reopen-report-evidence.json`，內容包含 expected field/date/display、settle 狀態、前後 state delta、DOM state、UI profile 與 report/detail network requests/responses。此修正不恢復 `bringToFront` 或 CDP activate。
+- 完整紀錄 MD：新增 `POST /api/runs/:id/export-archive-md`，與既有 concise `export-md` 分開。Web UI 現在有三個主要下載：`下載結果 XLSX`、`下載報告 MD`、`下載完整紀錄 MD`；完整 archive 包含 run metadata、case state、result counts、timing summary、artifact stats/list、timeline、logs、events。
+- 手機 RWD：補 `min-width:0`、long text wrapping、card header action wrapping、case row mobile layout、detail_json wrapping、artifact/log row stacking、file name/agent/dev-url overflow 防護。Playwright 以 desktop `1440x1000` 與 mobile `390x844` 檢查 `documentElement.scrollWidth === clientWidth`，未發現水平 overflow。
+- 修改檔案：`package.json`、`package-lock.json`、`agent/package.json`、`agent/src/connection.ts`、`agent/src/bi-ui-helper-executor.ts`、`agent/src/result-contract.ts`、`agent/src/task-runner.ts`、`src/result-parser/result-evidence-gate.ts`、`src/runs.ts`、`domain-packs/BI/result_parser_adapter.json`、`scripts/verify-result-evidence-gate.ts`、`scripts/verify-agent-result-contract.ts`、`web/src/App.tsx`、`web/src/App.css`、`README.md`、`docs/refactor/規劃說明.md`、`docs/refactor/工程spac.md`、`docs/refactor/UAT_Tool_M1_完整實作Spec_v1.md`、`docs/refactor/UAT_Tool_Spec_v1_2_1.md`、本 planning log。
+- 驗證：`npm run typecheck`、`npm run typecheck --prefix agent`、`npm run build`、`npm run build --prefix agent`、`npm run build --prefix web`、`npm run verify:helper-report-gate`、`npm run verify:capability-gate`、`npm run verify:package-consistency`、`npm run verify:result-evidence-gate`、`npm run verify:agent-result-contract`、`npm run verify:final-aggregate-result`、`npm run verify:helper-hints`、`npm run verify:tool-bridge`、`npm run verify:case-advance-policy`、`npm run verify:agent-resume`、`npm run verify:agent-roundtrip`、`git diff --check` 皆已通過；另以本機 Vite + API 做 Playwright desktop/mobile overflow 檢查。部署、Railway `/version` / `/health` 與本機 Agent 重啟狀態由本次收尾回報補列。

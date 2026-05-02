@@ -65,7 +65,10 @@ const FAIL_REQUIRED_FIELDS = [
   ["RD 分派", "RD分派", "rdAssignment", "rdOwner"]
 ];
 
-const BLOCKED_REQUIRED_FIELDS = [["blocked_reason", "blockedReason", "阻塞原因", "blocker", "blocked reason"]];
+const BLOCKED_REQUIRED_FIELDS = [
+  ...PASS_REQUIRED_FIELDS,
+  ["blocked_reason", "blockedReason", "阻塞原因", "blocker", "blocked reason"]
+];
 
 const PARTIAL_REQUIRED_FIELDS = [
   ["部分符合的子項清單", "partialPassedItems", "passedItems"],

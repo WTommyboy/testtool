@@ -20,6 +20,24 @@ type RunSnapshot = {
   updated_at: string;
 };
 
+const readAgentVersion = (): string => {
+  const candidates = [
+    path.resolve(__dirname, "../package.json"),
+    path.resolve(__dirname, "../../agent/package.json")
+  ];
+  for (const candidate of candidates) {
+    try {
+      const parsed = JSON.parse(fs.readFileSync(candidate, "utf8")) as { version?: unknown };
+      if (typeof parsed.version === "string" && parsed.version.trim()) return parsed.version.trim();
+    } catch {
+      // Continue to the next layout; source and compiled builds resolve differently.
+    }
+  }
+  return "0.0.0-dev";
+};
+
+export const AGENT_VERSION = readAgentVersion();
+
 export class AgentConnection {
   private ws: WebSocket | null = null;
   private seq = 1;
@@ -69,7 +87,7 @@ export class AgentConnection {
       this.ws = new WebSocket(this.options.config.server, {
         headers: {
           Authorization: `Bearer ${this.options.config.token}`,
-          "X-Agent-Version": "0.1.0",
+          "X-Agent-Version": AGENT_VERSION,
           "X-Device-Name": this.options.config.device_name
         }
       });
@@ -79,7 +97,7 @@ export class AgentConnection {
           const capability = await buildAgentCapability(this.options.config);
           this.send("agent.online", {
             device_name: this.options.config.device_name,
-            agent_version: "0.1.0",
+            agent_version: AGENT_VERSION,
             ...capability,
             status: this.status,
             current_run_id: this.currentRunId,

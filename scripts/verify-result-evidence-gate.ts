@@ -154,9 +154,24 @@ const main = async (): Promise<void> => {
         })
       }
     ]);
-    const missingEvidenceReport = await runGate(missingEvidence);
-    assert.equal(missingEvidenceReport.status, "error");
-    assert.ok(hasIssue(missingEvidenceReport, "CURRENT_RUN_EVIDENCE_MISSING"));
+	    const missingEvidenceReport = await runGate(missingEvidence);
+	    assert.equal(missingEvidenceReport.status, "error");
+	    assert.ok(hasIssue(missingEvidenceReport, "CURRENT_RUN_EVIDENCE_MISSING"));
+
+	    const blockedMissingCore = path.join(tempRoot, "blocked-missing-core-result.xlsx");
+	    await writeWorkbook(blockedMissingCore, [
+	      {
+	        caseNo: "FIX-H-01",
+	        status: "BLOCKED",
+	        detailJson: JSON.stringify({
+	          blocked_reason: "fixture blocked without the required core narrative",
+	          currentRunEvidence: goodDetail.currentRunEvidence
+	        })
+	      }
+	    ]);
+	    const blockedMissingCoreReport = await runGate(blockedMissingCore);
+	    assert.equal(blockedMissingCoreReport.status, "error");
+	    assert.ok(hasIssue(blockedMissingCoreReport, "DETAIL_JSON_REQUIRED_FIELD_MISSING"));
 
     const fallbackReport = await runGate(good, { resultSource: "agent_fallback" });
     assert.equal(fallbackReport.status, "error");
@@ -202,8 +217,9 @@ const main = async (): Promise<void> => {
             "single current-case result with current-run evidence passes",
             "legacy Bug sheet header 來源 Case without 狀態 is parsed as OPEN",
             "multi-case result is blocked",
-            "missing current-run evidence is blocked",
-            "agent fallback result is blocked",
+	            "missing current-run evidence is blocked",
+	            "BLOCKED detail_json missing core fields is blocked",
+	            "agent fallback result is blocked",
             "diagnostic result source is blocked",
             "Tool Bridge action claim without response evidence is blocked",
             "invalid detail_json is blocked"

@@ -38,6 +38,12 @@
   --mono: "IBM Plex Mono", monospace;
 }
 
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
 /* ─── Base ─── */
 .app {
   min-height: 100vh;
@@ -73,7 +79,7 @@
   margin: 0;
   font-size: 17px;
   font-weight: 600;
-  letter-spacing: -0.3px;
+  letter-spacing: 0;
 }
 
 .topbar h1 span {
@@ -153,6 +159,7 @@
   grid-template-columns: 340px 1fr;
   gap: 16px;
   margin-bottom: 16px;
+  min-width: 0;
 }
 
 .grid-equal {
@@ -160,6 +167,7 @@
   grid-template-columns: 1fr 1fr;
   gap: 16px;
   margin-bottom: 16px;
+  min-width: 0;
 }
 
 /* ─── Cards ─── */
@@ -169,6 +177,7 @@
   border-radius: var(--r);
   padding: 20px;
   box-shadow: var(--shadow);
+  min-width: 0;
 }
 
 .card + .card {
@@ -180,12 +189,16 @@
   justify-content: space-between;
   align-items: center;
   margin-bottom: 14px;
+  gap: 10px;
+  min-width: 0;
 }
 
 .card-header h2 {
   margin: 0;
   font-size: 15px;
   font-weight: 600;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .card-title-with-status {
@@ -205,6 +218,9 @@
 .card-header .actions {
   display: flex;
   gap: 6px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  min-width: 0;
 }
 
 /* ─── Stats Row ─── */
@@ -431,6 +447,9 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  min-width: 0;
+  justify-content: center;
+  white-space: nowrap;
 }
 
 .btn:hover {
@@ -476,6 +495,7 @@
 /* ─── Forms ─── */
 .form-group {
   margin-bottom: 12px;
+  min-width: 0;
 }
 
 .form-group label {
@@ -513,6 +533,7 @@
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 12px;
+  min-width: 0;
 }
 
 .inline-actions {
@@ -525,6 +546,7 @@
   border-radius: var(--r-sm);
   padding: 6px 8px 6px 12px;
   background: var(--card);
+  min-width: 0;
 }
 
 .agent-status-panel {
@@ -545,6 +567,8 @@
   display: flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .agent-capability-grid {
@@ -622,6 +646,7 @@
 .run-item .run-id {
   font: 500 13px var(--mono);
   color: var(--accent);
+  overflow-wrap: anywhere;
 }
 
 .run-item .run-name {
@@ -986,6 +1011,11 @@
   flex-wrap: wrap;
 }
 
+.run-meta span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 /* ─── Scrollable containers ─── */
 .scroll-y {
   overflow-y: auto;
@@ -1132,6 +1162,7 @@
 
 .file-input-wrap {
   position: relative;
+  min-width: 0;
 }
 
 .file-input-wrap input[type="file"] {
@@ -1176,6 +1207,9 @@
   background: var(--accent-2-light);
   padding: 3px 10px;
   border-radius: 6px;
+  max-width: 100%;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .file-list {
@@ -1300,7 +1334,7 @@
 /* ─── Case Row (clickable expand) ─── */
 .case-row {
   display: grid;
-  grid-template-columns: 20px 64px 1fr 60px 100px 120px;
+  grid-template-columns: 20px 64px minmax(0, 1fr) 60px minmax(84px, auto) minmax(90px, 120px);
   align-items: center;
   padding: 8px 4px;
   cursor: pointer;
@@ -1308,6 +1342,7 @@
   border-bottom: 1px solid var(--border-light);
   gap: 8px;
   font-size: 13px;
+  min-width: 0;
 }
 
 .case-row:hover {
@@ -1328,10 +1363,13 @@
 .case-row .case-no {
   font: 500 13px var(--mono);
   color: var(--accent);
+  overflow-wrap: anywhere;
 }
 
 .case-row .case-title {
   font-size: 13px;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .case-row .exec-type {
@@ -1352,6 +1390,7 @@
   margin: 4px 0 10px 28px;
   padding: 14px 18px;
   animation: slideDown 0.18s ease;
+  min-width: 0;
 }
 
 @keyframes slideDown {
@@ -1380,6 +1419,9 @@
 
 .detail-table .dt-val {
   color: var(--text);
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 /* ─── Bug Section ─── */
@@ -1490,9 +1532,10 @@
   }
 
   .case-row {
-    grid-template-columns: 20px 50px 1fr 50px 80px;
+    grid-template-columns: 20px 56px minmax(0, 1fr) minmax(78px, auto);
   }
 
+  .case-row .exec-type,
   .case-row .fail-cat {
     display: none;
   }
@@ -1517,5 +1560,128 @@
     display: block;
     border-bottom: 1px solid var(--border-light);
     padding: 4px 0;
+  }
+}
+
+@media (max-width: 640px) {
+  .topbar-left,
+  .tabs,
+  .run-log-tabs {
+    min-width: 0;
+    flex-wrap: wrap;
+  }
+
+  .panel {
+    padding: 12px;
+  }
+
+  .card {
+    padding: 14px;
+  }
+
+  .card-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .card-header .actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .card-header .actions .btn,
+  .flex-end .btn {
+    flex: 1 1 140px;
+    white-space: normal;
+  }
+
+  .btn {
+    white-space: normal;
+  }
+
+  .stat {
+    min-width: calc(50% - 5px);
+    padding: 12px;
+  }
+
+  .run-item {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .run-item .badge {
+    max-width: 100%;
+    overflow-wrap: anywhere;
+  }
+
+  .agent-capability-grid,
+  .approval-detail-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .group-header {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .group-stats {
+    flex-wrap: wrap;
+  }
+
+  .case-row {
+    grid-template-columns: 18px minmax(46px, auto) minmax(0, 1fr);
+    align-items: flex-start;
+  }
+
+  .case-row .badge {
+    grid-column: 2 / -1;
+    justify-self: start;
+    max-width: 100%;
+    overflow-wrap: anywhere;
+  }
+
+  .case-detail {
+    padding: 12px;
+  }
+
+  .pm-review-actions .btn,
+  .approval-card .approval-actions .btn {
+    flex: 1 1 130px;
+  }
+
+  .phase-current {
+    flex-direction: column;
+  }
+
+  .phase-time {
+    text-align: left;
+  }
+
+  .phase-step {
+    grid-template-columns: 12px 62px minmax(0, 1fr);
+  }
+
+  .phase-step-duration {
+    grid-column: 2 / -1;
+  }
+
+  .artifact-row {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+
+  .artifact-row strong {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .log-entry {
+    flex-wrap: wrap;
+  }
+
+  .event-type {
+    min-width: 0;
+    overflow-wrap: anywhere;
   }
 }

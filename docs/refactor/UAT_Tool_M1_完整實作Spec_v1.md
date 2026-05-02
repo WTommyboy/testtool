@@ -680,7 +680,7 @@ Headers:
 
 ```http
 Authorization: Bearer <agent token>
-X-Agent-Version: 0.1.0
+X-Agent-Version: 0.2.0
 X-Device-Name: Tommy's MacBook Pro
 ```
 
@@ -704,7 +704,7 @@ X-Device-Name: Tommy's MacBook Pro
 ```json
 {
   "device_name": "Tommy's MacBook Pro",
-  "agent_version": "0.1.0",
+  "agent_version": "0.2.0",
   "platform": "darwin-arm64",
   "codex_version": "codex-cli 0.124.0",
   "node_version": "v20.x",
@@ -813,12 +813,14 @@ Ack message:
 ```json
 {
   "name": "uat-tool-agent",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "bin": {
     "uat-agent": "dist/cli.js"
   }
 }
 ```
+
+`X-Agent-Version` and `agent_version` are sourced from `/agent/package.json`; runtime code must not hard-code the semantic version.
 
 ### 11.2 Commands
 

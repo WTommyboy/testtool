@@ -57,9 +57,13 @@ const writeBlockedWorkbookWithoutEvidence = async (filePath: string): Promise<vo
     "agent",
     "BLOCKED",
     "EVIDENCE_INSUFFICIENT",
-    JSON.stringify({
-      blocked_reason: "fixture blocked without evidence"
-    })
+	    JSON.stringify({
+	      測試目的: "驗證 BLOCKED result 仍保留可稽核主敘述。",
+	      設定條件: "fixture helper pre-run partial evidence",
+	      預期行為: "無法執行時應留下 blocked reason 與本次 evidence。",
+	      實際行為: "fixture blocked before browser evidence was available.",
+	      blocked_reason: "fixture blocked without evidence"
+	    })
   ]);
 
   const bugs = workbook.addWorksheet("Bug");
@@ -182,8 +186,8 @@ const main = async (): Promise<void> => {
         "generated result-template contains no EX-* example result rows",
         "legacy Bug header 來源 Case is rejected by agent self-check",
         "FAIL detail_json missing required fields is rejected before upload",
-        "single-case legacy result workbook missing 群組ID is repaired before self-check",
-        "BLOCKED detail_json without current-run evidence is enriched before upload"
+	        "single-case legacy result workbook missing 群組ID is repaired before self-check",
+	        "BLOCKED detail_json with core fields but without current-run evidence is enriched before upload"
       ]
     }, null, 2));
   } finally {

@@ -21,6 +21,11 @@ Production endpoints:
 - Health: `https://testtool-production.up.railway.app/health`
 - Version: `https://testtool-production.up.railway.app/version`
 
+Current semantic versions:
+
+- App/API: `1.1.0`
+- Mac Agent: `0.2.0`
+
 Active branches:
 
 - `refactor/mac-agent-mvp`: working branch for implementation and docs.
@@ -40,10 +45,13 @@ The current line is the Mac Agent MVP. It supports:
 - Single-case `output/result.xlsx` upload and evidence gate.
 - Server-side normalized result state.
 - Final aggregate result workbook download after all cases finish.
+- Concise report Markdown download and complete archive Markdown download; the archive includes timeline, logs, events, artifact inventory, timing summary, and per-case state.
 - `groupId / 群組ID` testcase schema.
 - OTTEST002 collage helper P0 coverage for multi-field preview, table preview evidence, save/reopen, existing-report overwrite, metadata dropdown extraction, and UI-triggered CSV download evidence including report-list row refresh/re-targeting.
 - Background-safe dedicated Chrome execution: each run/case writes `input/browser-session.json`, binds helper actions to a token-marked tab, and does not bring Chrome to the foreground during normal helper/Codex phases.
 - Helper field setup waits for BI field-list loading to complete before looking for `+ 新增欄位`, so slow `載入欄位中...` states are reported as loading timeouts instead of immediate button blockers.
+- Metadata dropdown extraction uses the same field-list wait as metric configuration; A-03 style helpers should not report `ADD_FIELD_BUTTON_NOT_CLICKABLE` while the BI field list is still loading.
+- Reopen helpers settle after the report editor reloads and record reopen DOM/network evidence for date/field state restoration cases.
 - Metadata dropdown evidence is source-group scoped when the BI picker exposes group headers such as `DAILY_REPORT`, and preserves both exact field-name diffs and normalized known-alias diffs.
 - Optional support files are indexed with lightweight profiles in `input/supporting-docs-manifest.json` so Codex can inspect CSV headers/row counts or markdown headings before choosing a full file to read.
 - Successful same-run helper browser evidence can satisfy preflight for helper-assisted cases; Codex should not mark `TOOL_EXECUTION_UNAVAILABLE` solely because Codex-side browser tools are absent.
@@ -92,6 +100,8 @@ The `測試案例` sheet must include:
 - `詳細紀錄JSON`
 
 Railway ingests each single-case workbook into normalized state. When the run is complete, Railway generates the final aggregate workbook. The UI result download should prefer the final aggregate workbook, not the last raw single-case workbook.
+
+`detail_json` is a hard-gated contract. `PASS` and `BLOCKED` both require `測試目的`, `設定條件`, `預期行為`, and `實際行為`; `BLOCKED` additionally requires `blocked_reason` and current-run evidence. `FAIL` adds RD-facing root-cause fields, and `PARTIAL` requires explicit matching/non-matching subitem lists.
 
 ### Evidence
 
@@ -303,9 +313,13 @@ Common endpoints:
 - `POST /api/runs/:id/start`
 - `POST /api/runs/:id/status`
 - `POST /api/runs/:id/cancel`
+- `POST /api/runs/:id/export-md`
+- `POST /api/runs/:id/export-archive-md`
 - `GET /api/runs/:id/cases`
 - `GET /api/runs/:id/logs`
+- `GET /api/runs/:id/events`
 - `GET /api/runs/:id/output/result-xlsx`
+- `GET /api/runs/:id/output/log`
 - `POST /api/runs/:id/output/result-xlsx`
 - `POST /api/runs/:id/output/artifacts`
 

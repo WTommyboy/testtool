@@ -1616,7 +1616,7 @@ function App() {
 
   const handleDownloadMd = async () => {
     if (!selectedRunId) return;
-      setRunError("");
+    setRunError("");
     try {
       const requestUrl = buildApiUrl(`/api/runs/${selectedRunId}/export-md`);
       const resp = await fetch(requestUrl, { method: "POST", credentials: "include" });
@@ -1629,6 +1629,36 @@ function App() {
       const disposition = resp.headers.get("Content-Disposition") ?? "";
       const match = disposition.match(/filename="?([^"]+)"?/);
       const rawName = match?.[1] ? decodeURIComponent(match[1]) : `UAT_report_${selectedRunId}.md`;
+      const downloadName = rawName.replace(/[/\\]/g, "_");
+
+      const objectUrl = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = objectUrl;
+      a.download = downloadName;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(objectUrl);
+    } catch (error) {
+      setRunError(error instanceof Error ? error.message : String(error));
+    }
+  };
+
+  const handleDownloadArchiveMd = async () => {
+    if (!selectedRunId) return;
+    setRunError("");
+    try {
+      const requestUrl = buildApiUrl(`/api/runs/${selectedRunId}/export-archive-md`);
+      const resp = await fetch(requestUrl, { method: "POST", credentials: "include" });
+      if (!resp.ok) {
+        const msg = await resp.text().catch(() => "");
+        throw new Error(msg || "Archive export failed");
+      }
+
+      const blob = await resp.blob();
+      const disposition = resp.headers.get("Content-Disposition") ?? "";
+      const match = disposition.match(/filename="?([^"]+)"?/);
+      const rawName = match?.[1] ? decodeURIComponent(match[1]) : `UAT_archive_${selectedRunId}.md`;
       const downloadName = rawName.replace(/[/\\]/g, "_");
 
       const objectUrl = URL.createObjectURL(blob);
@@ -2327,14 +2357,17 @@ function App() {
                   <h2>Run 摘要</h2>
                   <div className="actions">
                     <button className="btn sm" onClick={() => void handleDownloadMd()} disabled={!selectedRunId || runBusy}>
-                      📄 下載 MD
+                      📄 下載報告 MD
+                    </button>
+                    <button className="btn sm" onClick={() => void handleDownloadArchiveMd()} disabled={!selectedRunId || runBusy}>
+                      🗂️ 下載完整紀錄 MD
                     </button>
                     <button
                       className="btn sm"
                       onClick={() => void handleDownloadXlsx()}
                       disabled={!selectedRunId || runBusy || !summary?.resultXlsxAvailable}
                     >
-                      📊 下載 XLSX
+                      📊 下載結果 XLSX
                     </button>
                     <button
                       className="btn sm"
