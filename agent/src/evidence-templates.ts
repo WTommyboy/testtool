@@ -94,6 +94,7 @@ export const writeEvidenceTemplates = (runDir: string): EvidenceTemplateFiles =>
       policy: [
         "CSV must be produced by a visible UI download action or an explicitly provided run packet file.",
         "The Agent may read the downloaded local CSV file after the UI download succeeds.",
+        "Google Sheets is not a formal evidence path for CSV verification; use local CSV parsing.",
         "If save/reopen or preview preconditions fail before download, record the failed earlier subcondition as the primary result and mark CSV comparison as not reached."
       ]
     },

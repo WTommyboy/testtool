@@ -1,7 +1,7 @@
 # UAT Tool 最新工程 Spec
 
 **版本**: v2026-05-02
-**狀態**: Mac Agent MVP / Indexed Guidance + Preflight Safeguards + groupId schema + final aggregate result + OTTEST002 Collage helper P0 + result repair guard + degraded BLOCKED result guard + case-type must-read rules + CSV/metadata authoring contract
+**狀態**: Mac Agent MVP / Indexed Guidance + Preflight Safeguards + groupId schema + final aggregate result + OTTEST002 Collage helper P0 + result repair guard + degraded BLOCKED result guard + case-type must-read rules + CSV/metadata authoring contract + exact metadata source filename contract
 **適用分支**: `refactor/mac-agent-mvp` / `codex/uat-tool-mvp`  
 **說明**: 檔名沿用 Tommy 提供的 `工程spac.md`;本文內容為工程 spec。
 
@@ -499,8 +499,8 @@ Current-case behavior:
 - `input/current-case-pack.json.mustReadRuleKeys` is the mandatory first-pass rule bundle.
 - `rule-index.currentCaseRecommendations.ruleIds` merges the mandatory bundle with existing recommendation logic and filters it to available files.
 - Every BI case mandatory bundle includes platform skill, domain-routing, `PROJECT_AGENTS_FULL.md`, and the three canonical `BI_TEST_RULES/*.md` rulebooks before result judgment.
-- CSV/download cases add `reference-index`, `evidence-template-index` and BI helper guidance.
-- Metadata/dropdown cases add `reference-index` and the BI metadata rule; canonical CSV path is `rules/BI_DATA/metadata.csv`.
+- CSV/download cases add `reference-index`, `evidence-template-index` and BI helper guidance. Formal CSV evidence is a UI-triggered local download parsed by the Agent/Codex; Google Sheets is not part of the trusted evidence path.
+- Metadata/dropdown cases add `reference-index` and the BI metadata rule; canonical CSV path is `rules/BI_DATA/metadata.csv`, confirmed by `bi_metadata_csv` or the testcase source filename such as `metadata＿1.2.5 - 工作表1.csv`.
 
 ### 4.5 `input/preflight-auth-check.md`
 
@@ -1721,12 +1721,12 @@ codex/uat-tool-mvp
 
 ### P0
 
-1. Run OTTEST002 production regression against the deployed helper P0, case-type must-read rules and final aggregate pipeline.
+1. Run OTTEST002 production regression against the deployed helper P0, case-type must-read rules, exact metadata source filename contract and final aggregate pipeline.
 2. Verify A-01 field-add actionability fallback and A-03 degraded metadata compare writes `BLOCKED/TOOL_EXECUTION_UNAVAILABLE` instead of falling into `CODEX_NO_RESULT_XLSX`.
 3. Verify the Agent pre-upload repair guard with OTTEST002 Codex-generated result workbooks that still omit `群組ID`.
 4. Add Web UI display for `BATCH_CASE_POLICY_VIOLATION`, result gate errors, and Tool Bridge schema errors with clear explanation.
 5. Add per-case progress events and current-case pointer visibility.
-6. If OTTEST002 exposes BI locator drift, metadata reference mismatch or CSV format mismatch, tune `collage.configureMetric` / `collage.openExistingReport` / `collage.downloadCsvAndComparePreview` using the helper DOM profile artifacts.
+6. If OTTEST002 exposes BI locator drift, metadata reference mismatch, helper continuation gap or CSV format mismatch, tune `collage.configureMetric` / `collage.openExistingReport` / `collage.downloadCsvAndComparePreview` using the helper DOM profile artifacts.
 
 ### P1
 

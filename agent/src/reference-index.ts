@@ -60,7 +60,7 @@ export const writeReferenceIndex = ({ runDir, inputs, generated }: ReferenceInde
   const localReferences = [
     {
       key: "bi_metadata_csv",
-      role: "canonical copied BI metadata CSV when present; original localized filename is traceability only",
+      role: "canonical copied BI metadata CSV when present; expected source filename metadata＿1.2.5 - 工作表1.csv for BI v1.2.5 packages",
       path: metadataPath,
       exists: exists(metadataPath)
     },
@@ -87,6 +87,7 @@ export const writeReferenceIndex = ({ runDir, inputs, generated }: ReferenceInde
         policy: [
           "Use exact paths from this file before doing broad filesystem search.",
           "Do not bulk-read every reference file during startup.",
+          "For BI metadata comparison, prefer localReferences.bi_metadata_csv and the testcase source filename over scanning all uploaded CSV files.",
           "Only load supporting documents that the current-case-pack or rule-index says are needed.",
           "If a referenced file is missing, report the missing file instead of guessing."
         ],

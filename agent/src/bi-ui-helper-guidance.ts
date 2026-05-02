@@ -12,7 +12,7 @@ const templateGuidance: Record<string, string[]> = {
   metadata_dropdown_compare: [
     "用真實 UI 展開指定下拉或欄位 picker。",
     "用 DOM read 擷取 visible list、來源群組、欄位名稱與 count。",
-    "需要 metadata 對照時優先讀 `rules/BI_DATA/metadata.csv`；原始檔名只作 traceability，不可打 BI API 補清單。"
+    "需要 metadata 對照時優先讀 `rules/BI_DATA/metadata.csv`；並用 `input/reference-index.json` 的 `bi_metadata_csv` 或 testcase 指定來源檔名確認來源，不可打 BI API 補清單。"
   ],
   collage_build_preview_save_reopen: [
     "建立拼貼報表時，每次新增欄位/條件後立刻用 DOM 或 snapshot 驗證狀態。",
@@ -47,7 +47,7 @@ const templateGuidance: Record<string, string[]> = {
   download_csv_verify: [
     "下載必須由 UI 操作觸發。",
     "下載成功後可用本地 CSV parser 檢查檔名、表頭、row count、aggregate；Agent 可以讀 UI 下載到本機的檔案。",
-    "不可用 API 直接產生 CSV 取代 UI 下載；若儲存/重開/preview 前置已失敗，CSV 比對標 not reached，最終判定回到已失敗的必要子條件。"
+    "不可用 API 直接產生 CSV 取代 UI 下載；不可把 Google Sheet 開檔流程當正式 evidence；若儲存/重開/preview 前置已失敗，CSV 比對標 not reached，最終判定回到已失敗的必要子條件。"
   ],
   save_load_flow: [
     "儲存前確認是本輪臨時資源名稱，不覆蓋既有主資源。",
@@ -180,12 +180,14 @@ export const writeBiUiHelperGuidance = (runDir: string, options: WriteBiUiHelper
     "2. CSV helper 只可由 visible UI 點擊下載,不可直接打 BI API。",
     "3. 下載後讀回 CSV row count / numeric series,與本 case preview evidence 比對；helper 只提供 evidence,不直接判 PASS/FAIL。",
     "4. 若重開後欄位、日期或 preview 已消失，記錄 `CSV_PRECONDITION_NOT_MET...` 與當前 DOM state；Codex 應先判斷該必要子條件是否已構成 FAIL，再把 CSV 比對記為 not reached。",
+    "5. 若 helper plan 已列出 save/reopen/download actions，不可在只完成 preview 後直接判 `BLOCKED/EVIDENCE_INSUFFICIENT`；需先要求 Tool Bridge/continuation 或明確記錄已失敗的必要子條件。",
+    "6. Google Sheet 只可作人工探索 fallback，不作正式 UAT evidence 主路徑。",
     "",
     "### Metadata 對照",
     "",
     "1. Metadata/dropdown case 必須使用 run packet 的 canonical reference：`rules/BI_DATA/metadata.csv`。",
-    "2. 若 testcase 只寫 metadata 版本或原始檔名，先查 `input/reference-index.json` 找 `bi_metadata_csv`；不要 broad search 工作區，也不要用 BI API 取代 reference CSV。",
-    "3. detail_json 需列 reference_csv、source_report、match_key、compare_fields，以及命名正規化後的缺少/多出清單。",
+    "2. 若 testcase 寫原始檔名（例如 `metadata＿1.2.5 - 工作表1.csv`），用該檔名與 `input/reference-index.json` 的 `bi_metadata_csv` 確認來源；不要 broad-read 所有 reference CSV 來猜測。",
+    "3. detail_json 需列 reference_csv、reference_source_name、reference_index_key、source_report、match_key、compare_fields，以及命名正規化後的缺少/多出清單。",
     "",
     "## One Case Guard",
     "",

@@ -877,3 +877,12 @@ Tommy 曾討論是否改成腳本。最後決策是採「半腳本化 / helper �
 - 文件同步：`docs/refactor/規劃說明.md` 與 `docs/refactor/工程spac.md` 更新 must-read 規則，明確標示每個 BI case 都會帶入 Layer 1、domain-routing、AGENTS full 與三份 BI rulebook；case-type 規則再額外加 metadata/CSV/helper 專用包。
 - 修改檔案：`agent/src/current-case-pack.ts`、`agent/src/task-runner.ts`、本 planning log、refactor 規劃與工程 spec。
 - 驗證：已跑 `npm run typecheck --prefix agent`、`npm run typecheck`、`npm run build --prefix agent`、`npm run build`、`npm run verify:helper-hints`、`npm run verify:capability-gate`、`git diff --check` 通過；收尾需 commit/push deployment branch 並確認 Railway `/version`、`/health`。
+
+### 2026-05-02 08:26 - 收緊 OTTEST002_16：metadata 精確檔名與 CSV 下載正式 evidence
+
+- 背景：Tommy 檢查 OTTEST002_16 後確認 A-03 不是 metadata 未提供，而是多參考檔時需要更明確告訴 Codex 哪一份 CSV 才是 metadata；A-04 則需釐清「Codex/Agent 能不能讀下載 CSV」。本次決策：metadata case 用 exact source filename + reference-index 鎖定來源；CSV case 正式 evidence 走 UI 下載後本機 parser，不導入 Google Sheet 作主流程。
+- OTTEST002 source 更新：實際測題來源 `BI_UAT_ROUNDS/onlinetest/OTTEST002/拼貼工具測試_測試案例_v1_0.xlsx` 已更新 A-03/A-04。A-03 明寫 source filename=`metadata＿1.2.5 - 工作表1.csv`、Agent canonical=`rules/BI_DATA/metadata.csv`、reference-index key=`bi_metadata_csv`，並禁止 bulk-read 全部 CSV 猜測來源。A-04 明寫必須完成「儲存→重開→current preview→UI 下載 CSV→本機 CSV parser 比對 preview」，只完成 preview 不可直接判 `BLOCKED/EVIDENCE_INSUFFICIENT`。
+- Companion md 更新：`BI_UAT_ROUNDS/onlinetest/OTTEST002/Codex_指派文字_TOOL001_v1_0.md` 與 `拼貼工具測試_測試執行說明_for_v1_0.md` 同步 metadata 檔名、reference-index 與 CSV not-reached/FAIL 分層判定。這兩份目前位於 `uat-tool` git root 外，實體檔已更新，但不會被本 repo commit 追蹤。
+- Runtime/rules 更新：authoring 規則、Layer 1 artifacts/results、helper protocol、generated BI helper guidance、reference-index、evidence-template 與 task-runner prompt 同步：metadata 多檔案時只讀 `bi_metadata_csv` 或 exact filename；UI 下載後可讀本機 CSV；Google Sheet 只作人工探索 fallback；save/reopen/download helper plan 未完成前不可直接把 CSV path 判成 evidence insufficient。
+- Refactor 文件同步：`docs/refactor/規劃說明.md` 與 `docs/refactor/工程spac.md` 更新最新 planning/spec，將 exact metadata source filename contract、local CSV parser evidence 與 A-04 helper continuation 納入近期 P0 驗證重點。
+- 驗證：已跑 OTTEST002 package consistency check（status=warning，唯一 warning 為 legacy package 無 helper hints JSON，無 error）、`npm run typecheck --prefix agent`、`npm run typecheck`、`npm run build --prefix agent`、`npm run build`、`npm run verify:capability-gate`、`npm run verify:package-consistency`、`npm run verify:helper-hints`、`git diff --check` 通過。

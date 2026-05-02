@@ -21,7 +21,8 @@
 - Helper executor 只能由 Mac Agent 執行；Codex 不可用 shell `command_execution` 直接呼叫 helper executor 或自行連 persistent Chrome CDP。Codex 的職責是讀 helper report、必要時發 Tool Bridge request、再判定並寫 result。
 - Helper 若支援多欄位選取,必須把 composite field string 拆成多個欄位逐一透過 visible UI 新增與驗證。
 - Helper 可在 `+ 新增欄位` 文字 locator 失敗時嘗試其他 visible button / role / class fallback,但仍必須使用 Playwright actionability click,不可用 force click 或 JS setter。失敗時需留下 visible controls / DOM profile / locator drift evidence。
-- Helper 若支援 CSV 下載,只能透過 visible UI 觸發下載,再讀本機下載檔作 evidence；不可直接打 BI API 取得 CSV。若重開後設定或 preview 已消失,回 `blocked` 並標 `CSV_PRECONDITION_NOT_MET...`,讓 Codex 判斷前置流程失敗與 CSV not reached。
+- Helper 若支援 CSV 下載,只能透過 visible UI 觸發下載,再讀本機下載檔作 evidence；不可直接打 BI API 取得 CSV,也不可把 Google Sheet 開檔流程當成正式 UAT evidence。若重開後設定或 preview 已消失,回 `blocked` 並標 `CSV_PRECONDITION_NOT_MET...`,讓 Codex 判斷前置流程失敗與 CSV not reached。
+- 對同時包含 save/reopen/download 的 CSV case,helper plan 若已產生 save/reopen/download actions,只完成 preview 不代表 case 已可判定。Codex 應先要求 Tool Bridge/continuation 執行剩餘必要步驟,或在 helper report 中明確記錄哪個前置必要子條件失敗。
 
 ## Artifacts
 

@@ -70,9 +70,9 @@ const collageCsvDownloadCase: CaseManifestCase = {
   riskLevel: "🟡 建立",
   testTarget: "功能流程",
   cleanupChecklist: "欄位=MAU(帳號);篩選=不影響;分組=不影響;時間=2026/03/01~2026/03/31;顯示=每天",
-  stepsSummary: "1. 進入拼貼模式新增報表頁\n2. 加欄位「MAU(帳號)」\n3. 按執行\n4. 儲存報表(報表名: TOOL_A04_<timestamp>)\n5. 重新開啟該報表\n6. 點下載 CSV\n7. 讀 CSV 內容比對 preview 數值",
-  expected: "preview 與 CSV 下載資料完全一致(列數、數值)\n重開後 4 項設定還原",
-  validationMethod: "Evidence: DOM read + network response body + downloaded CSV"
+  stepsSummary: "1. 進入拼貼模式新增報表頁\n2. 加欄位「MAU(帳號)」\n3. 按執行取得 current preview\n4. 儲存報表(報表名: TOOL_A04_<timestamp>)\n5. 重新開啟該報表並驗證 4 項設定還原\n6. 重開後確認 current preview 可讀\n7. 點 UI 下載 CSV\n8. 本機讀 CSV 內容比對 preview 數值",
+  expected: "儲存成功\n重開後 4 項設定還原\n重開後 current preview 存在\nUI 下載 CSV 成功且本機可讀\nCSV row count / 數值與 preview 完全一致",
+  validationMethod: "Evidence: DOM read + network/chart/table evidence + UI-triggered downloaded CSV + local CSV parser"
 };
 
 const collageExistingReportCase: CaseManifestCase = {
@@ -100,10 +100,10 @@ const collageMetadataCompareCase: CaseManifestCase = {
   riskLevel: "🟢 觀察",
   testTarget: "前端呈現",
   cleanupChecklist: "欄位=空;篩選=不影響;分組=不影響;時間=不影響;顯示=不影響",
-  preconditions: "建構模式: 拼貼\n參考資料: metadata v1.2.5, 來源報表=每日報表(規範 32 欄)",
-  stepsSummary: "1. 進入拼貼模式新增報表頁\n2. 來源報表選「每日報表」\n3. 點「+ 新增欄位」展開欄位下拉\n4. 抓取下拉清單所有可選欄位\n5. 對照 metadata CSV\n6. detail_json 表格化呈現缺少 / 多出",
+  preconditions: "建構模式: 拼貼\n參考資料: rules/BI_DATA/metadata.csv;source_filename=metadata＿1.2.5 - 工作表1.csv;reference_index_key=bi_metadata_csv;來源報表=每日報表(規範 32 欄)",
+  stepsSummary: "1. 進入拼貼模式新增報表頁\n2. 來源報表選「每日報表」\n3. 點「+ 新增欄位」展開欄位下拉\n4. 抓取下拉清單所有可選欄位\n5. 對照指定 metadata CSV\n6. detail_json 表格化呈現缺少 / 多出與 reference source",
   expected: "「每日報表」可設置欄位完全符合 metadata v1.2.5 規範",
-  validationMethod: "Evidence: DOM read(欄位下拉清單)+ metadata CSV 對照計算"
+  validationMethod: "Evidence: DOM read(欄位下拉清單)+ rules/BI_DATA/metadata.csv 對照計算"
 };
 
 const main = (): void => {
