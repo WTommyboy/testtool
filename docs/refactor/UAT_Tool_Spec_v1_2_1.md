@@ -396,7 +396,7 @@ WebSocket upgrade 用 HTTP header:
 GET /agent-ws HTTP/1.1
 Upgrade: websocket
 Authorization: Bearer <token>
-X-Agent-Version: 0.2.2
+X-Agent-Version: 0.2.3
 X-Device-Name: Tommy's MacBook Pro
 ```
 
@@ -429,7 +429,7 @@ Railway 端:
   "type": "agent.online",
   "payload": {
     "device_name": "Tommy's MacBook Pro",
-    "agent_version": "0.2.2",
+    "agent_version": "0.2.3",
     "codex_version": "0.42.1",
     "platform": "darwin-arm64"
   }

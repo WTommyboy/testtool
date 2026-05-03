@@ -2553,7 +2553,7 @@ const uploadRunArtifacts = async (options: UploadArtifactsOptions): Promise<Uplo
         );
       }
     }
-    const contractReport = await validateResultWorkbookContract(resultXlsxPath);
+    const contractReport = await validateResultWorkbookContract(resultXlsxPath, undefined, { runDir });
     writeJson(path.join(runDir, "output", "result-xlsx-self-check.json"), contractReport);
     if (contractReport.status === "error") {
       const errorCodes = contractReport.issues.filter((item) => item.severity === "error").map((item) => item.code).join(",");

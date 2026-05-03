@@ -34,6 +34,10 @@ export type ResultContractReport = {
   issues: ResultContractIssue[];
 };
 
+export type ResultContractOptions = {
+  runDir?: string;
+};
+
 const defaultAdapter: ResultParserAdapter = {
   schemaVersion: "result-parser-adapter-v1",
   adapterVersion: "bi-result-adapter-mvp-v1",
@@ -148,9 +152,74 @@ const parseDetail = (raw: string): Record<string, unknown> | null => {
   }
 };
 
+const readJsonIfExists = <T>(filePath: string): T | null => {
+  if (!fs.existsSync(filePath)) return null;
+  try {
+    return JSON.parse(fs.readFileSync(filePath, "utf8")) as T;
+  } catch {
+    return null;
+  }
+};
+
+const sanitizePathPart = (value: string): string => value.replace(/[^a-zA-Z0-9._-]+/g, "_").replace(/^_+|_+$/g, "") || "unknown-case";
+
+const falseChecks = (checks: unknown): string[] => {
+  if (!checks || typeof checks !== "object" || Array.isArray(checks)) return [];
+  return Object.entries(checks as Record<string, unknown>)
+    .filter(([, value]) => value === false)
+    .map(([key]) => key);
+};
+
+const helperEvidenceFalseChecksForPass = (runDir: string, caseNo: string): Array<{ reportPath: string; falseChecks: string[] }> => {
+  const caseDir = path.join(runDir, "output", "helper-artifacts", sanitizePathPart(caseNo));
+  const reports = [
+    {
+      fileName: "collage.configureMetric-latest.json",
+      readChecks: (parsed: Record<string, unknown>) => {
+        const evidence = parsed.evidence && typeof parsed.evidence === "object" && !Array.isArray(parsed.evidence)
+          ? parsed.evidence as Record<string, unknown>
+          : {};
+        const stateDelta = evidence.stateDelta && typeof evidence.stateDelta === "object" && !Array.isArray(evidence.stateDelta)
+          ? evidence.stateDelta as Record<string, unknown>
+          : {};
+        const after = stateDelta.after && typeof stateDelta.after === "object" && !Array.isArray(stateDelta.after)
+          ? stateDelta.after as Record<string, unknown>
+          : {};
+        return after.checks;
+      }
+    },
+    {
+      fileName: "collage.reopenReport-latest.json",
+      readChecks: (parsed: Record<string, unknown>) => {
+        const evidence = parsed.evidence && typeof parsed.evidence === "object" && !Array.isArray(parsed.evidence)
+          ? parsed.evidence as Record<string, unknown>
+          : {};
+        const reopen = evidence.reopenReportEvidence && typeof evidence.reopenReportEvidence === "object" && !Array.isArray(evidence.reopenReportEvidence)
+          ? evidence.reopenReportEvidence as Record<string, unknown>
+          : {};
+        const stateDelta = reopen.stateDelta && typeof reopen.stateDelta === "object" && !Array.isArray(reopen.stateDelta)
+          ? reopen.stateDelta as Record<string, unknown>
+          : {};
+        const after = stateDelta.after && typeof stateDelta.after === "object" && !Array.isArray(stateDelta.after)
+          ? stateDelta.after as Record<string, unknown>
+          : {};
+        return after.checks;
+      }
+    }
+  ];
+  return reports.flatMap(({ fileName, readChecks }) => {
+    const reportPath = path.join(caseDir, fileName);
+    const parsed = readJsonIfExists<Record<string, unknown>>(reportPath);
+    if (!parsed) return [];
+    const failed = falseChecks(readChecks(parsed));
+    return failed.length > 0 ? [{ reportPath: path.relative(runDir, reportPath), falseChecks: failed }] : [];
+  });
+};
+
 export const validateResultWorkbookContract = async (
   filePath: string,
-  adapter = loadResultParserAdapter()
+  adapter = loadResultParserAdapter(),
+  options: ResultContractOptions = {}
 ): Promise<ResultContractReport> => {
   const issues: ResultContractIssue[] = [];
   const workbook = new ExcelJS.Workbook();
@@ -198,6 +267,22 @@ export const validateResultWorkbookContract = async (
               code: "RESULT_XLSX_DETAIL_FIELD_MISSING",
               message: `${caseNo} ${status} detail_json is missing required field: ${field}`,
               context: { rowNo, caseNo, status, field }
+            });
+          }
+        }
+        if (status === "PASS" && options.runDir) {
+          for (const contradiction of helperEvidenceFalseChecksForPass(options.runDir, caseNo)) {
+            issues.push({
+              severity: "error",
+              code: "RESULT_PASS_CONTRADICTS_HELPER_EVIDENCE",
+              message: `${caseNo} is PASS but helper evidence has failed check(s): ${contradiction.falseChecks.join(",")}`,
+              context: {
+                rowNo,
+                caseNo,
+                status,
+                helperReport: contradiction.reportPath,
+                falseChecks: contradiction.falseChecks
+              }
             });
           }
         }

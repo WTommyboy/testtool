@@ -24,7 +24,7 @@ Production endpoints:
 Current semantic versions:
 
 - App/API: `1.1.1`
-- Mac Agent: `0.2.2`
+- Mac Agent: `0.2.3`
 
 Active branches:
 
@@ -205,6 +205,7 @@ Important current decisions:
 - CSV comparison normalizes preview table exports by dropping a duplicated header row and treating `Date` / `日期` as the same date column, so successful list-page downloads are not reported as false mismatches.
 - When a helper plan reaches a pending save/overwrite action and Mac Agent auto-approval is enabled, Agent records a Tool Bridge auto-approval from the helper plan, runs the approved helper continuation, and exposes `helper-continuation-summary.json` before Codex writes the case result.
 - Existing-report collage edits reconcile selected fields exactly before save: the Agent reads visible selected-field remove controls, removes extra/duplicated fields through UI clicks, adds missing target fields through the normal picker, and requires exact field evidence instead of mere text containment.
+- Result self-check blocks any `PASS` result that contradicts current-run helper state checks, such as `collage.reopenReport` reporting `dateRange=false`.
 - If a visible row download click produces a CSV/attachment response but no browser `download` event, the Agent may save that UI-triggered response body as CSV evidence and label `downloadedCsv.source`.
 - Google Sheets is only a manual exploratory fallback, not a formal evidence path.
 - If save/list-row/download preconditions fail before CSV comparison, write `csv_comparison_status="not_reached"` and judge the failed necessary subcondition directly.

@@ -71,6 +71,36 @@ const writeBlockedWorkbookWithoutEvidence = async (filePath: string): Promise<vo
   await workbook.xlsx.writeFile(filePath);
 };
 
+const writePassWorkbook = async (filePath: string, caseNo: string): Promise<void> => {
+  const workbook = new ExcelJS.Workbook();
+  const index = workbook.addWorksheet("索引");
+  index.getCell("A1").value = "schema_version";
+  index.getCell("B1").value = "fixture-result-v1";
+
+  const cases = workbook.addWorksheet("測試案例");
+  cases.addRow(["群組ID", "群組", "編號", "測試項目", "測試類型", "執行方式", "結果", "失敗分類", "詳細紀錄JSON"]);
+  cases.addRow([
+    "A",
+    "A",
+    caseNo,
+    "pass fixture",
+    "功能流程",
+    "agent",
+    "PASS",
+    "",
+    JSON.stringify({
+      測試目的: "fixture",
+      設定條件: "fixture",
+      預期行為: "expected",
+      實際行為: "actual"
+    })
+  ]);
+
+  const bugs = workbook.addWorksheet("Bug");
+  bugs.addRow(["嚴重度", "Bug ID", "關聯編號", "標題", "描述", "建議", "狀態"]);
+  await workbook.xlsx.writeFile(filePath);
+};
+
 const writeLegacySingleCaseWithoutGroupId = async (filePath: string): Promise<void> => {
   const workbook = new ExcelJS.Workbook();
   const index = workbook.addWorksheet("索引");
@@ -178,6 +208,32 @@ const main = async (): Promise<void> => {
     });
     assert.equal(gate.status, "ok", JSON.stringify(gate.issues));
 
+    const contradictoryPass = path.join(tempRoot, "pass-contradicts-helper-evidence.xlsx");
+    await writePassWorkbook(contradictoryPass, "TOOL-A-05");
+    fs.mkdirSync(path.join(tempRoot, "output", "helper-artifacts", "TOOL-A-05"), { recursive: true });
+    fs.writeFileSync(path.join(tempRoot, "output", "helper-artifacts", "TOOL-A-05", "collage.reopenReport-latest.json"), JSON.stringify({
+      schemaVersion: "bi-ui-helper-report-v1",
+      caseId: "TOOL-A-05",
+      action: "collage.reopenReport",
+      status: "ok",
+      evidence: {
+        reopenReportEvidence: {
+          stateDelta: {
+            after: {
+              checks: {
+                field: true,
+                dateRange: false,
+                display: true
+              }
+            }
+          }
+        }
+      }
+    }, null, 2));
+    const contradictoryReport = await validateResultWorkbookContract(contradictoryPass, undefined, { runDir: tempRoot });
+    assert.equal(contradictoryReport.status, "error");
+    assert.ok(contradictoryReport.issues.some((item) => item.code === "RESULT_PASS_CONTRADICTS_HELPER_EVIDENCE"));
+
     console.log(JSON.stringify({
       ok: true,
       fixture: "agent-result-contract",
@@ -187,7 +243,8 @@ const main = async (): Promise<void> => {
         "legacy Bug header 來源 Case is rejected by agent self-check",
         "FAIL detail_json missing required fields is rejected before upload",
 	        "single-case legacy result workbook missing 群組ID is repaired before self-check",
-	        "BLOCKED detail_json with core fields but without current-run evidence is enriched before upload"
+	        "BLOCKED detail_json with core fields but without current-run evidence is enriched before upload",
+	        "PASS result contradicting helper false checks is rejected before upload"
       ]
     }, null, 2));
   } finally {
