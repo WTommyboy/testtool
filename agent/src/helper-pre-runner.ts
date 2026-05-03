@@ -32,7 +32,7 @@ export type HelperPreRunSummary = {
   actions: HelperPreRunActionResult[];
 };
 
-type AutoApprovedToolBridgeResponseLike = {
+export type AutoApprovedToolBridgeResponseLike = {
   requestId: string | null;
   request: unknown;
   raw?: string;
@@ -51,6 +51,15 @@ export type HelperContinuationSummary = {
   durationMs: number;
   autoResponseCount: number;
   actions: HelperPreRunActionResult[];
+};
+
+export type PendingHelperToolBridgeRequest = {
+  actionId: string;
+  template: string;
+  title: string;
+  requestId: string;
+  request: Record<string, unknown>;
+  raw: string;
 };
 
 const readJsonIfExists = <T>(filePath: string): T | null => {
@@ -360,6 +369,51 @@ const existingActionStatus = (
   const reportPath = latestReportPath(runDir, caseId, action.template);
   if (!fs.existsSync(reportPath)) return { status: null, warnings: [] };
   return readLatestReport(runDir, caseId, action, reportPath);
+};
+
+const buildPendingHelperToolBridgeRequest = (
+  runDir: string,
+  caseId: string,
+  action: HelperPlanAction
+): PendingHelperToolBridgeRequest => {
+  const runId = path.basename(path.resolve(runDir));
+  const requestId = `${runId}-${caseId}-${sanitizeId(action.template)}-helper-plan`;
+  const request = {
+    type: "irreversible_operation",
+    request_id: requestId,
+    case: caseId,
+    action: `Agent helper continuation: ${action.title}`,
+    reason: `Helper plan completed prior safe actions and the next required action ${action.template} needs Tool Bridge authorization before a BI native dialog or irreversible operation.`,
+    proposed_action: `Authorize Mac Agent helper to run ${action.template} for current case ${caseId} only; handle only known BI save/overwrite/delete dialogs and stop on unknown dialogs.`
+  };
+  return {
+    actionId: action.id,
+    template: action.template,
+    title: action.title,
+    requestId,
+    request,
+    raw: JSON.stringify(request)
+  };
+};
+
+export const collectPendingHelperToolBridgeRequests = (runDir: string): PendingHelperToolBridgeRequest[] => {
+  const planPath = path.join(runDir, "input", "helper-execution-plan.json");
+  const plan = readJsonIfExists<HelperExecutionPlan>(planPath);
+  const consistency = consistencyStatus(runDir);
+  const capabilityGate = capabilityGateAllowsHelperPreRun(runDir);
+  if (!plan || !plan.caseId || consistency === "error" || !capabilityGate.allowed) return [];
+
+  for (const action of plan.actions) {
+    if (action.optional) break;
+    const existing = existingActionStatus(runDir, plan.caseId, action);
+    if (existing.status === "ok") continue;
+    if (existing.status && existing.status !== "requires_approval") break;
+    if (action.requiresToolBridge) {
+      return [buildPendingHelperToolBridgeRequest(runDir, plan.caseId, action)];
+    }
+    break;
+  }
+  return [];
 };
 
 export const runHelperContinuationAfterApprovals = async (

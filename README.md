@@ -23,8 +23,8 @@ Production endpoints:
 
 Current semantic versions:
 
-- App/API: `1.1.0`
-- Mac Agent: `0.2.0`
+- App/API: `1.1.1`
+- Mac Agent: `0.2.1`
 
 Active branches:
 
@@ -202,6 +202,8 @@ Important current decisions:
 - `TOOL-A-03` expected metadata must be confirmed by `input/reference-index.json` key `bi_metadata_csv` or source filename `metadata＿1.2.5 - 工作表1.csv`.
 - When multiple CSV/reference files are present, Codex must not bulk-read every file and guess which one is metadata.
 - `TOOL-A-04` CSV verification now targets the saved report row on the project/report list page, refreshes/re-targets that row when the post-save list is stale, and compares the CSV to pre-save preview table/chart evidence; it should not reopen the editor or test date-range restoration.
+- CSV comparison normalizes preview table exports by dropping a duplicated header row and treating `Date` / `日期` as the same date column, so successful list-page downloads are not reported as false mismatches.
+- When a helper plan reaches a pending save/overwrite action and Mac Agent auto-approval is enabled, Agent records a Tool Bridge auto-approval from the helper plan, runs the approved helper continuation, and exposes `helper-continuation-summary.json` before Codex writes the case result.
 - If a visible row download click produces a CSV/attachment response but no browser `download` event, the Agent may save that UI-triggered response body as CSV evidence and label `downloadedCsv.source`.
 - Google Sheets is only a manual exploratory fallback, not a formal evidence path.
 - If save/list-row/download preconditions fail before CSV comparison, write `csv_comparison_status="not_reached"` and judge the failed necessary subcondition directly.
