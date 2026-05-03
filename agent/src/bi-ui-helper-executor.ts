@@ -808,6 +808,21 @@ const readDomState = async (page: Page): Promise<Record<string, unknown>> => {
 
 const normalizeDateText = (value: string): string => value.replace(/\s+/g, "").replaceAll("-", "/");
 const normalizeUiText = (value: string): string => value.replace(/\s+/g, "");
+const normalizeMetricFieldIdentity = (value: string | null | undefined): string =>
+  normalizeUiText(value ?? "")
+    .replace(/[（]/g, "(")
+    .replace(/[）]/g, ")")
+    .toUpperCase();
+
+const knownMetricFieldCode = (field: string): string | null => {
+  const key = normalizeMetricFieldIdentity(field);
+  const known: Record<string, string> = {
+    [normalizeMetricFieldIdentity("新增帳號數")]: "NEW_ACCOUNTS",
+    [normalizeMetricFieldIdentity("MAU(帳號)")]: "MAU",
+    [normalizeMetricFieldIdentity("總營收(TWD)")]: "TOTAL_REVENUE"
+  };
+  return known[key] ?? null;
+};
 
 type CalendarSide = "left" | "right";
 type VisibleButton = { index: number; text: string; x: number; y: number; width: number; height: number };
@@ -823,6 +838,17 @@ type VisibleTextTarget = {
   height: number;
 };
 type VisibleMonthLabel = { text: string; year: number; month: number; x: number; y: number; width: number; height: number };
+type SelectedMetricField = {
+  label: string;
+  code: string | null;
+  buttonIndex: number;
+  onclick: string | null;
+  text: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
 
 const calendarDomSide = (side: CalendarSide): "start" | "end" => side === "left" ? "start" : "end";
 
@@ -933,6 +959,7 @@ const readStateDelta = async (page: Page, params: Record<string, unknown>): Prom
       selects
     };
   });
+  const selectedMetricFields = await readSelectedMetricFields(page).catch(() => []);
   const contains = (value: unknown, expected: string | null): boolean | null => {
     if (!expected || expected === "不限" || expected === "不影響") return null;
     if (typeof value !== "string") return false;
@@ -944,11 +971,18 @@ const readStateDelta = async (page: Page, params: Record<string, unknown>): Prom
     targets,
     observed: {
       ...observed,
+      selectedMetricFields: selectedMetricFields.map((item) => ({
+        label: item.label,
+        code: item.code,
+        buttonIndex: item.buttonIndex
+      })),
       bodyText: observed.bodyText.slice(0, 1200)
     },
     checks: {
-      field: targetFields.length > 1
-        ? targetFields.every((item) => contains(fieldText, item) === true)
+      field: targetFields.length > 0
+        ? selectedMetricFields.length > 0
+          ? fieldListExactlyMatches(selectedMetricFields, targetFields)
+          : targetFields.every((item) => contains(fieldText, item) === true)
         : contains(fieldText, typeof targets.field === "string" ? targets.field : null),
       filter: targets.filter === "0組" || targets.filter === "空"
         ? null
@@ -1694,10 +1728,70 @@ const openExistingReport = async (options: CliOptions, page: Page, startedAt: st
   );
 };
 
+const readSelectedMetricFields = async (page: Page): Promise<SelectedMetricField[]> => {
+  return page.evaluate(() => {
+    const normalize = (value: string | null | undefined) => (value ?? "").trim().replace(/\s+/g, " ");
+    const isVisible = (element: Element): boolean => {
+      const rect = element.getBoundingClientRect();
+      const style = window.getComputedStyle(element);
+      return rect.width > 0 && rect.height > 0 && style.visibility !== "hidden" && style.display !== "none" && style.opacity !== "0";
+    };
+    const cleanLabel = (value: string, code: string | null): string => {
+      const codeText = code ? code.replace(/_/g, "\\s*_?\\s*") : "";
+      let text = normalize(value)
+        .replace(/×/g, " ")
+        .replace(/\+ 新增欄位/g, " ")
+        .replace(/\+ 新增運算欄位/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+      if (codeText) {
+        text = text.replace(new RegExp(codeText, "i"), "").replace(/\s+/g, " ").trim();
+      }
+      return text;
+    };
+    const selected = Array.from(document.querySelectorAll("button")).flatMap((button, index) => {
+      if (!isVisible(button)) return [];
+      const onclick = button.getAttribute("onclick");
+      const className = typeof button.className === "string" ? button.className : "";
+      if (!/removeFieldFromSelection/i.test(onclick ?? "") && !/\bbtn-remove-field\b/i.test(className)) return [];
+      const code = onclick?.match(/removeFieldFromSelection\(['"]([^'"]+)['"]\)/i)?.[1]
+        ?? button.getAttribute("data-field-code")
+        ?? button.getAttribute("data-field")
+        ?? button.getAttribute("data-value");
+      const containers = [
+        button.parentElement,
+        button.closest("[class*=field]"),
+        button.parentElement?.parentElement,
+        button.parentElement?.parentElement?.parentElement
+      ].filter((item): item is HTMLElement => Boolean(item));
+      const label = containers
+        .map((container) => cleanLabel(container.innerText || container.textContent || "", code ?? null))
+        .find((text) => text.length > 0 && text.length <= 80 && !/^欄位選擇$/i.test(text)) ?? cleanLabel(button.previousElementSibling?.textContent ?? "", code ?? null);
+      const rect = button.getBoundingClientRect();
+      return [{
+        label: label || String(code ?? ""),
+        code: code ?? null,
+        buttonIndex: index,
+        onclick,
+        text: normalize(button.textContent),
+        x: rect.x,
+        y: rect.y,
+        width: rect.width,
+        height: rect.height
+      }];
+    });
+    return selected.sort((a, b) => a.y - b.y || a.x - b.x);
+  });
+};
+
 const selectedFieldText = async (page: Page): Promise<string> => {
+  const selected = await readSelectedMetricFields(page).catch(() => []);
   const dom = await readDomState(page).catch(() => null);
   const cleanupState = dom?.cleanupState && typeof dom.cleanupState === "object" ? dom.cleanupState as Record<string, unknown> : {};
-  return String(cleanupState.fieldSelectionText ?? "");
+  return [
+    selected.map((item) => item.label || item.code || item.text).join("\n"),
+    String(cleanupState.fieldSelectionText ?? "")
+  ].filter(Boolean).join("\n");
 };
 
 const metricAddFieldPattern = /(?:\+\s*)?新增(?:欄位|指標|資料)|(?:欄位|指標).{0,6}(?:新增|選擇)|選擇(?:欄位|指標)|\+.*欄位/i;
@@ -1824,6 +1918,80 @@ const selectMetricFieldThroughUi = async (page: Page, field: string): Promise<st
   return `${readiness};${addOperation};field:set:${field}`;
 };
 
+const selectedMetricFieldMatches = (selected: SelectedMetricField, targetField: string): boolean => {
+  const targetKey = normalizeMetricFieldIdentity(targetField);
+  const selectedLabelKey = normalizeMetricFieldIdentity(selected.label);
+  const selectedCodeKey = normalizeMetricFieldIdentity(selected.code);
+  const targetCodeKey = normalizeMetricFieldIdentity(knownMetricFieldCode(targetField));
+  if (targetCodeKey.length > 0 && selectedCodeKey.length > 0) return selectedCodeKey === targetCodeKey;
+  return (
+    selectedLabelKey === targetKey ||
+    (selectedLabelKey.length > 0 && selectedLabelKey.includes(targetKey)) ||
+    (selectedLabelKey.length > 0 && targetKey.length > 0 && targetKey.includes(selectedLabelKey)) ||
+    (targetCodeKey.length > 0 && selectedCodeKey === targetCodeKey)
+  );
+};
+
+const fieldListExactlyMatches = (selected: SelectedMetricField[], targetFields: string[]): boolean => {
+  if (selected.length !== targetFields.length) return false;
+  const used = new Set<number>();
+  for (const target of targetFields) {
+    const matchIndex = selected.findIndex((item, index) => !used.has(index) && selectedMetricFieldMatches(item, target));
+    if (matchIndex === -1) return false;
+    used.add(matchIndex);
+  }
+  return true;
+};
+
+const removeSelectedMetricFieldThroughUi = async (page: Page, selected: SelectedMetricField): Promise<string> => {
+  await clickVisibleButtonByIndex(page, selected.buttonIndex, 8000);
+  await page.waitForTimeout(500);
+  return `field:removed:${selected.label || selected.code || "unknown"}:${selected.buttonIndex}`;
+};
+
+const reconcileMetricFieldsThroughUi = async (page: Page, targetFields: string[]): Promise<string[]> => {
+  const operations: string[] = [];
+  if (targetFields.length === 0) return operations;
+
+  for (let attempt = 0; attempt < Math.max(8, targetFields.length * 4 + 4); attempt += 1) {
+    const selected = await readSelectedMetricFields(page);
+    const kept = new Set<number>();
+    let removeCandidate: SelectedMetricField | null = null;
+    for (const item of selected) {
+      const targetIndex = targetFields.findIndex((target, index) => !kept.has(index) && selectedMetricFieldMatches(item, target));
+      if (targetIndex === -1) {
+        removeCandidate = item;
+        break;
+      }
+      kept.add(targetIndex);
+    }
+
+    if (removeCandidate) {
+      operations.push(await removeSelectedMetricFieldThroughUi(page, removeCandidate));
+      continue;
+    }
+
+    const missing = targetFields.find((target) => !selected.some((item) => selectedMetricFieldMatches(item, target)));
+    if (missing) {
+      operations.push(await selectMetricFieldThroughUi(page, missing));
+      continue;
+    }
+
+    if (fieldListExactlyMatches(await readSelectedMetricFields(page), targetFields)) {
+      operations.push(`field:exact:${targetFields.join("+")}`);
+      return operations;
+    }
+
+    if (selected.length > targetFields.length && selected[selected.length - 1]) {
+      operations.push(await removeSelectedMetricFieldThroughUi(page, selected[selected.length - 1]));
+      continue;
+    }
+  }
+
+  const finalSelected = await readSelectedMetricFields(page).catch(() => []);
+  throw new HelperBlockedError(`FIELD_RECONCILE_FAILED:target=${JSON.stringify(targetFields)}; selected=${JSON.stringify(finalSelected).slice(0, 1200)}`);
+};
+
 const configureMetric = async (options: CliOptions, page: Page, startedAt: string): Promise<HelperReport> => {
   const warnings: string[] = [];
   const fields = metricFieldsFromParams(options.params);
@@ -1834,9 +2002,7 @@ const configureMetric = async (options: CliOptions, page: Page, startedAt: strin
   let dateRangeEvidence: Record<string, unknown> | null = null;
   let dateRangeUiProfiles: UiDomProfileRef[] = [];
   if (fields.length > 0) {
-    for (const field of fields) {
-      operations.push(await selectMetricFieldThroughUi(page, field));
-    }
+    operations.push(...await reconcileMetricFieldsThroughUi(page, fields));
   }
   if (dateRange) {
     const result = await setDateRange(options, page, dateRange);

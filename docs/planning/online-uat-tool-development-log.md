@@ -962,3 +962,11 @@ Tommy 曾討論是否改成腳本。最後決策是採「半腳本化 / helper �
 - A-05 修正：`helper-pre-runner` 新增 `collectPendingHelperToolBridgeRequests()`，會依 current helper plan 與已完成 helper reports 找出第一個 pending required Tool Bridge action。`task-runner` 在 safe helper pre-run 後若 `auto_approve_tool_requests=true`，會產生 Agent-owned auto approval record，送出 `run.tool_request` / `tool_response.delivered` 事件，接著直接跑 `runHelperContinuationAfterApprovals()`，把 H5/H6 evidence 寫入 `output/helper-continuation-summary.json`，並在 Codex prompt/run brief 明確要求判定前讀取該 current-run evidence。
 - 版本與文件：root app 升到 `1.1.1`，Mac Agent 升到 `0.2.1`；README、refactor 規劃、工程 spec、M1 spec / v1.2.1 spec 同步補上 CSV header/date normalization 與 helper-plan pending Tool Bridge auto continuation。
 - 驗證：本次新增的 `verify:helper-report-gate` fixture 覆蓋 A-04 false mismatch 與 A-05 pending helper Tool Bridge detection。完整 typecheck/build/verify、commit/push、Railway `/version` / `/health` 與本機 Agent 重啟狀態由本次收尾回報補列。
+
+### 2026-05-04 00:20 - OTTEST002_26 follow-up：A-05 既有報表欄位 exact reconciliation
+
+- 背景：Tommy 檢查 run archive `f9104c1e-e7d9-4da9-bb59-98248f012073` 後，A-04/A-05 流程已正常；但回看 A-05 helper evidence 發現覆寫 save body 出現 `NEW_ACCOUNTS` 重複，reopen DOM 也顯示兩個「新增帳號數」加一個「總營收(TWD)」。此問題不影響該輪「日期重開還原失敗」的 FAIL 判定，但會污染 A-05 對「修改欄位後覆寫」的欄位 evidence。
+- 根因：`collage.configureMetric` 的 `selectedFieldText()` 只讀 `#fieldSelectionContainer`，而目前 BI editor 該 selector 回 null；helper 因此看不到既有報表原本已有「新增帳號數」，在 A-05 開既有報表後又追加了一次「新增帳號數」與「總營收(TWD)」。
+- 修正：`bi-ui-helper-executor` 新增 selected-field DOM fallback，透過 read-only DOM 讀取可見 `removeFieldFromSelection(...)` / `btn-remove-field` 按鈕，取得已選欄位 label/code；`configureMetric` 改為 `reconcileMetricFieldsThroughUi()`，先用真實 UI 點「×」移除多餘或重複欄位，再用正常 `+ 新增欄位` picker 補缺少欄位。`readStateDelta.checks.field` 也改為 selected field exact match，不再只用 body text contains 判定欄位對齊。
+- 版本與文件：Mac Agent 升到 `0.2.2`，root app 維持 `1.1.1`；README、refactor 規劃、工程 spec、M1 spec / v1.2.1 spec 同步更新 Agent version 與 existing-report field exact reconciliation。
+- 驗證：已跑 `npm run typecheck --prefix agent`、`npm run typecheck`、`npm run build --prefix agent`、`npm run build`、`npm run verify:helper-report-gate`、`npm run verify:capability-gate`。完整 verify、commit/push、Railway `/version` / `/health` 與本機 Agent 重啟狀態由本次收尾回報補列。
