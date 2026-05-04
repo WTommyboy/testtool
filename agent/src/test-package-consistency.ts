@@ -136,6 +136,9 @@ const extractLabeledValue = (section: string, label: string): string | null => {
 };
 
 const extractCleanupValue = (section: string): string | null => {
+  const inline = extractLabeledValue(section, "狀態清理");
+  if (inline && inline.includes("欄位=")) return inline;
+
   const label = section.match(/\*\*狀態清理\*\*[\s\S]*?(?:\n|$)/);
   if (!label?.index && label?.index !== 0) return null;
   const after = section.slice(label.index + label[0].length);

@@ -91,7 +91,17 @@ const writeAssignment = (filePath: string): void => {
   );
 };
 
-const writeInstruction = (filePath: string, riskLevel = "🟢 觀察"): void => {
+const writeInstruction = (filePath: string, riskLevel = "🟢 觀察", cleanupStyle: "block" | "inline" = "block"): void => {
+  const cleanupLines =
+    cleanupStyle === "inline"
+      ? ["**狀態清理**:`欄位=新增帳號數;篩選=0組;分組=0組;時間=2026-03-01~2026-03-31;顯示=每天`"]
+      : [
+          "**狀態清理**(固定 5 項格式):",
+          "```",
+          "欄位=新增帳號數;篩選=0組;分組=0組;時間=2026-03-01~2026-03-31;顯示=每天",
+          "```"
+        ];
+
   fs.writeFileSync(
     filePath,
     [
@@ -108,10 +118,12 @@ const writeInstruction = (filePath: string, riskLevel = "🟢 觀察"): void => 
       "",
       "**測試標的**: 前後端整合",
       "",
-      "**狀態清理**(固定 5 項格式):",
-      "```",
-      "欄位=新增帳號數;篩選=0組;分組=0組;時間=2026-03-01~2026-03-31;顯示=每天",
-      "```",
+      ...cleanupLines,
+      "",
+      "## 步驟",
+      "",
+      "1. 進入設定頁,加欄位「新增帳號數」",
+      "2. 驗證 DOM 欄位=新增帳號數,再按執行",
       "",
       "Helper hints:",
       "```json",
@@ -237,6 +249,14 @@ const main = async (): Promise<void> => {
     assert.equal(okReport.status, "ok", `good fixture should pass with status=ok; issues=${JSON.stringify(okReport.issues)}`);
     assert.equal(okReport.issues.length, 0, `good fixture should not emit issues; issues=${JSON.stringify(okReport.issues)}`);
 
+    writeInstruction(instruction, "🟢 觀察", "inline");
+    const inlineReport = runChecker(xlsx, assignment, instruction, path.join(tempRoot, "inline-report.json"));
+    assert.equal(inlineReport.status, "ok", `inline cleanup fixture should pass with status=ok; issues=${JSON.stringify(inlineReport.issues)}`);
+    assert.ok(
+      !inlineReport.issues.some((item) => item.code === "CLEANUP_CHECKLIST_CONFLICT"),
+      `inline cleanup fixture should not compare against later step text; issues=${JSON.stringify(inlineReport.issues)}`
+    );
+
     writeInstruction(instruction, "🔴 刪除");
     const badReport = runChecker(xlsx, assignment, instruction, path.join(tempRoot, "bad-report.json"));
     assert.equal(badReport.status, "error", "risk mismatch fixture should block");
@@ -273,6 +293,7 @@ const main = async (): Promise<void> => {
           fixture: "test-package-consistency",
           checked: [
             "good helper hints package status ok",
+            "inline cleanup label is parsed before later step lines",
             "risk-level conflict emits blocking error",
             "DEMO001 v1_4 has no blocking consistency error",
             "TOOL-prefixed case ids do not conflict with pause-table shorthand"
