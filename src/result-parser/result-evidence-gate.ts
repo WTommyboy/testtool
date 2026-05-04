@@ -26,12 +26,22 @@ export type ResultEvidenceGateReport = {
   issues: ResultEvidenceGateIssue[];
 };
 
+export type ExternalToolBridgeEvidence = {
+  requestId?: string | null;
+  eventType?: string | null;
+  approved?: boolean | null;
+  resolvedBy?: string | null;
+  source?: string | null;
+  createdAt?: string | null;
+};
+
 export type ResultEvidenceGateInput = {
   parsed: ParsedResultXlsx;
   resultSource?: string | null;
   currentCaseNo?: string | null;
   expectedCaseNos?: string[];
   requireSingleCase?: boolean;
+  externalToolBridgeEvidenceByCase?: Record<string, ExternalToolBridgeEvidence[]>;
 };
 
 export class ResultEvidenceGateError extends Error {
@@ -238,6 +248,18 @@ const hasToolBridgeResponse = (detail: Record<string, unknown>): boolean => {
   return TOOL_BRIDGE_RESPONSE_PATTERNS.some((pattern) => pattern.test(text));
 };
 
+const hasExternalToolBridgeResponse = (
+  caseNo: string,
+  evidenceByCase: Record<string, ExternalToolBridgeEvidence[]>
+): boolean => {
+  const normalizedCaseNo = normalizeCaseNo(caseNo);
+  for (const [key, evidence] of Object.entries(evidenceByCase)) {
+    if (normalizeCaseNo(key) !== normalizedCaseNo) continue;
+    if (evidence.some((item) => isMeaningfulValue(item.requestId) || isMeaningfulValue(item.eventType))) return true;
+  }
+  return false;
+};
+
 const missingFieldIssues = (
   item: ParsedResultCase,
   label: string,
@@ -265,6 +287,7 @@ export const evaluateResultEvidenceGate = (input: ResultEvidenceGateInput): Resu
   const resultSource = input.resultSource?.trim().toLowerCase() || null;
   const expectedCaseNos = uniqueStrings(input.expectedCaseNos ?? []);
   const currentCaseNo = input.currentCaseNo?.trim() || (expectedCaseNos.length === 1 ? expectedCaseNos[0] : null);
+  const externalToolBridgeEvidenceByCase = input.externalToolBridgeEvidenceByCase ?? {};
   const issues: ResultEvidenceGateIssue[] = [];
   const caseNos = parsed.cases.map((item) => item.caseNo);
 
@@ -381,7 +404,11 @@ export const evaluateResultEvidenceGate = (input: ResultEvidenceGateInput): Resu
       });
     }
 
-    if (claimsToolBridgeAction(item.detailJson) && !hasToolBridgeResponse(item.detailJson)) {
+    if (
+      claimsToolBridgeAction(item.detailJson) &&
+      !hasToolBridgeResponse(item.detailJson) &&
+      !hasExternalToolBridgeResponse(item.caseNo, externalToolBridgeEvidenceByCase)
+    ) {
       issues.push({
         severity: "error",
         code: "TOOL_BRIDGE_RESPONSE_MISSING",

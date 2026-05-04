@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import type { CaseManifestCase } from "./case-manifest";
 import type { HelperHints } from "./helper-hints";
-import { detectCaseFeatures, parseCleanupTargets } from "./case-feature-detection";
+import { detectCaseFeatures, isNeutralCleanupTarget, parseCleanupTargets } from "./case-feature-detection";
 
 export type HelperPlanAction = {
   id: string;
@@ -96,6 +96,32 @@ const stringParam = (params: Record<string, unknown>, keys: string[]): string | 
   return null;
 };
 
+const booleanishParam = (params: Record<string, unknown>, keys: string[]): boolean => {
+  for (const key of keys) {
+    const value = params[key];
+    if (value === true) return true;
+    if (typeof value === "string" && /^(true|yes|y|1|是|要)$/i.test(value.trim())) return true;
+  }
+  return false;
+};
+
+const nonNeutral = (value: string | null | undefined): string | null => {
+  const trimmed = value?.trim();
+  if (!trimmed || isNeutralCleanupTarget(trimmed)) return null;
+  return trimmed;
+};
+
+const helperScope = (params: Record<string, unknown>): string | null => stringParam(params, ["scope", "executionScope", "helperScope"]);
+
+const helperRequestsPreviewOnly = (params: Record<string, unknown>): boolean =>
+  /^(preview_only|preview-only|preview|d0|d0_only|d0-only)$/i.test(helperScope(params) ?? "");
+
+const helperRequestsNoSave = (params: Record<string, unknown>): boolean =>
+  helperRequestsPreviewOnly(params) || booleanishParam(params, ["skipSave", "doNotSave", "noSave", "previewOnly"]);
+
+const helperRequestsNoReopen = (params: Record<string, unknown>): boolean =>
+  helperRequestsPreviewOnly(params) || booleanishParam(params, ["skipReopen", "doNotReopen", "noReopen", "previewOnly"]);
+
 const cleanReportNamePattern = (value: string | null): string | null => {
   if (!value) return null;
   const cleaned = value.replace(/[)）]\s*$/, "").trim();
@@ -140,14 +166,17 @@ const inferCollageParams = (currentCase: CaseManifestCase | null, helperHints: H
   const text = textBlob(currentCase);
   const cleanup = parseCleanupTargets(currentCase?.cleanupChecklist);
   const params = paramsObject(helperHints);
-  const field = stringParam(params, ["field", "metric", "metricField"]) ?? cleanup["欄位"] ?? firstMatch(text, [/欄位[「=：: ]+([^」\n,，]+)/]);
+  const field =
+    nonNeutral(stringParam(params, ["field", "metric", "metricField"])) ??
+    nonNeutral(cleanup["欄位"]) ??
+    nonNeutral(firstMatch(text, [/欄位[「=：: ]+([^」\n,，;；]+)/]));
   const fields = splitCompositeMetricFields(field);
   const reportNamePattern = inferReportNamePattern(text, params);
   const modifiesExistingReport = /修改既有|既有報表|已儲存報表|儲存覆寫|覆寫/.test(text);
   const existingReportNamePattern = inferExistingReportNamePattern(text, params, reportNamePattern);
   const dateRangeText =
-    stringParam(params, ["dateRange", "timeRange"]) ??
-    cleanup["時間"] ??
+    nonNeutral(stringParam(params, ["dateRange", "timeRange"])) ??
+    nonNeutral(cleanup["時間"]) ??
     firstMatch(text, [/(\d{4}\/\d{2}\/\d{2}\s*[~～-]\s*\d{4}\/\d{2}\/\d{2})/]);
 
   return {
@@ -163,7 +192,7 @@ const inferCollageParams = (currentCase: CaseManifestCase | null, helperHints: H
     field,
     fields,
     dateRange: dateRangeText,
-    display: stringParam(params, ["display", "displayMode"]) ?? cleanup["顯示"] ?? null,
+    display: nonNeutral(stringParam(params, ["display", "displayMode"])) ?? nonNeutral(cleanup["顯示"]) ?? null,
     cleanupChecklist: currentCase?.cleanupChecklist ?? null,
     cleanupTargets: cleanup,
     reportNamePattern,
@@ -200,6 +229,7 @@ const buildActions = (currentCase: CaseManifestCase | null, helperHints: HelperH
   const text = textBlob(currentCase);
   const operationTemplate = helperHints?.operationTemplate ?? "";
   const params = inferCollageParams(currentCase, helperHints);
+  const helperParams = paramsObject(helperHints);
   const actions: HelperPlanAction[] = [];
   const features = detectCaseFeatures(currentCase, helperHints);
   const unsupportedHelperTarget =
@@ -232,7 +262,10 @@ const buildActions = (currentCase: CaseManifestCase | null, helperHints: HelperH
   }
   const isCollageFlow = /collage_build_preview_save_reopen/.test(operationTemplate) || /拼貼|新增報表|儲存報表|重開|重新檢視/.test(text);
   const modifiesExistingReport = params.openExistingReport === true;
-  const explicitlyNoReopen = /不(?:需|要|應)?重開|不要重開|無需重開|不用重開|不重開\s*editor|不應產生\s*reopen/i.test(text);
+  const noSave = helperRequestsNoSave({ ...params, ...helperParams });
+  const explicitlyNoReopen =
+    helperRequestsNoReopen({ ...params, ...helperParams }) ||
+    /不(?:需|要|應)?重開|不要重開|無需重開|不用重開|不重開\s*editor|不應產生\s*reopen/i.test(text);
   const needsReopen = !explicitlyNoReopen && /重開|重新檢視|還原|載入/.test(text);
 
   if (isCollageFlow) {
@@ -265,7 +298,7 @@ const buildActions = (currentCase: CaseManifestCase | null, helperHints: HelperH
       })
     );
 
-    if (/儲存|覆寫/.test(text)) {
+    if (!noSave && /儲存|覆寫/.test(text)) {
       actions.push(
         action("H5", "collage.saveReport", modifiesExistingReport ? "覆寫既有報表" : "儲存本輪臨時報表", params, {
           requiresToolBridge: true,

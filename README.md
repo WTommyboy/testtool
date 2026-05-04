@@ -23,8 +23,8 @@ Production endpoints:
 
 Current semantic versions:
 
-- App/API: `1.1.1`
-- Mac Agent: `0.2.3`
+- App/API: `1.1.2`
+- Mac Agent: `0.2.4`
 
 Active branches:
 
@@ -99,7 +99,7 @@ The `測試案例` sheet must include:
 - `失敗分類`
 - `詳細紀錄JSON`
 
-Railway ingests each single-case workbook into normalized state. When the run is complete, Railway generates the final aggregate workbook. The UI result download should prefer the final aggregate workbook, not the last raw single-case workbook.
+Railway ingests each single-case workbook into normalized state. The UI result download is generated from server-normalized run state: final aggregate when all cases are terminal, partial aggregate when a run fails or is interrupted with completed cases. It should not fall back to the last raw single-case workbook unless no normalized case result exists yet.
 
 `detail_json` is a hard-gated contract. `PASS` and `BLOCKED` both require `測試目的`, `設定條件`, `預期行為`, and `實際行為`; `BLOCKED` additionally requires `blocked_reason` and current-run evidence. `FAIL` adds RD-facing root-cause fields, and `PARTIAL` requires explicit matching/non-matching subitem lists.
 

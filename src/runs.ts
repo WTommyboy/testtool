@@ -21,6 +21,7 @@ import {
 import {
   evaluateResultEvidenceGate,
   ResultEvidenceGateError,
+  type ExternalToolBridgeEvidence,
   type ResultEvidenceGateReport
 } from "./result-parser/result-evidence-gate";
 import { readOptionalDomainPackFile } from "./domain-loader";
@@ -349,6 +350,37 @@ const extractSummary = (c: MdCase): string => {
   }
 };
 
+const detailObject = (value: string | null | undefined): Record<string, unknown> | null => {
+  if (!value?.trim()) return null;
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : null;
+  } catch {
+    return null;
+  }
+};
+
+const isPmSkippedCase = (c: Pick<MdCase, "result_status" | "fail_category" | "execution_type" | "detail_json">): boolean => {
+  if ((c.result_status ?? "").toUpperCase() !== "BLOCKED") return false;
+  const detail = detailObject(c.detail_json);
+  const text = [
+    c.fail_category,
+    c.execution_type,
+    detail?.skip_reason,
+    detail?.skipped_reason,
+    detail?.["跳過原因"],
+    detail?.blocked_reason,
+    detail?.["阻塞原因"],
+    detail?.["實際行為"]
+  ]
+    .filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+    .join("\n");
+  return /PM.*(?:skip|跳過)|本輪不執行|主動跳過|skip_reason|N\/A\s*\(?本輪不執行\)?/i.test(text);
+};
+
+const classifiedCaseStatus = (c: Pick<MdCase, "result_status" | "fail_category" | "execution_type" | "detail_json">): string =>
+  isPmSkippedCase(c) ? "PM_SKIPPED" : c.result_status || "PENDING";
+
 const generateMd = (
   run: MdRun,
   cases: MdCase[],
@@ -366,6 +398,7 @@ const generateMd = (
     "BLOCKED",
     "PARTIAL",
     "SKIPPED",
+    "PM_SKIPPED",
     "MANUAL_PASS",
     "MANUAL_FAIL",
     "MANUAL_BLOCKED",
@@ -378,6 +411,7 @@ const generateMd = (
     BLOCKED: "🚫",
     PARTIAL: "⚠️",
     SKIPPED: "⏭️",
+    PM_SKIPPED: "⏭️",
     MANUAL_PASS: "📝✅",
     MANUAL_FAIL: "📝❌",
     MANUAL_BLOCKED: "📝🚫",
@@ -493,7 +527,7 @@ const generateArchiveMd = (
 ): string => {
   const generatedAt = new Date().toISOString();
   const counts = cases.reduce<Record<string, number>>((acc, item) => {
-    const status = item.result_status || "PENDING";
+    const status = classifiedCaseStatus(item);
     acc[status] = (acc[status] ?? 0) + 1;
     return acc;
   }, {});
@@ -1226,6 +1260,105 @@ const uniqueCaseNosForGate = (values: Array<string | null | undefined>): string[
   return result;
 };
 
+const objectValue = (value: unknown): Record<string, unknown> | null =>
+  value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
+
+const stringValue = (value: unknown): string | null => {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed || null;
+};
+
+const toolBridgePayloadObject = (payload: Record<string, unknown> | null): Record<string, unknown> => {
+  const nested = objectValue(payload?.payload);
+  return nested ?? payload ?? {};
+};
+
+const requestIdFromToolBridgePayload = (payload: Record<string, unknown> | null): string | null => {
+  const toolPayload = toolBridgePayloadObject(payload);
+  return (
+    stringValue(payload?.requestId) ??
+    stringValue(payload?.request_id) ??
+    stringValue(toolPayload.requestId) ??
+    stringValue(toolPayload.request_id)
+  );
+};
+
+const caseNoFromToolBridgePayload = (payload: Record<string, unknown> | null): string | null => {
+  const toolPayload = toolBridgePayloadObject(payload);
+  return (
+    stringValue(payload?.caseNo) ??
+    stringValue(payload?.case_no) ??
+    stringValue(payload?.case) ??
+    stringValue(toolPayload.caseNo) ??
+    stringValue(toolPayload.case_no) ??
+    stringValue(toolPayload.case)
+  );
+};
+
+const booleanValue = (value: unknown): boolean | null => (typeof value === "boolean" ? value : null);
+
+const toolBridgeResponseEvidence = (
+  eventType: string,
+  createdAt: string | null,
+  payload: Record<string, unknown> | null
+): ExternalToolBridgeEvidence => {
+  const toolPayload = toolBridgePayloadObject(payload);
+  return {
+    requestId: requestIdFromToolBridgePayload(payload),
+    eventType,
+    approved: booleanValue(payload?.approved) ?? booleanValue(toolPayload.approved),
+    resolvedBy: stringValue(payload?.resolvedBy) ?? stringValue(payload?.resolved_by) ?? stringValue(toolPayload.resolvedBy) ?? stringValue(toolPayload.resolved_by),
+    source: "run_events",
+    ...(createdAt ? { createdAt } : {})
+  };
+};
+
+const inferCaseNoFromRequestId = (requestId: string | null, expectedCaseNos: string[]): string | null => {
+  if (!requestId) return null;
+  const normalizedRequestId = normalizeCaseNoForGate(requestId);
+  return expectedCaseNos.find((caseNo) => normalizedRequestId.includes(normalizeCaseNoForGate(caseNo))) ?? null;
+};
+
+const collectExternalToolBridgeEvidenceByCase = (
+  runId: string,
+  currentCaseNos: string[]
+): Record<string, ExternalToolBridgeEvidence[]> => {
+  const rows = db
+    .prepare(
+      `
+        SELECT event_type, payload_json, created_at
+        FROM run_events
+        WHERE run_id = ? AND event_type IN ('tool_request.created', 'tool_response.sent', 'tool_response.delivered')
+        ORDER BY rowid ASC
+      `
+    )
+    .all(runId) as Array<{ event_type: string; payload_json: string | null; created_at: string | null }>;
+
+  const requestIdToCaseNo = new Map<string, string>();
+  for (const row of rows) {
+    if (row.event_type !== "tool_request.created") continue;
+    const payload = parseJsonObject(row.payload_json);
+    const requestId = requestIdFromToolBridgePayload(payload);
+    const caseNo = caseNoFromToolBridgePayload(payload) ?? inferCaseNoFromRequestId(requestId, currentCaseNos);
+    if (requestId && caseNo) requestIdToCaseNo.set(requestId, caseNo);
+  }
+
+  const evidenceByCase: Record<string, ExternalToolBridgeEvidence[]> = {};
+  for (const row of rows) {
+    if (row.event_type !== "tool_response.sent" && row.event_type !== "tool_response.delivered") continue;
+    const payload = parseJsonObject(row.payload_json);
+    const requestId = requestIdFromToolBridgePayload(payload);
+    let caseNo = caseNoFromToolBridgePayload(payload);
+    if (!caseNo && requestId) caseNo = requestIdToCaseNo.get(requestId) ?? null;
+    if (!caseNo) caseNo = inferCaseNoFromRequestId(requestId, currentCaseNos);
+    if (!caseNo) continue;
+    const evidence = toolBridgeResponseEvidence(row.event_type, row.created_at, payload);
+    evidenceByCase[caseNo] = [...(evidenceByCase[caseNo] ?? []), evidence];
+  }
+  return evidenceByCase;
+};
+
 const deleteBugsForParsedResult = (runId: string, parsed: { cases: ParsedResultCase[]; bugs: ParsedBug[] }): void => {
   const relatedCaseNos = uniqueCaseNosForGate([
     ...parsed.cases.map((item) => item.caseNo),
@@ -1278,18 +1411,28 @@ const casesReadyForFinalAggregate = (cases: AggregateCase[]): boolean => {
   });
 };
 
-const generateFinalAggregateResult = async (runId: string): Promise<string | null> => {
+const casesReadyForPartialAggregate = (cases: AggregateCase[]): boolean => {
+  if (cases.length === 0) return false;
+  return cases.some((item) => {
+    const status = normalizeParsedResultStatus(item.result_status ?? "PENDING");
+    return (status !== "PENDING" && status !== "MANUAL_PENDING") || Boolean(item.detail_json?.trim());
+  });
+};
+
+const generateAggregateResult = async (runId: string, aggregateMode: "final" | "partial"): Promise<string | null> => {
   const run = getRun(runId) as (AggregateRun & RunOutputPaths) | undefined;
   if (!run) return null;
   const cases = listAggregateCases(runId);
-  if (!casesReadyForFinalAggregate(cases)) return null;
+  if (aggregateMode === "final" && !casesReadyForFinalAggregate(cases)) return null;
+  if (aggregateMode === "partial" && !casesReadyForPartialAggregate(cases)) return null;
 
   const filePath = aggregateResultPathForRun(runId);
   await writeFinalAggregateResultXlsx({
     filePath,
     run,
     cases,
-    bugs: listAggregateBugs(runId)
+    bugs: listAggregateBugs(runId),
+    aggregateMode
   });
 
   const now = nowIso();
@@ -1299,24 +1442,29 @@ const generateFinalAggregateResult = async (runId: string): Promise<string | nul
     now,
     runId
   );
-  insertRunEvent(runId, "result.aggregate_generated", {
+  insertRunEvent(runId, aggregateMode === "final" ? "result.aggregate_generated" : "result.partial_aggregate_generated", {
     filePath,
     caseCount: cases.length,
+    aggregateMode,
     source: "normalized-server-state"
   });
-  insertRunLog(runId, "INFO", "Final aggregate result xlsx generated", {
+  insertRunLog(runId, "INFO", aggregateMode === "final" ? "Final aggregate result xlsx generated" : "Partial aggregate result xlsx generated", {
     filePath,
-    caseCount: cases.length
+    caseCount: cases.length,
+    aggregateMode
   });
   return filePath;
 };
 
+const generateFinalAggregateResult = async (runId: string): Promise<string | null> => generateAggregateResult(runId, "final");
+
 const getDownloadResultXlsxPath = async (runId: string, run: RunOutputPaths): Promise<string | null> => {
-  if (run.aggregate_result_xlsx_path && fs.existsSync(run.aggregate_result_xlsx_path)) {
-    return run.aggregate_result_xlsx_path;
-  }
-  const aggregatePath = await generateFinalAggregateResult(runId);
-  return aggregatePath ?? run.result_xlsx_path ?? null;
+  const cases = listAggregateCases(runId);
+  const aggregateMode = casesReadyForFinalAggregate(cases) ? "final" : "partial";
+  const aggregatePath = await generateAggregateResult(runId, aggregateMode);
+  if (aggregatePath) return aggregatePath;
+  if (run.aggregate_result_xlsx_path && fs.existsSync(run.aggregate_result_xlsx_path)) return run.aggregate_result_xlsx_path;
+  return run.result_xlsx_path ?? null;
 };
 
 const writeResultEvidenceGateReport = (filePath: string, report: ResultEvidenceGateReport): string => {
@@ -1341,12 +1489,21 @@ const ingestResultXlsx = async (
     ...expectedCaseNosForRun(runId),
     ...(options.expectedCaseNos ?? [])
   ]);
+  const externalToolBridgeEvidenceByCase = collectExternalToolBridgeEvidenceByCase(
+    runId,
+    uniqueCaseNosForGate([
+      ...parsed.cases.map((item) => item.caseNo),
+      ...(options.currentCaseNo ? [options.currentCaseNo] : []),
+      ...(options.expectedCaseNos ?? [])
+    ])
+  );
   const report = evaluateResultEvidenceGate({
     parsed,
     resultSource: options.resultSource,
     currentCaseNo: options.currentCaseNo,
     expectedCaseNos,
-    requireSingleCase: true
+    requireSingleCase: true,
+    externalToolBridgeEvidenceByCase
   });
   const reportPath = writeResultEvidenceGateReport(filePath, report);
   insertRunEvent(runId, "result.evidence_gate_checked", {
@@ -2796,6 +2953,9 @@ router.get("/:id/summary", (req, res) => {
   const caseStatsRows = db
     .prepare("SELECT result_status, COUNT(1) AS count FROM run_cases WHERE run_id = ? GROUP BY result_status")
     .all(req.params.id) as Array<{ result_status: string; count: number }>;
+  const caseRowsForClassStats = db
+    .prepare("SELECT result_status, fail_category, execution_type, detail_json FROM run_cases WHERE run_id = ?")
+    .all(req.params.id) as MdCase[];
   const stepStatsRows = db
     .prepare("SELECT status, COUNT(1) AS count FROM run_case_steps WHERE run_id = ? GROUP BY status")
     .all(req.params.id) as Array<{ status: string; count: number }>;
@@ -2806,6 +2966,11 @@ router.get("/:id/summary", (req, res) => {
 
   const caseStats: Record<string, number> = {};
   for (const row of caseStatsRows) caseStats[row.result_status] = row.count;
+  const caseStatsByClass: Record<string, number> = {};
+  for (const row of caseRowsForClassStats) {
+    const status = classifiedCaseStatus(row);
+    caseStatsByClass[status] = (caseStatsByClass[status] ?? 0) + 1;
+  }
   const stepStats: Record<string, number> = {};
   for (const row of stepStatsRows) stepStats[row.status] = row.count;
 
@@ -2832,6 +2997,7 @@ router.get("/:id/summary", (req, res) => {
     screenshotArtifactCount: artifactStats.screenshots,
     artifactManifestAvailable: artifactStats.manifests > 0,
     caseStats,
+    caseStatsByClass,
     stepStats,
     pendingApprovals: pendingApprovals.count
   });
@@ -2914,7 +3080,7 @@ router.post("/:id/export-md", (req, res) => {
 
   const counts: Record<string, number> = {};
   for (const c of cases) {
-    const status = c.result_status || "PENDING";
+    const status = classifiedCaseStatus(c);
     counts[status] = (counts[status] ?? 0) + 1;
   }
   const total = cases.length;

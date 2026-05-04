@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import ExcelJS from "exceljs";
 import { writeFinalAggregateResultXlsx } from "../src/result-aggregate-writer";
 import { parseResultXlsx } from "../src/result-parser/result-xlsx-parser";
 
@@ -11,6 +12,7 @@ const main = async (): Promise<void> => {
     const filePath = path.join(tempRoot, "final-aggregate-result.xlsx");
     await writeFinalAggregateResultXlsx({
       filePath,
+      aggregateMode: "partial",
       run: {
         id: "fixture-run",
         round_id: "FIXTURE",
@@ -79,12 +81,20 @@ const main = async (): Promise<void> => {
     assert.equal(parsed.cases[1]?.groupId, "B");
     assert.equal(parsed.bugs.length, 1);
     assert.equal(parsed.bugs[0]?.relatedCaseNo, "FIX-B-01");
+    const readback = new ExcelJS.Workbook();
+    await readback.xlsx.readFile(filePath);
+    const indexRows = (readback.getWorksheet("索引")?.getSheetValues() ?? []) as unknown[];
+    assert.ok(
+      JSON.stringify(indexRows).includes("partial"),
+      "aggregate workbook index should record partial aggregate mode when generated before all cases are final"
+    );
 
     console.log(JSON.stringify({
       ok: true,
       fixture: "final-aggregate-result",
       checked: [
         "aggregate workbook includes multiple case rows",
+        "aggregate workbook records partial aggregate mode",
         "groupId is preserved before groupName",
         "existing result parser can read aggregate workbook"
       ]

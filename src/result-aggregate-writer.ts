@@ -68,6 +68,7 @@ export const writeFinalAggregateResultXlsx = async (input: {
   run: AggregateRun;
   cases: AggregateCase[];
   bugs: AggregateBug[];
+  aggregateMode?: "final" | "partial";
 }): Promise<void> => {
   const workbook = new ExcelJS.Workbook();
   workbook.creator = "uat-tool-server";
@@ -78,6 +79,7 @@ export const writeFinalAggregateResultXlsx = async (input: {
   index.addRows([
     ["schema_version", "uat-final-aggregate-result-v1"],
     ["source", "normalized-server-state"],
+    ["aggregate_mode", input.aggregateMode ?? "final"],
     ["generated_at", generatedAt],
     ["run_id", input.run.id],
     ["round_id", input.run.round_id ?? ""],
@@ -85,7 +87,12 @@ export const writeFinalAggregateResultXlsx = async (input: {
     ["run_status", input.run.status ?? ""],
     ["case_count", input.cases.length],
     ["bug_count", input.bugs.length],
-    ["policy", "Each case was ingested from a single-case output/result.xlsx before this aggregate workbook was generated."]
+    [
+      "policy",
+      input.aggregateMode === "partial"
+        ? "Partial aggregate generated from server-normalized run state. PENDING/MANUAL_PENDING rows may remain when the run failed, was cancelled, or is still incomplete."
+        : "Each case was ingested from a single-case output/result.xlsx before this aggregate workbook was generated."
+    ]
   ]);
 
   const cases = workbook.addWorksheet("測試案例");

@@ -156,6 +156,17 @@ const stringParam = (params: Record<string, unknown>, key: string): string | nul
   return typeof value === "string" && value.trim() ? value.trim() : null;
 };
 
+const isNeutralUiTarget = (value: string | null | undefined): boolean => {
+  const normalized = String(value ?? "").trim().replace(/\s+/g, "").toLowerCase();
+  return !normalized || ["不影響", "不限", "空", "無", "0", "0組", "none", "n/a", "na"].includes(normalized);
+};
+
+const nonNeutralUiTarget = (value: string | null | undefined): string | null => {
+  const trimmed = value?.trim();
+  if (!trimmed || isNeutralUiTarget(trimmed)) return null;
+  return trimmed;
+};
+
 const firstStringParam = (params: Record<string, unknown>, keys: string[]): string | null => {
   for (const key of keys) {
     const value = stringParam(params, key);
@@ -193,8 +204,8 @@ const splitCompositeMetricFields = (value: string | null): string[] => {
 
 const metricFieldsFromParams = (params: Record<string, unknown>): string[] => {
   const explicit = stringArrayParam(params, "fields");
-  if (explicit.length > 0) return [...new Set(explicit)];
-  return splitCompositeMetricFields(firstStringParam(params, ["field", "metric", "metricField"]));
+  if (explicit.length > 0) return [...new Set(explicit.filter((item) => !isNeutralUiTarget(item)))];
+  return splitCompositeMetricFields(nonNeutralUiTarget(firstStringParam(params, ["field", "metric", "metricField"])));
 };
 
 const timestampId = (): string => new Date().toISOString().replace(/[-:T.Z]/g, "").slice(0, 12);
@@ -925,15 +936,15 @@ const parseCleanupTargets = (value: unknown): Record<string, string> => {
 
 const targetStateFromParams = (params: Record<string, unknown>): Record<string, string | string[] | null> => {
   const cleanup = parseCleanupTargets(params.cleanupChecklist);
-  const field = stringParam(params, "field") ?? cleanup["欄位"] ?? null;
+  const field = nonNeutralUiTarget(stringParam(params, "field")) ?? nonNeutralUiTarget(cleanup["欄位"]);
   const fields = metricFieldsFromParams({ ...params, field });
   return {
     field,
     fields,
-    filter: cleanup["篩選"] ?? null,
-    group: cleanup["分組"] ?? null,
-    dateRange: stringParam(params, "dateRange") ?? cleanup["時間"] ?? null,
-    display: stringParam(params, "display") ?? cleanup["顯示"] ?? null
+    filter: nonNeutralUiTarget(cleanup["篩選"]),
+    group: nonNeutralUiTarget(cleanup["分組"]),
+    dateRange: nonNeutralUiTarget(stringParam(params, "dateRange")) ?? nonNeutralUiTarget(cleanup["時間"]),
+    display: nonNeutralUiTarget(stringParam(params, "display")) ?? nonNeutralUiTarget(cleanup["顯示"])
   };
 };
 
@@ -961,7 +972,7 @@ const readStateDelta = async (page: Page, params: Record<string, unknown>): Prom
   });
   const selectedMetricFields = await readSelectedMetricFields(page).catch(() => []);
   const contains = (value: unknown, expected: string | null): boolean | null => {
-    if (!expected || expected === "不限" || expected === "不影響") return null;
+    if (!expected || isNeutralUiTarget(expected)) return null;
     if (typeof value !== "string") return false;
     return normalizeUiText(value).includes(normalizeUiText(expected));
   };
@@ -1459,6 +1470,7 @@ const setDatePreset = async (options: CliOptions, page: Page, preset: string): P
   const uiProfiles: UiDomProfileRef[] = [];
   const normalizedPreset = preset.trim();
   if (!normalizedPreset) return { ok: false, warning: "DATE_RANGE_PRESET_EMPTY", uiProfiles };
+  if (isNeutralUiTarget(normalizedPreset)) return { ok: true, warning: "DATE_RANGE_PRESET_NEUTRAL_SKIPPED", observedAfter: normalizedPreset, uiProfiles };
   if (await bodyContainsText(page, normalizedPreset)) return { ok: true, observedAfter: normalizedPreset, uiProfiles };
 
   if (!(await isDatePickerOpen(page))) {
@@ -1995,7 +2007,7 @@ const reconcileMetricFieldsThroughUi = async (page: Page, targetFields: string[]
 const configureMetric = async (options: CliOptions, page: Page, startedAt: string): Promise<HelperReport> => {
   const warnings: string[] = [];
   const fields = metricFieldsFromParams(options.params);
-  const dateRange = stringParam(options.params, "dateRange");
+  const dateRange = nonNeutralUiTarget(stringParam(options.params, "dateRange"));
   const uiProfileBefore = await captureUiDomProfile(options, page, "configureMetric.before");
   const stateDeltaBefore = await readStateDelta(page, options.params);
   const operations: string[] = [];

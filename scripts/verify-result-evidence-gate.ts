@@ -95,7 +95,12 @@ const writeLegacyBugHeaderWorkbook = async (filePath: string): Promise<void> => 
 
 const runGate = async (
   xlsxPath: string,
-  options: { currentCaseNo?: string | null; expectedCaseNos?: string[]; resultSource?: string | null } = {}
+  options: {
+    currentCaseNo?: string | null;
+    expectedCaseNos?: string[];
+    resultSource?: string | null;
+    externalToolBridgeEvidenceByCase?: Record<string, Array<{ requestId?: string | null; eventType?: string | null }>>;
+  } = {}
 ) => {
   const parsed = await parseResultXlsx(xlsxPath);
   return evaluateResultEvidenceGate({
@@ -103,7 +108,8 @@ const runGate = async (
     currentCaseNo: options.currentCaseNo ?? "FIX-H-01",
     expectedCaseNos: options.expectedCaseNos ?? ["FIX-H-01"],
     resultSource: options.resultSource ?? "codex_generated",
-    requireSingleCase: true
+    requireSingleCase: true,
+    externalToolBridgeEvidenceByCase: options.externalToolBridgeEvidenceByCase
   });
 };
 
@@ -196,6 +202,13 @@ const main = async (): Promise<void> => {
     assert.equal(missingToolBridgeReport.status, "error");
     assert.ok(hasIssue(missingToolBridgeReport, "TOOL_BRIDGE_RESPONSE_MISSING"));
 
+    const externalToolBridgeReport = await runGate(missingToolBridge, {
+      externalToolBridgeEvidenceByCase: {
+        "FIX-H-01": [{ requestId: "fixture-FIX-H-01-save", eventType: "tool_response.delivered" }]
+      }
+    });
+    assert.equal(externalToolBridgeReport.status, "ok", `external Tool Bridge evidence should satisfy response gate; issues=${JSON.stringify(externalToolBridgeReport.issues)}`);
+
     const invalidJson = path.join(tempRoot, "invalid-json-result.xlsx");
     await writeWorkbook(invalidJson, [
       {
@@ -222,6 +235,7 @@ const main = async (): Promise<void> => {
 	            "agent fallback result is blocked",
             "diagnostic result source is blocked",
             "Tool Bridge action claim without response evidence is blocked",
+            "Tool Bridge action claim can be satisfied by current-run server event evidence",
             "invalid detail_json is blocked"
           ]
         },

@@ -1,7 +1,7 @@
 # UAT Tool 最新工程 Spec
 
 **版本**: v2026-05-04
-**狀態**: Mac Agent MVP / App 1.1.1 + Agent 0.2.3 / Indexed Guidance + Preflight Safeguards + groupId schema + final aggregate result + complete archive MD export + OTTEST002 Collage helper P0 + metadata dropdown source-group scoping + list-page CSV row refresh + response-body fallback + preview table evidence + CSV header/date normalization + helper-plan auto continuation + existing-report field exact reconciliation + helper-evidence preflight replacement + support-file profile + result repair guard + degraded BLOCKED result guard + BLOCKED detail_json core-field gate + PASS-vs-helper-false-check gate + case-type must-read rules + CSV/metadata authoring contract + exact metadata source filename contract + background-safe browser lease + no-foreground helper policy + field-list loading wait
+**狀態**: Mac Agent MVP / App 1.1.2 + Agent 0.2.4 / Indexed Guidance + Preflight Safeguards + groupId schema + final/partial aggregate result + complete archive MD export + OTTEST002 Collage helper P0 + metadata dropdown source-group scoping + list-page CSV row refresh + response-body fallback + preview table evidence + CSV header/date normalization + helper-plan auto continuation + existing-report field exact reconciliation + helper-evidence preflight replacement + support-file profile + result repair guard + degraded BLOCKED result guard + BLOCKED detail_json core-field gate + Tool Bridge run-event evidence gate + PASS-vs-helper-false-check gate + PM skip classification + preview-only helper skip guards + case-type must-read rules + CSV/metadata authoring contract + exact metadata source filename contract + background-safe browser lease + no-foreground helper policy + field-list loading wait
 **適用分支**: `refactor/mac-agent-mvp` / `codex/uat-tool-mvp`  
 **說明**: 檔名沿用 Tommy 提供的 `工程spac.md`;本文內容為工程 spec。
 
@@ -150,7 +150,7 @@ package:
 ```text
 package name: uat-tool-agent
 binary: uat-agent
-version: 0.2.3
+version: 0.2.4
 ```
 
 The Agent WebSocket `X-Agent-Version` header and `agent.online.payload.agent_version` are read from `agent/package.json`; they must not be hard-coded in `agent/src/connection.ts`.
@@ -1221,6 +1221,7 @@ Workbook contract:
 ```text
 schema_version = uat-final-aggregate-result-v1
 source = normalized-server-state
+aggregate_mode = final | partial
 ```
 
 Sheets:
@@ -1247,8 +1248,9 @@ Final `測試案例` columns:
 
 Download behavior:
 
-- `GET /api/runs/:id/output/result-xlsx` first returns final aggregate if available.
-- If the run is not complete or aggregate generation is not possible, it falls back to the latest raw `result.xlsx`.
+- `GET /api/runs/:id/output/result-xlsx` first generates an aggregate workbook from normalized server state.
+- If all cases are terminal, `aggregate_mode=final`; if a failed/cancelled/interrupted run has completed case rows but still contains `PENDING`/`MANUAL_PENDING`, `aggregate_mode=partial`.
+- It falls back to the latest raw `result.xlsx` only when no normalized case result exists yet.
 
 ### 9.5 Markdown Downloads
 

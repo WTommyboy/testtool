@@ -25,12 +25,12 @@ export const parseCleanupTargets = (value: string | null | undefined): Record<st
   return result;
 };
 
-const neutralCleanupTarget = (value: string | null | undefined): boolean => {
+export const isNeutralCleanupTarget = (value: string | null | undefined): boolean => {
   const normalized = normalize(value).replace(/\s+/g, "").toLowerCase();
   return !normalized || ["不影響", "不限", "空", "無", "0", "0組", "none", "n/a", "na"].includes(normalized);
 };
 
-const cleanupRequiresFeature = (value: string | null | undefined): boolean => !neutralCleanupTarget(value);
+const cleanupRequiresFeature = (value: string | null | undefined): boolean => !isNeutralCleanupTarget(value);
 
 const fullTextBlob = (item: CaseManifestCase | null, helperHints: HelperHints | null): string =>
   [

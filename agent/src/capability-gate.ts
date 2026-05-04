@@ -38,6 +38,39 @@ type WriteCapabilityGateOptions = {
   helperHints: HelperHints | null;
 };
 
+const paramsObject = (helperHints: HelperHints | null): Record<string, unknown> =>
+  helperHints?.params && typeof helperHints.params === "object" && !Array.isArray(helperHints.params)
+    ? (helperHints.params as Record<string, unknown>)
+    : {};
+
+const stringParam = (params: Record<string, unknown>, keys: string[]): string | null => {
+  for (const key of keys) {
+    const value = params[key];
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return null;
+};
+
+const booleanishParam = (params: Record<string, unknown>, keys: string[]): boolean => {
+  for (const key of keys) {
+    const value = params[key];
+    if (value === true) return true;
+    if (typeof value === "string" && /^(true|yes|y|1|是|要)$/i.test(value.trim())) return true;
+  }
+  return false;
+};
+
+const helperScope = (params: Record<string, unknown>): string | null => stringParam(params, ["scope", "executionScope", "helperScope"]);
+
+const helperRequestsPreviewOnly = (params: Record<string, unknown>): boolean =>
+  /^(preview_only|preview-only|preview|d0|d0_only|d0-only)$/i.test(helperScope(params) ?? "");
+
+const helperRequestsNoSave = (params: Record<string, unknown>): boolean =>
+  helperRequestsPreviewOnly(params) || booleanishParam(params, ["skipSave", "doNotSave", "noSave", "previewOnly"]);
+
+const helperRequestsNoReopen = (params: Record<string, unknown>): boolean =>
+  helperRequestsPreviewOnly(params) || booleanishParam(params, ["skipReopen", "doNotReopen", "noReopen", "previewOnly"]);
+
 export const evaluateCapabilityGate = (
   currentCase: CaseManifestCase | null,
   helperHints: HelperHints | null
@@ -53,7 +86,11 @@ export const evaluateCapabilityGate = (
   const isSaveReopenFlow = detectedFeatures.isSaveReopenFlow;
   const unsupportedFeatures: string[] = [];
   const supportedHelperTemplates: string[] = [];
-  const explicitlyNoReopen = /不(?:需|要|應)?重開|不要重開|無需重開|不用重開|不重開\s*editor|不應產生\s*reopen/i.test(text);
+  const params = paramsObject(helperHints);
+  const noSave = helperRequestsNoSave(params);
+  const explicitlyNoReopen =
+    helperRequestsNoReopen(params) ||
+    /不(?:需|要|應)?重開|不要重開|無需重開|不用重開|不重開\s*editor|不應產生\s*reopen/i.test(text);
 
   if (mode === "record") unsupportedFeatures.push("record_mode_helper_not_supported");
   if (mode === "metric") unsupportedFeatures.push("metric_mode_helper_not_supported");
@@ -74,7 +111,7 @@ export const evaluateCapabilityGate = (
       "collage.runPreviewAndCollectEvidence"
     );
     if (/修改既有|既有報表|已儲存報表|儲存覆寫|覆寫/.test(text)) supportedHelperTemplates.push("collage.openExistingReport");
-    if (/儲存|覆寫/.test(text)) supportedHelperTemplates.push("collage.saveReport");
+    if (!noSave && /儲存|覆寫/.test(text)) supportedHelperTemplates.push("collage.saveReport");
     if (!explicitlyNoReopen && /重開|重新檢視|還原|載入/.test(text)) supportedHelperTemplates.push("collage.reopenReport");
     if (/下載|CSV/i.test(text)) supportedHelperTemplates.push("collage.downloadCsvAndComparePreview");
   }

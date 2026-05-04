@@ -5,6 +5,7 @@ import path from "node:path";
 import { evaluateCapabilityGate } from "../agent/src/capability-gate";
 import { buildHelperExecutionPlan } from "../agent/src/helper-execution-plan";
 import type { CaseManifestCase } from "../agent/src/case-manifest";
+import type { HelperHints } from "../agent/src/helper-hints";
 
 const collageSaveReopenCase: CaseManifestCase = {
   order: 1,
@@ -106,6 +107,27 @@ const collageMetadataCompareCase: CaseManifestCase = {
   validationMethod: "Evidence: DOM read(欄位下拉清單)+ rules/BI_DATA/metadata.csv 對照計算"
 };
 
+const previewOnlyHints: HelperHints = {
+  caseId: "TOOL-D-01",
+  automationLevel: "helper",
+  operationTemplate: "collage_build_preview_save_reopen",
+  params: {
+    scope: "preview_only",
+    skipSave: true,
+    skipReopen: true,
+    field: "新增帳號數",
+    dateRange: "不影響",
+    display: "不影響"
+  },
+  requiredEvidence: ["network.requestBody", "chart.datasets"],
+  forbiddenAutomation: ["direct_bi_api", "internal_js_setter"],
+  aiDecisionRequired: true,
+  raw: {},
+  sourcePath: "fixture/helper-hints.md",
+  sourceRelativePath: "fixture/helper-hints.md",
+  warnings: []
+};
+
 const main = (): void => {
   const report = evaluateCapabilityGate(collageSaveReopenCase, null);
   assert.equal(report.supportStatus, "supported", `TOOL-A-01 save/reopen fixture should be helper supported; report=${JSON.stringify(report)}`);
@@ -153,6 +175,25 @@ const main = (): void => {
     assert.ok(existingPlan.actions.some((item) => item.template === "collage.openExistingReport"), "A-05 should open an existing report instead of creating a new report");
     assert.ok(!existingPlan.actions.some((item) => item.template === "collage.createReport"), "A-05 should not create a new report");
     assert.equal(existingPlan.actions.find((item) => item.template === "collage.saveReport")?.params.overwriteExisting, true, "A-05 save should be overwriteExisting");
+
+    const previewOnlyCase = {
+      ...collageSaveReopenCase,
+      caseNo: "TOOL-D-01",
+      cleanupChecklist: "欄位=新增帳號數;篩選=不影響;分組=不影響;時間=不影響;顯示=不影響",
+      stepsSummary: "1. 進入拼貼模式新增報表頁\n2. 加欄位「新增帳號數」\n3. 按執行取得 preview\n4. 本題不儲存、不重開"
+    };
+    const previewOnlyGate = evaluateCapabilityGate(previewOnlyCase, previewOnlyHints);
+    assert.ok(!previewOnlyGate.supportedHelperTemplates.includes("collage.saveReport"), "preview-only helper hints must not advertise saveReport");
+    assert.ok(!previewOnlyGate.supportedHelperTemplates.includes("collage.reopenReport"), "preview-only helper hints must not advertise reopenReport");
+    const previewOnlyPlan = buildHelperExecutionPlan({ runDir, currentCase: previewOnlyCase, helperHints: previewOnlyHints });
+    assert.ok(previewOnlyPlan.actions.some((item) => item.template === "collage.runPreviewAndCollectEvidence"), "preview-only flow should still run preview evidence");
+    assert.ok(!previewOnlyPlan.actions.some((item) => item.template === "collage.saveReport"), "skipSave must suppress saveReport even when template name includes save_reopen");
+    assert.ok(!previewOnlyPlan.actions.some((item) => item.template === "collage.reopenReport"), "skipReopen must suppress reopenReport even when template name includes save_reopen");
+    assert.equal(
+      previewOnlyPlan.actions.find((item) => item.template === "collage.configureMetric")?.params.dateRange,
+      null,
+      "neutral dateRange must not be passed to helper as a clickable date preset"
+    );
   } finally {
     fs.rmSync(runDir, { recursive: true, force: true });
   }
@@ -173,6 +214,7 @@ const main = (): void => {
           "collage multi-field helper params split composite metric strings",
           "collage CSV case includes download/compare helper action",
           "collage existing-report modification opens existing report and overwrites",
+          "preview-only helper hints suppress save/reopen and neutral dateRange",
           "collage metadata compare is not misclassified as record/detail mode",
           "collage metadata compare is helper-assisted by dedicated dropdown extraction",
           "list-page CSV case does not reopen editor and targets saved report row download",
