@@ -156,7 +156,7 @@ const needsReportEditorPrelude = (currentCase: CaseManifestCase | null): boolean
 const dateRequiresCodexVisibleUi = (currentCase: CaseManifestCase | null, helperHints: HelperHints | null): boolean => {
   const params = paramsObject(helperHints);
   const cleanup = parseCleanupTargets(currentCase?.cleanupChecklist);
-  const dateVariants = stringArrayParam(params, "dateVariants");
+  const dateVariants = firstStringArrayParam(params, ["dateVariants", "uiLabels"]);
   if (dateVariants.length > 1) return true;
   const dateText = [
     stringParam(params, ["dateRange", "timeRange"]),
@@ -204,6 +204,14 @@ const stringArrayParam = (params: Record<string, unknown>, key: string): string[
   return value.filter((item): item is string => typeof item === "string" && item.trim().length > 0).map((item) => item.trim());
 };
 
+const firstStringArrayParam = (params: Record<string, unknown>, keys: string[]): string[] => {
+  for (const key of keys) {
+    const values = stringArrayParam(params, key);
+    if (values.length > 0) return values;
+  }
+  return [];
+};
+
 const rawArrayParam = (params: Record<string, unknown>, key: string): unknown[] | null =>
   Array.isArray(params[key]) ? (params[key] as unknown[]) : null;
 
@@ -214,6 +222,22 @@ const dateObjectParam = (value: unknown): string | null => {
   const end = typeof record.end === "string" ? record.end.trim() : "";
   if (!start || !end) return null;
   return `${start.replaceAll("-", "/")}~${end.replaceAll("-", "/")}`;
+};
+
+const structuredStaticDateRangeParam = (params: Record<string, unknown>): string | null => {
+  const start = params.start;
+  const end = params.end;
+  if (!start || !end || typeof start !== "object" || typeof end !== "object" || Array.isArray(start) || Array.isArray(end)) {
+    return null;
+  }
+  const startRecord = start as Record<string, unknown>;
+  const endRecord = end as Record<string, unknown>;
+  const startType = typeof startRecord.type === "string" ? startRecord.type.trim().toLowerCase() : "";
+  const endType = typeof endRecord.type === "string" ? endRecord.type.trim().toLowerCase() : "";
+  const startDate = typeof startRecord.date === "string" ? startRecord.date.trim() : "";
+  const endDate = typeof endRecord.date === "string" ? endRecord.date.trim() : "";
+  if (startType !== "static" || endType !== "static" || !startDate || !endDate) return null;
+  return `${startDate.replaceAll("-", "/")}~${endDate.replaceAll("-", "/")}`;
 };
 
 const numberParam = (params: Record<string, unknown>, keys: string[]): number | null => {
@@ -245,7 +269,7 @@ const inferCollageParams = (currentCase: CaseManifestCase | null, helperHints: H
   const selectAllFields =
     booleanishParam(params, ["selectAllFields", "selectAll", "selectAllMetrics"]) ||
     booleanishParam(params, ["selectAllFieldsInSourceReport", "selectAllSourceFields"]);
-  const dateVariants = stringArrayParam(params, "dateVariants");
+  const dateVariants = firstStringArrayParam(params, ["dateVariants", "uiLabels"]);
   const field = selectAllFields
     ? null
     : nonNeutral(stringParam(params, ["field", "metric", "metricField"])) ??
@@ -258,6 +282,7 @@ const inferCollageParams = (currentCase: CaseManifestCase | null, helperHints: H
   const dateRangeText =
     nonNeutral(stringParam(params, ["dateRange", "timeRange"])) ??
     nonNeutral(dateObjectParam(params.dateRange)) ??
+    nonNeutral(structuredStaticDateRangeParam(params)) ??
     (dateVariants.length === 1 ? nonNeutral(dateVariants[0]) : null) ??
     nonNeutral(cleanup["時間"]) ??
     firstMatch(text, [/(\d{4}\/\d{2}\/\d{2}\s*[~～-]\s*\d{4}\/\d{2}\/\d{2})/]);
@@ -306,6 +331,14 @@ const inferCollageParams = (currentCase: CaseManifestCase | null, helperHints: H
   };
 };
 
+const canRunDatePreviewEvidenceHelper = (params: Record<string, unknown>, currentCase: CaseManifestCase | null): boolean => {
+  const dateVariants = stringArrayParam(params, "dateVariants");
+  const dateMode = String(params.dateMode ?? "").trim().toLowerCase();
+  if (dateVariants.length > 0 && (!dateMode || dateMode === "preset")) return true;
+  if (dateMode === "static" && typeof params.dateRange === "string" && params.dateRange.trim()) return true;
+  return /operationTemplate[：:]\s*collage_date_variants_preview/.test(textBlob(currentCase));
+};
+
 const action = (
   id: string,
   template: string,
@@ -345,7 +378,7 @@ const buildActions = (currentCase: CaseManifestCase | null, helperHints: HelperH
   const helperMustLeaveCoreToCodex = helperHintsRequestManualAi(helperHints) || dateRequiresCodexVisibleUi(currentCase, helperHints);
   if (helperMustLeaveCoreToCodex) {
     if (!needsCollageNavigationPrelude(currentCase, helperHints)) return [];
-    const prelude = [
+    const prelude: HelperPlanAction[] = [
       action("H1", "collage.openProject", "開啟指定拼貼專案（manual_ai 前置導航）", params, {
         requiredEvidence: ["dom.url", "dom.pageTitle", "dom.state", "screenshot"],
         notes: ["manual_ai / 動態日期題只允許 helper 做安全前置導航；不可判斷 testcase 結果。"]
@@ -356,6 +389,19 @@ const buildActions = (currentCase: CaseManifestCase | null, helperHints: HelperH
         action("H2", "collage.createReport", "進入新增報表頁（manual_ai 前置導航）", params, {
           requiredEvidence: ["dom.url", "dom.pageTitle", "dom.state", "screenshot"],
           notes: ["到達報表設定頁後即停止；欄位、日期、preview、CSV 等核心驗證必須由 Codex visible UI 逐步執行。"]
+        })
+      );
+    }
+    if (canRunDatePreviewEvidenceHelper(params, currentCase)) {
+      prelude.push(
+        action("H3", "collage.runDateVariantsPreviewEvidence", "逐輪設定日期並收集 preview evidence（manual_ai 日期合題）", params, {
+          requiredEvidence: ["dom.state", "date.uiState", "date.representedRange", "network.requestBody", "chart.datasets", "screenshot"],
+          screenshotPolicy: "required_if_possible",
+          notes: [
+            "此 helper 只適用 preset dateVariants/uiLabels 或全靜態 start/end 日期；不支援自訂動態/半動態右側天數輸入。",
+            "每個日期 variant 必須透過 visible UI 設定後按執行，收集 per-variant date UI、network request body、chart/table evidence。",
+            "helper 不判 PASS/FAIL；Codex 必須比對 UI label、representedRange、requestBody.dateRange 與 preview 筆數後寫 result.xlsx。"
+          ]
         })
       );
     }

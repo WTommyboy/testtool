@@ -80,6 +80,14 @@ const stringArrayParam = (params: Record<string, unknown>, key: string): string[
   return value.filter((item): item is string => typeof item === "string" && item.trim().length > 0).map((item) => item.trim());
 };
 
+const firstStringArrayParam = (params: Record<string, unknown>, keys: string[]): string[] => {
+  for (const key of keys) {
+    const values = stringArrayParam(params, key);
+    if (values.length > 0) return values;
+  }
+  return [];
+};
+
 const dateObjectParam = (value: unknown): string | null => {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const record = value as Record<string, unknown>;
@@ -92,7 +100,7 @@ const dateObjectParam = (value: unknown): string | null => {
 const dateRequiresCodexVisibleUi = (currentCase: CaseManifestCase | null, helperHints: HelperHints | null): boolean => {
   const params = paramsObject(helperHints);
   const cleanupTargets = detectCaseFeatures(currentCase, helperHints).cleanupTargets;
-  const dateVariants = stringArrayParam(params, "dateVariants");
+  const dateVariants = firstStringArrayParam(params, ["dateVariants", "uiLabels"]);
   if (dateVariants.length > 1) return true;
   const dateText = [
     stringParam(params, ["dateRange", "timeRange"]),
@@ -105,6 +113,13 @@ const dateRequiresCodexVisibleUi = (currentCase: CaseManifestCase | null, helper
     .filter(Boolean)
     .join("\n");
   return /半動態|自訂動態|動態區間|天前|天後|快捷起點|快捷訖點|快捷終點|跨\s*9[01]\s*天|90\s*天|91\s*天|連續切換|不同區間/.test(dateText);
+};
+
+const canRunDatePreviewEvidenceHelper = (params: Record<string, unknown>): boolean => {
+  const dateVariants = firstStringArrayParam(params, ["dateVariants", "uiLabels"]);
+  const dateMode = String(params.dateMode ?? "").trim().toLowerCase();
+  if (dateVariants.length > 0 && (!dateMode || dateMode === "preset")) return true;
+  return dateMode === "static";
 };
 
 const needsCollageNavigationPrelude = (currentCase: CaseManifestCase | null, helperHints: HelperHints | null): boolean => {
@@ -141,6 +156,7 @@ export const evaluateCapabilityGate = (
   const manualAiRequested = automationLevel === "manual_ai" || operationTemplate === "manual_ai";
   const dateNeedsCodexVisibleUi = dateRequiresCodexVisibleUi(currentCase, helperHints);
   const navigationPreludeAllowed = needsCollageNavigationPrelude(currentCase, helperHints);
+  const datePreviewEvidenceAllowed = mode === "collage" && !hasFilter && !hasGroup && canRunDatePreviewEvidenceHelper(params);
 
   if (mode === "record") unsupportedFeatures.push("record_mode_helper_not_supported");
   if (mode === "metric") unsupportedFeatures.push("metric_mode_helper_not_supported");
@@ -164,6 +180,17 @@ export const evaluateCapabilityGate = (
     if (!noSave && /儲存|覆寫/.test(text)) supportedHelperTemplates.push("collage.saveReport");
     if (!explicitlyNoReopen && /重開|重新檢視|還原|載入/.test(text)) supportedHelperTemplates.push("collage.reopenReport");
     if (!noDownload && /下載|CSV/i.test(text)) supportedHelperTemplates.push("collage.downloadCsvAndComparePreview");
+    if (datePreviewEvidenceAllowed) supportedHelperTemplates.push("collage.runDateVariantsPreviewEvidence");
+  }
+
+  if (manualAiRequested || dateNeedsCodexVisibleUi) {
+    const degradedAllowed = new Set([
+      "collage.openProject",
+      "collage.createReport",
+      ...(datePreviewEvidenceAllowed ? ["collage.runDateVariantsPreviewEvidence"] : [])
+    ]);
+    const filtered = supportedHelperTemplates.filter((template) => degradedAllowed.has(template));
+    supportedHelperTemplates.splice(0, supportedHelperTemplates.length, ...filtered);
   }
 
   let supportStatus: CapabilityGateReport["supportStatus"] = "degraded";
@@ -196,7 +223,9 @@ export const evaluateCapabilityGate = (
     : supportStatus === "supported"
       ? "Use helper pre-run evidence when status=ok and matching this case; continue with visible UI only for incomplete evidence. Codex still judges PASS/FAIL/BLOCKED."
       : navigationPreludeAllowed
-        ? "Helper pre-run may perform only safe collage navigation/setup (open project and, when needed, enter the new-report settings page). Codex must execute the case-specific UI assertions, field/date/preview/CSV steps, and judge PASS/FAIL/BLOCKED. Do not treat navigation helper output alone as final testcase proof."
+        ? datePreviewEvidenceAllowed
+          ? "Helper pre-run may perform safe collage navigation/setup plus implemented date preview evidence collection for preset/static date cases. Codex must judge PASS/FAIL/BLOCKED from per-variant UI, request body, and preview evidence; do not treat helper output alone as final testcase proof."
+          : "Helper pre-run may perform only safe collage navigation/setup (open project and, when needed, enter the new-report settings page). Codex must execute the case-specific UI assertions, field/date/preview/CSV steps, and judge PASS/FAIL/BLOCKED. Do not treat navigation helper output alone as final testcase proof."
         : "Do not run helper pre-run. Codex may perform visible UI/read-only evidence collection one case at a time. If browser automation is unavailable or the UI path is not reachable, write a single-case BLOCKED result with fail_category=TOOL_EXECUTION_UNAVAILABLE and cite this capability gate/helper skipped state as current-run evidence.";
 
   return {

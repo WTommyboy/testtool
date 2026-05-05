@@ -271,6 +271,39 @@ const baseDateParam = (params: Record<string, unknown>): string | null =>
 const weekStartParam = (params: Record<string, unknown>): "monday" | "sunday" =>
   normalizeDateUiWeekStart(firstStringParam(params, ["weekStart", "week_start", "weekStartsOn"])) ?? "monday";
 
+const firstStringArrayParam = (params: Record<string, unknown>, keys: string[]): string[] => {
+  for (const key of keys) {
+    const values = stringArrayParam(params, key);
+    if (values.length > 0) return values;
+  }
+  return [];
+};
+
+const structuredStaticDateRangeParam = (params: Record<string, unknown>): string | null => {
+  const start = params.start;
+  const end = params.end;
+  if (!start || !end || typeof start !== "object" || typeof end !== "object" || Array.isArray(start) || Array.isArray(end)) {
+    return null;
+  }
+  const startRecord = start as Record<string, unknown>;
+  const endRecord = end as Record<string, unknown>;
+  const startType = typeof startRecord.type === "string" ? startRecord.type.trim().toLowerCase() : "";
+  const endType = typeof endRecord.type === "string" ? endRecord.type.trim().toLowerCase() : "";
+  const startDate = typeof startRecord.date === "string" ? startRecord.date.trim() : "";
+  const endDate = typeof endRecord.date === "string" ? endRecord.date.trim() : "";
+  if (startType !== "static" || endType !== "static" || !startDate || !endDate) return null;
+  return `${startDate.replaceAll("-", "/")} ~ ${endDate.replaceAll("-", "/")}`;
+};
+
+const datePreviewLabelsFromParams = (params: Record<string, unknown>): string[] => {
+  const variants = firstStringArrayParam(params, ["dateVariants", "uiLabels"]);
+  if (variants.length > 0) return variants;
+  const staticRange = structuredStaticDateRangeParam(params);
+  if (staticRange) return [staticRange];
+  const direct = nonNeutralUiTarget(firstStringParam(params, ["dateRange", "timeRange", "datePreset"]));
+  return direct ? [direct] : [];
+};
+
 export const readDateUiEvidence = async (page: Page, requested: string | null, params: Record<string, unknown>): Promise<DateUiEvidence> => {
   const observed = await page.evaluate(`
     (() => {
@@ -1593,6 +1626,36 @@ const setDatePreset = async (options: CliOptions, page: Page, preset: string): P
   };
 };
 
+const setDisplayModeThroughUi = async (page: Page, display: string | null): Promise<string | null> => {
+  const target = nonNeutralUiTarget(display);
+  if (!target) return null;
+  const normalizedTarget = normalizeUiText(target);
+  const selects = await page.locator("select").count().catch(() => 0);
+  for (let index = 0; index < selects; index += 1) {
+    const options = await page.locator("select").nth(index).evaluate((select) => {
+      if (!(select instanceof HTMLSelectElement)) return [];
+      return Array.from(select.options).map((option) => ({
+        value: option.value,
+        text: option.textContent?.trim() ?? "",
+        selected: option.selected
+      }));
+    }).catch(() => []);
+    const current = options.find((option) => option.selected);
+    if (current && normalizeUiText(`${current.text}\n${current.value}`).includes(normalizedTarget)) {
+      return `display:already:${target}`;
+    }
+    const match = options.find((option) =>
+      normalizeUiText(`${option.text}\n${option.value}`).includes(normalizedTarget) ||
+      (normalizedTarget === "每天" && /daily|day|每日|每天/i.test(`${option.text}\n${option.value}`))
+    );
+    if (!match) continue;
+    await page.locator("select").nth(index).selectOption(match.value, { timeout: 5000 });
+    await page.waitForTimeout(300);
+    return `display:set:${target}:${match.value}`;
+  }
+  return `display:not_found:${target}`;
+};
+
 const readChartSummary = async (page: Page): Promise<Record<string, unknown> | null> => {
   try {
     return await page.evaluate(() => {
@@ -2211,6 +2274,8 @@ const configureMetric = async (options: CliOptions, page: Page, startedAt: strin
       operations.push(`dateRange:verified:${dateRange}`);
     }
   }
+  const displayOperation = await setDisplayModeThroughUi(page, stringParam(options.params, "display"));
+  if (displayOperation) operations.push(displayOperation);
   const stateDeltaAfter = await readStateDelta(page, options.params);
   const shot = await screenshot(options, page, "configure-metric");
   const uiProfileAfter = await captureUiDomProfile(options, page, "configureMetric.after");
@@ -2303,6 +2368,120 @@ const runPreview = async (options: CliOptions, page: Page, startedAt: string): P
       ...(shot ? [] : ["SCREENSHOT_UNAVAILABLE"]),
       ...(hasPreviewEvidence ? [] : ["PREVIEW_UI_ACTION_NOT_VERIFIED_NO_NETWORK_OR_CHART_EVIDENCE"])
     ]
+  );
+};
+
+const dateVariantsPreviewEvidencePath = (options: CliOptions): string => path.join(artifactRoot(options), "date-variants-preview-evidence.json");
+
+const runDateVariantsPreviewEvidence = async (options: CliOptions, page: Page, startedAt: string): Promise<HelperReport> => {
+  const warnings: string[] = [];
+  const operations: string[] = [];
+  const labels = datePreviewLabelsFromParams(options.params);
+  if (labels.length === 0) {
+    throw new HelperBlockedError("DATE_VARIANTS_EMPTY");
+  }
+
+  const fields = metricFieldsFromParams(options.params);
+  const beforeProfile = await captureUiDomProfile(options, page, "dateVariants.before");
+  const stateBefore = await readStateDelta(page, options.params).catch((error) => ({
+    readError: error instanceof Error ? error.message : String(error)
+  }));
+
+  if (paramsRequestSelectAllFields(options.params)) {
+    operations.push(...await selectAllMetricFieldsThroughUi(options, page));
+  } else if (fields.length > 0) {
+    operations.push(...await reconcileMetricFieldsThroughUi(page, fields));
+  }
+  const displayOperation = await setDisplayModeThroughUi(page, stringParam(options.params, "display"));
+  if (displayOperation) operations.push(displayOperation);
+
+  const variants: Array<Record<string, unknown>> = [];
+  for (const label of labels) {
+    const normalizedLabel = normalizeDatePresetLabel(label);
+    const variantWarnings: string[] = [];
+    const setResult = await setDateRange(options, page, label);
+    const { uiProfiles, ...setEvidence } = setResult;
+    const dateUiEvidence = await readDateUiEvidence(page, label, options.params);
+    const dateUiArtifact = writeDateUiEvidenceArtifact(options, dateUiEvidence);
+    variantWarnings.push(...dateUiEvidence.warnings);
+    if (!setResult.ok) {
+      variantWarnings.push(`DATE_VARIANT_UI_SETTING_NOT_COMPLETED:${setResult.warning ?? "unknown"}`);
+    }
+
+    let observed: { requests: Record<string, unknown>[]; responses: Record<string, unknown>[] } = { requests: [], responses: [] };
+    let chart: Record<string, unknown> | null = null;
+    let table: Record<string, unknown> | null = null;
+    if (setResult.ok) {
+      const previewObserved = await observeDuring(page, async () => {
+        await page.getByText("執行", { exact: true }).first().click({ timeout: 15000 });
+        await page.waitForTimeout(2500);
+      });
+      observed = { requests: previewObserved.requests, responses: previewObserved.responses };
+      chart = await readChartSummary(page);
+      table = await readPreviewTableSummary(page);
+    }
+    const hasPreviewEvidence = observed.requests.length > 0 || observed.responses.length > 0 || chart !== null || table !== null;
+    if (setResult.ok && !hasPreviewEvidence) {
+      variantWarnings.push("DATE_VARIANT_PREVIEW_ACTION_NOT_VERIFIED_NO_NETWORK_OR_CHART_EVIDENCE");
+    }
+    const shot = await screenshot(options, page, `date-variant-${label}`);
+    if (!shot) variantWarnings.push("SCREENSHOT_UNAVAILABLE");
+
+    const variantEvidence = {
+      index: variants.length,
+      requestedLabel: label,
+      normalizedLabel,
+      status: setResult.ok && hasPreviewEvidence ? "ok" : "blocked",
+      setDateResult: setEvidence,
+      dateUiEvidence,
+      network: observed,
+      chart,
+      table,
+      domState: await readDomState(page),
+      stateDelta: await readStateDelta(page, { ...options.params, dateRange: label }).catch((error) => ({
+        readError: error instanceof Error ? error.message : String(error)
+      })),
+      uiProfiles: uiProfiles ?? [],
+      artifacts: {
+        dateUiEvidence: dateUiArtifact,
+        ...(shot ? { screenshot: shot } : {})
+      },
+      warnings: variantWarnings
+    };
+    variants.push(variantEvidence);
+    warnings.push(...variantWarnings.map((warning) => `${label}:${warning}`));
+  }
+
+  const evidence = {
+    generatedAt: new Date().toISOString(),
+    caseId: options.caseId,
+    fields,
+    requestedLabels: labels,
+    stateBefore,
+    stateAfter: await readStateDelta(page, options.params).catch((error) => ({
+      readError: error instanceof Error ? error.message : String(error)
+    })),
+    operations,
+    variants
+  };
+  ensureDir(artifactRoot(options));
+  fs.writeFileSync(dateVariantsPreviewEvidencePath(options), `${JSON.stringify(evidence, null, 2)}\n`);
+  const afterProfile = await captureUiDomProfile(options, page, "dateVariants.after");
+  const ok = variants.length > 0 && variants.every((variant) => variant.status === "ok");
+  return createReport(
+    options,
+    ok ? "ok" : "blocked",
+    startedAt,
+    {
+      domState: await readDomState(page),
+      uiProfiles: {
+        before: beforeProfile,
+        after: afterProfile
+      },
+      dateVariantsPreviewEvidence: evidence
+    },
+    { dateVariantsPreviewEvidence: dateVariantsPreviewEvidencePath(options) },
+    warnings
   );
 };
 
@@ -3722,6 +3901,9 @@ const run = async (): Promise<void> => {
         break;
       case "collage.runPreviewAndCollectEvidence":
         report = await runPreview(options, page, startedAt);
+        break;
+      case "collage.runDateVariantsPreviewEvidence":
+        report = await runDateVariantsPreviewEvidence(options, page, startedAt);
         break;
       case "collage.captureDateUiEvidence":
         report = await captureDateUiEvidenceReport(options, page, startedAt);

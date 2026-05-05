@@ -30,6 +30,7 @@ const ALLOWED_OPERATION_TEMPLATES = new Set([
   "metric_filter_operator",
   "metric_group_series",
   "chart_csv_consistency",
+  "collage_date_variants_preview",
   "download_csv_verify",
   "save_load_flow",
   "manual_ai"

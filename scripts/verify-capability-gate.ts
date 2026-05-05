@@ -306,11 +306,11 @@ const main = (): void => {
     const manualAiPlan = buildHelperExecutionPlan({ runDir, currentCase: manualAiCase, helperHints: manualAiDateHints });
     assert.deepEqual(
       manualAiPlan.actions.map((item) => item.template),
-      ["collage.openProject", "collage.createReport"],
-      "manual_ai cases may only build safe navigation/setup helper actions"
+      ["collage.openProject", "collage.createReport", "collage.runDateVariantsPreviewEvidence"],
+      "manual_ai preset date cases may build safe navigation plus dedicated date-variants evidence helper"
     );
-    assert.ok(!manualAiPlan.actions.some((item) => item.template === "collage.configureMetric"), "manual_ai prelude must not configure fields/date");
-    assert.ok(!manualAiPlan.actions.some((item) => item.template === "collage.runPreviewAndCollectEvidence"), "manual_ai prelude must not run preview");
+    assert.ok(!manualAiPlan.actions.some((item) => item.template === "collage.configureMetric"), "manual_ai date helper must not use generic configureMetric");
+    assert.ok(!manualAiPlan.actions.some((item) => item.template === "collage.runPreviewAndCollectEvidence"), "manual_ai date helper must not use the single-preview template");
     assert.ok(
       manualAiPlan.availableTemplates.some((item) => item.template === "collage.captureDateUiEvidence"),
       "manual_ai date cases should still expose a read-only date UI evidence capture helper"
@@ -323,10 +323,10 @@ const main = (): void => {
     const helperDateVariantsPlan = buildHelperExecutionPlan({ runDir, currentCase: manualAiCase, helperHints: helperDateVariantsHints });
     assert.deepEqual(
       helperDateVariantsPlan.actions.map((item) => item.template),
-      ["collage.openProject", "collage.createReport"],
-      "multi-variant date helper hints may only build safe navigation/setup actions"
+      ["collage.openProject", "collage.createReport", "collage.runDateVariantsPreviewEvidence"],
+      "multi-variant date helper hints should use the dedicated per-variant preview evidence helper"
     );
-    assert.ok(!helperDateVariantsPlan.actions.some((item) => item.template === "collage.configureMetric"), "multi-variant date prelude must not build single configureMetric actions");
+    assert.ok(!helperDateVariantsPlan.actions.some((item) => item.template === "collage.configureMetric"), "multi-variant date helper must not build single configureMetric actions");
     assert.ok(
       helperDateVariantsPlan.availableTemplates.some((item) => item.template === "collage.captureDateUiEvidence"),
       "multi-variant date cases should expose optional date UI evidence capture"
@@ -435,7 +435,7 @@ const main = (): void => {
           "collage metadata compare is helper-assisted by dedicated dropdown extraction",
           "metadata source-scope helper params are forwarded to dropdown extraction",
           "list-page CSV case does not reopen editor and targets saved report row download",
-          "manual_ai cases degrade to Codex visible UI with safe navigation prelude only",
+          "manual_ai preset date cases collect dedicated per-variant helper evidence without using configureMetric",
           "manual_ai date cases expose optional read-only date UI evidence capture",
           "multi-variant date helper hints are degraded to Codex visible UI",
           "multi-variant date cases expose optional date UI evidence capture",
