@@ -181,6 +181,24 @@ const stringArrayParam = (params: Record<string, unknown>, key: string): string[
   return value.filter((item): item is string => typeof item === "string" && item.trim().length > 0).map((item) => item.trim());
 };
 
+const booleanishParam = (params: Record<string, unknown>, keys: string[]): boolean => {
+  for (const key of keys) {
+    const value = params[key];
+    if (value === true) return true;
+    if (typeof value === "string" && /^(true|yes|y|1|是|要)$/i.test(value.trim())) return true;
+  }
+  return false;
+};
+
+const numberParam = (params: Record<string, unknown>, keys: string[]): number | null => {
+  for (const key of keys) {
+    const value = params[key];
+    if (typeof value === "number" && Number.isFinite(value)) return value;
+    if (typeof value === "string" && value.trim() && Number.isFinite(Number(value))) return Number(value);
+  }
+  return null;
+};
+
 const splitCompositeMetricFields = (value: string | null): string[] => {
   if (!value) return [];
   const parts: string[] = [];
@@ -202,7 +220,11 @@ const splitCompositeMetricFields = (value: string | null): string[] => {
   return [...new Set(parts)];
 };
 
+const paramsRequestSelectAllFields = (params: Record<string, unknown>): boolean =>
+  booleanishParam(params, ["selectAllFields", "selectAll", "selectAllMetrics", "selectAllFieldsInSourceReport", "selectAllSourceFields"]);
+
 const metricFieldsFromParams = (params: Record<string, unknown>): string[] => {
+  if (paramsRequestSelectAllFields(params)) return [];
   const explicit = stringArrayParam(params, "fields");
   if (explicit.length > 0) return [...new Set(explicit.filter((item) => !isNeutralUiTarget(item)))];
   return splitCompositeMetricFields(nonNeutralUiTarget(firstStringParam(params, ["field", "metric", "metricField"])));
@@ -913,6 +935,13 @@ const bodyContainsText = async (page: Page, expected: string): Promise<boolean> 
   return normalizeUiText(bodyText).includes(normalizeUiText(expected));
 };
 
+const normalizeDatePresetLabel = (preset: string): string => {
+  let normalized = preset.trim();
+  normalized = normalized.replace(/\s*[（(]\s*(?:快捷|快捷起點|快捷訖點|快捷終點|起點|終點)\s*[）)]\s*$/u, "");
+  normalized = normalized.replace(/^(過去|最近)\s+(\d+)\s*天$/u, "$1$2天");
+  return normalized.trim();
+};
+
 const isDatePickerOpen = async (page: Page): Promise<boolean> => {
   return page.locator("#datePickerPopup").first().evaluate((element) => {
     const rect = element.getBoundingClientRect();
@@ -936,7 +965,8 @@ const parseCleanupTargets = (value: unknown): Record<string, string> => {
 
 const targetStateFromParams = (params: Record<string, unknown>): Record<string, string | string[] | null> => {
   const cleanup = parseCleanupTargets(params.cleanupChecklist);
-  const field = nonNeutralUiTarget(stringParam(params, "field")) ?? nonNeutralUiTarget(cleanup["欄位"]);
+  const selectAllFields = paramsRequestSelectAllFields(params);
+  const field = selectAllFields ? null : nonNeutralUiTarget(stringParam(params, "field")) ?? nonNeutralUiTarget(cleanup["欄位"]);
   const fields = metricFieldsFromParams({ ...params, field });
   return {
     field,
@@ -1468,10 +1498,11 @@ const setDateRange = async (options: CliOptions, page: Page, dateRange: string):
 
 const setDatePreset = async (options: CliOptions, page: Page, preset: string): Promise<DateRangeUiResult> => {
   const uiProfiles: UiDomProfileRef[] = [];
-  const normalizedPreset = preset.trim();
-  if (!normalizedPreset) return { ok: false, warning: "DATE_RANGE_PRESET_EMPTY", uiProfiles };
-  if (isNeutralUiTarget(normalizedPreset)) return { ok: true, warning: "DATE_RANGE_PRESET_NEUTRAL_SKIPPED", observedAfter: normalizedPreset, uiProfiles };
-  if (await bodyContainsText(page, normalizedPreset)) return { ok: true, observedAfter: normalizedPreset, uiProfiles };
+  const requestedPreset = preset.trim();
+  const uiPreset = normalizeDatePresetLabel(requestedPreset);
+  if (!requestedPreset) return { ok: false, warning: "DATE_RANGE_PRESET_EMPTY", uiProfiles };
+  if (isNeutralUiTarget(requestedPreset)) return { ok: true, warning: "DATE_RANGE_PRESET_NEUTRAL_SKIPPED", observedAfter: requestedPreset, uiProfiles };
+  if (await bodyContainsText(page, uiPreset)) return { ok: true, observedAfter: uiPreset, uiProfiles };
 
   if (!(await isDatePickerOpen(page))) {
     const opened = await clickFirstVisible([
@@ -1485,13 +1516,13 @@ const setDatePreset = async (options: CliOptions, page: Page, preset: string): P
   uiProfiles.push(await captureUiDomProfile(options, page, "datePreset.popupOpened"));
 
   const selected = await clickFirstVisible([
-    page.getByText(normalizedPreset, { exact: true }),
-    page.locator("button").filter({ hasText: normalizedPreset })
+    page.getByText(uiPreset, { exact: true }),
+    page.locator("button").filter({ hasText: uiPreset })
   ], 5000);
   if (!selected) {
     return {
       ok: false,
-      warning: `DATE_RANGE_PRESET_NOT_FOUND:${normalizedPreset}`,
+      warning: `DATE_RANGE_PRESET_NOT_FOUND:${requestedPreset}${uiPreset !== requestedPreset ? `;normalized=${uiPreset}` : ""}`,
       observedAfter: (await page.locator("body").innerText({ timeout: 5000 }).catch(() => "")).slice(0, 1000),
       uiProfiles
     };
@@ -1499,7 +1530,7 @@ const setDatePreset = async (options: CliOptions, page: Page, preset: string): P
   await clickFirstVisible([page.getByText("確認", { exact: true }), page.locator("button").filter({ hasText: "確認" })], 3000).catch(() => false);
   await page.waitForTimeout(800);
 
-  const ok = await bodyContainsText(page, normalizedPreset);
+  const ok = await bodyContainsText(page, uiPreset);
   return {
     ok,
     warning: ok ? undefined : "DATE_RANGE_PRESET_VERIFY_FAILED_AFTER_UI_CLICK",
@@ -2066,7 +2097,9 @@ const configureMetric = async (options: CliOptions, page: Page, startedAt: strin
   const operations: string[] = [];
   let dateRangeEvidence: Record<string, unknown> | null = null;
   let dateRangeUiProfiles: UiDomProfileRef[] = [];
-  if (fields.length > 0) {
+  if (paramsRequestSelectAllFields(options.params)) {
+    operations.push(...await selectAllMetricFieldsThroughUi(options, page));
+  } else if (fields.length > 0) {
     operations.push(...await reconcileMetricFieldsThroughUi(page, fields));
   }
   if (dateRange) {
@@ -2165,12 +2198,36 @@ const normalizeFieldIdentity = (value: string): string =>
     .trim()
     .toLowerCase();
 
+const normalizeSourceReportIdentity = (value: string): string =>
+  value
+    .replace(/[（]/g, "(")
+    .replace(/[）]/g, ")")
+    .replace(/\s+/g, "")
+    .trim()
+    .toLowerCase();
+
+const knownSourceGroupsByCanonicalSource: Record<string, string[]> = {
+  [normalizeSourceReportIdentity("每日報表")]: ["DAILY_REPORT"],
+  [normalizeSourceReportIdentity("各登入渠道狀況(原 beanfun! 導流)")]: ["LOGIN_PLATFORM_STATUS"],
+  [normalizeSourceReportIdentity("各登入渠道狀況（原beanfun!導流）")]: ["LOGIN_PLATFORM_STATUS"],
+  [normalizeSourceReportIdentity("退費追蹤")]: ["REFUND_TRACKING"],
+  [normalizeSourceReportIdentity("雙平台營收佔比")]: ["DOUBLE_PLATFORM_REVENUE", "DUAL_PLATFORM_REVENUE", "PLATFORM_REVENUE_SHARE"]
+};
+
+const knownCanonicalSourceByGroup = new Map<string, string>([
+  ["DAILY_REPORT", "每日報表"],
+  ["LOGIN_PLATFORM_STATUS", "各登入渠道狀況（原beanfun!導流）"],
+  ["REFUND_TRACKING", "退費追蹤"],
+  ["DOUBLE_PLATFORM_REVENUE", "雙平台營收佔比"],
+  ["DUAL_PLATFORM_REVENUE", "雙平台營收佔比"],
+  ["PLATFORM_REVENUE_SHARE", "雙平台營收佔比"],
+  ["ORDER_MANAGEMENT", "訂單管理表.csv"]
+]);
+
 const fieldPickerSourceGroupLabels = (sourceReport: string): string[] => {
   const direct = sourceReport.trim();
-  const known: Record<string, string[]> = {
-    "每日報表": ["DAILY_REPORT"]
-  };
-  return [...new Set([direct, ...(known[direct] ?? [])].filter(Boolean))];
+  const known = knownSourceGroupsByCanonicalSource[normalizeSourceReportIdentity(direct)] ?? [];
+  return [...new Set([direct, ...known].filter(Boolean))];
 };
 
 const normalizeFieldPickerGroup = (value: string | null | undefined): string =>
@@ -2244,7 +2301,15 @@ const resolveMetadataCsvPath = (options: CliOptions): { path: string | null; sou
 
 const readExpectedMetadataFields = (
   options: CliOptions
-): { metadataPath: string | null; source: string; referenceIndexEntry?: unknown; expectedFields: string[]; header: string[]; warnings: string[] } => {
+): {
+  metadataPath: string | null;
+  source: string;
+  referenceIndexEntry?: unknown;
+  expectedFields: string[];
+  expectedSourceGroups: Array<{ sourceReport: string; fieldCount: number }>;
+  header: string[];
+  warnings: string[];
+} => {
   const resolved = resolveMetadataCsvPath(options);
   const warnings: string[] = [];
   if (!resolved.path) {
@@ -2253,12 +2318,14 @@ const readExpectedMetadataFields = (
       source: resolved.source,
       referenceIndexEntry: resolved.referenceIndexEntry,
       expectedFields: [],
+      expectedSourceGroups: [],
       header: [],
       warnings: ["METADATA_CSV_NOT_FOUND"]
     };
   }
 
   const sourceReport = stringParam(options.params, "source") ?? stringParam(options.params, "sourceReport") ?? "每日報表";
+  const matchKey = stringParam(options.params, "matchKey") ?? "";
   const rows = parseCsv(fs.readFileSync(resolved.path, "utf8"));
   const header = rows[0] ?? [];
   const nameIndex = header.indexOf("欄位名稱");
@@ -2267,12 +2334,35 @@ const readExpectedMetadataFields = (
   if (nameIndex === -1 || sourceIndex === -1 || collageAvailableIndex === -1) {
     warnings.push("METADATA_REQUIRED_COLUMNS_NOT_FOUND");
   }
+  const availableRows = rows.slice(1).filter((row) => {
+    const available = collageAvailableIndex === -1 ? "" : String(row[collageAvailableIndex] ?? "").trim().toUpperCase();
+    return available === "Y";
+  });
+  const expectedSourceGroupMap = new Map<string, { sourceReport: string; fieldCount: number }>();
+  for (const row of availableRows) {
+    const rowSource = sourceIndex === -1 ? "" : String(row[sourceIndex] ?? "").trim();
+    if (!rowSource) continue;
+    const key = normalizeSourceReportIdentity(rowSource);
+    const current = expectedSourceGroupMap.get(key);
+    if (current) {
+      current.fieldCount += 1;
+    } else {
+      expectedSourceGroupMap.set(key, { sourceReport: rowSource, fieldCount: 1 });
+    }
+  }
+  const expectedSourceGroups = [...expectedSourceGroupMap.values()];
+  const sourceListMode =
+    /來源報表|source\s*report/i.test(matchKey) ||
+    normalizeSourceReportIdentity(sourceReport) === normalizeSourceReportIdentity("清單對照") ||
+    sourceReport.trim() === "/";
   const expectedFields = rows.slice(1)
     .filter((row) => {
       if (nameIndex === -1) return false;
       const rowSource = sourceIndex === -1 ? "" : String(row[sourceIndex] ?? "").trim();
       const available = collageAvailableIndex === -1 ? "" : String(row[collageAvailableIndex] ?? "").trim().toUpperCase();
-      return rowSource === sourceReport && available === "Y";
+      if (available !== "Y") return false;
+      if (sourceListMode) return true;
+      return normalizeSourceReportIdentity(rowSource) === normalizeSourceReportIdentity(sourceReport);
     })
     .map((row) => String(row[nameIndex] ?? "").trim())
     .filter(Boolean);
@@ -2282,6 +2372,7 @@ const readExpectedMetadataFields = (
     source: resolved.source,
     referenceIndexEntry: resolved.referenceIndexEntry,
     expectedFields,
+    expectedSourceGroups,
     header,
     warnings
   };
@@ -2384,6 +2475,109 @@ const extractFieldPickerDomItems = async (page: Page): Promise<Array<Record<stri
     const leafSet = new Set(container.leaves);
     return all.flatMap((element, index) => leafSet.has(element) ? [itemFor(element, index, "dropdown-container-leaf")] : []);
   });
+};
+
+const readSelectAllExpectedFields = (options: CliOptions): { fields: string[]; sourceReports: string[]; metadataPath: string | null; warnings: string[] } => {
+  const resolved = resolveMetadataCsvPath(options);
+  const warnings: string[] = [];
+  const sourceReports = stringArrayParam(options.params, "sourceReports");
+  const fallbackSource = stringParam(options.params, "source") ?? stringParam(options.params, "sourceReport");
+  const effectiveSources = sourceReports.length > 0
+    ? sourceReports
+    : paramsRequestSelectAllFields(options.params) && fallbackSource && !/全選|全部|清單對照/.test(fallbackSource)
+      ? [fallbackSource]
+      : [];
+
+  if (!resolved.path) {
+    return { fields: [], sourceReports: effectiveSources, metadataPath: null, warnings: ["SELECT_ALL_METADATA_CSV_NOT_FOUND"] };
+  }
+
+  const rows = parseCsv(fs.readFileSync(resolved.path, "utf8"));
+  const header = rows[0] ?? [];
+  const nameIndex = header.indexOf("欄位名稱");
+  const sourceIndex = header.indexOf("來源報表");
+  const collageAvailableIndex = header.indexOf("所屬報表是否可用於拼貼模式主選擇");
+  if (nameIndex === -1 || sourceIndex === -1 || collageAvailableIndex === -1) {
+    return { fields: [], sourceReports: effectiveSources, metadataPath: resolved.path, warnings: ["SELECT_ALL_METADATA_REQUIRED_COLUMNS_NOT_FOUND"] };
+  }
+
+  const sourceKeys = new Set(effectiveSources.map(normalizeSourceReportIdentity));
+  const seen = new Set<string>();
+  const fields = rows.slice(1).flatMap((row) => {
+    const available = String(row[collageAvailableIndex] ?? "").trim().toUpperCase();
+    if (available !== "Y") return [];
+    const rowSource = String(row[sourceIndex] ?? "").trim();
+    if (sourceKeys.size > 0 && !sourceKeys.has(normalizeSourceReportIdentity(rowSource))) return [];
+    const label = normalizeMetadataAlias(String(row[nameIndex] ?? "").trim());
+    const key = normalizeMetricFieldIdentity(label);
+    if (!label || seen.has(key)) return [];
+    seen.add(key);
+    return [label];
+  });
+  return { fields, sourceReports: effectiveSources, metadataPath: resolved.path, warnings };
+};
+
+const selectAllMetricFieldsThroughUi = async (options: CliOptions, page: Page): Promise<string[]> => {
+  const operations: string[] = [];
+  const expectedFieldCount = numberParam(options.params, ["expectedFieldCount", "fieldCount", "expectedFieldsCount"]);
+  const expected = readSelectAllExpectedFields(options);
+  operations.push(`field:selectAll:requested:sources=${expected.sourceReports.join("|") || "all"};expectedFieldCount=${expectedFieldCount ?? "unknown"}`);
+  operations.push(...expected.warnings.map((warning) => `field:selectAll:warning:${warning}`));
+
+  if (expected.fields.length > 0) {
+    operations.push(`field:selectAll:metadataFields:${expected.fields.length}`);
+    operations.push(...await reconcileMetricFieldsThroughUi(page, expected.fields));
+    const selected = await readSelectedMetricFields(page).catch(() => []);
+    if (expectedFieldCount !== null && selected.length !== expectedFieldCount) {
+      throw new HelperBlockedError(
+        `SELECT_ALL_FIELD_COUNT_MISMATCH:expected=${expectedFieldCount}; selected=${selected.length}; metadataFields=${expected.fields.length}; selectedSample=${JSON.stringify(selected.slice(0, 20))}`
+      );
+    }
+    return operations;
+  }
+
+  const readiness = await waitForMetricFieldControls(page);
+  const addOperation = await clickMetricAddFieldControl(page, "select-all-fields");
+  await page.waitForTimeout(700);
+  const rawItems = await extractFieldPickerDomItems(page);
+  const sourceReports = stringArrayParam(options.params, "sourceReports");
+  const targetGroups = new Set(sourceReports.flatMap(fieldPickerSourceGroupLabels).map(normalizeFieldPickerGroup));
+  const groupedItems = targetGroups.size > 0
+    ? rawItems.filter((item) => typeof item.groupLabel === "string" && targetGroups.has(normalizeFieldPickerGroup(item.groupLabel)))
+    : [];
+  const candidateItems = groupedItems.length > 0 ? groupedItems : rawItems;
+  const seen = new Set<string>();
+  const targets = candidateItems.flatMap((item) => {
+    const label = inferFieldLabel(String(item.text ?? ""), [], item.code);
+    const key = normalizeMetricFieldIdentity(String(item.code ?? label));
+    const index = typeof item.index === "number" ? item.index : null;
+    if (!label || index === null || seen.has(key)) return [];
+    seen.add(key);
+    return [{ index, label, code: typeof item.code === "string" ? item.code : null }];
+  });
+
+  if (targets.length === 0) {
+    throw new HelperBlockedError(`SELECT_ALL_NO_FIELD_ITEMS:readiness=${readiness}; addOperation=${addOperation}; rawItems=${rawItems.length}`);
+  }
+
+  for (const target of targets) {
+    const selected = await readSelectedMetricFields(page).catch(() => []);
+    if (selected.some((item) => selectedMetricFieldMatches(item, target.label) || (target.code && normalizeMetricFieldIdentity(item.code) === normalizeMetricFieldIdentity(target.code)))) {
+      continue;
+    }
+    await clickVisibleBodyElementByIndex(page, target.index, 8000);
+    await page.waitForTimeout(250);
+    operations.push(`field:selectAll:set:${target.label}${target.code ? `:${target.code}` : ""}`);
+  }
+
+  const finalSelected = await readSelectedMetricFields(page).catch(() => []);
+  operations.push(`field:selectAll:finalSelected:${finalSelected.length}`);
+  if (expectedFieldCount !== null && finalSelected.length !== expectedFieldCount) {
+    throw new HelperBlockedError(
+      `SELECT_ALL_FIELD_COUNT_MISMATCH:expected=${expectedFieldCount}; selected=${finalSelected.length}; candidateItems=${targets.length}; groupedItems=${groupedItems.length}; rawItems=${rawItems.length}`
+    );
+  }
+  return operations;
 };
 
 const extractMetadataDropdownFields = async (options: CliOptions, page: Page, startedAt: string): Promise<HelperReport> => {

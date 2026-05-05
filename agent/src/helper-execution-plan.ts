@@ -122,6 +122,12 @@ const helperRequestsNoSave = (params: Record<string, unknown>): boolean =>
 const helperRequestsNoReopen = (params: Record<string, unknown>): boolean =>
   helperRequestsPreviewOnly(params) || booleanishParam(params, ["skipReopen", "doNotReopen", "noReopen", "previewOnly"]);
 
+const helperRequestsNoDownload = (params: Record<string, unknown>): boolean =>
+  helperRequestsPreviewOnly(params) || booleanishParam(params, ["skipDownload", "doNotDownload", "noDownload", "doNotDownloadCsv", "skipCsv", "noCsv"]);
+
+const helperHintsRequestManualAi = (helperHints: HelperHints | null): boolean =>
+  helperHints?.automationLevel === "manual_ai" || helperHints?.operationTemplate === "manual_ai";
+
 const cleanReportNamePattern = (value: string | null): string | null => {
   if (!value) return null;
   const cleaned = value.replace(/[)）]\s*$/, "").trim();
@@ -149,6 +155,30 @@ const splitCompositeMetricFields = (value: string | null): string[] => {
   return [...new Set(parts)];
 };
 
+const stringArrayParam = (params: Record<string, unknown>, key: string): string[] => {
+  const value = params[key];
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is string => typeof item === "string" && item.trim().length > 0).map((item) => item.trim());
+};
+
+const dateObjectParam = (value: unknown): string | null => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  const start = typeof record.start === "string" ? record.start.trim() : "";
+  const end = typeof record.end === "string" ? record.end.trim() : "";
+  if (!start || !end) return null;
+  return `${start.replaceAll("-", "/")}~${end.replaceAll("-", "/")}`;
+};
+
+const numberParam = (params: Record<string, unknown>, keys: string[]): number | null => {
+  for (const key of keys) {
+    const value = params[key];
+    if (typeof value === "number" && Number.isFinite(value)) return value;
+    if (typeof value === "string" && value.trim() && Number.isFinite(Number(value))) return Number(value);
+  }
+  return null;
+};
+
 const inferReportNamePattern = (text: string, params: Record<string, unknown>): string | null =>
   cleanReportNamePattern(
     stringParam(params, ["reportName", "reportNamePattern"]) ??
@@ -166,16 +196,23 @@ const inferCollageParams = (currentCase: CaseManifestCase | null, helperHints: H
   const text = textBlob(currentCase);
   const cleanup = parseCleanupTargets(currentCase?.cleanupChecklist);
   const params = paramsObject(helperHints);
-  const field =
-    nonNeutral(stringParam(params, ["field", "metric", "metricField"])) ??
-    nonNeutral(cleanup["欄位"]) ??
-    nonNeutral(firstMatch(text, [/欄位[「=：: ]+([^」\n,，;；]+)/]));
+  const selectAllFields =
+    booleanishParam(params, ["selectAllFields", "selectAll", "selectAllMetrics"]) ||
+    booleanishParam(params, ["selectAllFieldsInSourceReport", "selectAllSourceFields"]);
+  const dateVariants = stringArrayParam(params, "dateVariants");
+  const field = selectAllFields
+    ? null
+    : nonNeutral(stringParam(params, ["field", "metric", "metricField"])) ??
+      nonNeutral(cleanup["欄位"]) ??
+      nonNeutral(firstMatch(text, [/欄位[「=：: ]+([^」\n,，;；]+)/]));
   const fields = splitCompositeMetricFields(field);
   const reportNamePattern = inferReportNamePattern(text, params);
   const modifiesExistingReport = /修改既有|既有報表|已儲存報表|儲存覆寫|覆寫/.test(text);
   const existingReportNamePattern = inferExistingReportNamePattern(text, params, reportNamePattern);
   const dateRangeText =
     nonNeutral(stringParam(params, ["dateRange", "timeRange"])) ??
+    nonNeutral(dateObjectParam(params.dateRange)) ??
+    (dateVariants.length === 1 ? nonNeutral(dateVariants[0]) : null) ??
     nonNeutral(cleanup["時間"]) ??
     firstMatch(text, [/(\d{4}\/\d{2}\/\d{2}\s*[~～-]\s*\d{4}\/\d{2}\/\d{2})/]);
 
@@ -191,8 +228,16 @@ const inferCollageParams = (currentCase: CaseManifestCase | null, helperHints: H
     downloadScope: stringParam(params, ["downloadScope"]) ?? (/清單|列表|專案頁|報表列|report list/i.test(text) ? "report_list" : null),
     field,
     fields,
+    sourceReports: stringArrayParam(params, "sourceReports"),
+    selectAllFields,
+    selectAllFieldsInSourceReport: booleanishParam(params, ["selectAllFieldsInSourceReport", "selectAllSourceFields"]),
+    expectedFieldCount: numberParam(params, ["expectedFieldCount", "fieldCount", "expectedFieldsCount"]),
+    dateVariants,
     dateRange: dateRangeText,
     display: nonNeutral(stringParam(params, ["display", "displayMode"])) ?? nonNeutral(cleanup["顯示"]) ?? null,
+    skipSave: helperRequestsNoSave(params),
+    skipReopen: helperRequestsNoReopen(params),
+    skipDownload: helperRequestsNoDownload(params),
     cleanupChecklist: currentCase?.cleanupChecklist ?? null,
     cleanupTargets: cleanup,
     reportNamePattern,
@@ -226,6 +271,7 @@ const action = (
 
 const buildActions = (currentCase: CaseManifestCase | null, helperHints: HelperHints | null): HelperPlanAction[] => {
   if (!currentCase) return [];
+  if (helperHintsRequestManualAi(helperHints)) return [];
   const text = textBlob(currentCase);
   const operationTemplate = helperHints?.operationTemplate ?? "";
   const params = inferCollageParams(currentCase, helperHints);
@@ -263,6 +309,7 @@ const buildActions = (currentCase: CaseManifestCase | null, helperHints: HelperH
   const isCollageFlow = /collage_build_preview_save_reopen/.test(operationTemplate) || /拼貼|新增報表|儲存報表|重開|重新檢視/.test(text);
   const modifiesExistingReport = params.openExistingReport === true;
   const noSave = helperRequestsNoSave({ ...params, ...helperParams });
+  const noDownload = helperRequestsNoDownload({ ...params, ...helperParams });
   const explicitlyNoReopen =
     helperRequestsNoReopen({ ...params, ...helperParams }) ||
     /不(?:需|要|應)?重開|不要重開|無需重開|不用重開|不重開\s*editor|不應產生\s*reopen/i.test(text);
@@ -318,7 +365,7 @@ const buildActions = (currentCase: CaseManifestCase | null, helperHints: HelperH
       );
     }
 
-    if (/下載|CSV/i.test(text)) {
+    if (!noDownload && /下載|CSV/i.test(text)) {
       actions.push(
         action("H7", "collage.downloadCsvAndComparePreview", "下載 CSV 並與 preview evidence 比對", params, {
           requiredEvidence: ["downloaded.csv", "csv.rows", "preview.table_or_chart", "screenshot"],

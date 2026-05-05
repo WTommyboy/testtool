@@ -128,6 +128,53 @@ const previewOnlyHints: HelperHints = {
   warnings: []
 };
 
+const manualAiDateHints: HelperHints = {
+  caseId: "OTTEST004-B-03",
+  automationLevel: "manual_ai",
+  operationTemplate: "manual_ai",
+  params: {
+    mode: "拼貼",
+    field: "新增帳號數",
+    sourceReport: "每日報表",
+    dateVariants: ["昨日", "今日"],
+    display: "每天",
+    doNotSave: true,
+    doNotReopen: true,
+    doNotDownloadCsv: true,
+    scope: "preview_only"
+  },
+  requiredEvidence: ["dom.state", "network.requestBody", "chart.datasets"],
+  forbiddenAutomation: ["direct_bi_api", "internal_js_setter"],
+  aiDecisionRequired: true,
+  raw: {},
+  sourcePath: "fixture/helper-hints.md",
+  sourceRelativePath: "fixture/helper-hints.md",
+  warnings: []
+};
+
+const selectAllFieldsHints: HelperHints = {
+  caseId: "OTTEST004-D-02",
+  automationLevel: "helper",
+  operationTemplate: "chart_csv_consistency",
+  params: {
+    mode: "拼貼",
+    sourceReports: ["每日報表", "各登入渠道狀況(原 beanfun! 導流)", "退費追蹤", "雙平台營收佔比"],
+    selectAllFields: true,
+    expectedFieldCount: 72,
+    dateRange: { start: "2026-03-01", end: "2026-03-31" },
+    display: "每天",
+    downloadCsv: true,
+    skipSave: true
+  },
+  requiredEvidence: ["dom.state", "network.requestBody", "chart.datasets", "csv.rows"],
+  forbiddenAutomation: ["direct_bi_api", "internal_js_setter"],
+  aiDecisionRequired: true,
+  raw: {},
+  sourcePath: "fixture/helper-hints.md",
+  sourceRelativePath: "fixture/helper-hints.md",
+  warnings: []
+};
+
 const main = (): void => {
   const report = evaluateCapabilityGate(collageSaveReopenCase, null);
   assert.equal(report.supportStatus, "supported", `TOOL-A-01 save/reopen fixture should be helper supported; report=${JSON.stringify(report)}`);
@@ -194,6 +241,37 @@ const main = (): void => {
       null,
       "neutral dateRange must not be passed to helper as a clickable date preset"
     );
+
+    const manualAiCase = {
+      ...collageSaveReopenCase,
+      caseNo: "OTTEST004-B-03",
+      caseTitle: "全動態 — 昨日 / 今日 快捷",
+      cleanupChecklist: "欄位=新增帳號數;篩選=0組;分組=不影響;時間=昨日(快捷);顯示=每天",
+      stepsSummary: "1. 用 UI 切換昨日與今日快捷\n2. 各按執行並比較 request/chart"
+    };
+    const manualAiGate = evaluateCapabilityGate(manualAiCase, manualAiDateHints);
+    assert.equal(manualAiGate.supportStatus, "degraded", "manual_ai should not be advertised as fully helper-supported");
+    assert.equal(manualAiGate.helperPreRunAllowed, false, "manual_ai must disable helper pre-run");
+    assert.equal(manualAiGate.executionMode, "codex_visible_ui", "manual_ai should leave execution to Codex visible UI");
+    const manualAiPlan = buildHelperExecutionPlan({ runDir, currentCase: manualAiCase, helperHints: manualAiDateHints });
+    assert.equal(manualAiPlan.actions.length, 0, "manual_ai cases must not build helper actions that can false-block before Codex UI work");
+
+    const selectAllCase = {
+      ...collageSaveReopenCase,
+      caseNo: "OTTEST004-D-02",
+      caseTitle: "所有欄位一次選取(72 欄)+ CSV 完整輸出驗證",
+      cleanupChecklist: "欄位=4 來源報表全選 72 欄;篩選=0組;分組=不影響;時間=2026/03/01~2026/03/31;顯示=每天",
+      stepsSummary: "1. 進入設定頁,逐一加入 4 個來源報表的所有欄位(共 72)\n2. 設定時間並下載 CSV"
+    };
+    const selectAllPlan = buildHelperExecutionPlan({ runDir, currentCase: selectAllCase, helperHints: selectAllFieldsHints });
+    const selectAllConfigure = selectAllPlan.actions.find((item) => item.template === "collage.configureMetric");
+    assert.equal(selectAllConfigure?.params.selectAllFields, true, "selectAllFields helper param must be preserved");
+    assert.deepEqual(selectAllConfigure?.params.fields, [], "synthetic cleanup text must not become a clickable field");
+    assert.deepEqual(selectAllConfigure?.params.sourceReports, selectAllFieldsHints.params.sourceReports, "sourceReports must be forwarded to configureMetric");
+    assert.equal(selectAllConfigure?.params.expectedFieldCount, 72);
+    assert.equal(selectAllConfigure?.params.dateRange, "2026/03/01~2026/03/31", "dateRange object should become a concrete static range");
+    assert.ok(selectAllPlan.actions.some((item) => item.template === "collage.downloadCsvAndComparePreview"), "select-all CSV case should still download CSV");
+    assert.ok(!selectAllPlan.actions.some((item) => item.template === "collage.saveReport"), "select-all preview case should not save when skipSave is set");
   } finally {
     fs.rmSync(runDir, { recursive: true, force: true });
   }
@@ -218,6 +296,8 @@ const main = (): void => {
           "collage metadata compare is not misclassified as record/detail mode",
           "collage metadata compare is helper-assisted by dedicated dropdown extraction",
           "list-page CSV case does not reopen editor and targets saved report row download",
+          "manual_ai cases disable helper pre-run and build no helper actions",
+          "selectAllFields helper hints preserve sourceReports/expected count and avoid synthetic field text",
           "active filter cases remain blocked until helper support exists"
         ]
       },

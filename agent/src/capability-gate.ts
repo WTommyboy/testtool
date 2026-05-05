@@ -71,6 +71,9 @@ const helperRequestsNoSave = (params: Record<string, unknown>): boolean =>
 const helperRequestsNoReopen = (params: Record<string, unknown>): boolean =>
   helperRequestsPreviewOnly(params) || booleanishParam(params, ["skipReopen", "doNotReopen", "noReopen", "previewOnly"]);
 
+const helperRequestsNoDownload = (params: Record<string, unknown>): boolean =>
+  helperRequestsPreviewOnly(params) || booleanishParam(params, ["skipDownload", "doNotDownload", "noDownload", "doNotDownloadCsv", "skipCsv", "noCsv"]);
+
 export const evaluateCapabilityGate = (
   currentCase: CaseManifestCase | null,
   helperHints: HelperHints | null
@@ -88,9 +91,11 @@ export const evaluateCapabilityGate = (
   const supportedHelperTemplates: string[] = [];
   const params = paramsObject(helperHints);
   const noSave = helperRequestsNoSave(params);
+  const noDownload = helperRequestsNoDownload(params);
   const explicitlyNoReopen =
     helperRequestsNoReopen(params) ||
     /不(?:需|要|應)?重開|不要重開|無需重開|不用重開|不重開\s*editor|不應產生\s*reopen/i.test(text);
+  const manualAiRequested = automationLevel === "manual_ai" || operationTemplate === "manual_ai";
 
   if (mode === "record") unsupportedFeatures.push("record_mode_helper_not_supported");
   if (mode === "metric") unsupportedFeatures.push("metric_mode_helper_not_supported");
@@ -113,7 +118,7 @@ export const evaluateCapabilityGate = (
     if (/修改既有|既有報表|已儲存報表|儲存覆寫|覆寫/.test(text)) supportedHelperTemplates.push("collage.openExistingReport");
     if (!noSave && /儲存|覆寫/.test(text)) supportedHelperTemplates.push("collage.saveReport");
     if (!explicitlyNoReopen && /重開|重新檢視|還原|載入/.test(text)) supportedHelperTemplates.push("collage.reopenReport");
-    if (/下載|CSV/i.test(text)) supportedHelperTemplates.push("collage.downloadCsvAndComparePreview");
+    if (!noDownload && /下載|CSV/i.test(text)) supportedHelperTemplates.push("collage.downloadCsvAndComparePreview");
   }
 
   let supportStatus: CapabilityGateReport["supportStatus"] = "degraded";
@@ -121,7 +126,11 @@ export const evaluateCapabilityGate = (
   let helperPreRunAllowed = false;
   let blockingReason: string | null = null;
 
-  if (unsupportedFeatures.length > 0 || (automationLevel === "blocked_if_no_helper" && supportedHelperTemplates.length === 0)) {
+  if (manualAiRequested) {
+    supportStatus = "degraded";
+    executionMode = "codex_visible_ui";
+    helperPreRunAllowed = false;
+  } else if (unsupportedFeatures.length > 0 || (automationLevel === "blocked_if_no_helper" && supportedHelperTemplates.length === 0)) {
     supportStatus = "unsupported";
     executionMode = "blocked_unsupported";
     blockingReason = unsupportedFeatures.length > 0

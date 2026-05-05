@@ -680,7 +680,7 @@ Headers:
 
 ```http
 Authorization: Bearer <agent token>
-X-Agent-Version: 0.2.6
+X-Agent-Version: 0.2.7
 X-Device-Name: Tommy's MacBook Pro
 ```
 
@@ -704,7 +704,7 @@ X-Device-Name: Tommy's MacBook Pro
 ```json
 {
   "device_name": "Tommy's MacBook Pro",
-  "agent_version": "0.2.6",
+  "agent_version": "0.2.7",
   "platform": "darwin-arm64",
   "codex_version": "codex-cli 0.124.0",
   "node_version": "v20.x",
@@ -813,7 +813,7 @@ Ack message:
 ```json
 {
   "name": "uat-tool-agent",
-  "version": "0.2.6",
+  "version": "0.2.7",
   "bin": {
     "uat-agent": "dist/cli.js"
   }
