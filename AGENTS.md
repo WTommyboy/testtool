@@ -27,6 +27,12 @@ final response and explain why.
 Do not read raw old session JSONL files unless Tommy explicitly asks. Prefer
 the handoff files under `docs/planning/` and the development log.
 
+When producing a session handoff or future daily automated handoff, follow
+`docs/planning/session-handoff-generation-rules.md`. The handoff must start
+with Tommy's active question / next conversation objective before repo status.
+If a new chat would know the files but not what Tommy was asking, the handoff is
+incomplete.
+
 ## Result Safety
 
 Preserve one-case-at-a-time execution. Each case still needs its own

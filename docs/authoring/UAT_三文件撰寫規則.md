@@ -397,6 +397,66 @@ testcase 仍維持人類可讀。不要要求文件作者撰寫 Playwright selec
 
 如果 xlsx row 結果仍空白，就不得在 md 宣稱該 case 已執行。
 
+### 2.4.1 預先 BLOCKED / PM-skip case
+
+若 Tommy 或 PM 在測試包設計階段決定某題本輪不執行,該題可保留在 case list 中,但必須以 **PM-skip** 方式表達。PM-skip 的 xlsx `結果` 仍填 `BLOCKED`,但它代表「本輪設計時跳過」,不是 Agent runtime evidence 不足。
+
+適用情境:
+
+- 需要 prod / RD raw data / 跨日資料,本輪資料或權限不足。
+- 工具缺口已知且會阻塞後續 case,因此先保留 case 供未來補測。
+- Tommy 明確決定本輪不執行,但不刪 row,避免編號與後續引用亂掉。
+
+xlsx 對應 row 必須填齊:
+
+- `結果 = BLOCKED`
+- `執行方式 = N/A(本輪不執行)`
+- `測試日 = <決策日期>`
+- `驗證方法 = 本輪不執行;未來執行 evidence: <未來需要的 evidence 類型>`
+- `詳細紀錄JSON` 必須可 parse,且至少包含:
+
+```json
+{
+  "skip_reason": "本輪不執行的具體原因",
+  "skip_decided_by": "Tommy",
+  "skip_decided_at": "2026-05-05",
+  "preserved_for": "未來補測"
+}
+```
+
+若跳過原因是工具缺口,可額外加:
+
+```json
+{
+  "根因層級": "UAT Tool orchestration gap"
+}
+```
+
+三文件必須同步:
+
+- 指派文字與執行說明都列出 PM-skip case 編號與原因。
+- 總 case 數、實際執行 case 數、跳過 case 數必須一致。
+- 交付要求必須明寫 Agent/Codex 不可碰這些 row,只原樣複製到 `output/result.xlsx`。
+- 報表統計應將 `detail_json.skip_decided_by = "Tommy"` 類 case 歸為 PM-skip,不要和 runtime BLOCKED 混在一起。
+
+PM-skip case **不要放 Helper hints block**。預先跳過不是 helper automation level,不需要也不允許用 Helper hints 表達。
+
+禁止寫法:
+
+```json
+{
+  "automationLevel": "blocked_preassigned",
+  "operationTemplate": "n/a",
+  "doNotExecute": true
+}
+```
+
+正確寫法:
+
+- 執行說明該 case 章節寫「本輪不執行,已預寫 BLOCKED,Agent 原樣複製」。
+- 直接省略 `Helper hints` 區塊。
+- 若要保留未來補測步驟,放在「步驟」或「備註」中,不要放進 Helper hints。
+
 ### 2.5 前置條件寫法
 
 前置條件應使用固定欄位式語法，避免只寫自然語言。
@@ -812,6 +872,8 @@ Screenshot 是人類佐證，不取代 DOM/network/chart data。
 
 此區塊是**提示工具加速**，不是 PASS / FAIL 判定來源。若 Helper hints 與 xlsx 步驟衝突，以 xlsx 步驟與預期結果為準。
 
+PM-skip / 預先 BLOCKED case 不應加入 `Helper hints`。跳過題的控制來源是 xlsx 結果欄與 `detail_json.skip_decided_by`,不是 helper plan。若為跳過題發明 `automationLevel=blocked_preassigned`、`operationTemplate=n/a` 或 `doNotExecute=true`,package gate 應視為 schema error。
+
 建議格式：
 
 ````md
@@ -1007,6 +1069,7 @@ Helper hints 不可包含：
 - 直接 API URL。
 - 要求 helper 判 PASS / FAIL。
 - 要求 helper 寫多題結果。
+- PM-skip / 預先 BLOCKED 的控制欄位,例如 `blocked_preassigned`、`operationTemplate: "n/a"`、`doNotExecute`、`skip_reason`。
 
 ### 4.4 Package lint 建議規則
 
@@ -1020,6 +1083,7 @@ Claude 產出 testcase package 後，建議先用以下規則自檢；未來若�
 6. multi-variant date case 不得標 `automationLevel=helper`；應標 `automationLevel=manual_ai`。
 7. `operationTemplate=manual_ai` 時，`automationLevel` 必須是 `manual_ai`。
 8. `automationLevel=helper` 時，params 必須足以形成 deterministic helper plan，不可只靠自然語言讓 helper 猜。
+9. PM-skip / 預先 BLOCKED case 不得有 Helper hints block；不得使用 `automationLevel=blocked_preassigned`、`operationTemplate=n/a` 或 `doNotExecute`。
 
 ---
 

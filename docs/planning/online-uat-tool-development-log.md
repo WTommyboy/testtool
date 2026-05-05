@@ -1,6 +1,6 @@
 # 線上 UAT Tool 開發與規劃日誌
 
-最後更新：2026-05-03
+最後更新：2026-05-06
 
 本文件記錄「UAT Tool 線上派工 + Mac Agent」這條路徑的歷史決策、設計理由、目前架構與後續待辦。它的用途是跨聊天室、跨 session 交接，不取代 `AGENTS.md`、Layer rules、authoring spec 或實作 spec。
 
@@ -182,6 +182,12 @@ curl -s https://testtool-production.up.railway.app/health
 ```
 
 注意：`/version` 目前可能只回 deployment id，不一定回 git commit / branch。若 deployment id 沒變，需到 Railway Deployments 檢查 auto deploy trigger、追蹤 branch，必要時手動 redeploy latest commit。
+
+### 3.6 Session handoff 必須保留活問題
+
+新聊天室交接不能只產 repo inventory 或 deploy 狀態。每份 handoff，包含未來每日自動產生的 D-1 shared handoff，都必須先寫清楚 Tommy 當下正在追問什麼、下一個 assistant 應先回答什麼、目前允許只排查或可進入實作。
+
+正式規則見 `docs/planning/session-handoff-generation-rules.md`。核心判準：如果新聊天室讀完 handoff 只知道有哪些檔案與 commit，卻不知道 Tommy 的活問題與第一個應答方向，該 handoff 視為不完整。
 
 ---
 
@@ -1097,3 +1103,27 @@ Tommy 曾討論是否改成腳本。最後決策是採「半腳本化 / helper �
 - Gate/authoring：`helper-hints` 新增允許 `collage_date_variants_preview` template 名稱供未來 testcase 明確指定；`capability-gate` 對 degraded manual/date case 只列出允許的 helper templates（navigation + date variants evidence），不再把 generic `configureMetric` 列給 Codex 誤用。
 - 版本與文件：Mac Agent 升到 `0.2.14`，root app 維持 `1.1.2`；README、refactor 規劃、工程 spec、M1 spec / v1.2.1 spec 同步更新 Agent version 與 date-variants preview evidence helper。
 - 驗證：已跑 `npm run typecheck --prefix agent`、`npm run verify:capability-gate`，並用 OTTEST004 v1.7 B-03/B-04/B-05/B-06/B-07/B-08/B-09 actual helper plan smoke 確認分流。完整 build/verify、commit/push、Railway `/version` / `/health` 與本機 Agent 重啟狀態由本次收尾回報補列。
+
+### 2026-05-06 00:18 - OTTEST004_011 incident：A-06 native validation dialog / Tool Bridge response gap
+
+- 背景：Tommy 提供 run `31243914-3666-4430-a4c6-aaad35f1d70e` report/archive 詢問「發生什麼事」。本次未讀 raw session JSONL，只看 report/archive。v1.8.1 package gate 已通過，run 實際執行到 `OTTEST004-A-06` 才中斷；A-01/A-04/A-05 為 metadata/source mismatch 類實測結果，非本次 abort 主因。
+- 根因：A-06 helper pre-run 只完成安全導航，核心「選欄位 → 設日期 → 執行 → 判斷全 0 欄位」交給 Codex visible UI。Codex 在未成功選到任何欄位時按下「執行」，BI 跳出 native validation alert `請至少選擇一個欄位`。Codex 有輸出 Tool Bridge `playwright_recovery` request，但 Agent/App 沒有記錄 Tool Bridge response，policy guard 以 `NATIVE_DIALOG_WITHOUT_TOOL_BRIDGE_RESPONSE` 結束整輪。
+- 澄清：這不是 Tommy 沒在 chat 按授權造成。Agent 模式只認 App / Agent Tool Bridge response；目前問題是 pending Tool Bridge request 沒有被 UI/Agent 正確承接與回覆，錯誤訊息也容易讓人誤會成「使用者未授權」。
+- 待修項：已寫入 `docs/refactor/工程spac.md`。P0 包含 selected-field-count guard before Execute、非破壞性 native validation alert allowlist/recovery、pending Tool Bridge request 顯示、missing Tool Bridge response 的明確錯誤訊息、current-case BLOCKED/recoverable without whole-run abort，以及 A-06 all-zero-field inspection helper/guardrail。
+- 狀態：本次只做 docs tracking，未改 runtime code，未部署。
+
+### 2026-05-06 00:42 - Authoring contract：PM-skip / 預先 BLOCKED 不寫 Helper hints
+
+- 背景：OTTEST004 `_claude_v1_8_2` 為了避開 A-06 已知工具缺口，將 A-06 預先 BLOCKED；方向正確，但在執行說明中發明 `automationLevel=blocked_preassigned`、`operationTemplate=n/a` 與 `doNotExecute=true`，造成 package gate 報 `UNKNOWN_AUTOMATION_LEVEL`、`UNKNOWN_OPERATION_TEMPLATE`、`MISSING_FORBIDDEN_AUTOMATION`。v1.8.3 已改成 PM-skip row 並移除 A-06 Helper hints，package consistency 回到 `status=warning / ok=true`。
+- 決策：正式補進 `docs/authoring/UAT_三文件撰寫規則.md`：PM-skip / 預先 BLOCKED case 要靠 xlsx `結果=BLOCKED`、`執行方式=N/A(本輪不執行)`、`測試日`、`驗證方法=本輪不執行;未來執行 evidence: ...` 與 `detail_json.skip_reason/skip_decided_by/skip_decided_at/preserved_for` 表達；三文件統計與 skip 清單必須同步；Agent/Codex 不可碰這些 row，只原樣複製到 `output/result.xlsx`。
+- Helper hints 契約：PM-skip case 不得放 Helper hints block，因為 skip 不是 helper automation level。明確禁止 `blocked_preassigned`、`operationTemplate: "n/a"`、`doNotExecute`、`skip_reason` 等 PM-skip 控制欄位出現在 Helper hints；若 package lint 遇到應視為 schema error。
+- Layer 1：同步補 `agent-skills/uat-tool/rules/artifacts-and-results.md` 的 PM-skip row contract，要求 UI/report 將 PM-skip 與 Agent-runtime BLOCKED 分開分類，不可把 PM-skip 修復成 runtime `EVIDENCE_INSUFFICIENT`。
+- 狀態：docs-only 更新，未改 runtime code，未部署。
+
+### 2026-05-06 01:10 - Session handoff 規則：活問題優先於狀態盤點
+
+- 背景：新視窗 `019dfa40-7d25-7630-ba5d-0f0f0d373b72` 雖有讀到前一版 handoff 並完成 repo / production / dirty files 盤點，但 handoff 沒把 Tommy 真正要接續的活問題放在最前面，導致新視窗看起來像不知道 Tommy 在追問 OTTEST004 v1.7 vs v1.8.3、`TOOL_BRIDGE_RESPONSE_MISSING` 自動中止、B-12 後未執行等核心議題。
+- 決策：新增 `docs/planning/session-handoff-generation-rules.md`，規定任何 session handoff 與未來每日自動 handoff 都必須以 `Active User Question / Next Conversation Objective` 開頭；repo/run/deploy 狀態只能作為支撐資料，不能取代活問題。若新聊天室讀完只知道檔案與 commit，卻不知道 Tommy 第一個要它回答什麼，該 handoff 視為不完整。
+- 修改檔案：`docs/planning/session-handoff-generation-rules.md`、`AGENTS.md`、`docs/planning/online-uat-tool-development-log.md`、`docs/refactor/規劃說明.md`、`docs/refactor/工程spac.md`。
+- 驗證：docs-only 規則更新；需以 `git diff --check` 驗證格式。
+- 後續影響：每日自動產生 shared D-1 handoff 時，必須偵測並輸出每條工作流的活問題、允許模式、未決事項、來源 thread/folder 與 ready-to-paste prompt；不能只彙整 git diff 或 run 狀態。

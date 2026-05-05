@@ -93,6 +93,20 @@ Artifact upload 是附加 observability，不得改變 case PASS/FAIL/BLOCKED �
 
 如果 Codex 在 evidence 不足時產生 case results，這些 rows 應標為 blocked 或 evidence-insufficient。
 
+PM-skip / 預先 BLOCKED rows are trusted only when the source testcase package already marks the row as intentionally not executed. They are not runtime evidence failures.
+
+PM-skip row contract:
+
+- `結果 = BLOCKED`
+- `執行方式 = N/A(本輪不執行)`
+- `測試日` is filled
+- `詳細紀錄JSON.skip_reason` explains why the case is skipped
+- `詳細紀錄JSON.skip_decided_by = "Tommy"` or another explicit PM owner
+- `詳細紀錄JSON.skip_decided_at` is filled
+- `詳細紀錄JSON.preserved_for` says whether and when to retest
+
+Agent/Codex must copy PM-skip rows unchanged into `output/result.xlsx`. Do not rerun, overwrite, or repair them as runtime `EVIDENCE_INSUFFICIENT`. UI summaries should classify these rows separately from Agent-runtime BLOCKED cases.
+
 如果 helper 被 capability gate 跳過、且 Codex turn 沒有可用 browser automation tool 或 UI path 不可達，這仍是目前 current case 的可信平台阻塞。Codex 必須寫單題 `BLOCKED` result workbook，`失敗分類` 使用 `TOOL_EXECUTION_UNAVAILABLE` 或 `EVIDENCE_INSUFFICIENT`，並在 `detail_json.currentRunEvidence` 引用本 run 的 capability gate、helper skipped summary、preflight/browser tool 狀態或 agent log 摘要。不可把這種情境丟給 Agent fallback，因為 fallback 不會上傳成可信 UAT result。
 
 CSV/download case 若已透過 UI 成功下載檔案，Agent/Codex 可以讀本機下載的 CSV 作 structured evidence，包含檔名、表頭、row count、數值摘要與 preview-vs-CSV comparison。正式 UAT evidence 不需要也不應依賴 Google Sheet；Google Sheet 只可作人工探索 fallback。若 browser download event 未觸發，但同一次可見 UI 點擊產生 CSV/attachment network response，可把該 UI-triggered response body 落地成 CSV evidence，並在 `downloadedCsv.source` 明確標示 `ui_triggered_network_response_body`。若 testcase 指定從專案/報表清單下載,CSV evidence 必須鎖定本輪 saved report row/list control,必要時刷新/重定位清單列,並與儲存前 preview table/chart evidence 比對,不可重開 editor 造成 date-range restore regression 混入。若儲存、清單列、重開、設定還原或 current/pre-save preview 已先失敗，CSV 比對應在 `detail_json` 標 `csv_comparison_status = not_reached` 並記 failed subcondition；不可因後續沒有 CSV 檔就把已知功能流程 regression 改判 `BLOCKED`。
