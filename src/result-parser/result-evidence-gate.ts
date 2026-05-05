@@ -122,9 +122,10 @@ const CURRENT_RUN_EVIDENCE_TEXT_PATTERNS = [
 
 const TOOL_BRIDGE_ACTION_CLAIM_PATTERNS = [
   /browser_handle_dialog/i,
-  /(?:Tommy|PM).{0,40}(?:授權|同意|approved|authorized)/i,
-  /(?:已取得|已收到|已獲).{0,20}(?:授權|approval|authorization)/i,
-  /(?:已|完成|成功|執行|按下|clicked?|handled).{0,30}(?:刪除|删除|delete|覆蓋|overwrite|confirm|alert|dialog|不可逆)/i
+  /(?:tool\s*bridge|toolbridge|tool_bridge).{0,40}(?:request|approval|authorization|dialog|confirm|alert|授權|回覆|請求)/i,
+  /(?:Tommy|PM).{0,40}(?:授權|同意|approved|authorized).{0,80}(?:刪除|删除|delete|覆寫|覆蓋儲存|overwrite|confirm|alert|dialog|不可逆)/i,
+  /(?:刪除|删除|delete|覆寫|覆蓋儲存|overwrite|confirm|alert|dialog|不可逆).{0,80}(?:已取得|已收到|已獲|Tommy|PM).{0,40}(?:授權|同意|approval|authorization|approved|authorized)/i,
+  /(?:已|完成|成功|按下|clicked?|handled|accepted|confirmed|dismissed).{0,40}(?:browser_handle_dialog|native\s*(?:confirm|alert|dialog)|原生\s*(?:confirm|alert|dialog)|confirm|alert|dialog|刪除|删除|delete|覆寫儲存|覆蓋儲存|不可逆)/i
 ];
 
 const TOOL_BRIDGE_RESPONSE_PATTERNS = [

@@ -42,7 +42,7 @@ The current line is the Mac Agent MVP. It supports:
 - Preflight, auth, package consistency, capability gate, and run-state safeguards.
 - Tool Bridge for native dialogs, irreversible actions, SSO/auth blockers, and ambiguity handling.
 - One-case-at-a-time execution discipline.
-- Single-case `output/result.xlsx` upload and evidence gate.
+- Single-case `output/result.xlsx` upload and evidence gate, with Tool Bridge claim detection scoped to explicit approval/native-dialog/irreversible-action claims rather than ordinary testcase prose.
 - Server-side normalized result state.
 - Final aggregate result workbook download after all cases finish.
 - Concise report Markdown download and complete archive Markdown download; the archive includes timeline, logs, events, artifact inventory, timing summary, and per-case state.
@@ -140,6 +140,8 @@ Normal runs do not call `page.bringToFront()` or CDP `/json/activate`. Opening t
 Native dialogs, irreversible actions, overwrite/delete/save flows, SSO/auth blockers, and ambiguous package conflicts must go through Tool Bridge. Testcase text or startup instructions are not authorization.
 
 The Mac Agent may auto-approve non-auth Tool Bridge requests only when the local policy allows it.
+
+The result evidence gate only requires Tool Bridge response evidence when `detail_json` explicitly claims approval, native dialog handling, or an irreversible action. Test language such as "second preview result overwrites the first preview display" is treated as ordinary evidence prose, not an irreversible overwrite/save claim.
 
 ## Test Package Source Of Truth
 

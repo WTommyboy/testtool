@@ -160,24 +160,24 @@ const main = async (): Promise<void> => {
         })
       }
     ]);
-	    const missingEvidenceReport = await runGate(missingEvidence);
-	    assert.equal(missingEvidenceReport.status, "error");
-	    assert.ok(hasIssue(missingEvidenceReport, "CURRENT_RUN_EVIDENCE_MISSING"));
+    const missingEvidenceReport = await runGate(missingEvidence);
+    assert.equal(missingEvidenceReport.status, "error");
+    assert.ok(hasIssue(missingEvidenceReport, "CURRENT_RUN_EVIDENCE_MISSING"));
 
-	    const blockedMissingCore = path.join(tempRoot, "blocked-missing-core-result.xlsx");
-	    await writeWorkbook(blockedMissingCore, [
-	      {
-	        caseNo: "FIX-H-01",
-	        status: "BLOCKED",
-	        detailJson: JSON.stringify({
-	          blocked_reason: "fixture blocked without the required core narrative",
-	          currentRunEvidence: goodDetail.currentRunEvidence
-	        })
-	      }
-	    ]);
-	    const blockedMissingCoreReport = await runGate(blockedMissingCore);
-	    assert.equal(blockedMissingCoreReport.status, "error");
-	    assert.ok(hasIssue(blockedMissingCoreReport, "DETAIL_JSON_REQUIRED_FIELD_MISSING"));
+    const blockedMissingCore = path.join(tempRoot, "blocked-missing-core-result.xlsx");
+    await writeWorkbook(blockedMissingCore, [
+      {
+        caseNo: "FIX-H-01",
+        status: "BLOCKED",
+        detailJson: JSON.stringify({
+          blocked_reason: "fixture blocked without the required core narrative",
+          currentRunEvidence: goodDetail.currentRunEvidence
+        })
+      }
+    ]);
+    const blockedMissingCoreReport = await runGate(blockedMissingCore);
+    assert.equal(blockedMissingCoreReport.status, "error");
+    assert.ok(hasIssue(blockedMissingCoreReport, "DETAIL_JSON_REQUIRED_FIELD_MISSING"));
 
     const fallbackReport = await runGate(good, { resultSource: "agent_fallback" });
     assert.equal(fallbackReport.status, "error");
@@ -186,6 +186,25 @@ const main = async (): Promise<void> => {
     const diagnosticReport = await runGate(good, { resultSource: "diagnostic" });
     assert.equal(diagnosticReport.status, "error");
     assert.ok(hasIssue(diagnosticReport, "DIAGNOSTIC_RESULT_NOT_TRUSTED"));
+
+    const benignOverwriteProse = path.join(tempRoot, "benign-overwrite-prose-result.xlsx");
+    await writeWorkbook(benignOverwriteProse, [
+      {
+        caseNo: "FIX-H-01",
+        status: "PASS",
+        detailJson: JSON.stringify({
+          ...goodDetail,
+          預期行為: "同一 session 內變更日期區間後重新執行，第二次結果需覆蓋第一次 preview 顯示。",
+          實際行為: "本次 network request body 與 Chart.js datasets 均來自第二次日期區間；未處理 native dialog、未執行不可逆覆寫儲存。"
+        })
+      }
+    ]);
+    const benignOverwriteProseReport = await runGate(benignOverwriteProse);
+    assert.equal(
+      benignOverwriteProseReport.status,
+      "ok",
+      `benign overwrite prose should not require Tool Bridge response; issues=${JSON.stringify(benignOverwriteProseReport.issues)}`
+    );
 
     const missingToolBridge = path.join(tempRoot, "missing-tool-bridge-result.xlsx");
     await writeWorkbook(missingToolBridge, [
@@ -230,10 +249,11 @@ const main = async (): Promise<void> => {
             "single current-case result with current-run evidence passes",
             "legacy Bug sheet header 來源 Case without 狀態 is parsed as OPEN",
             "multi-case result is blocked",
-	            "missing current-run evidence is blocked",
-	            "BLOCKED detail_json missing core fields is blocked",
-	            "agent fallback result is blocked",
+            "missing current-run evidence is blocked",
+            "BLOCKED detail_json missing core fields is blocked",
+            "agent fallback result is blocked",
             "diagnostic result source is blocked",
+            "benign overwrite prose does not require Tool Bridge response",
             "Tool Bridge action claim without response evidence is blocked",
             "Tool Bridge action claim can be satisfied by current-run server event evidence",
             "invalid detail_json is blocked"

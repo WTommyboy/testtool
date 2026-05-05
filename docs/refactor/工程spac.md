@@ -1,7 +1,7 @@
 # UAT Tool 最新工程 Spec
 
 **版本**: v2026-05-06
-**狀態**: Mac Agent MVP / App 1.1.2 + Agent 0.2.14 / Indexed Guidance + Preflight Safeguards + groupId schema + final/partial aggregate result + complete archive MD export + OTTEST002 Collage helper P0 + metadata dropdown source-group scoping + metadata expected-source fallback + metadata source-scope count guard + list-page CSV row refresh + response-body fallback + preview table evidence + CSV header/date normalization + helper-plan auto continuation + existing-report field exact reconciliation + helper-evidence preflight replacement + support-file profile + result repair guard + degraded BLOCKED result guard + Tool Bridge run-event evidence gate + PASS-vs-helper-false-check gate + PM skip classification + preview-only helper skip guards + case-type must-read rules + CSV/metadata authoring contract + exact metadata source filename contract + background-safe browser lease + no-foreground helper policy + field-list loading wait + inline cleanup consistency parser guard / helper project auto-selection guard / manual_ai helper pre-run guard / manual_ai safe navigation prelude guard / date-variants preview evidence helper / multi-variant date visible-UI routing guard / date UI represented-range evidence / Monday-week date preset guard with weekStart override / select-all fields params guard / selected-field code-label reconciliation / Playwright browser_tabs availability guard / active-question-first session handoff contract
+**狀態**: Mac Agent MVP / App 1.1.2 + Agent 0.2.14 / Indexed Guidance + Preflight Safeguards + groupId schema + final/partial aggregate result + complete archive MD export + OTTEST002 Collage helper P0 + metadata dropdown source-group scoping + metadata expected-source fallback + metadata source-scope count guard + list-page CSV row refresh + response-body fallback + preview table evidence + CSV header/date normalization + helper-plan auto continuation + existing-report field exact reconciliation + helper-evidence preflight replacement + support-file profile + result repair guard + degraded BLOCKED result guard + Tool Bridge run-event evidence gate + Tool Bridge result-gate false-positive guard + PASS-vs-helper-false-check gate + PM skip classification + preview-only helper skip guards + case-type must-read rules + CSV/metadata authoring contract + exact metadata source filename contract + background-safe browser lease + no-foreground helper policy + field-list loading wait + inline cleanup consistency parser guard / helper project auto-selection guard / manual_ai helper pre-run guard / manual_ai safe navigation prelude guard / date-variants preview evidence helper / multi-variant date visible-UI routing guard / date UI represented-range evidence / Monday-week date preset guard with weekStart override / select-all fields params guard / selected-field code-label reconciliation / Playwright browser_tabs availability guard / active-question-first session handoff contract
 **適用分支**: `refactor/mac-agent-mvp` / `codex/uat-tool-mvp`  
 **說明**: 檔名沿用 Tommy 提供的 `工程spac.md`;本文內容為工程 spec。
 
@@ -903,6 +903,11 @@ If no Tool Bridge response exists in current run, Agent scans for policy violati
 - Native dialog was accepted without Tool Bridge response.
 - Destructive click detected without Tool Bridge response.
 
+Result evidence gate scoping:
+
+- The gate must not treat ordinary testcase prose as an irreversible-action claim. For example, date/preview assertions that say the second preview result should "覆蓋" the first preview are not Tool Bridge actions.
+- Tool Bridge response evidence is required only for explicit approval claims, native dialog handling claims, `browser_handle_dialog`, or destructive/irreversible action claims such as delete or overwrite-save.
+
 Violation result:
 
 ```text
@@ -1511,6 +1516,7 @@ Known sources:
 - Supporting docs manifest profiles decompose optional CSV/MD inputs into compact metadata before full-file loading.
 - Successful helper evidence can replace Codex-owned browser preflight for helper-assisted cases when the evidence is current-run/current-case and covers required steps.
 - Agent result contract rejects `PASS` rows that contradict helper state checks, including configure/reopen helper reports with any expected state check recorded as false.
+- Result evidence gate scopes `TOOL_BRIDGE_RESPONSE_MISSING` to explicit approval/native-dialog/irreversible-action claims; benign testcase prose such as preview-result overwrite no longer aborts ingestion.
 - structured evidence priority
 - batch-case policy detector
 - phase duration UI
@@ -1812,12 +1818,13 @@ codex/uat-tool-mvp
 
 1. Fix OTTEST004-A-06 native validation dialog recovery: selected-field-count guard before Execute, allowlisted non-destructive alert handling, visible Tool Bridge pending state, and current-case BLOCKED recovery without whole-run abort.
 2. Add A-06 all-zero-field inspection helper or guarded visible-UI flow: enumerate/select fields, verify selected field labels/codes, run preview, and collect zero-column evidence.
-3. Run OTTEST002 production regression against the deployed helper P0, metadata dropdown source-group scoping, list-page CSV helper, helper-evidence preflight replacement, case-type must-read rules, exact metadata source filename contract and final aggregate pipeline.
-4. Verify A-01 field-add actionability fallback and A-03 metadata dropdown helper writes `metadata-dropdown-evidence.json` with source-group scoped DOM actual list, exact diff, normalized diff and metadata expected list.
-5. Verify the Agent pre-upload repair guard with OTTEST002 Codex-generated result workbooks that still omit `群組ID`.
-6. Add Web UI display for `BATCH_CASE_POLICY_VIOLATION`, result gate errors, Tool Bridge pending requests, missing Tool Bridge response errors, and Tool Bridge schema errors with clear explanation.
-7. Add per-case progress events and current-case pointer visibility.
-8. If OTTEST002 exposes BI locator drift, metadata dropdown DOM mismatch, helper continuation gap, list-page CSV control mismatch or CSV format mismatch, tune `collage.configureMetric` / `collage.extractMetadataDropdownFields` / `collage.openExistingReport` / `collage.downloadCsvAndComparePreview` using the helper DOM profile artifacts.
+3. Add source-result/PM-skip runtime skip ingestion so prefilled source rows are terminal without Agent execution.
+4. Run OTTEST002 production regression against the deployed helper P0, metadata dropdown source-group scoping, list-page CSV helper, helper-evidence preflight replacement, case-type must-read rules, exact metadata source filename contract and final aggregate pipeline.
+5. Verify A-01 field-add actionability fallback and A-03 metadata dropdown helper writes `metadata-dropdown-evidence.json` with source-group scoped DOM actual list, exact diff, normalized diff and metadata expected list.
+6. Verify the Agent pre-upload repair guard with OTTEST002 Codex-generated result workbooks that still omit `群組ID`.
+7. Add Web UI display for `BATCH_CASE_POLICY_VIOLATION`, result gate errors, Tool Bridge pending requests, missing Tool Bridge response errors, and Tool Bridge schema errors with clear explanation.
+8. Add per-case progress events and current-case pointer visibility.
+9. If OTTEST002 exposes BI locator drift, metadata dropdown DOM mismatch, helper continuation gap, list-page CSV control mismatch or CSV format mismatch, tune `collage.configureMetric` / `collage.extractMetadataDropdownFields` / `collage.openExistingReport` / `collage.downloadCsvAndComparePreview` using the helper DOM profile artifacts.
 
 ### P1
 

@@ -1127,3 +1127,11 @@ Tommy 曾討論是否改成腳本。最後決策是採「半腳本化 / helper �
 - 修改檔案：`docs/planning/session-handoff-generation-rules.md`、`AGENTS.md`、`docs/planning/online-uat-tool-development-log.md`、`docs/refactor/規劃說明.md`、`docs/refactor/工程spac.md`。
 - 驗證：docs-only 規則更新；需以 `git diff --check` 驗證格式。
 - 後續影響：每日自動產生 shared D-1 handoff 時，必須偵測並輸出每條工作流的活問題、允許模式、未決事項、來源 thread/folder 與 ready-to-paste prompt；不能只彙整 git diff 或 run 狀態。
+
+### 2026-05-06 07:22 - OTTEST004_014：result gate TOOL_BRIDGE_RESPONSE_MISSING false positive 修正
+
+- 背景：OTTEST004 v1.8.3 / run `6ced1427-6365-49fa-88a5-cf582d99bff6` 實際只跑到 B-12；B-12 local result 已寫 `BLOCKED / EVIDENCE_INSUFFICIENT`，但 server ingest 以 `TOOL_BRIDGE_RESPONSE_MISSING` 中止。排查發現不是 Tommy 取消或未授權，也不是實際 native dialog response 遺失，而是 result evidence gate 的 regex 把 testcase prose「第二次結果需覆蓋第一次」誤判成不可逆 overwrite action claim。
+- 修正：`src/result-parser/result-evidence-gate.ts` 收斂 Tool Bridge action claim 偵測，只在明確 `browser_handle_dialog`、Tool Bridge request/approval、Tommy/PM 授權 + destructive/native action、已處理 native dialog、刪除或覆寫儲存等情境要求 Tool Bridge response。不再把一般「覆蓋 preview 顯示 / overwrite previous preview result」語句視為不可逆操作。
+- Fixture：`scripts/verify-result-evidence-gate.ts` 新增 benign overwrite prose workbook，確認「同一 session 重新執行，第二次結果覆蓋第一次 preview 顯示」可通過 gate；既有「Tommy 已授權刪除，並已完成刪除動作」仍會被 `TOOL_BRIDGE_RESPONSE_MISSING` 擋下，外部 Tool Bridge event evidence 仍可解除。
+- 文件：README、`docs/refactor/工程spac.md`、`docs/refactor/規劃說明.md` 同步說明 result gate false-positive guard。A-06 native validation dialog lifecycle 與 PM-skip runtime ingestion 仍是後續 P0。
+- 驗證：已跑 `npm run verify:result-evidence-gate`、`npm run typecheck`、`npm run build`、`git diff --check` 通過；commit/push `refactor/mac-agent-mvp` 與 `codex/uat-tool-mvp` 待本批收尾執行。
