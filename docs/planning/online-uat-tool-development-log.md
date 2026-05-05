@@ -1037,3 +1037,10 @@ Tommy 曾討論是否改成腳本。最後決策是採「半腳本化 / helper �
 - Fixture：`verify:helper-hints` 新增 metadata top-level params merge 檢查；`verify:capability-gate` 新增 multi-variant date helper hints must degrade to Codex visible UI。另用 OTTEST004 `8c87...` input 抽樣確認 A-01/A-04/A-05/B-02/D-02 params 與 B-03 gate/plan 會按新版邏輯生成。
 - 版本與文件：Mac Agent 升到 `0.2.8`，root app 維持 `1.1.2`；README、refactor 規劃、工程 spec、M1 spec / v1.2.1 spec 同步更新 metadata expected-source fallback、multi-variant date visible-UI routing guard 與 Agent version。
 - 驗證：已跑 `npm run typecheck --prefix agent`、`npm run build --prefix agent`、`npm run typecheck`、`npm run build`、`npm run build --prefix web`、`npm run verify:helper-hints`、`npm run verify:capability-gate`、`npm run verify:helper-report-gate`、`npm run verify:package-consistency`、`npm run verify:result-evidence-gate`、`npm run verify:agent-result-contract`、`npm run verify:final-aggregate-result`、`npm run verify:case-advance-policy`、`npm run verify:tool-bridge`、`npm run verify:agent-resume`、`npm run verify:agent-roundtrip`、`git diff --check` 通過；另用 OTTEST004 `8c87...` input 抽樣確認 metadata params、D-02 select-all params 與 B-03 gate/plan。commit/push、Railway `/version` / `/health` 與本機 Agent 重啟狀態由本次收尾回報補列。
+
+### 2026-05-05 12:24 - OTTEST004 testcase authoring contract：日期、metadata scope、selectAllFields 結構化
+
+- 背景：OTTEST004 false BLOCKED 除了工具側 helper/gate 缺口，也暴露 testcase 撰寫會把 UI label、測試意圖與 helper params 混在自然語言中。工具已在 `b7ee326` 加強容錯，但後續測試包應從 authoring 規範層避免同類問題。
+- 決策：正式更新 `docs/authoring/UAT_三文件撰寫規則.md`，要求日期 UI label 不得混入 `(快捷)`、`(快捷起點)`、`(半動態)` 等註解；動態/半動態/多變體日期用 structured params，且標 `automationLevel=manual_ai` / `operationTemplate=manual_ai`。metadata case 必填 `comparisonScope`、`expectedReportSources`、`matchKey`、`compareFields` 與 expected count；欄位全選 case 改用 `selectAllFields/sourceReports/expectedFieldCount`，不可把「4 來源報表全選 72 欄」當可點擊文字。
+- 交接文件：新增 `docs/planning/ottest004-testcase-authoring-adjustment-request.md`，可直接交給 Claude 調整 OTTEST004 testcase / companion md / authoring spec。
+- 驗證：本次為 docs-only authoring contract 更新，已跑 `git diff --check`；不需重跑 TypeScript/build，也不需 Railway redeploy 或 Mac Agent 重啟。

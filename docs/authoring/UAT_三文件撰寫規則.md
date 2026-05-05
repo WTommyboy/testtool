@@ -425,6 +425,83 @@ compare_fields: 欄位名稱, 欄位代碼, 資料型態
 
 不要只寫「與 metadata 驗證」。若三文件只寫 metadata 版本，Agent 會以 run packet 的 `rules/BI_DATA/metadata.csv` 為準，但這會降低 testcase 可讀性；若同輪上傳多份 CSV，檔名與 `reference_index_key` 是避免誤讀參考檔的必要資訊。
 
+OTTEST004 類 metadata case 必須補上 `comparisonScope`，讓工具知道比對範圍。canonical 寫法如下：
+
+```json
+{
+  "comparisonScope": "source_list",
+  "expectedReportSources": ["每日報表", "商品報表", "訂單報表", "會員報表"]
+}
+```
+
+```json
+{
+  "comparisonScope": "source_report_fields",
+  "expectedReportSources": ["每日報表"],
+  "expectedFieldCount": 31
+}
+```
+
+```json
+{
+  "comparisonScope": "all_sources_fields",
+  "expectedReportSources": ["每日報表", "商品報表", "訂單報表", "會員報表"],
+  "expectedTotalFieldCount": 72
+}
+```
+
+metadata case 的 `預期結果` 不可只寫「與 metadata 一致」。至少要寫出期望來源報表、欄位數與比對欄位，例如「預期欄位 picker 內存在每日報表來源群組，該群組下可選欄位數為 31，需比對欄位名稱、欄位代碼、資料型態」。除非 case 明確測空集合，否則不得讓 expected metadata 為空集合。
+
+日期 case 必須把 UI label 與測試意圖分離。`狀態清理` 和步驟中只放真實 UI 可見 label，例如 `時間=昨日`、`時間=上週`、`時間=過去30天`；不要寫 `昨日(快捷)`、`上週(快捷)`、`昨日(快捷起點)`。快捷、動態或半動態意圖放在 helper hints / structured params：
+
+```json
+{
+  "dateMode": "preset",
+  "uiLabel": "昨日",
+  "dateAssertion": "shortcut_preset"
+}
+```
+
+```json
+{
+  "dateMode": "relative",
+  "startOffsetDays": -90,
+  "endOffsetDays": -1,
+  "timezone": "Asia/Taipei",
+  "uiAction": "custom_date_range"
+}
+```
+
+半動態日期用結構化描述，不要只寫自然語言：
+
+```json
+{
+  "dateMode": "hybrid",
+  "start": {
+    "type": "relative",
+    "offsetDays": -90
+  },
+  "end": {
+    "type": "preset",
+    "uiLabel": "昨日"
+  },
+  "timezone": "Asia/Taipei",
+  "uiAction": "custom_date_range"
+}
+```
+
+multi-variant 日期 case 優先拆成多題，例如 `B-03a 昨日快捷`、`B-03b 上週快捷`、`B-03c 上月快捷`、`B-03d 過去30天快捷`。只有當測試目的明確是「連續切換後狀態不可殘留」時，才保留 multi-variant，且必須標 `automationLevel=manual_ai` / `operationTemplate=manual_ai`。
+
+欄位全選 case 不要把摘要文字寫成可點擊 UI 文字。避免寫 `點選「4 來源報表全選 72 欄」` 或 `欄位=4 來源報表全選 72 欄`。請改用 structured params：
+
+```json
+{
+  "selectAllFields": true,
+  "sourceReports": ["每日報表", "商品報表", "訂單報表", "會員報表"],
+  "expectedFieldCount": 72
+}
+```
+
 `狀態清理` 不要在前置條件重複成另一套 checklist，避免和 xlsx 獨立欄位衝突。若需補充背景，放在 `備註`。
 
 ### 2.6 步驟寫法
@@ -781,6 +858,15 @@ Helper hints:
 | `manual_ai` | 需要 Codex 判斷、延伸驗證或處理 UI 異常，不應固定腳本化 |
 | `blocked_if_no_helper` | 若缺少對應 helper，應先回報，不要臨時硬寫腳本 |
 
+以下 case 應標 `manual_ai`，不得標 `helper` 讓 helper pre-run：
+
+- 動態日期、半動態日期。
+- 90/91 天邊界。
+- 多日期變體連續切換。
+- 需要 Codex 判斷 UI 異常或延伸驗證的前端呈現 case。
+
+若 `operationTemplate=manual_ai`，`automationLevel` 也必須是 `manual_ai`。
+
 #### 常用 `operationTemplate`
 
 `operationTemplate` 不是程式碼，只是讓工具知道可套哪類 helper。建議先使用以下 canonical 值：
@@ -803,13 +889,80 @@ Helper hints:
 
 ```json
 {
+  "automationLevel": "helper",
+  "operationTemplate": "metadata_dropdown_compare",
   "referenceCsv": "rules/BI_DATA/metadata.csv",
   "referenceSourceName": "metadata＿1.2.5 - 工作表1.csv",
   "referenceSourcePath": "BI_DATA/metadata＿1.2.5 - 工作表1.csv",
   "referenceIndexKey": "bi_metadata_csv",
-  "sourceReport": "每日報表",
+  "comparisonScope": "source_report_fields",
+  "expectedReportSources": ["每日報表"],
   "matchKey": "欄位名稱",
-  "compareFields": ["欄位名稱", "欄位代碼", "資料型態"]
+  "compareFields": ["欄位名稱", "欄位代碼", "資料型態"],
+  "expectedFieldCount": 31
+}
+```
+
+來源清單 case 改用：
+
+```json
+{
+  "automationLevel": "helper",
+  "operationTemplate": "metadata_dropdown_compare",
+  "comparisonScope": "source_list",
+  "expectedReportSources": ["每日報表", "商品報表", "訂單報表", "會員報表"]
+}
+```
+
+多來源欄位總集合 case 改用：
+
+```json
+{
+  "automationLevel": "helper",
+  "operationTemplate": "metadata_dropdown_compare",
+  "comparisonScope": "all_sources_fields",
+  "expectedReportSources": ["每日報表", "商品報表", "訂單報表", "會員報表"],
+  "matchKey": "欄位名稱",
+  "compareFields": ["欄位名稱", "欄位代碼", "資料型態"],
+  "expectedTotalFieldCount": 72
+}
+```
+
+快捷日期 case 必須把 UI label 與測試意圖拆開。不要把 `昨日(快捷)`、`上週(快捷)`、`昨日(快捷起點)` 放進 `uiLabel` 或 `狀態清理`；`uiLabel` 只能是真實 UI 文字。
+
+```json
+{
+  "automationLevel": "helper",
+  "operationTemplate": "metric_date_display_preview",
+  "dateMode": "preset",
+  "uiLabel": "昨日",
+  "dateAssertion": "shortcut_preset"
+}
+```
+
+動態、半動態、90/91 天邊界或 multi-variant 日期 case 必須標 `manual_ai`，並用結構化 params 表示日期：
+
+```json
+{
+  "automationLevel": "manual_ai",
+  "operationTemplate": "manual_ai",
+  "dateMode": "relative",
+  "startOffsetDays": -90,
+  "endOffsetDays": -1,
+  "timezone": "Asia/Taipei",
+  "uiAction": "custom_date_range"
+}
+```
+
+欄位全選 case 不要把 `4 來源報表全選 72 欄` 寫成可點擊文字；Helper hints 必須帶：
+
+```json
+{
+  "automationLevel": "helper",
+  "operationTemplate": "collage_build_preview_save_reopen",
+  "selectAllFields": true,
+  "sourceReports": ["每日報表", "商品報表", "訂單報表", "會員報表"],
+  "expectedFieldCount": 72
 }
 ```
 
@@ -848,6 +1001,19 @@ Helper hints 不可包含：
 - 直接 API URL。
 - 要求 helper 判 PASS / FAIL。
 - 要求 helper 寫多題結果。
+
+### 4.4 Package lint 建議規則
+
+Claude 產出 testcase package 後，建議先用以下規則自檢；未來若工具加入 package lint，這些應作為 blocking 或至少 warning：
+
+1. 日期 UI label 不得包含 `(快捷)`、`(快捷起點)`、`(半動態)` 或其他非 UI label 註解。
+2. metadata case 必須有 `comparisonScope`、`referenceCsv`、`referenceIndexKey`、`expectedReportSources`、`matchKey`、`compareFields`。
+3. `comparisonScope=source_report_fields` 必須有 `expectedFieldCount`。
+4. `comparisonScope=all_sources_fields` 必須有 `expectedTotalFieldCount`。
+5. `selectAllFields=true` 必須有 `sourceReports`，且必須有 `expectedFieldCount` 或 `expectedTotalFieldCount`。
+6. multi-variant date case 不得標 `automationLevel=helper`；應標 `automationLevel=manual_ai`。
+7. `operationTemplate=manual_ai` 時，`automationLevel` 必須是 `manual_ai`。
+8. `automationLevel=helper` 時，params 必須足以形成 deterministic helper plan，不可只靠自然語言讓 helper 猜。
 
 ---
 
@@ -904,11 +1070,15 @@ Claude 產出三文件後，必須逐項檢查：
 - 指派文字與執行說明的 case summary 表也要使用相同 canonical 值，不可回退成 Low / Medium 或自由文字。
 - Agent 模式預設可自動 advance 下一 case；若要人工停等，文件需寫明明確 stop directive，避免和連續執行混淆。
 - 前置條件與步驟必須機器可執行：一行一個 UI action，每步列驗證方式與 evidence 類型。
+- 日期 UI label 只能寫真實 UI 文字，不可混入 `(快捷)`、`(快捷起點)`、`(半動態)`；快捷、動態、半動態意圖請放 helper hints / structured params。
+- metadata case 必須寫明 `comparisonScope`、`expectedReportSources`、`matchKey`、`compareFields` 與 expected count，不可只寫「與 metadata 一致」。
+- 欄位全選 case 必須用 `selectAllFields/sourceReports/expectedFieldCount` structured params，不可把「4 來源報表全選 72 欄」寫成可點擊文字。
 - 不可要求 Codex 操作 DevTools UI；Network / Console 取證需寫成 Playwright network observation 或 read-only page.evaluate。
 - Screenshot 是輔助 evidence，DOM/network/chart data 優先。
 - 採半腳本化 / helper 化原則：可腳本化 xlsx 解析、ACTIVE prompt、寫回、dump、CSV 計算、Chart.js 抽取、metadata 比對；可 helper 化單一 case 內的 UI 動作；不可把整份 testcase 或整群 case 寫成固定 Playwright 腳本。
 - 若某題適合 helper 化，請在 `測試執行說明_*.md` 該題加入 `Helper hints` JSON 區塊，使用 canonical `automationLevel`、`operationTemplate`、`requiredEvidence`。不要在 xlsx 寫 selector 或程式碼。
 - Helper hints 只能描述單一 case，不可包含多題 queue，不可要求 helper 判 PASS / FAIL，不可要求 helper 一次寫多題結果。
+- multi-variant / dynamic / half-dynamic 日期 case 請標 `automationLevel=manual_ai` 與 `operationTemplate=manual_ai`，不要讓 helper pre-run。
 
 產出後請附一份「三文件一致性檢查表」，逐項確認是否通過。
 ```
