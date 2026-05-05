@@ -128,6 +128,31 @@ const helperRequestsNoDownload = (params: Record<string, unknown>): boolean =>
 const helperHintsRequestManualAi = (helperHints: HelperHints | null): boolean =>
   helperHints?.automationLevel === "manual_ai" || helperHints?.operationTemplate === "manual_ai";
 
+const needsCollageNavigationPrelude = (currentCase: CaseManifestCase | null, helperHints: HelperHints | null): boolean => {
+  const features = detectCaseFeatures(currentCase, helperHints);
+  if (features.mode !== "collage" || features.hasFilter || features.hasGroup) return false;
+  const text = textBlob(currentCase);
+  if (/新增專案/.test(text) && !/新增報表|報表設定|設定頁|\+\s*新增欄位|欄位選擇|時間區間|preview|預覽|執行/.test(text)) {
+    return false;
+  }
+  return /拼貼模式|專案頁|新增報表|報表設定|設定頁|\+\s*新增欄位|欄位選擇|時間區間|preview|預覽|執行/.test(text);
+};
+
+const needsReportEditorPrelude = (currentCase: CaseManifestCase | null): boolean => {
+  const titleAndSteps = [currentCase?.caseTitle, currentCase?.preconditions, currentCase?.stepsSummary]
+    .filter(Boolean)
+    .join("\n");
+  const explicitlyOpensEditor =
+    /新增報表頁|報表設定|設定頁|\+\s*新增欄位|欄位選擇|時間區間|dateRange|preview|預覽|按執行|點「?執行/.test(titleAndSteps) ||
+    /(點|按|點擊|開啟|進入).{0,12}(\+\s*)?新增報表/.test(titleAndSteps);
+  if (/專案頁/.test(titleAndSteps) && !explicitlyOpensEditor) return false;
+  const text = textBlob(currentCase);
+  return (
+    explicitlyOpensEditor ||
+    /報表設定|設定頁|\+\s*新增欄位|欄位選擇|時間區間|dateRange|preview|預覽|按執行|點「?執行/.test(text)
+  );
+};
+
 const dateRequiresCodexVisibleUi = (currentCase: CaseManifestCase | null, helperHints: HelperHints | null): boolean => {
   const params = paramsObject(helperHints);
   const cleanup = parseCleanupTargets(currentCase?.cleanupChecklist);
@@ -304,8 +329,6 @@ const action = (
 
 const buildActions = (currentCase: CaseManifestCase | null, helperHints: HelperHints | null): HelperPlanAction[] => {
   if (!currentCase) return [];
-  if (helperHintsRequestManualAi(helperHints)) return [];
-  if (dateRequiresCodexVisibleUi(currentCase, helperHints)) return [];
   const text = textBlob(currentCase);
   const operationTemplate = helperHints?.operationTemplate ?? "";
   const params = inferCollageParams(currentCase, helperHints);
@@ -319,6 +342,25 @@ const buildActions = (currentCase: CaseManifestCase | null, helperHints: HelperH
     features.hasGroup;
   const metadataOnly = features.isMetadataDropdown;
   if (unsupportedHelperTarget) return [];
+  const helperMustLeaveCoreToCodex = helperHintsRequestManualAi(helperHints) || dateRequiresCodexVisibleUi(currentCase, helperHints);
+  if (helperMustLeaveCoreToCodex) {
+    if (!needsCollageNavigationPrelude(currentCase, helperHints)) return [];
+    const prelude = [
+      action("H1", "collage.openProject", "開啟指定拼貼專案（manual_ai 前置導航）", params, {
+        requiredEvidence: ["dom.url", "dom.pageTitle", "dom.state", "screenshot"],
+        notes: ["manual_ai / 動態日期題只允許 helper 做安全前置導航；不可判斷 testcase 結果。"]
+      })
+    ];
+    if (needsReportEditorPrelude(currentCase)) {
+      prelude.push(
+        action("H2", "collage.createReport", "進入新增報表頁（manual_ai 前置導航）", params, {
+          requiredEvidence: ["dom.url", "dom.pageTitle", "dom.state", "screenshot"],
+          notes: ["到達報表設定頁後即停止；欄位、日期、preview、CSV 等核心驗證必須由 Codex visible UI 逐步執行。"]
+        })
+      );
+    }
+    return prelude;
+  }
 
   if (metadataOnly) {
     return [

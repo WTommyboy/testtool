@@ -107,6 +107,16 @@ const dateRequiresCodexVisibleUi = (currentCase: CaseManifestCase | null, helper
   return /半動態|自訂動態|動態區間|天前|天後|快捷起點|快捷訖點|快捷終點|跨\s*9[01]\s*天|90\s*天|91\s*天|連續切換|不同區間/.test(dateText);
 };
 
+const needsCollageNavigationPrelude = (currentCase: CaseManifestCase | null, helperHints: HelperHints | null): boolean => {
+  const features = detectCaseFeatures(currentCase, helperHints);
+  if (features.mode !== "collage" || features.hasFilter || features.hasGroup) return false;
+  const text = features.text;
+  if (/新增專案/.test(text) && !/新增報表|報表設定|設定頁|\+\s*新增欄位|欄位選擇|時間區間|preview|預覽|執行/.test(text)) {
+    return false;
+  }
+  return /拼貼模式|專案頁|新增報表|報表設定|設定頁|\+\s*新增欄位|欄位選擇|時間區間|preview|預覽|執行/.test(text);
+};
+
 export const evaluateCapabilityGate = (
   currentCase: CaseManifestCase | null,
   helperHints: HelperHints | null
@@ -130,6 +140,7 @@ export const evaluateCapabilityGate = (
     /不(?:需|要|應)?重開|不要重開|無需重開|不用重開|不重開\s*editor|不應產生\s*reopen/i.test(text);
   const manualAiRequested = automationLevel === "manual_ai" || operationTemplate === "manual_ai";
   const dateNeedsCodexVisibleUi = dateRequiresCodexVisibleUi(currentCase, helperHints);
+  const navigationPreludeAllowed = needsCollageNavigationPrelude(currentCase, helperHints);
 
   if (mode === "record") unsupportedFeatures.push("record_mode_helper_not_supported");
   if (mode === "metric") unsupportedFeatures.push("metric_mode_helper_not_supported");
@@ -163,7 +174,7 @@ export const evaluateCapabilityGate = (
   if (manualAiRequested || dateNeedsCodexVisibleUi) {
     supportStatus = "degraded";
     executionMode = "codex_visible_ui";
-    helperPreRunAllowed = false;
+    helperPreRunAllowed = navigationPreludeAllowed;
   } else if (unsupportedFeatures.length > 0 || (automationLevel === "blocked_if_no_helper" && supportedHelperTemplates.length === 0)) {
     supportStatus = "unsupported";
     executionMode = "blocked_unsupported";
@@ -184,7 +195,9 @@ export const evaluateCapabilityGate = (
     ? "Do not execute trusted browser testcase steps for this case. Write a single-case BLOCKED result with fail_category=UNSUPPORTED_ONLINE_CAPABILITY and detail_json.blocked_reason from this capability gate."
     : supportStatus === "supported"
       ? "Use helper pre-run evidence when status=ok and matching this case; continue with visible UI only for incomplete evidence. Codex still judges PASS/FAIL/BLOCKED."
-      : "Do not run helper pre-run. Codex may perform visible UI/read-only evidence collection one case at a time. If browser automation is unavailable or the UI path is not reachable, write a single-case BLOCKED result with fail_category=TOOL_EXECUTION_UNAVAILABLE and cite this capability gate/helper skipped state as current-run evidence.";
+      : navigationPreludeAllowed
+        ? "Helper pre-run may perform only safe collage navigation/setup (open project and, when needed, enter the new-report settings page). Codex must execute the case-specific UI assertions, field/date/preview/CSV steps, and judge PASS/FAIL/BLOCKED. Do not treat navigation helper output alone as final testcase proof."
+        : "Do not run helper pre-run. Codex may perform visible UI/read-only evidence collection one case at a time. If browser automation is unavailable or the UI path is not reachable, write a single-case BLOCKED result with fail_category=TOOL_EXECUTION_UNAVAILABLE and cite this capability gate/helper skipped state as current-run evidence.";
 
   return {
     schemaVersion: "uat-capability-gate-v1",

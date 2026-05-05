@@ -301,10 +301,16 @@ const main = (): void => {
     };
     const manualAiGate = evaluateCapabilityGate(manualAiCase, manualAiDateHints);
     assert.equal(manualAiGate.supportStatus, "degraded", "manual_ai should not be advertised as fully helper-supported");
-    assert.equal(manualAiGate.helperPreRunAllowed, false, "manual_ai must disable helper pre-run");
+    assert.equal(manualAiGate.helperPreRunAllowed, true, "manual_ai collage cases may run safe navigation prelude");
     assert.equal(manualAiGate.executionMode, "codex_visible_ui", "manual_ai should leave execution to Codex visible UI");
     const manualAiPlan = buildHelperExecutionPlan({ runDir, currentCase: manualAiCase, helperHints: manualAiDateHints });
-    assert.equal(manualAiPlan.actions.length, 0, "manual_ai cases must not build helper actions that can false-block before Codex UI work");
+    assert.deepEqual(
+      manualAiPlan.actions.map((item) => item.template),
+      ["collage.openProject", "collage.createReport"],
+      "manual_ai cases may only build safe navigation/setup helper actions"
+    );
+    assert.ok(!manualAiPlan.actions.some((item) => item.template === "collage.configureMetric"), "manual_ai prelude must not configure fields/date");
+    assert.ok(!manualAiPlan.actions.some((item) => item.template === "collage.runPreviewAndCollectEvidence"), "manual_ai prelude must not run preview");
     assert.ok(
       manualAiPlan.availableTemplates.some((item) => item.template === "collage.captureDateUiEvidence"),
       "manual_ai date cases should still expose a read-only date UI evidence capture helper"
@@ -312,13 +318,32 @@ const main = (): void => {
 
     const helperDateVariantsGate = evaluateCapabilityGate(manualAiCase, helperDateVariantsHints);
     assert.equal(helperDateVariantsGate.supportStatus, "degraded", "multi-variant date cases should be routed to Codex visible UI even if authored as helper");
-    assert.equal(helperDateVariantsGate.helperPreRunAllowed, false, "multi-variant date cases must disable helper pre-run");
+    assert.equal(helperDateVariantsGate.helperPreRunAllowed, true, "multi-variant date cases may run safe navigation prelude");
     assert.equal(helperDateVariantsGate.executionMode, "codex_visible_ui", "multi-variant date cases require visible UI execution");
     const helperDateVariantsPlan = buildHelperExecutionPlan({ runDir, currentCase: manualAiCase, helperHints: helperDateVariantsHints });
-    assert.equal(helperDateVariantsPlan.actions.length, 0, "multi-variant date helper hints must not build single configureMetric actions");
+    assert.deepEqual(
+      helperDateVariantsPlan.actions.map((item) => item.template),
+      ["collage.openProject", "collage.createReport"],
+      "multi-variant date helper hints may only build safe navigation/setup actions"
+    );
+    assert.ok(!helperDateVariantsPlan.actions.some((item) => item.template === "collage.configureMetric"), "multi-variant date prelude must not build single configureMetric actions");
     assert.ok(
       helperDateVariantsPlan.availableTemplates.some((item) => item.template === "collage.captureDateUiEvidence"),
       "multi-variant date cases should expose optional date UI evidence capture"
+    );
+
+    const manualProjectNavigationCase = {
+      ...collageSaveReopenCase,
+      caseNo: "OTTEST004-A-02",
+      caseTitle: "從左側選單進入拼貼模式專案頁",
+      preconditions: "起始頁面: 報表管理頁; 導航路徑: 我的自訂 > 拼貼模式",
+      stepsSummary: "1. 展開「我的自訂」與「拼貼模式」\n2. 點任一既有專案\n3. 驗證 + 新增報表可見"
+    };
+    const manualProjectPlan = buildHelperExecutionPlan({ runDir, currentCase: manualProjectNavigationCase, helperHints: { ...manualAiDateHints, caseId: "OTTEST004-A-02", params: { mode: "拼貼" } } });
+    assert.deepEqual(
+      manualProjectPlan.actions.map((item) => item.template),
+      ["collage.openProject"],
+      "project-page navigation case should stop at openProject and not enter report editor"
     );
 
     const selectAllCase = {
@@ -410,7 +435,7 @@ const main = (): void => {
           "collage metadata compare is helper-assisted by dedicated dropdown extraction",
           "metadata source-scope helper params are forwarded to dropdown extraction",
           "list-page CSV case does not reopen editor and targets saved report row download",
-          "manual_ai cases disable helper pre-run and build no helper actions",
+          "manual_ai cases degrade to Codex visible UI with safe navigation prelude only",
           "manual_ai date cases expose optional read-only date UI evidence capture",
           "multi-variant date helper hints are degraded to Codex visible UI",
           "multi-variant date cases expose optional date UI evidence capture",

@@ -1,7 +1,7 @@
 # UAT Tool 最新工程 Spec
 
 **版本**: v2026-05-05
-**狀態**: Mac Agent MVP / App 1.1.2 + Agent 0.2.12 / Indexed Guidance + Preflight Safeguards + groupId schema + final/partial aggregate result + complete archive MD export + OTTEST002 Collage helper P0 + metadata dropdown source-group scoping + metadata expected-source fallback + metadata source-scope count guard + list-page CSV row refresh + response-body fallback + preview table evidence + CSV header/date normalization + helper-plan auto continuation + existing-report field exact reconciliation + helper-evidence preflight replacement + support-file profile + result repair guard + degraded BLOCKED result guard + Tool Bridge run-event evidence gate + PASS-vs-helper-false-check gate + PM skip classification + preview-only helper skip guards + case-type must-read rules + CSV/metadata authoring contract + exact metadata source filename contract + background-safe browser lease + no-foreground helper policy + field-list loading wait + inline cleanup consistency parser guard / helper project auto-selection guard / manual_ai helper pre-run guard / multi-variant date visible-UI routing guard / date UI represented-range evidence / Monday-week date preset guard with weekStart override / select-all fields params guard / selected-field code-label reconciliation / Playwright browser_tabs availability guard
+**狀態**: Mac Agent MVP / App 1.1.2 + Agent 0.2.13 / Indexed Guidance + Preflight Safeguards + groupId schema + final/partial aggregate result + complete archive MD export + OTTEST002 Collage helper P0 + metadata dropdown source-group scoping + metadata expected-source fallback + metadata source-scope count guard + list-page CSV row refresh + response-body fallback + preview table evidence + CSV header/date normalization + helper-plan auto continuation + existing-report field exact reconciliation + helper-evidence preflight replacement + support-file profile + result repair guard + degraded BLOCKED result guard + Tool Bridge run-event evidence gate + PASS-vs-helper-false-check gate + PM skip classification + preview-only helper skip guards + case-type must-read rules + CSV/metadata authoring contract + exact metadata source filename contract + background-safe browser lease + no-foreground helper policy + field-list loading wait + inline cleanup consistency parser guard / helper project auto-selection guard / manual_ai helper pre-run guard / manual_ai safe navigation prelude guard / multi-variant date visible-UI routing guard / date UI represented-range evidence / Monday-week date preset guard with weekStart override / select-all fields params guard / selected-field code-label reconciliation / Playwright browser_tabs availability guard
 **適用分支**: `refactor/mac-agent-mvp` / `codex/uat-tool-mvp`  
 **說明**: 檔名沿用 Tommy 提供的 `工程spac.md`;本文內容為工程 spec。
 
@@ -150,7 +150,7 @@ package:
 ```text
 package name: uat-tool-agent
 binary: uat-agent
-version: 0.2.12
+version: 0.2.13
 ```
 
 The Agent WebSocket `X-Agent-Version` header and `agent.online.payload.agent_version` are read from `agent/package.json`; they must not be hard-coded in `agent/src/connection.ts`.
