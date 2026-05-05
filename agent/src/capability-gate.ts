@@ -74,6 +74,39 @@ const helperRequestsNoReopen = (params: Record<string, unknown>): boolean =>
 const helperRequestsNoDownload = (params: Record<string, unknown>): boolean =>
   helperRequestsPreviewOnly(params) || booleanishParam(params, ["skipDownload", "doNotDownload", "noDownload", "doNotDownloadCsv", "skipCsv", "noCsv"]);
 
+const stringArrayParam = (params: Record<string, unknown>, key: string): string[] => {
+  const value = params[key];
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is string => typeof item === "string" && item.trim().length > 0).map((item) => item.trim());
+};
+
+const dateObjectParam = (value: unknown): string | null => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  const start = typeof record.start === "string" ? record.start.trim() : "";
+  const end = typeof record.end === "string" ? record.end.trim() : "";
+  if (!start || !end) return null;
+  return `${start}~${end}`;
+};
+
+const dateRequiresCodexVisibleUi = (currentCase: CaseManifestCase | null, helperHints: HelperHints | null): boolean => {
+  const params = paramsObject(helperHints);
+  const cleanupTargets = detectCaseFeatures(currentCase, helperHints).cleanupTargets;
+  const dateVariants = stringArrayParam(params, "dateVariants");
+  if (dateVariants.length > 1) return true;
+  const dateText = [
+    stringParam(params, ["dateRange", "timeRange"]),
+    dateObjectParam(params.dateRange),
+    ...dateVariants,
+    cleanupTargets["時間"],
+    currentCase?.stepsSummary,
+    currentCase?.expected
+  ]
+    .filter(Boolean)
+    .join("\n");
+  return /半動態|自訂動態|動態區間|天前|天後|快捷起點|快捷訖點|快捷終點|跨\s*9[01]\s*天|90\s*天|91\s*天|連續切換|不同區間/.test(dateText);
+};
+
 export const evaluateCapabilityGate = (
   currentCase: CaseManifestCase | null,
   helperHints: HelperHints | null
@@ -96,6 +129,7 @@ export const evaluateCapabilityGate = (
     helperRequestsNoReopen(params) ||
     /不(?:需|要|應)?重開|不要重開|無需重開|不用重開|不重開\s*editor|不應產生\s*reopen/i.test(text);
   const manualAiRequested = automationLevel === "manual_ai" || operationTemplate === "manual_ai";
+  const dateNeedsCodexVisibleUi = dateRequiresCodexVisibleUi(currentCase, helperHints);
 
   if (mode === "record") unsupportedFeatures.push("record_mode_helper_not_supported");
   if (mode === "metric") unsupportedFeatures.push("metric_mode_helper_not_supported");
@@ -126,7 +160,7 @@ export const evaluateCapabilityGate = (
   let helperPreRunAllowed = false;
   let blockingReason: string | null = null;
 
-  if (manualAiRequested) {
+  if (manualAiRequested || dateNeedsCodexVisibleUi) {
     supportStatus = "degraded";
     executionMode = "codex_visible_ui";
     helperPreRunAllowed = false;

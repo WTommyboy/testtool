@@ -152,6 +152,12 @@ const manualAiDateHints: HelperHints = {
   warnings: []
 };
 
+const helperDateVariantsHints: HelperHints = {
+  ...manualAiDateHints,
+  automationLevel: "helper",
+  operationTemplate: "chart_csv_consistency"
+};
+
 const selectAllFieldsHints: HelperHints = {
   caseId: "OTTEST004-D-02",
   automationLevel: "helper",
@@ -256,6 +262,13 @@ const main = (): void => {
     const manualAiPlan = buildHelperExecutionPlan({ runDir, currentCase: manualAiCase, helperHints: manualAiDateHints });
     assert.equal(manualAiPlan.actions.length, 0, "manual_ai cases must not build helper actions that can false-block before Codex UI work");
 
+    const helperDateVariantsGate = evaluateCapabilityGate(manualAiCase, helperDateVariantsHints);
+    assert.equal(helperDateVariantsGate.supportStatus, "degraded", "multi-variant date cases should be routed to Codex visible UI even if authored as helper");
+    assert.equal(helperDateVariantsGate.helperPreRunAllowed, false, "multi-variant date cases must disable helper pre-run");
+    assert.equal(helperDateVariantsGate.executionMode, "codex_visible_ui", "multi-variant date cases require visible UI execution");
+    const helperDateVariantsPlan = buildHelperExecutionPlan({ runDir, currentCase: manualAiCase, helperHints: helperDateVariantsHints });
+    assert.equal(helperDateVariantsPlan.actions.length, 0, "multi-variant date helper hints must not build single configureMetric actions");
+
     const selectAllCase = {
       ...collageSaveReopenCase,
       caseNo: "OTTEST004-D-02",
@@ -297,6 +310,7 @@ const main = (): void => {
           "collage metadata compare is helper-assisted by dedicated dropdown extraction",
           "list-page CSV case does not reopen editor and targets saved report row download",
           "manual_ai cases disable helper pre-run and build no helper actions",
+          "multi-variant date helper hints are degraded to Codex visible UI",
           "selectAllFields helper hints preserve sourceReports/expected count and avoid synthetic field text",
           "active filter cases remain blocked until helper support exists"
         ]

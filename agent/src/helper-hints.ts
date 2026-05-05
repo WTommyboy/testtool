@@ -67,6 +67,32 @@ const stringArray = (value: unknown): string[] => {
   return value.filter((item): item is string => typeof item === "string" && item.trim().length > 0).map((item) => item.trim());
 };
 
+const PARAM_PASSTHROUGH_KEYS = [
+  "referenceCsv",
+  "referenceSourceName",
+  "referenceSourcePath",
+  "referenceIndexKey",
+  "matchKey",
+  "matchValue",
+  "matchValueAliases",
+  "compareFields",
+  "comparisonScope",
+  "expectedReportSourceCount",
+  "expectedReportSources",
+  "expectedTotalFieldCount",
+  "expectedFieldCount"
+];
+
+const mergedParams = (raw: Record<string, unknown>): unknown => {
+  const params = raw.params && typeof raw.params === "object" && !Array.isArray(raw.params)
+    ? { ...(raw.params as Record<string, unknown>) }
+    : {};
+  for (const key of PARAM_PASSTHROUGH_KEYS) {
+    if (raw[key] !== undefined && params[key] === undefined) params[key] = raw[key];
+  }
+  return params;
+};
+
 const firstHeadingSectionForCase = (markdown: string, caseNo: string): string | null => {
   const target = normalizeCaseNo(caseNo);
   const lines = markdown.split(/\r?\n/);
@@ -160,7 +186,7 @@ const buildHelperHints = (
     caseId,
     automationLevel,
     operationTemplate,
-    params: raw.params,
+    params: mergedParams(raw),
     requiredEvidence,
     forbiddenAutomation,
     aiDecisionRequired,

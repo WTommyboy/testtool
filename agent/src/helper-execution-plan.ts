@@ -128,6 +128,24 @@ const helperRequestsNoDownload = (params: Record<string, unknown>): boolean =>
 const helperHintsRequestManualAi = (helperHints: HelperHints | null): boolean =>
   helperHints?.automationLevel === "manual_ai" || helperHints?.operationTemplate === "manual_ai";
 
+const dateRequiresCodexVisibleUi = (currentCase: CaseManifestCase | null, helperHints: HelperHints | null): boolean => {
+  const params = paramsObject(helperHints);
+  const cleanup = parseCleanupTargets(currentCase?.cleanupChecklist);
+  const dateVariants = stringArrayParam(params, "dateVariants");
+  if (dateVariants.length > 1) return true;
+  const dateText = [
+    stringParam(params, ["dateRange", "timeRange"]),
+    dateObjectParam(params.dateRange),
+    ...dateVariants,
+    cleanup["時間"],
+    currentCase?.stepsSummary,
+    currentCase?.expected
+  ]
+    .filter(Boolean)
+    .join("\n");
+  return /半動態|自訂動態|動態區間|天前|天後|快捷起點|快捷訖點|快捷終點|跨\s*9[01]\s*天|90\s*天|91\s*天|連續切換|不同區間/.test(dateText);
+};
+
 const cleanReportNamePattern = (value: string | null): string | null => {
   if (!value) return null;
   const cleaned = value.replace(/[)）]\s*$/, "").trim();
@@ -272,6 +290,7 @@ const action = (
 const buildActions = (currentCase: CaseManifestCase | null, helperHints: HelperHints | null): HelperPlanAction[] => {
   if (!currentCase) return [];
   if (helperHintsRequestManualAi(helperHints)) return [];
+  if (dateRequiresCodexVisibleUi(currentCase, helperHints)) return [];
   const text = textBlob(currentCase);
   const operationTemplate = helperHints?.operationTemplate ?? "";
   const params = inferCollageParams(currentCase, helperHints);

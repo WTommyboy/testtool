@@ -8,6 +8,7 @@ import { writeBiUiHelperGuidance } from "../agent/src/bi-ui-helper-guidance";
 import { writeCaseManifest } from "../agent/src/case-manifest";
 import { writeCurrentCasePack } from "../agent/src/current-case-pack";
 import { writeHelperExecutionPlan } from "../agent/src/helper-execution-plan";
+import { parseHelperHintsFromMarkdown } from "../agent/src/helper-hints";
 import { writeNetworkObservationGuidance } from "../agent/src/network-observation-guidance";
 import { writeRuleIndex } from "../agent/src/rule-index";
 
@@ -222,6 +223,45 @@ const main = async (): Promise<void> => {
     assert.ok(ruleIds.includes("helper-execution-plan"), "rule-index should recommend helper-execution-plan");
     assert.ok(ruleIds.includes("network-observation-guidance"), "rule-index should recommend network-observation-guidance");
 
+    const metadataHintsMarkdown = [
+      "### META-A-01 — metadata top-level params",
+      "",
+      "Helper hints:",
+      "```json",
+      JSON.stringify({
+        caseId: "META-A-01",
+        automationLevel: "helper",
+        operationTemplate: "metadata_dropdown_compare",
+        params: {
+          mode: "拼貼",
+          comparisonScope: "report_sources_only"
+        },
+        requiredEvidence: ["dom.list"],
+        forbiddenAutomation: ["direct_bi_api", "internal_js_setter", "multi_case_batch"],
+        aiDecisionRequired: true,
+        referenceCsv: "rules/BI_DATA/metadata.csv",
+        referenceSourceName: "metadata＿1.2.5 - 工作表1.csv",
+        referenceIndexKey: "bi_metadata_csv",
+        matchKey: "所屬報表是否可用於拼貼模式主選擇",
+        expectedReportSourceCount: 4,
+        expectedReportSources: ["每日報表", "各登入渠道狀況(原 beanfun! 導流)", "退費追蹤", "雙平台營收佔比"]
+      }, null, 2),
+      "```",
+      ""
+    ].join("\n");
+    const parsedMetadataHints = parseHelperHintsFromMarkdown(metadataHintsMarkdown, "META-A-01", "fixture/metadata.md").helperHints;
+    assert.ok(parsedMetadataHints, "metadata helper hints should parse");
+    assert.deepEqual(
+      (parsedMetadataHints.params as Record<string, unknown>).expectedReportSources,
+      ["每日報表", "各登入渠道狀況(原 beanfun! 導流)", "退費追蹤", "雙平台營收佔比"],
+      "top-level expectedReportSources must be merged into helper params"
+    );
+    assert.equal(
+      (parsedMetadataHints.params as Record<string, unknown>).referenceIndexKey,
+      "bi_metadata_csv",
+      "top-level referenceIndexKey must be merged into helper params"
+    );
+
     console.log(
       JSON.stringify(
         {
@@ -236,7 +276,8 @@ const main = async (): Promise<void> => {
             "current-case-pack.md Helper Hints section",
             "helper-execution-plan safety and templates",
             "bi-ui-helper-guidance Template Notes",
-            "rule-index currentCaseRecommendations"
+            "rule-index currentCaseRecommendations",
+            "metadata helper top-level reference params merged into params"
           ]
         },
         null,

@@ -24,7 +24,7 @@ Production endpoints:
 Current semantic versions:
 
 - App/API: `1.1.2`
-- Mac Agent: `0.2.7`
+- Mac Agent: `0.2.8`
 
 Active branches:
 
@@ -52,7 +52,8 @@ The current line is the Mac Agent MVP. It supports:
 - Helper field setup waits for BI field-list loading to complete before looking for `+ 新增欄位`, so slow `載入欄位中...` states are reported as loading timeouts instead of immediate button blockers.
 - Metadata dropdown extraction uses the same field-list wait as metric configuration; A-03 style helpers should not report `ADD_FIELD_BUTTON_NOT_CLICKABLE` while the BI field list is still loading.
 - Reopen helpers settle after the report editor reloads and record reopen DOM/network evidence for date/field state restoration cases.
-- Metadata dropdown evidence is source-group scoped when the BI picker exposes group headers such as `DAILY_REPORT`, and preserves both exact field-name diffs and normalized known-alias diffs.
+- Metadata dropdown evidence is source-group scoped when the BI picker exposes group headers such as `DAILY_REPORT`; source-list cases compare distinct source groups, missing source groups are recorded as evidence instead of all-items fallback, and source-specific cases preserve exact field-name diffs plus normalized known-alias diffs.
+- Multi-variant or dynamic date cases are routed to Codex visible UI instead of helper pre-run, avoiding single-action helper false BLOCKED results for cases such as shortcut comparisons, dynamic offsets, half-dynamic ranges, and 90/91-day boundary checks.
 - Optional support files are indexed with lightweight profiles in `input/supporting-docs-manifest.json` so Codex can inspect CSV headers/row counts or markdown headings before choosing a full file to read.
 - Successful same-run helper browser evidence can satisfy preflight for helper-assisted cases; Codex should not mark `TOOL_EXECUTION_UNAVAILABLE` solely because Codex-side browser tools are absent.
 - Degraded-case trusted `BLOCKED` result handling when browser/manual UI tools are unavailable.

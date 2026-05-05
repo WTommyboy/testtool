@@ -2256,6 +2256,8 @@ const cleanFieldPickerLabel = (text: string, code?: unknown): string => {
 const normalizeMetadataAlias = (fieldName: string): string => {
   const key = normalizeFieldIdentity(fieldName);
   const aliases: Record<string, string> = {
+    [normalizeFieldIdentity("總營收(TWD)")]: "總營收",
+    [normalizeFieldIdentity("總營收 TWD")]: "總營收",
     [normalizeFieldIdentity("iOS平台總營收")]: "iOS總營收",
     [normalizeFieldIdentity("iOS平台付費帳號數")]: "iOS付費帳號數",
     [normalizeFieldIdentity("iOS平台付費次數")]: "iOS付費次數",
@@ -2268,6 +2270,23 @@ const normalizeMetadataAlias = (fieldName: string): string => {
     [normalizeFieldIdentity("線下商城Coda付費次數")]: "線下商城CODAPAY付費次數"
   };
   return aliases[key] ?? fieldName;
+};
+
+const canonicalSourceForPickerGroup = (groupLabel: string): string => {
+  const normalized = normalizeFieldPickerGroup(groupLabel);
+  return knownCanonicalSourceByGroup.get(normalized) ?? groupLabel;
+};
+
+const sourceIdentities = (values: string[]): Set<string> => new Set(values.map(normalizeSourceReportIdentity));
+
+const uniqueBySourceIdentity = (values: string[]): string[] => {
+  const seen = new Set<string>();
+  return values.filter((value) => {
+    const key = normalizeSourceReportIdentity(value);
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 };
 
 const resolveMetadataCsvPath = (options: CliOptions): { path: string | null; source: string; referenceIndexEntry?: unknown } => {
@@ -2307,6 +2326,9 @@ const readExpectedMetadataFields = (
   referenceIndexEntry?: unknown;
   expectedFields: string[];
   expectedSourceGroups: Array<{ sourceReport: string; fieldCount: number }>;
+  expectedReportSources: string[];
+  sourceListMode: boolean;
+  allSourcesFieldMode: boolean;
   header: string[];
   warnings: string[];
 } => {
@@ -2319,12 +2341,18 @@ const readExpectedMetadataFields = (
       referenceIndexEntry: resolved.referenceIndexEntry,
       expectedFields: [],
       expectedSourceGroups: [],
+      expectedReportSources: [],
+      sourceListMode: false,
+      allSourcesFieldMode: false,
       header: [],
       warnings: ["METADATA_CSV_NOT_FOUND"]
     };
   }
 
   const sourceReport = stringParam(options.params, "source") ?? stringParam(options.params, "sourceReport") ?? "每日報表";
+  const comparisonScope = stringParam(options.params, "comparisonScope") ?? "";
+  const expectedTotalFieldCount = numberParam(options.params, ["expectedTotalFieldCount", "expectedFieldCount"]);
+  const expectedReportSourcesParam = stringArrayParam(options.params, "expectedReportSources");
   const matchKey = stringParam(options.params, "matchKey") ?? "";
   const rows = parseCsv(fs.readFileSync(resolved.path, "utf8"));
   const header = rows[0] ?? [];
@@ -2351,17 +2379,30 @@ const readExpectedMetadataFields = (
     }
   }
   const expectedSourceGroups = [...expectedSourceGroupMap.values()];
+  const expectedReportSources = uniqueBySourceIdentity(
+    expectedReportSourcesParam.length > 0
+      ? expectedReportSourcesParam
+      : expectedSourceGroups.map((item) => item.sourceReport)
+  );
   const sourceListMode =
+    /report_sources_only/i.test(comparisonScope) ||
+    numberParam(options.params, ["expectedReportSourceCount"]) !== null ||
     /來源報表|source\s*report/i.test(matchKey) ||
     normalizeSourceReportIdentity(sourceReport) === normalizeSourceReportIdentity("清單對照") ||
     sourceReport.trim() === "/";
+  const allSourcesFieldMode =
+    /all_?4_?sources|all_?sources/i.test(comparisonScope) ||
+    expectedTotalFieldCount !== null ||
+    (sourceReport.trim() === "/" && /欄位名稱|field/i.test(matchKey));
+  const sourceKeys = sourceIdentities(expectedReportSources);
   const expectedFields = rows.slice(1)
     .filter((row) => {
       if (nameIndex === -1) return false;
       const rowSource = sourceIndex === -1 ? "" : String(row[sourceIndex] ?? "").trim();
       const available = collageAvailableIndex === -1 ? "" : String(row[collageAvailableIndex] ?? "").trim().toUpperCase();
       if (available !== "Y") return false;
-      if (sourceListMode) return true;
+      if (sourceListMode && !allSourcesFieldMode) return false;
+      if (allSourcesFieldMode) return sourceKeys.size === 0 || sourceKeys.has(normalizeSourceReportIdentity(rowSource));
       return normalizeSourceReportIdentity(rowSource) === normalizeSourceReportIdentity(sourceReport);
     })
     .map((row) => String(row[nameIndex] ?? "").trim())
@@ -2373,6 +2414,9 @@ const readExpectedMetadataFields = (
     referenceIndexEntry: resolved.referenceIndexEntry,
     expectedFields,
     expectedSourceGroups,
+    expectedReportSources,
+    sourceListMode,
+    allSourcesFieldMode,
     header,
     warnings
   };
@@ -2593,20 +2637,50 @@ const extractMetadataDropdownFields = async (options: CliOptions, page: Page, st
 
   const rawItems = await extractFieldPickerDomItems(page);
   const sourceReport = stringParam(options.params, "source") ?? stringParam(options.params, "sourceReport") ?? "每日報表";
-  const targetGroups = fieldPickerSourceGroupLabels(sourceReport).map(normalizeFieldPickerGroup);
+  const expectedReportSources = metadata.expectedReportSources;
+  const targetSourceReports = metadata.sourceListMode || metadata.allSourcesFieldMode
+    ? expectedReportSources
+    : [sourceReport];
+  const targetGroups = targetSourceReports.flatMap(fieldPickerSourceGroupLabels).map(normalizeFieldPickerGroup);
   const groupedItems = rawItems.filter((item) => {
     const groupLabel = typeof item.groupLabel === "string" ? item.groupLabel : null;
     return groupLabel ? targetGroups.includes(normalizeFieldPickerGroup(groupLabel)) : false;
   });
-  const scopedRawItems = groupedItems.length > 0 ? groupedItems : rawItems;
-  if (rawItems.length > 0 && groupedItems.length === 0) warnings.push("METADATA_DROPDOWN_SOURCE_GROUP_SCOPE_NOT_FOUND_USING_ALL_ITEMS");
-
-  const actualItems = scopedRawItems.map((item) => ({
+  const rawItemsWithLabels = rawItems.map((item) => ({
     ...item,
     label: inferFieldLabel(String(item.text ?? ""), expectedFields, item.code)
   }));
+  const groupedItemsWithLabels = groupedItems.map((item) => ({
+    ...item,
+    label: inferFieldLabel(String(item.text ?? ""), expectedFields, item.code)
+  }));
+  const expectedFieldKeys = new Set(expectedFields.map((field) => normalizeFieldIdentity(normalizeMetadataAlias(field))));
+  const expectedFieldNameFallbackItems = rawItemsWithLabels.filter((item) =>
+    expectedFieldKeys.has(normalizeFieldIdentity(normalizeMetadataAlias(String(item.label ?? ""))))
+  );
+  const scopedRawItems = groupedItemsWithLabels.length > 0
+    ? groupedItemsWithLabels
+    : metadata.sourceListMode || metadata.allSourcesFieldMode
+      ? []
+      : expectedFieldNameFallbackItems;
+  const actualScopeMode = groupedItemsWithLabels.length > 0
+    ? "source_group"
+    : metadata.sourceListMode || metadata.allSourcesFieldMode
+      ? "source_group_missing"
+      : expectedFieldNameFallbackItems.length > 0
+        ? "expected_field_name_fallback"
+        : "source_group_missing";
+  if (rawItems.length > 0 && groupedItems.length === 0) {
+    warnings.push(
+      metadata.sourceListMode || metadata.allSourcesFieldMode
+        ? "METADATA_DROPDOWN_SOURCE_GROUP_SCOPE_NOT_FOUND_USING_GROUP_EVIDENCE_ONLY"
+        : expectedFieldNameFallbackItems.length > 0
+          ? "METADATA_DROPDOWN_SOURCE_GROUP_SCOPE_NOT_FOUND_USING_EXPECTED_FIELD_MATCHES"
+          : "METADATA_DROPDOWN_SOURCE_GROUP_SCOPE_NOT_FOUND"
+    );
+  }
   const seen = new Set<string>();
-  const actualVisibleItems = actualItems
+  const actualVisibleItems = scopedRawItems
     .map((item) => String(item.label ?? "").trim())
     .filter(Boolean)
     .filter((label) => {
@@ -2625,23 +2699,54 @@ const extractMetadataDropdownFields = async (options: CliOptions, page: Page, st
   const exactMissingFields = expectedFields.filter((field) => !exactActualByKey.has(normalizeFieldIdentity(field)));
   const exactExtraFields = actualVisibleItems.filter((field) => !exactExpectedByKey.has(normalizeFieldIdentity(field)));
   const matchedFields = expectedFields.filter((field) => actualByKey.has(normalizeFieldIdentity(normalizeMetadataAlias(field))));
+  const actualSourceReports = uniqueBySourceIdentity(
+    rawItems
+      .map((item) => typeof item.groupLabel === "string" ? item.groupLabel : null)
+      .filter((item): item is string => Boolean(item))
+      .map(canonicalSourceForPickerGroup)
+  );
+  const groupedSourceReports = uniqueBySourceIdentity(
+    groupedItems
+      .map((item) => typeof item.groupLabel === "string" ? item.groupLabel : null)
+      .filter((item): item is string => Boolean(item))
+      .map(canonicalSourceForPickerGroup)
+  );
+  const expectedSourceKeys = sourceIdentities(expectedReportSources);
+  const actualSourceKeys = sourceIdentities(actualSourceReports);
+  const missingSourceReports = expectedReportSources.filter((source) => !actualSourceKeys.has(normalizeSourceReportIdentity(source)));
+  const extraSourceReports = expectedSourceKeys.size === 0
+    ? []
+    : actualSourceReports.filter((source) => !expectedSourceKeys.has(normalizeSourceReportIdentity(source)));
 
   const evidence = {
     caseNo: options.caseId,
     sourceGroupLabel: sourceReport,
-    sourceGroupDomLabels: fieldPickerSourceGroupLabels(sourceReport),
+    sourceGroupDomLabels: targetSourceReports.flatMap(fieldPickerSourceGroupLabels),
     pickerReadiness,
     pickerOpenAction: addOperation,
     actualScope: {
-      mode: groupedItems.length > 0 ? "source_group" : "all_items_fallback",
+      mode: actualScopeMode,
       requestedSourceReport: sourceReport,
-      targetGroupLabels: fieldPickerSourceGroupLabels(sourceReport),
+      requestedSourceReports: targetSourceReports,
+      targetGroupLabels: targetSourceReports.flatMap(fieldPickerSourceGroupLabels),
       allRawItemCount: rawItems.length,
+      groupedRawItemCount: groupedItems.length,
+      expectedFieldNameFallbackCount: expectedFieldNameFallbackItems.length,
       scopedRawItemCount: scopedRawItems.length
     },
     actualVisibleItems,
     actualCount: actualVisibleItems.length,
-    actualRawItems: actualItems,
+    actualRawItems: scopedRawItems,
+    allRawItemsSample: rawItemsWithLabels.slice(0, 120),
+    sourceGroupEvidence: {
+      expectedReportSources,
+      actualSourceReports,
+      groupedSourceReports,
+      missingSourceReports,
+      extraSourceReports,
+      expectedReportSourceCount: numberParam(options.params, ["expectedReportSourceCount"]),
+      actualReportSourceCount: actualSourceReports.length
+    },
     expectedSource: {
       referenceCsv: metadata.metadataPath,
       referenceCsvRelativePath: metadata.metadataPath ? path.relative(options.runDir, metadata.metadataPath) : null,
@@ -2649,19 +2754,25 @@ const extractMetadataDropdownFields = async (options: CliOptions, page: Page, st
       referenceIndexEntry: metadata.referenceIndexEntry ?? null,
       referenceSourceName: stringParam(options.params, "referenceSourceName") ?? "metadata＿1.2.5 - 工作表1.csv",
       sourceReport: stringParam(options.params, "source") ?? stringParam(options.params, "sourceReport") ?? "每日報表",
+      comparisonScope: stringParam(options.params, "comparisonScope") ?? null,
       matchKey: stringParam(options.params, "matchKey") ?? "欄位名稱",
       compareFields: Array.isArray(options.params.compareFields) ? options.params.compareFields : ["欄位名稱", "資料類型"],
-      filter: "來源報表 == sourceReport && 所屬報表是否可用於拼貼模式主選擇 == Y"
+      filter: metadata.sourceListMode && !metadata.allSourcesFieldMode
+        ? "所屬報表是否可用於拼貼模式主選擇 == Y; compare distinct 來源報表"
+        : metadata.allSourcesFieldMode
+          ? "來源報表 in expectedReportSources && 所屬報表是否可用於拼貼模式主選擇 == Y"
+          : "來源報表 == sourceReport && 所屬報表是否可用於拼貼模式主選擇 == Y"
     },
     expectedFields,
     expectedCount: expectedFields.length,
+    expectedReportSources,
     missingFields,
     extraFields,
     exactMissingFields,
     exactExtraFields,
     normalizationNotes: [
       "comparison normalizes whitespace, full-width/half-width parentheses, and source-specific known naming aliases",
-      "actual picker fields are scoped to the requested source group when a DOM group header such as DAILY_REPORT is present",
+      "actual picker fields are scoped to requested source group headers when present; if a source group is absent, helper records source-group evidence instead of treating all picker items as that source",
       "field labels remove UI type badges such as NUMERIC and trailing field codes such as RAU when they are appended to the visible label",
       "DOM extraction reads visible picker options / addFieldToSelection onclick metadata only; it does not call BI API"
     ],
@@ -2671,22 +2782,29 @@ const extractMetadataDropdownFields = async (options: CliOptions, page: Page, st
       extraFields,
       exactMissingFields,
       exactExtraFields,
+      missingSourceReports,
+      extraSourceReports,
       trueDifferenceCount: missingFields.length + extraFields.length
     },
-    verdict: missingFields.length === 0 && extraFields.length === 0 ? "matches" : "differences_found"
+    verdict: metadata.sourceListMode && !metadata.allSourcesFieldMode
+      ? missingSourceReports.length === 0 && extraSourceReports.length === 0 ? "matches" : "differences_found"
+      : missingFields.length === 0 && extraFields.length === 0 ? "matches" : "differences_found"
   };
   const evidencePath = path.join(artifactRoot(options), "metadata-dropdown-evidence.json");
   ensureDir(path.dirname(evidencePath));
   fs.writeFileSync(evidencePath, `${JSON.stringify(evidence, null, 2)}\n`);
 
-  if (actualVisibleItems.length === 0) warnings.push("METADATA_DROPDOWN_NO_VISIBLE_ITEMS_EXTRACTED");
-  if (expectedFields.length === 0) warnings.push("METADATA_EXPECTED_FIELDS_EMPTY");
+  if (rawItems.length === 0) warnings.push("METADATA_DROPDOWN_NO_VISIBLE_ITEMS_EXTRACTED");
+  if (!metadata.sourceListMode && expectedFields.length === 0) warnings.push("METADATA_EXPECTED_FIELDS_EMPTY");
   const shot = await screenshot(options, page, "metadata-dropdown");
   const uiProfileAfter = await captureUiDomProfile(options, page, "metadataDropdown.after");
+  const hasComparableEvidence = metadata.sourceListMode && !metadata.allSourcesFieldMode
+    ? actualSourceReports.length > 0 && expectedReportSources.length > 0
+    : rawItems.length > 0 && expectedFields.length > 0;
 
   return createReport(
     options,
-    actualVisibleItems.length > 0 && expectedFields.length > 0 ? "ok" : "blocked",
+    hasComparableEvidence ? "ok" : "blocked",
     startedAt,
     {
       domState: await readDomState(page),

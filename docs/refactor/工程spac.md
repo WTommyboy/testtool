@@ -1,7 +1,7 @@
 # UAT Tool 最新工程 Spec
 
 **版本**: v2026-05-04
-**狀態**: Mac Agent MVP / App 1.1.2 + Agent 0.2.7 / Indexed Guidance + Preflight Safeguards + groupId schema + final/partial aggregate result + complete archive MD export + OTTEST002 Collage helper P0 + metadata dropdown source-group scoping + list-page CSV row refresh + response-body fallback + preview table evidence + CSV header/date normalization + helper-plan auto continuation + existing-report field exact reconciliation + helper-evidence preflight replacement + support-file profile + result repair guard + degraded BLOCKED result guard + BLOCKED detail_json core-field gate + Tool Bridge run-event evidence gate + PASS-vs-helper-false-check gate + PM skip classification + preview-only helper skip guards + case-type must-read rules + CSV/metadata authoring contract + exact metadata source filename contract + background-safe browser lease + no-foreground helper policy + field-list loading wait + inline cleanup consistency parser guard / helper project auto-selection guard / manual_ai helper pre-run guard / select-all fields params guard
+**狀態**: Mac Agent MVP / App 1.1.2 + Agent 0.2.8 / Indexed Guidance + Preflight Safeguards + groupId schema + final/partial aggregate result + complete archive MD export + OTTEST002 Collage helper P0 + metadata dropdown source-group scoping + metadata expected-source fallback + list-page CSV row refresh + response-body fallback + preview table evidence + CSV header/date normalization + helper-plan auto continuation + existing-report field exact reconciliation + helper-evidence preflight replacement + support-file profile + result repair guard + degraded BLOCKED result guard + BLOCKED detail_json core-field gate + Tool Bridge run-event evidence gate + PASS-vs-helper-false-check gate + PM skip classification + preview-only helper skip guards + case-type must-read rules + CSV/metadata authoring contract + exact metadata source filename contract + background-safe browser lease + no-foreground helper policy + field-list loading wait + inline cleanup consistency parser guard / helper project auto-selection guard / manual_ai helper pre-run guard / multi-variant date visible-UI routing guard / select-all fields params guard
 **適用分支**: `refactor/mac-agent-mvp` / `codex/uat-tool-mvp`  
 **說明**: 檔名沿用 Tommy 提供的 `工程spac.md`;本文內容為工程 spec。
 
@@ -150,7 +150,7 @@ package:
 ```text
 package name: uat-tool-agent
 binary: uat-agent
-version: 0.2.7
+version: 0.2.8
 ```
 
 The Agent WebSocket `X-Agent-Version` header and `agent.online.payload.agent_version` are read from `agent/package.json`; they must not be hard-coded in `agent/src/connection.ts`.
@@ -1480,7 +1480,8 @@ Known sources:
   - CSV precondition failures such as missing current preview, missing saved report row, or missing list-page download control are reported with `failedSubcondition` and `csv_comparison_status=not_reached`; Codex records CSV comparison as `not_reached` when an earlier required workflow subcondition already failed
   - if Playwright does not emit a browser download event but the same visible UI click returns a CSV/attachment response, persist that response body as CSV evidence with `downloadedCsv.source=ui_triggered_network_response_body`
   - unknown native dialog chains are blocked with evidence when no real recovery handler exists
-- Metadata compare contract uses `rules/BI_DATA/metadata.csv` as canonical reference and requires reference_csv/source_report/match_key/compare_fields/actualScope in detail_json; helper evidence should include actualVisibleItems, expectedFields, missingFields, extraFields, exactMissingFields and exactExtraFields
+- Metadata compare contract uses `rules/BI_DATA/metadata.csv` as canonical reference and requires reference_csv/source_report/match_key/compare_fields/actualScope in detail_json; helper evidence should include actualVisibleItems, expectedFields, missingFields, extraFields, exactMissingFields and exactExtraFields. For source-list cases the helper compares distinct source groups (`actualSourceReports` vs `expectedReportSources`); for missing source groups it records `missingSourceReports` or expected-field-name fallback evidence instead of treating every visible picker item as the requested source.
+- Multi-variant, dynamic-offset, half-dynamic, and date-boundary cases are degraded to Codex visible UI in capability gate/helper plan. A single `collage.configureMetric` helper action must not pre-run those cases because it cannot represent multiple date transitions or mixed static/dynamic input.
 - Supporting docs manifest profiles decompose optional CSV/MD inputs into compact metadata before full-file loading.
 - Successful helper evidence can replace Codex-owned browser preflight for helper-assisted cases when the evidence is current-run/current-case and covers required steps.
 - Agent result contract rejects `PASS` rows that contradict helper state checks, including configure/reopen helper reports with any expected state check recorded as false.
