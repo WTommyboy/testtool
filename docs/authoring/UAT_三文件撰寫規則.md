@@ -936,9 +936,13 @@ Helper hints:
   "operationTemplate": "metric_date_display_preview",
   "dateMode": "preset",
   "uiLabel": "昨日",
-  "dateAssertion": "shortcut_preset"
+  "dateAssertion": "shortcut_preset",
+  "baseDate": "2026-05-05",
+  "requiredEvidence": ["dom.state", "date.uiState", "date.representedRange", "network.requestBody", "chart.datasets"]
 }
 ```
+
+日期 case 若要求判斷「UI label 代表哪段日期」,必須帶 `date.uiState` 與 `date.representedRange` evidence。若 UI 只顯示 `昨日` 這類 preset label、沒有直接顯示起訖日期,detail_json 應註明代表日期是依 `baseDate/testDate` 計算,不是畫面直接顯示。
 
 動態、半動態、90/91 天邊界或 multi-variant 日期 case 必須標 `manual_ai`，並用結構化 params 表示日期：
 
@@ -982,6 +986,8 @@ Helper hints:
 
 - `dom.state`
 - `dom.list`
+- `date.uiState`
+- `date.representedRange`
 - `network.requestBody`
 - `network.responseBody`
 - `chart.datasets`

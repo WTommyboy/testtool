@@ -37,6 +37,8 @@ const ALLOWED_OPERATION_TEMPLATES = new Set([
 const ALLOWED_EVIDENCE = new Set([
   "dom.state",
   "dom.list",
+  "date.uiState",
+  "date.representedRange",
   "network.requestBody",
   "network.responseBody",
   "chart.datasets",

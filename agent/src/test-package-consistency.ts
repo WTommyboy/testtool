@@ -188,6 +188,8 @@ const evidenceAppearsInCaseText = (base: string, text: string): boolean => {
   const checks: Record<string, RegExp> = {
     "dom.state": /dom|頁面|畫面|狀態|select|input/i,
     "dom.list": /dom|list|清單|下拉|欄位/i,
+    "date.uiState": /日期|時間|date|preset|快捷|區間/i,
+    "date.representedRange": /日期|時間|date|起訖|區間|代表|range/i,
     "network.requestBody": /network|request\s*body|payload|dateRange|filters?|request/i,
     "network.responseBody": /network|response|回應|資料/i,
     "chart.datasets": /chart|chart\.js|datasets?|圖表/i,

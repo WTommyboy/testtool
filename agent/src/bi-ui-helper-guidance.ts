@@ -27,6 +27,7 @@ const templateGuidance: Record<string, string[]> = {
   ],
   metric_date_display_preview: [
     "用 UI 設定時間區間與顯示方式，設定後讀按鈕文字/select value 逐字驗證。",
+    "日期題必須產出 date UI evidence：包含 testcase 要求 label、UI 正規化 label、目前日期按鈕文字，以及可見或依 baseDate 計算出的代表起訖日期。",
     "按執行後用 network performance 或 chart/table data 證明本次 preview 已重跑。",
     "若狀態清理 checklist 與 UI 文字不逐字相符，先修正或 BLOCKED。"
   ],
@@ -164,6 +165,7 @@ export const writeBiUiHelperGuidance = (runDir: string, options: WriteBiUiHelper
     "1. 點時間按鈕,用 UI 選擇 testcase 指定區間或日期。",
     "2. 點確認後重新讀按鈕文字。",
     "3. 如果按鈕文字與狀態清理 checklist 逐字不符,不可假設等價,必須修正或 BLOCKED。",
+    "4. 日期 case 需保留 `date-ui-evidence.json` 或同等 detail_json 欄位,寫明 UI label 與其代表日期區間；若 UI 只顯示 preset label,必須標明代表區間是依 baseDate 計算,不是直接從畫面讀到。",
     "",
     "### 執行與驗證",
     "",

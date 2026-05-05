@@ -12,6 +12,7 @@
     "check:result-evidence": "tsx scripts/check-result-evidence-gate.ts",
     "verify:agent-roundtrip": "npm run build && tsx scripts/verify-agent-roundtrip.ts",
     "verify:helper-hints": "tsx scripts/verify-helper-hints-fixture.ts",
+    "verify:date-ui-evidence": "tsx scripts/verify-date-ui-evidence.ts",
     "verify:capability-gate": "tsx scripts/verify-capability-gate.ts",
     "verify:case-advance-policy": "tsx scripts/verify-case-advance-policy.ts",
     "verify:package-consistency": "tsx scripts/verify-package-consistency-fixture.ts",
@@ -20,7 +21,7 @@
     "verify:agent-result-contract": "tsx scripts/verify-agent-result-contract.ts",
     "verify:final-aggregate-result": "tsx scripts/verify-final-aggregate-result.ts",
     "verify:helper-report-gate": "tsx scripts/verify-helper-report-gate.ts",
-    "verify:all": "npm run typecheck && npm run build --prefix agent && npm run build --prefix web && npm run verify:helper-report-gate && npm run verify:capability-gate && npm run verify:case-advance-policy && npm run verify:tool-bridge && npm run verify:agent-roundtrip",
+    "verify:all": "npm run typecheck && npm run build --prefix agent && npm run build --prefix web && npm run verify:date-ui-evidence && npm run verify:helper-report-gate && npm run verify:capability-gate && npm run verify:case-advance-policy && npm run verify:tool-bridge && npm run verify:agent-roundtrip",
     "verify:tool-bridge": "tsx scripts/verify-tool-bridge.ts",
     "postinstall": "playwright install chromium"
   },

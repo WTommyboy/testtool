@@ -24,7 +24,7 @@ Production endpoints:
 Current semantic versions:
 
 - App/API: `1.1.2`
-- Mac Agent: `0.2.9`
+- Mac Agent: `0.2.10`
 
 Active branches:
 
@@ -56,6 +56,7 @@ The current line is the Mac Agent MVP. It supports:
 - Source-specific metadata comparisons keep `expectedFieldCount` scoped to the requested source report; all-source comparisons must use all-source scope/total count explicitly, so A-04/A-05 style cases do not silently fall back to all 4 sources.
 - Select-all field helpers reconcile selected fields by stable field code and nearby visible label, so code-style buttons such as `MAX_CCU` are not mistaken for missing fields or merged with unrelated labels.
 - Multi-variant or dynamic date cases are routed to Codex visible UI instead of helper pre-run, avoiding single-action helper false BLOCKED results for cases such as shortcut comparisons, dynamic offsets, half-dynamic ranges, and 90/91-day boundary checks.
+- Date UI evidence is first-class: `collage.configureMetric` writes `date-ui-evidence.json`, and manual/Codex-visible date cases can use `collage.captureDateUiEvidence` to record the requested UI label plus the visible or baseDate-computed represented date range.
 - Optional support files are indexed with lightweight profiles in `input/supporting-docs-manifest.json` so Codex can inspect CSV headers/row counts or markdown headings before choosing a full file to read.
 - Successful same-run helper browser evidence can satisfy preflight for helper-assisted cases; Codex should not mark `TOOL_EXECUTION_UNAVAILABLE` solely because Codex-side browser tools are absent.
 - Codex-side visible-UI cases must first attempt Playwright MCP `browser_tabs`; a successful tab listing proves browser tooling is available and prevents false `TOOL_EXECUTION_UNAVAILABLE`.

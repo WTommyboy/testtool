@@ -6,6 +6,7 @@ import { chromium, type Browser, type Dialog, type Download, type Page, type Req
 import { closeChromeDebugSession, diagnoseChromeDebugSession, ensureChromeDebugSession, readBrowserSessionLease, type BrowserSessionLease } from "./browser-session";
 import { readConfig } from "./config";
 import { parseCsv, summarizeCsvAgainstPreview } from "./csv-preview-comparison";
+import { buildDateUiEvidence, normalizeDatePresetLabel, type DateUiEvidence } from "./date-ui-evidence";
 
 type CliOptions = {
   runDir: string;
@@ -240,6 +241,8 @@ const resolveReportName = (options: CliOptions): string => {
 
 const savedReportStatePath = (options: CliOptions): string => path.join(artifactRoot(options), "saved-report.json");
 const previewEvidencePath = (options: CliOptions): string => path.join(artifactRoot(options), "preview-evidence.json");
+const dateUiEvidencePath = (options: CliOptions, suffix: string | null = null): string =>
+  path.join(artifactRoot(options), suffix ? `date-ui-evidence-${sanitize(suffix)}.json` : "date-ui-evidence.json");
 
 const writeSavedReportState = (options: CliOptions, reportName: string, extra: Record<string, unknown> = {}): void => {
   ensureDir(artifactRoot(options));
@@ -260,6 +263,48 @@ const readSavedReportName = (options: CliOptions): string | null => {
   } catch {
     return null;
   }
+};
+
+const baseDateParam = (params: Record<string, unknown>): string | null =>
+  firstStringParam(params, ["baseDate", "testDate", "runDate", "currentDate"]);
+
+const readDateUiEvidence = async (page: Page, requested: string | null, params: Record<string, unknown>): Promise<DateUiEvidence> => {
+  const observed = await page.evaluate(() => {
+    const text = (selector: string): string | null => (document.querySelector(selector) as HTMLElement | null)?.innerText?.trim() ?? null;
+    const popup = document.querySelector("#datePickerPopup") as HTMLElement | null;
+    const popupVisible = popup
+      ? (() => {
+          const rect = popup.getBoundingClientRect();
+          const style = window.getComputedStyle(popup);
+          return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden";
+        })()
+      : null;
+    return {
+      dateRangeButtonText: text("#dateRangeBtn"),
+      dateRangeDisplayText: text("#dateRangeDisplay"),
+      popupVisible,
+      popupText: popup?.innerText?.trim() ?? null,
+      bodyText: document.body.innerText.slice(0, 5000)
+    };
+  });
+  return buildDateUiEvidence({
+    requested,
+    baseDate: baseDateParam(params),
+    observed
+  });
+};
+
+const writeDateUiEvidenceArtifact = (options: CliOptions, evidence: DateUiEvidence): string => {
+  const suffix = [
+    evidence.generatedAt.replace(/[-:.TZ]/g, "").slice(0, 17),
+    evidence.requested.normalizedLabel ?? "unrequested"
+  ].join("-");
+  const filePath = dateUiEvidencePath(options, suffix);
+  const latestPath = dateUiEvidencePath(options);
+  ensureDir(path.dirname(filePath));
+  fs.writeFileSync(filePath, `${JSON.stringify(evidence, null, 2)}\n`);
+  fs.writeFileSync(latestPath, `${JSON.stringify(evidence, null, 2)}\n`);
+  return filePath;
 };
 
 const wildcardPatternToRegExp = (value: string): RegExp => {
@@ -934,13 +979,6 @@ const bodyContainsDateRange = async (page: Page, display: string): Promise<boole
 const bodyContainsText = async (page: Page, expected: string): Promise<boolean> => {
   const bodyText = await page.locator("body").innerText({ timeout: 5000 }).catch(() => "");
   return normalizeUiText(bodyText).includes(normalizeUiText(expected));
-};
-
-const normalizeDatePresetLabel = (preset: string): string => {
-  let normalized = preset.trim();
-  normalized = normalized.replace(/\s*[（(]\s*(?:快捷|快捷起點|快捷訖點|快捷終點|起點|終點)\s*[）)]\s*$/u, "");
-  normalized = normalized.replace(/^(過去|最近)\s+(\d+)\s*天$/u, "$1$2天");
-  return normalized.trim();
 };
 
 const isDatePickerOpen = async (page: Page): Promise<boolean> => {
@@ -2135,6 +2173,7 @@ const configureMetric = async (options: CliOptions, page: Page, startedAt: strin
   const operations: string[] = [];
   let dateRangeEvidence: Record<string, unknown> | null = null;
   let dateRangeUiProfiles: UiDomProfileRef[] = [];
+  let dateUiArtifact: string | null = null;
   if (paramsRequestSelectAllFields(options.params)) {
     operations.push(...await selectAllMetricFieldsThroughUi(options, page));
   } else if (fields.length > 0) {
@@ -2144,7 +2183,12 @@ const configureMetric = async (options: CliOptions, page: Page, startedAt: strin
     const result = await setDateRange(options, page, dateRange);
     const { uiProfiles, ...resultEvidence } = result;
     dateRangeUiProfiles = uiProfiles ?? [];
-    dateRangeEvidence = resultEvidence;
+    const dateUiEvidence = await readDateUiEvidence(page, dateRange, options.params);
+    dateUiArtifact = writeDateUiEvidenceArtifact(options, dateUiEvidence);
+    dateRangeEvidence = {
+      ...resultEvidence,
+      dateUiEvidence
+    };
     if (!result.ok) {
       warnings.push(`DATE_RANGE_UI_SETTING_NOT_COMPLETED:${result.warning ?? "unknown"}`);
       operations.push(`dateRange:blocked:${dateRange}`);
@@ -2174,8 +2218,37 @@ const configureMetric = async (options: CliOptions, page: Page, startedAt: strin
         operations
       }
     },
-    shot ? { screenshot: shot } : {},
+    {
+      ...(shot ? { screenshot: shot } : {}),
+      ...(dateUiArtifact ? { dateUiEvidence: dateUiArtifact } : {})
+    },
     shot ? warnings : [...warnings, "SCREENSHOT_UNAVAILABLE"]
+  );
+};
+
+const captureDateUiEvidenceReport = async (options: CliOptions, page: Page, startedAt: string): Promise<HelperReport> => {
+  const requested = nonNeutralUiTarget(stringParam(options.params, "dateRange")) ??
+    nonNeutralUiTarget(firstStringParam(options.params, ["datePreset", "timeRange", "requestedDate"]));
+  const uiProfile = await captureUiDomProfile(options, page, "dateUiEvidence.capture");
+  const evidence = await readDateUiEvidence(page, requested, options.params);
+  const artifact = writeDateUiEvidenceArtifact(options, evidence);
+  const shot = await screenshot(options, page, "date-ui-evidence");
+  const warnings = [...evidence.warnings];
+  if (!shot) warnings.push("SCREENSHOT_UNAVAILABLE");
+  return createReport(
+    options,
+    evidence.warnings.includes("DATE_UI_CONTROL_TEXT_NOT_FOUND") ? "blocked" : "ok",
+    startedAt,
+    {
+      domState: await readDomState(page),
+      uiProfile,
+      dateUiEvidence: evidence
+    },
+    {
+      dateUiEvidence: artifact,
+      ...(shot ? { screenshot: shot } : {})
+    },
+    warnings
   );
 };
 
@@ -3634,6 +3707,9 @@ const run = async (): Promise<void> => {
         break;
       case "collage.runPreviewAndCollectEvidence":
         report = await runPreview(options, page, startedAt);
+        break;
+      case "collage.captureDateUiEvidence":
+        report = await captureDateUiEvidenceReport(options, page, startedAt);
         break;
       case "collage.extractMetadataDropdownFields":
         report = await extractMetadataDropdownFields(options, page, startedAt);

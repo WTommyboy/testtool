@@ -364,11 +364,12 @@ const buildActions = (currentCase: CaseManifestCase | null, helperHints: HelperH
             requiredEvidence: ["dom.url", "dom.pageTitle", "dom.state", "screenshot"]
           }),
       action("H3", "collage.configureMetric", "設定來源、欄位、日期與顯示", params, {
-        requiredEvidence: ["dom.state", "state.delta", "screenshot"],
+        requiredEvidence: ["dom.state", "state.delta", "date.uiState", "date.representedRange", "screenshot"],
         notes: [
           "所有設定都必須透過 visible UI；不可使用內部 JS setter。",
           "可用 state delta planner 跳過已逐字/DOM 驗證對齊的項目；讀不到或不確定時必須操作 UI 或回 blocked。",
           "多欄位字串必須拆成多個欄位逐一新增/驗證，不可把整段 composite string 當作單一 clickable text。",
+          "日期設定完成後 helper 必須輸出 date-ui-evidence.json，包含 UI label 與其可見或可計算的代表日期區間。",
           "若 `+ 新增欄位` 文字 locator 失敗，helper 可嘗試其他 visible button/role/class fallback 並留下 locator drift evidence；不可用 force click 或內部 JS setter。"
         ]
       }),
@@ -421,6 +422,16 @@ const buildAvailableTemplates = (currentCase: CaseManifestCase | null, helperHin
   const params = inferCollageParams(currentCase, helperHints);
   const features = detectCaseFeatures(currentCase, helperHints);
   const available: HelperPlanAction[] = [
+    action("T-date-ui", "collage.captureDateUiEvidence", "讀取日期 UI label 與代表日期區間 evidence", params, {
+      mutatesUi: false,
+      optional: true,
+      requiredEvidence: ["dom.state", "date.uiState", "date.representedRange", "screenshot"],
+      screenshotPolicy: "required_if_possible",
+      notes: [
+        "此模板只讀取目前頁面的日期控制文字與 visible DOM，不設定日期、不按執行、不判 PASS/FAIL。",
+        "manual_ai / multi-variant 日期題由 Codex visible UI 完成切換後，可用此模板補 `date-ui-evidence.json`。"
+      ]
+    }),
     action("T-delete", "collage.deleteTemporaryReport", "刪除本輪臨時報表 helper（需授權）", params, {
       optional: true,
       requiresToolBridge: true,

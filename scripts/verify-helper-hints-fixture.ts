@@ -31,7 +31,7 @@ const helperHint = {
     },
     display: "每天"
   },
-  requiredEvidence: ["dom.state.filterRow", "network.requestBody.dateRange", "chart.datasets"],
+  requiredEvidence: ["dom.state.filterRow", "date.uiState", "date.representedRange", "network.requestBody.dateRange", "chart.datasets"],
   forbiddenAutomation: ["direct_bi_api", "internal_js_setter", "multi_case_batch"],
   aiDecisionRequired: true
 };
@@ -140,6 +140,7 @@ const main = async (): Promise<void> => {
     mustInclude(currentPrompt, "## 10. Helper Hints", "current prompt");
     mustInclude(currentPrompt, `operationTemplate：${operationTemplate}`, "current prompt");
     mustInclude(currentPrompt, "- warnings：none", "current prompt");
+    mustInclude(currentPrompt, "date.representedRange", "current prompt");
     mustInclude(currentPrompt, "network.requestBody.dateRange", "current prompt");
 
     runNode([path.join(projectRoot, "outputs", "generate_active_case_prompt.mjs"), xlsxPath, caseId, "--reset"]);
@@ -184,6 +185,10 @@ const main = async (): Promise<void> => {
     assert.ok(
       packJson.requiredEvidence?.includes("network.requestBody.dateRange"),
       "current-case-pack.json should include explicit requiredEvidence"
+    );
+    assert.ok(
+      packJson.requiredEvidence?.includes("date.representedRange"),
+      "current-case-pack.json should include date UI represented range evidence"
     );
     assert.ok(packJson.mustReadRuleKeys?.includes("helper-protocol"), "current-case-pack.json should include helper-protocol in mustReadRuleKeys");
     assert.ok(packJson.mustReadRuleKeys?.includes("bi-ui-helper-guidance"), "current-case-pack.json should include bi-ui-helper-guidance in mustReadRuleKeys");
@@ -296,6 +301,7 @@ const main = async (): Promise<void> => {
             "current_case_prompt Helper Hints warnings none",
             "ACTIVE prompt Helper Hints preserved",
             "current-case-pack.json helperHints",
+            "date UI evidence requiredEvidence accepted",
             "current-case-pack.md Helper Hints section",
             "helper-execution-plan safety and templates",
             "bi-ui-helper-guidance Template Notes",
