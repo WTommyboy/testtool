@@ -14,8 +14,11 @@ export type DateUiComputedRange = {
   display: string;
   basis: "static_range" | "preset";
   baseDate: string | null;
+  weekStart: DateUiWeekStart | null;
   assumptions: string[];
 };
+
+export type DateUiWeekStart = "monday" | "sunday";
 
 export type DateUiEvidence = {
   schemaVersion: "date-ui-evidence-v1";
@@ -25,6 +28,7 @@ export type DateUiEvidence = {
     normalizedLabel: string | null;
     baseDate: string | null;
     baseDateSource: "params" | "system_local_date" | null;
+    weekStart: DateUiWeekStart | null;
   };
   observed: {
     dateRangeButtonText: string | null;
@@ -48,6 +52,7 @@ export type DateUiEvidence = {
 type DateUiEvidenceInput = {
   requested?: string | null;
   baseDate?: string | null;
+  weekStart?: DateUiWeekStart | null;
   generatedAt?: string;
   observed: {
     dateRangeButtonText?: string | null;
@@ -89,9 +94,20 @@ const addDays = (date: Date, days: number): Date => {
   return next;
 };
 
-const startOfSundayWeek = (date: Date): Date => {
+export const normalizeDateUiWeekStart = (value: string | null | undefined): DateUiWeekStart | null => {
+  const normalized = (value ?? "").trim().toLowerCase().replace(/\s+/g, "");
+  if (!normalized) return null;
+  if (["monday", "mon", "iso", "週一", "星期一", "禮拜一", "周一"].includes(normalized)) return "monday";
+  if (["sunday", "sun", "週日", "週天", "星期日", "星期天", "禮拜日", "禮拜天", "周日", "周天"].includes(normalized)) {
+    return "sunday";
+  }
+  return null;
+};
+
+const startOfWeek = (date: Date, weekStart: DateUiWeekStart): Date => {
   const day = date.getUTCDay();
-  return addDays(date, -day);
+  if (weekStart === "sunday") return addDays(date, -day);
+  return addDays(date, day === 0 ? -6 : 1 - day);
 };
 
 const firstDayOfMonth = (date: Date): Date => new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1));
@@ -133,14 +149,22 @@ const staticDateRangeFromText = (value: string | null | undefined): DateUiComput
     display: displayRange(startIso, endIso),
     basis: "static_range",
     baseDate: null,
+    weekStart: null,
     assumptions: []
   };
 };
 
-export const computePresetDateRange = (preset: string, baseDateIso: string): DateUiComputedRange | null => {
+export const computePresetDateRange = (
+  preset: string,
+  baseDateIso: string,
+  options: { weekStart?: DateUiWeekStart | null } = {}
+): DateUiComputedRange | null => {
   const label = normalizeDatePresetLabel(preset);
   const base = parseIsoDate(baseDateIso);
   if (!base) return null;
+  const weekStart = options.weekStart ?? "monday";
+  const weekAssumption =
+    weekStart === "monday" ? "週起始日以 Monday 計算（週一~週日）" : "週起始日以 Sunday 計算（週日~週六）";
   const range = (start: Date, end: Date, assumptions: string[] = []): DateUiComputedRange => {
     const startIso = dateToIso(start);
     const endIso = dateToIso(end);
@@ -151,16 +175,17 @@ export const computePresetDateRange = (preset: string, baseDateIso: string): Dat
       display: displayRange(startIso, endIso),
       basis: "preset",
       baseDate: baseDateIso,
+      weekStart: label === "本週" || label === "上週" ? weekStart : null,
       assumptions
     };
   };
 
   if (label === "今日") return range(base, base);
   if (label === "昨日") return range(addDays(base, -1), addDays(base, -1));
-  if (label === "本週") return range(startOfSundayWeek(base), base, ["週起始日以 Sunday 計算（週日~週六）"]);
+  if (label === "本週") return range(startOfWeek(base, weekStart), base, [weekAssumption]);
   if (label === "上週") {
-    const thisWeekStart = startOfSundayWeek(base);
-    return range(addDays(thisWeekStart, -7), addDays(thisWeekStart, -1), ["週起始日以 Sunday 計算（週日~週六）"]);
+    const thisWeekStart = startOfWeek(base, weekStart);
+    return range(addDays(thisWeekStart, -7), addDays(thisWeekStart, -1), [weekAssumption]);
   }
   if (label === "本月") return range(firstDayOfMonth(base), base);
   if (label === "上月") {
@@ -270,6 +295,7 @@ export const buildDateUiEvidence = (input: DateUiEvidenceInput): DateUiEvidence 
   const explicitBaseDate = input.baseDate?.trim() || null;
   const baseDate = explicitBaseDate ?? (requestedRaw ? localDateIso() : null);
   const baseDateSource = explicitBaseDate ? "params" : requestedRaw ? "system_local_date" : null;
+  const weekStart = input.weekStart ?? "monday";
   const observedText = [
     input.observed.dateRangeButtonText,
     input.observed.dateRangeDisplayText,
@@ -285,7 +311,8 @@ export const buildDateUiEvidence = (input: DateUiEvidenceInput): DateUiEvidence 
     ...extractDateUiRanges(input.observed.bodyText, "bodyText")
   ];
   const staticRequested = staticDateRangeFromText(requestedRaw);
-  const presetRequested = !staticRequested && normalizedLabel && baseDate ? computePresetDateRange(normalizedLabel, baseDate) : null;
+  const presetRequested =
+    !staticRequested && normalizedLabel && baseDate ? computePresetDateRange(normalizedLabel, baseDate, { weekStart }) : null;
   const requestedRange = staticRequested ?? presetRequested;
   const matchedRepresentedRange = findMatchingRange(representedRanges, requestedRange, normalizedLabel);
   const labelVisible = requestedLabelVisible(requestedRaw, observedText);
@@ -313,7 +340,8 @@ export const buildDateUiEvidence = (input: DateUiEvidenceInput): DateUiEvidence 
       raw: requestedRaw,
       normalizedLabel,
       baseDate,
-      baseDateSource
+      baseDateSource,
+      weekStart: requestedRaw ? weekStart : null
     },
     observed: {
       dateRangeButtonText: truncate(input.observed.dateRangeButtonText, 240),
@@ -331,6 +359,6 @@ export const buildDateUiEvidence = (input: DateUiEvidenceInput): DateUiEvidence 
       representedRangeMatchesRequested
     },
     warnings,
-    policy: "Evidence records visible date control text and any visible represented ranges. Preset ranges may be computed from baseDate when Galaxy UI only exposes the preset label; Codex must state when a range is computed rather than directly visible."
+    policy: "Evidence records visible date control text and any visible represented ranges. Preset ranges may be computed from baseDate when Galaxy UI only exposes the preset label; week presets default to Monday week start unless weekStart=Sunday is provided. Codex must state when a range is computed rather than directly visible."
   };
 };

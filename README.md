@@ -24,7 +24,7 @@ Production endpoints:
 Current semantic versions:
 
 - App/API: `1.1.2`
-- Mac Agent: `0.2.11`
+- Mac Agent: `0.2.12`
 
 Active branches:
 

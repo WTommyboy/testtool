@@ -51,6 +51,9 @@ const compact = (value: string): string => value.replace(/\s+/g, " ").trim();
 const stripMarkdown = (value: string): string =>
   value.replace(/\*\*/g, "").replace(/`/g, "").replace(/[，,]\s*$/, "").trim();
 
+const stripMarkdownCode = (value: string): string =>
+  value.replace(/```[\s\S]*?```/g, "").replace(/`[^`\n]*`/g, "");
+
 const normalizeCaseNo = (value: string): string => value.trim().replace(/\s+/g, "").toUpperCase();
 
 const resolveCaseNo = (caseNo: string, knownCaseNos: Set<string>): string => {
@@ -82,8 +85,12 @@ const issue = (
   issues.push({ severity, code, message, context });
 };
 
+const isNonCaseReference = (caseId: string): boolean => /^BUG-\d{1,3}$/i.test(caseId) || /^[A-Z]-\d$/i.test(caseId);
+
 const extractCaseIds = (text: string): string[] =>
-  [...new Set([...text.matchAll(CASE_ID_PATTERN)].map((match) => normalizeCaseNo(match[0] ?? "")))].filter(Boolean);
+  [...new Set([...text.matchAll(CASE_ID_PATTERN)].map((match) => normalizeCaseNo(match[0] ?? "")))]
+    .filter(Boolean)
+    .filter((caseId) => !isNonCaseReference(caseId));
 
 const extractStartHint = (text: string, source: string): StartCaseHint | null => {
   const explicit = text.match(
@@ -101,6 +108,7 @@ const extractStartHint = (text: string, source: string): StartCaseHint | null =>
 
 const extractOrderLineCaseIds = (text: string): string[] => {
   const line = text.split(/\r?\n/).find((item) => /執行順序|case\s*order|run\s*order/i.test(item));
+  if (line && /(?:\.\.\.|…|依\s*xlsx\s*行順序|完整清單見)/i.test(line)) return [];
   return line ? extractCaseIds(line) : [];
 };
 
@@ -283,7 +291,7 @@ export const buildTestPackageConsistencyReport = (input: TestPackageConsistencyI
   ]) {
     if (!source.text) continue;
     const orderCaseIds = extractOrderLineCaseIds(source.text).map((caseId) => resolveCaseNo(caseId, caseNoSet));
-    const unknownCaseIds = extractCaseIds(source.text).filter((caseId) => !caseNoSet.has(resolveCaseNo(caseId, caseNoSet)));
+    const unknownCaseIds = extractCaseIds(stripMarkdownCode(source.text)).filter((caseId) => !caseNoSet.has(resolveCaseNo(caseId, caseNoSet)));
     if (unknownCaseIds.length > 0) {
       issue(issues, "warning", "DOC_REFERENCES_UNKNOWN_CASE", `${source.name} references case ids not found in xlsx.`, {
         source: source.name,

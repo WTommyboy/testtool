@@ -22,12 +22,18 @@ const main = (): void => {
   assert.equal(yesterdayRange?.endIso, "2026-05-04");
 
   const lastWeekRange = computePresetDateRange("上週", "2026-05-05");
-  assert.equal(lastWeekRange?.startIso, "2026-04-26");
-  assert.equal(lastWeekRange?.endIso, "2026-05-02");
+  assert.equal(lastWeekRange?.startIso, "2026-04-27");
+  assert.equal(lastWeekRange?.endIso, "2026-05-03");
+  assert.equal(lastWeekRange?.weekStart, "monday");
 
   const thisWeekRange = computePresetDateRange("本週", "2026-05-05");
-  assert.equal(thisWeekRange?.startIso, "2026-05-03");
+  assert.equal(thisWeekRange?.startIso, "2026-05-04");
   assert.equal(thisWeekRange?.endIso, "2026-05-05");
+
+  const sundayLastWeekRange = computePresetDateRange("上週", "2026-05-05", { weekStart: "sunday" });
+  assert.equal(sundayLastWeekRange?.startIso, "2026-04-26");
+  assert.equal(sundayLastWeekRange?.endIso, "2026-05-02");
+  assert.equal(sundayLastWeekRange?.weekStart, "sunday");
 
   const past30Range = computePresetDateRange("過去30天", "2026-05-05");
   assert.equal(past30Range?.startIso, "2026-04-05");
@@ -96,7 +102,8 @@ const main = (): void => {
           "shortcut label normalization",
           "visible represented range parsing",
           "preset represented range computed from baseDate",
-          "Sunday-based week shortcut ranges",
+          "Monday-week shortcut ranges by default",
+          "Sunday-week shortcut range override",
           "past/recent rolling day shortcut ranges",
           "static range exact observation",
           "requested label mismatch warning"

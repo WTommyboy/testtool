@@ -6,7 +6,7 @@ import { chromium, type Browser, type Dialog, type Download, type Page, type Req
 import { closeChromeDebugSession, diagnoseChromeDebugSession, ensureChromeDebugSession, readBrowserSessionLease, type BrowserSessionLease } from "./browser-session";
 import { readConfig } from "./config";
 import { parseCsv, summarizeCsvAgainstPreview } from "./csv-preview-comparison";
-import { buildDateUiEvidence, normalizeDatePresetLabel, type DateUiEvidence } from "./date-ui-evidence";
+import { buildDateUiEvidence, normalizeDatePresetLabel, normalizeDateUiWeekStart, type DateUiEvidence } from "./date-ui-evidence";
 
 type CliOptions = {
   runDir: string;
@@ -268,6 +268,9 @@ const readSavedReportName = (options: CliOptions): string | null => {
 const baseDateParam = (params: Record<string, unknown>): string | null =>
   firstStringParam(params, ["baseDate", "testDate", "runDate", "currentDate"]);
 
+const weekStartParam = (params: Record<string, unknown>): "monday" | "sunday" =>
+  normalizeDateUiWeekStart(firstStringParam(params, ["weekStart", "week_start", "weekStartsOn"])) ?? "monday";
+
 export const readDateUiEvidence = async (page: Page, requested: string | null, params: Record<string, unknown>): Promise<DateUiEvidence> => {
   const observed = await page.evaluate(`
     (() => {
@@ -301,6 +304,7 @@ export const readDateUiEvidence = async (page: Page, requested: string | null, p
   return buildDateUiEvidence({
     requested,
     baseDate: baseDateParam(params),
+    weekStart: weekStartParam(params),
     observed
   });
 };

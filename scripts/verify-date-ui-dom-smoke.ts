@@ -30,10 +30,16 @@ const main = async (): Promise<void> => {
     assert.equal(evidence.observed.dateRangeDisplayText, "上週");
     assert.equal(evidence.observed.popupVisible, true);
     assert.equal(evidence.requested.normalizedLabel, "上週");
-    assert.equal(evidence.requestedRange?.startIso, "2026-04-26");
-    assert.equal(evidence.requestedRange?.endIso, "2026-05-02");
+    assert.equal(evidence.requested.weekStart, "monday");
+    assert.equal(evidence.requestedRange?.startIso, "2026-04-27");
+    assert.equal(evidence.requestedRange?.endIso, "2026-05-03");
     assert.equal(evidence.checks.requestedLabelVisible, true);
     assert.equal(evidence.warnings.includes("DATE_UI_CONTROL_TEXT_NOT_FOUND"), false);
+
+    const sundayEvidence = await readDateUiEvidence(page, "上週(快捷)", { baseDate: "2026-05-05", weekStart: "Sunday" });
+    assert.equal(sundayEvidence.requested.weekStart, "sunday");
+    assert.equal(sundayEvidence.requestedRange?.startIso, "2026-04-26");
+    assert.equal(sundayEvidence.requestedRange?.endIso, "2026-05-02");
 
     console.log(
       JSON.stringify(
@@ -45,7 +51,8 @@ const main = async (): Promise<void> => {
             "#dateRangeDisplay selector read",
             "#datePickerPopup visibility/text read",
             "shortcut label normalization from selector-captured DOM",
-            "Sunday-week represented range computed from baseDate"
+            "Monday-week represented range computed from baseDate by default",
+            "Sunday-week represented range override from params"
           ]
         },
         null,

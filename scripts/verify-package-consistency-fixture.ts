@@ -84,7 +84,8 @@ const writeAssignment = (filePath: string): void => {
       "",
       "- 總 case 數: 1",
       `- 本輪 Codex 起始 case: **${caseId}**`,
-      `- 本輪 Codex 執行順序: **${caseId}**`,
+      `- 本輪 Codex 執行順序: 依 xlsx 行順序 ${caseId} → ... → ${caseId}(完整清單見第 4 章)`,
+      "- 歷史異動: `B-13` 已刪除；BUG-08 是 bug id；累計[D-1] 是日期術語。",
       "- 跳過 case: 無",
       ""
     ].join("\n")
@@ -295,6 +296,7 @@ const main = async (): Promise<void> => {
             "good helper hints package status ok",
             "inline cleanup label is parsed before later step lines",
             "risk-level conflict emits blocking error",
+            "abbreviated xlsx-order line and inline deleted case refs do not create false package errors",
             "DEMO001 v1_4 has no blocking consistency error",
             "TOOL-prefixed case ids do not conflict with pause-table shorthand"
           ]
