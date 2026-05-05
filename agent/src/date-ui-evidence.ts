@@ -89,10 +89,9 @@ const addDays = (date: Date, days: number): Date => {
   return next;
 };
 
-const startOfIsoWeek = (date: Date): Date => {
+const startOfSundayWeek = (date: Date): Date => {
   const day = date.getUTCDay();
-  const diff = day === 0 ? -6 : 1 - day;
-  return addDays(date, diff);
+  return addDays(date, -day);
 };
 
 const firstDayOfMonth = (date: Date): Date => new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1));
@@ -158,10 +157,10 @@ export const computePresetDateRange = (preset: string, baseDateIso: string): Dat
 
   if (label === "今日") return range(base, base);
   if (label === "昨日") return range(addDays(base, -1), addDays(base, -1));
-  if (label === "本週") return range(startOfIsoWeek(base), base, ["週起始日以 ISO Monday 計算"]);
+  if (label === "本週") return range(startOfSundayWeek(base), base, ["週起始日以 Sunday 計算（週日~週六）"]);
   if (label === "上週") {
-    const thisWeekStart = startOfIsoWeek(base);
-    return range(addDays(thisWeekStart, -7), addDays(thisWeekStart, -1), ["週起始日以 ISO Monday 計算"]);
+    const thisWeekStart = startOfSundayWeek(base);
+    return range(addDays(thisWeekStart, -7), addDays(thisWeekStart, -1), ["週起始日以 Sunday 計算（週日~週六）"]);
   }
   if (label === "本月") return range(firstDayOfMonth(base), base);
   if (label === "上月") {
@@ -170,11 +169,15 @@ export const computePresetDateRange = (preset: string, baseDateIso: string): Dat
     return range(previousStart, previousEnd);
   }
 
-  const rolling = label.match(/^(?:過去|最近)(\d+)天$/u);
+  const rolling = label.match(/^(過去|最近)(\d+)天$/u);
   if (rolling) {
-    const days = Number(rolling[1]);
+    const presetKind = rolling[1];
+    const days = Number(rolling[2]);
     if (!Number.isFinite(days) || days <= 0) return null;
-    return range(addDays(base, -days), addDays(base, -1), ["rolling day preset excludes today, matching current Galaxy UI display pattern"]);
+    if (presetKind === "最近") {
+      return range(addDays(base, -(days - 1)), base, ["最近 N 天包含今日（d-0）"]);
+    }
+    return range(addDays(base, -days), addDays(base, -1), ["過去 N 天不含今日（d-1 結束）"]);
   }
 
   return null;

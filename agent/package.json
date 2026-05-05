@@ -1,6 +1,6 @@
 {
   "name": "uat-tool-agent",
-  "version": "0.2.10",
+  "version": "0.2.11",
   "private": true,
   "type": "commonjs",
   "bin": {

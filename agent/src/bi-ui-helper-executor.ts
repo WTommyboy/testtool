@@ -268,25 +268,36 @@ const readSavedReportName = (options: CliOptions): string | null => {
 const baseDateParam = (params: Record<string, unknown>): string | null =>
   firstStringParam(params, ["baseDate", "testDate", "runDate", "currentDate"]);
 
-const readDateUiEvidence = async (page: Page, requested: string | null, params: Record<string, unknown>): Promise<DateUiEvidence> => {
-  const observed = await page.evaluate(() => {
-    const text = (selector: string): string | null => (document.querySelector(selector) as HTMLElement | null)?.innerText?.trim() ?? null;
-    const popup = document.querySelector("#datePickerPopup") as HTMLElement | null;
-    const popupVisible = popup
-      ? (() => {
-          const rect = popup.getBoundingClientRect();
-          const style = window.getComputedStyle(popup);
-          return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden";
-        })()
-      : null;
-    return {
-      dateRangeButtonText: text("#dateRangeBtn"),
-      dateRangeDisplayText: text("#dateRangeDisplay"),
-      popupVisible,
-      popupText: popup?.innerText?.trim() ?? null,
-      bodyText: document.body.innerText.slice(0, 5000)
-    };
-  });
+export const readDateUiEvidence = async (page: Page, requested: string | null, params: Record<string, unknown>): Promise<DateUiEvidence> => {
+  const observed = await page.evaluate(`
+    (() => {
+      const text = (selector) => {
+        const element = document.querySelector(selector);
+        return element && element.innerText ? element.innerText.trim() : null;
+      };
+      const popup = document.querySelector("#datePickerPopup");
+      const popupVisible = popup
+        ? (() => {
+            const rect = popup.getBoundingClientRect();
+            const style = window.getComputedStyle(popup);
+            return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden";
+          })()
+        : null;
+      return {
+        dateRangeButtonText: text("#dateRangeBtn"),
+        dateRangeDisplayText: text("#dateRangeDisplay"),
+        popupVisible,
+        popupText: popup && popup.innerText ? popup.innerText.trim() : null,
+        bodyText: document.body.innerText.slice(0, 5000)
+      };
+    })()
+  `) as {
+    dateRangeButtonText: string | null;
+    dateRangeDisplayText: string | null;
+    popupVisible: boolean | null;
+    popupText: string | null;
+    bodyText: string;
+  };
   return buildDateUiEvidence({
     requested,
     baseDate: baseDateParam(params),
