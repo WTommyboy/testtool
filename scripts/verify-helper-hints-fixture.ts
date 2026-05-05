@@ -262,6 +262,29 @@ const main = async (): Promise<void> => {
       "top-level referenceIndexKey must be merged into helper params"
     );
 
+    const boldLabelMarkdown = [
+      "### BOLD-H-01 — markdown bold helper label",
+      "",
+      "**Helper hints**:",
+      "```json",
+      JSON.stringify({
+        automationLevel: "helper",
+        operationTemplate: "metadata_dropdown_compare",
+        params: {
+          comparisonScope: "source_report_fields",
+          sourceReport: "每日報表"
+        },
+        requiredEvidence: ["dom.list"],
+        forbiddenAutomation: ["direct_bi_api", "internal_js_setter", "multi_case_batch"],
+        aiDecisionRequired: true
+      }, null, 2),
+      "```",
+      ""
+    ].join("\n");
+    const parsedBoldLabelHints = parseHelperHintsFromMarkdown(boldLabelMarkdown, "BOLD-H-01", "fixture/bold.md").helperHints;
+    assert.ok(parsedBoldLabelHints, "bold **Helper hints** label should parse even without caseId fallback");
+    assert.equal(parsedBoldLabelHints.operationTemplate, "metadata_dropdown_compare");
+
     console.log(
       JSON.stringify(
         {
@@ -277,7 +300,8 @@ const main = async (): Promise<void> => {
             "helper-execution-plan safety and templates",
             "bi-ui-helper-guidance Template Notes",
             "rule-index currentCaseRecommendations",
-            "metadata helper top-level reference params merged into params"
+            "metadata helper top-level reference params merged into params",
+            "bold markdown Helper hints label parses without caseId fallback"
           ]
         },
         null,

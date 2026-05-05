@@ -58,9 +58,16 @@ const isDirectory = (dir: string): boolean => {
   }
 };
 
+const hasEnabledMcpServer = (mcpListOutput: string, serverName: string): boolean =>
+  mcpListOutput
+    .split(/\r?\n/)
+    .some((line) => line.trim().startsWith(`${serverName} `) && /\benabled\b/i.test(line));
+
 export const runDoctor = async (config: AgentConfig): Promise<DoctorCheck[]> => {
   const nodeMajor = Number(process.versions.node.split(".")[0]);
   const codexVersion = await run(config.codex_bin, ["--version"]);
+  const codexMcpList = await run(config.codex_bin, ["mcp", "list"], 20_000);
+  const playwrightMcpConfigured = codexMcpList.exitCode === 0 && hasEnabledMcpServer(codexMcpList.stdout, "playwright");
   const checks: DoctorCheck[] = [
     check("node-version", nodeMajor >= 20, { version: process.version }),
     check("agent-token-present", Boolean(config.token), { hasToken: Boolean(config.token) }),
@@ -95,8 +102,12 @@ export const runDoctor = async (config: AgentConfig): Promise<DoctorCheck[]> => 
     check("codex-version", codexVersion.exitCode === 0, {
       version: codexVersion.stdout.trim() || codexVersion.stderr.trim()
     }),
-    skipped("playwright-mcp-availability", {
-      reason: "Verified during live runs through persistent Chrome CDP; doctor does not launch a Codex MCP session."
+    check("playwright-mcp-availability", playwrightMcpConfigured, {
+      reason: "Verified from `codex mcp list`; live CDP connectivity is still checked per run.",
+      command: "codex mcp list",
+      configured: playwrightMcpConfigured,
+      exitCode: codexMcpList.exitCode,
+      stderr: codexMcpList.stderr.slice(0, 500)
     }),
     skipped("galaxy-sso-session", {
       reason: "Open Galaxy URL with persistent profile and ask Tommy to login/confirm"

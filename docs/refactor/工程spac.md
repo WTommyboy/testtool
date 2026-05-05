@@ -1,7 +1,7 @@
 # UAT Tool 最新工程 Spec
 
-**版本**: v2026-05-04
-**狀態**: Mac Agent MVP / App 1.1.2 + Agent 0.2.8 / Indexed Guidance + Preflight Safeguards + groupId schema + final/partial aggregate result + complete archive MD export + OTTEST002 Collage helper P0 + metadata dropdown source-group scoping + metadata expected-source fallback + list-page CSV row refresh + response-body fallback + preview table evidence + CSV header/date normalization + helper-plan auto continuation + existing-report field exact reconciliation + helper-evidence preflight replacement + support-file profile + result repair guard + degraded BLOCKED result guard + BLOCKED detail_json core-field gate + Tool Bridge run-event evidence gate + PASS-vs-helper-false-check gate + PM skip classification + preview-only helper skip guards + case-type must-read rules + CSV/metadata authoring contract + exact metadata source filename contract + background-safe browser lease + no-foreground helper policy + field-list loading wait + inline cleanup consistency parser guard / helper project auto-selection guard / manual_ai helper pre-run guard / multi-variant date visible-UI routing guard / select-all fields params guard
+**版本**: v2026-05-05
+**狀態**: Mac Agent MVP / App 1.1.2 + Agent 0.2.9 / Indexed Guidance + Preflight Safeguards + groupId schema + final/partial aggregate result + complete archive MD export + OTTEST002 Collage helper P0 + metadata dropdown source-group scoping + metadata expected-source fallback + metadata source-scope count guard + list-page CSV row refresh + response-body fallback + preview table evidence + CSV header/date normalization + helper-plan auto continuation + existing-report field exact reconciliation + helper-evidence preflight replacement + support-file profile + result repair guard + degraded BLOCKED result guard + BLOCKED detail_json core-field gate + Tool Bridge run-event evidence gate + PASS-vs-helper-false-check gate + PM skip classification + preview-only helper skip guards + case-type must-read rules + CSV/metadata authoring contract + exact metadata source filename contract + background-safe browser lease + no-foreground helper policy + field-list loading wait + inline cleanup consistency parser guard / helper project auto-selection guard / manual_ai helper pre-run guard / multi-variant date visible-UI routing guard / select-all fields params guard / selected-field code-label reconciliation / Playwright browser_tabs availability guard
 **適用分支**: `refactor/mac-agent-mvp` / `codex/uat-tool-mvp`  
 **說明**: 檔名沿用 Tommy 提供的 `工程spac.md`;本文內容為工程 spec。
 
@@ -150,7 +150,7 @@ package:
 ```text
 package name: uat-tool-agent
 binary: uat-agent
-version: 0.2.8
+version: 0.2.9
 ```
 
 The Agent WebSocket `X-Agent-Version` header and `agent.online.payload.agent_version` are read from `agent/package.json`; they must not be hard-coded in `agent/src/connection.ts`.
@@ -525,7 +525,7 @@ Current-case behavior:
 - `rule-index.currentCaseRecommendations.ruleIds` merges the mandatory bundle with existing recommendation logic and filters it to available files.
 - Every BI case mandatory bundle includes platform skill, domain-routing, `PROJECT_AGENTS_FULL.md`, and the three canonical `BI_TEST_RULES/*.md` rulebooks before result judgment.
 - CSV/download cases add `reference-index`, `evidence-template-index` and BI helper guidance. Formal CSV evidence is a UI-triggered local CSV parsed by the Agent/Codex; Google Sheets is not part of the trusted evidence path. For list/project-page downloads, the helper targets the current run's saved report row, refreshes/re-targets the list when the post-save page is stale, and compares the CSV with pre-save preview table/chart evidence without reopening the editor. If a visible UI click yields a CSV/attachment response but no browser download event, the helper may persist that UI-triggered response body and labels the source in evidence.
-- Metadata/dropdown cases add `reference-index` and the BI metadata rule; canonical CSV path is `rules/BI_DATA/metadata.csv`, confirmed by `bi_metadata_csv` or the testcase source filename such as `metadata＿1.2.5 - 工作表1.csv`. `metadata_dropdown_compare` is helper-assisted by `collage.extractMetadataDropdownFields`, which opens the picker via visible UI, scopes actual fields to the requested source group when group headers such as `DAILY_REPORT` exist, and records DOM-extracted actual fields plus metadata expected fields. Evidence preserves both exact diff and known-alias normalized diff.
+- Metadata/dropdown cases add `reference-index` and the BI metadata rule; canonical CSV path is `rules/BI_DATA/metadata.csv`, confirmed by `bi_metadata_csv` or the testcase source filename such as `metadata＿1.2.5 - 工作表1.csv`. `metadata_dropdown_compare` is helper-assisted by `collage.extractMetadataDropdownFields`, which opens the picker via visible UI, scopes actual fields to the requested source group when group headers such as `DAILY_REPORT` exist, and records DOM-extracted actual fields plus metadata expected fields. Source-specific `expectedFieldCount` remains scoped to the requested source report; all-source comparisons require all-source scope/total-count params. Evidence preserves both exact diff and known-alias normalized diff.
 - Optional support files are indexed in `input/supporting-docs-manifest.json` with lightweight profiles. CSV profiles include header, row count and role hints such as `metadata_candidate`; text profiles include headings and line count. Codex should use these profiles to choose which optional file to read, not bulk-read every support file at startup.
 - `input/browser-session.json` is generated before helper pre-run and referenced in the run prompt. Codex/browser actions must verify the lease marker before trusting a page.
 
@@ -543,7 +543,7 @@ Allowed preflight behavior:
 - Confirm persistent Chrome / Playwright page is usable.
 - Detect app shell / title / current URL.
 - Detect SSO redirect, login page, 401/403, `載入失敗`, blank page, or obvious blocker.
-- Treat successful current-run Agent helper browser evidence for the same case as preflight replacement when it already covers the required UI/DOM/network evidence. Lack of Codex-side browser tools must not become `TOOL_EXECUTION_UNAVAILABLE` in that case.
+- Treat successful current-run Agent helper browser evidence for the same case as preflight replacement when it already covers the required UI/DOM/network evidence. Codex visible-UI cases must first attempt Playwright MCP `browser_tabs`; if the tab list succeeds, browser tooling is available and must not be reported as `TOOL_EXECUTION_UNAVAILABLE`.
 
 Forbidden preflight behavior:
 

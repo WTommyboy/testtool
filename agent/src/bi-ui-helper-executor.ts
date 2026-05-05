@@ -845,6 +845,7 @@ const normalizeMetricFieldIdentity = (value: string | null | undefined): string 
   normalizeUiText(value ?? "")
     .replace(/[（]/g, "(")
     .replace(/[）]/g, ")")
+    .replace(/[_-]/g, "")
     .toUpperCase();
 
 const knownMetricFieldCode = (field: string): string | null => {
@@ -1845,6 +1846,35 @@ const readSelectedMetricFields = async (page: Page): Promise<SelectedMetricField
       }
       return text;
     };
+    const cleanCandidate = (value: string, code: string | null): string => {
+      const cleaned = cleanLabel(value, code);
+      if (!cleaned || /^欄位選擇$/i.test(cleaned)) return "";
+      if (/新增欄位|新增運算欄位|儲存報表|執行|時間區間/i.test(cleaned)) return "";
+      return cleaned;
+    };
+    const labelNearButton = (button: HTMLButtonElement, code: string | null): string => {
+      const buttonRect = button.getBoundingClientRect();
+      const buttonMidY = buttonRect.y + buttonRect.height / 2;
+      const elements = Array.from(document.querySelectorAll<HTMLElement>("body *"));
+      const candidates = elements.flatMap((element) => {
+        if (element === button || !isVisible(element)) return [];
+        const rect = element.getBoundingClientRect();
+        if (rect.x >= buttonRect.x || rect.width <= 0 || rect.height <= 0) return [];
+        const midY = rect.y + rect.height / 2;
+        const verticalDistance = Math.abs(midY - buttonMidY);
+        if (verticalDistance > Math.max(18, buttonRect.height * 0.8)) return [];
+        const text = cleanCandidate(element.innerText || element.textContent || "", code);
+        if (!text || text.length > 80) return [];
+        const textCount = text.split(" ").filter(Boolean).length;
+        if (textCount > 8) return [];
+        return [{
+          text,
+          distance: verticalDistance + Math.max(0, buttonRect.x - (rect.x + rect.width)) / 100,
+          right: rect.x + rect.width
+        }];
+      });
+      return candidates.sort((a, b) => a.distance - b.distance || b.right - a.right)[0]?.text ?? "";
+    };
     const selected = Array.from(document.querySelectorAll("button")).flatMap((button, index) => {
       if (!isVisible(button)) return [];
       const onclick = button.getAttribute("onclick");
@@ -1860,9 +1890,16 @@ const readSelectedMetricFields = async (page: Page): Promise<SelectedMetricField
         button.parentElement?.parentElement,
         button.parentElement?.parentElement?.parentElement
       ].filter((item): item is HTMLElement => Boolean(item));
-      const label = containers
-        .map((container) => cleanLabel(container.innerText || container.textContent || "", code ?? null))
-        .find((text) => text.length > 0 && text.length <= 80 && !/^欄位選擇$/i.test(text)) ?? cleanLabel(button.previousElementSibling?.textContent ?? "", code ?? null);
+      const nearbyLabel = labelNearButton(button, code ?? null);
+      const containerLabel = containers
+        .filter((container) => {
+          const rect = container.getBoundingClientRect();
+          const buttonRect = button.getBoundingClientRect();
+          return rect.height <= Math.max(80, buttonRect.height * 3.5);
+        })
+        .map((container) => cleanCandidate(container.innerText || container.textContent || "", code ?? null))
+        .find((text) => text.length > 0 && text.length <= 80 && !/^欄位選擇$/i.test(text));
+      const label = nearbyLabel || containerLabel || cleanLabel(button.previousElementSibling?.textContent ?? "", code ?? null);
       const rect = button.getBoundingClientRect();
       return [{
         label: label || String(code ?? ""),
@@ -2021,6 +2058,7 @@ const selectedMetricFieldMatches = (selected: SelectedMetricField, targetField: 
   const targetCodeKey = normalizeMetricFieldIdentity(knownMetricFieldCode(targetField));
   if (targetCodeKey.length > 0 && selectedCodeKey.length > 0) return selectedCodeKey === targetCodeKey;
   return (
+    (selectedCodeKey.length > 0 && targetKey.length > 0 && selectedCodeKey === targetKey) ||
     selectedLabelKey === targetKey ||
     (selectedLabelKey.length > 0 && selectedLabelKey.includes(targetKey)) ||
     (selectedLabelKey.length > 0 && targetKey.length > 0 && targetKey.includes(selectedLabelKey)) ||
@@ -2351,7 +2389,8 @@ const readExpectedMetadataFields = (
 
   const sourceReport = stringParam(options.params, "source") ?? stringParam(options.params, "sourceReport") ?? "每日報表";
   const comparisonScope = stringParam(options.params, "comparisonScope") ?? "";
-  const expectedTotalFieldCount = numberParam(options.params, ["expectedTotalFieldCount", "expectedFieldCount"]);
+  const expectedFieldCount = numberParam(options.params, ["expectedFieldCount", "fieldCount", "expectedFieldsCount"]);
+  const expectedTotalFieldCount = numberParam(options.params, ["expectedTotalFieldCount", "totalFieldCount"]);
   const expectedReportSourcesParam = stringArrayParam(options.params, "expectedReportSources");
   const matchKey = stringParam(options.params, "matchKey") ?? "";
   const rows = parseCsv(fs.readFileSync(resolved.path, "utf8"));
@@ -2378,12 +2417,6 @@ const readExpectedMetadataFields = (
       expectedSourceGroupMap.set(key, { sourceReport: rowSource, fieldCount: 1 });
     }
   }
-  const expectedSourceGroups = [...expectedSourceGroupMap.values()];
-  const expectedReportSources = uniqueBySourceIdentity(
-    expectedReportSourcesParam.length > 0
-      ? expectedReportSourcesParam
-      : expectedSourceGroups.map((item) => item.sourceReport)
-  );
   const sourceListMode =
     /report_sources_only/i.test(comparisonScope) ||
     numberParam(options.params, ["expectedReportSourceCount"]) !== null ||
@@ -2394,6 +2427,14 @@ const readExpectedMetadataFields = (
     /all_?4_?sources|all_?sources/i.test(comparisonScope) ||
     expectedTotalFieldCount !== null ||
     (sourceReport.trim() === "/" && /欄位名稱|field/i.test(matchKey));
+  const expectedSourceGroups = [...expectedSourceGroupMap.values()];
+  const expectedReportSources = uniqueBySourceIdentity(
+    expectedReportSourcesParam.length > 0
+      ? expectedReportSourcesParam
+      : sourceListMode || allSourcesFieldMode
+        ? expectedSourceGroups.map((item) => item.sourceReport)
+        : [sourceReport]
+  );
   const sourceKeys = sourceIdentities(expectedReportSources);
   const expectedFields = rows.slice(1)
     .filter((row) => {
@@ -2407,6 +2448,12 @@ const readExpectedMetadataFields = (
     })
     .map((row) => String(row[nameIndex] ?? "").trim())
     .filter(Boolean);
+  if (!sourceListMode && expectedFieldCount !== null && expectedFields.length !== expectedFieldCount) {
+    warnings.push(`METADATA_EXPECTED_FIELD_COUNT_MISMATCH:expected=${expectedFieldCount}; metadata=${expectedFields.length}`);
+  }
+  if (allSourcesFieldMode && expectedTotalFieldCount !== null && expectedFields.length !== expectedTotalFieldCount) {
+    warnings.push(`METADATA_EXPECTED_TOTAL_FIELD_COUNT_MISMATCH:expected=${expectedTotalFieldCount}; metadata=${expectedFields.length}`);
+  }
 
   return {
     metadataPath: resolved.path,
@@ -2421,6 +2468,8 @@ const readExpectedMetadataFields = (
     warnings
   };
 };
+
+export const readExpectedMetadataFieldsForTest = readExpectedMetadataFields;
 
 const inferFieldLabel = (text: string, expectedFields: string[], code?: unknown): string => {
   const cleaned = cleanFieldPickerLabel(text, code);
@@ -2757,6 +2806,8 @@ const extractMetadataDropdownFields = async (options: CliOptions, page: Page, st
       comparisonScope: stringParam(options.params, "comparisonScope") ?? null,
       matchKey: stringParam(options.params, "matchKey") ?? "欄位名稱",
       compareFields: Array.isArray(options.params.compareFields) ? options.params.compareFields : ["欄位名稱", "資料類型"],
+      expectedFieldCount: numberParam(options.params, ["expectedFieldCount", "fieldCount", "expectedFieldsCount"]),
+      expectedTotalFieldCount: numberParam(options.params, ["expectedTotalFieldCount", "totalFieldCount"]),
       filter: metadata.sourceListMode && !metadata.allSourcesFieldMode
         ? "所屬報表是否可用於拼貼模式主選擇 == Y; compare distinct 來源報表"
         : metadata.allSourcesFieldMode

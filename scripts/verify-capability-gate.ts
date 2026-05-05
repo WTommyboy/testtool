@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { readExpectedMetadataFieldsForTest } from "../agent/src/bi-ui-helper-executor";
 import { evaluateCapabilityGate } from "../agent/src/capability-gate";
 import { buildHelperExecutionPlan } from "../agent/src/helper-execution-plan";
 import type { CaseManifestCase } from "../agent/src/case-manifest";
@@ -181,6 +182,32 @@ const selectAllFieldsHints: HelperHints = {
   warnings: []
 };
 
+const metadataSourceScopeHints: HelperHints = {
+  caseId: "OTTEST004-A-04",
+  automationLevel: "helper",
+  operationTemplate: "metadata_dropdown_compare",
+  params: {
+    mode: "拼貼",
+    comparisonScope: "source_report_fields",
+    expectedReportSources: ["各登入渠道狀況(原 beanfun! 導流)"],
+    expectedFieldCount: 27,
+    sourceReport: "各登入渠道狀況(原 beanfun! 導流)",
+    referenceCsv: "rules/BI_DATA/metadata.csv",
+    referenceSourceName: "metadata＿1.2.5 - 工作表1.csv",
+    referenceSourcePath: "BI_DATA/metadata＿1.2.5 - 工作表1.csv",
+    referenceIndexKey: "bi_metadata_csv",
+    matchKey: "欄位名稱",
+    compareFields: ["欄位名稱", "主分類", "次分類", "資料類型"]
+  },
+  requiredEvidence: ["dom.list"],
+  forbiddenAutomation: ["direct_bi_api", "internal_js_setter", "multi_case_batch"],
+  aiDecisionRequired: true,
+  raw: {},
+  sourcePath: "fixture/helper-hints.md",
+  sourceRelativePath: "fixture/helper-hints.md",
+  warnings: []
+};
+
 const main = (): void => {
   const report = evaluateCapabilityGate(collageSaveReopenCase, null);
   assert.equal(report.supportStatus, "supported", `TOOL-A-01 save/reopen fixture should be helper supported; report=${JSON.stringify(report)}`);
@@ -223,6 +250,23 @@ const main = (): void => {
     const metadataPlan = buildHelperExecutionPlan({ runDir, currentCase: collageMetadataCompareCase, helperHints: null });
     assert.ok(metadataPlan.actions.some((item) => item.template === "collage.extractMetadataDropdownFields"), "metadata compare should include dropdown extraction helper action");
     assert.ok(!metadataPlan.actions.some((item) => item.template === "collage.runPreviewAndCollectEvidence"), "metadata compare should not run preview");
+
+    const metadataSourceScopePlan = buildHelperExecutionPlan({
+      runDir,
+      currentCase: {
+        ...collageMetadataCompareCase,
+        caseNo: "OTTEST004-A-04",
+        caseTitle: "各登入渠道狀況報表欄位清單對照 metadata",
+        preconditions: "建構模式: 拼貼; 來源報表=各登入渠道狀況(原 beanfun! 導流)",
+        stepsSummary: "展開欄位 picker 並對照該來源報表的 27 欄"
+      },
+      helperHints: metadataSourceScopeHints
+    });
+    const metadataSourceScopeAction = metadataSourceScopePlan.actions.find((item) => item.template === "collage.extractMetadataDropdownFields");
+    assert.equal(metadataSourceScopeAction?.params.comparisonScope, "source_report_fields", "metadata comparisonScope must be forwarded to helper action params");
+    assert.deepEqual(metadataSourceScopeAction?.params.expectedReportSources, ["各登入渠道狀況(原 beanfun! 導流)"], "metadata expectedReportSources must be forwarded to helper action params");
+    assert.equal(metadataSourceScopeAction?.params.expectedFieldCount, 27, "source-specific expectedFieldCount must be forwarded");
+    assert.equal(metadataSourceScopeAction?.params.referenceSourcePath, "BI_DATA/metadata＿1.2.5 - 工作表1.csv", "metadata referenceSourcePath must be forwarded");
 
     const existingPlan = buildHelperExecutionPlan({ runDir, currentCase: collageExistingReportCase, helperHints: null });
     assert.ok(existingPlan.actions.some((item) => item.template === "collage.openExistingReport"), "A-05 should open an existing report instead of creating a new report");
@@ -285,6 +329,54 @@ const main = (): void => {
     assert.equal(selectAllConfigure?.params.dateRange, "2026/03/01~2026/03/31", "dateRange object should become a concrete static range");
     assert.ok(selectAllPlan.actions.some((item) => item.template === "collage.downloadCsvAndComparePreview"), "select-all CSV case should still download CSV");
     assert.ok(!selectAllPlan.actions.some((item) => item.template === "collage.saveReport"), "select-all preview case should not save when skipSave is set");
+
+    const metadataCsvPath = path.join(runDir, "metadata-fixture.csv");
+    fs.writeFileSync(
+      metadataCsvPath,
+      [
+        "欄位名稱,來源報表,所屬報表是否可用於拼貼模式主選擇",
+        "S1-F1,S1,Y",
+        "S1-F2,S1,Y",
+        "S2-F1,S2,Y",
+        "S3-hidden,S3,N"
+      ].join("\n")
+    );
+    const sourceScopedExpected = readExpectedMetadataFieldsForTest({
+      runDir,
+      caseId: "OTTEST004-A-04",
+      action: "collage.extractMetadataDropdownFields",
+      approvedToolRequestId: null,
+      closeAfter: false,
+      params: {
+        referenceCsv: metadataCsvPath,
+        sourceReport: "S1",
+        comparisonScope: "source_report_fields",
+        expectedReportSources: ["S1"],
+        expectedFieldCount: 2,
+        matchKey: "欄位名稱"
+      }
+    });
+    assert.equal(sourceScopedExpected.allSourcesFieldMode, false, "source_report_fields must not become all-sources merely because expectedFieldCount is present");
+    assert.deepEqual(sourceScopedExpected.expectedReportSources, ["S1"], "source-scoped metadata evidence should keep the requested source only");
+    assert.deepEqual(sourceScopedExpected.expectedFields, ["S1-F1", "S1-F2"], "source-scoped metadata evidence should include only S1 fields");
+
+    const allSourcesExpected = readExpectedMetadataFieldsForTest({
+      runDir,
+      caseId: "OTTEST004-B-02",
+      action: "collage.extractMetadataDropdownFields",
+      approvedToolRequestId: null,
+      closeAfter: false,
+      params: {
+        referenceCsv: metadataCsvPath,
+        sourceReport: "/",
+        comparisonScope: "all_sources_fields",
+        expectedReportSources: ["S1", "S2"],
+        expectedTotalFieldCount: 3,
+        matchKey: "來源報表+欄位名稱"
+      }
+    });
+    assert.equal(allSourcesExpected.allSourcesFieldMode, true, "all_sources_fields must keep all-source mode");
+    assert.deepEqual(allSourcesExpected.expectedFields, ["S1-F1", "S1-F2", "S2-F1"], "all-source metadata evidence should include all requested source fields");
   } finally {
     fs.rmSync(runDir, { recursive: true, force: true });
   }
@@ -308,10 +400,12 @@ const main = (): void => {
           "preview-only helper hints suppress save/reopen and neutral dateRange",
           "collage metadata compare is not misclassified as record/detail mode",
           "collage metadata compare is helper-assisted by dedicated dropdown extraction",
+          "metadata source-scope helper params are forwarded to dropdown extraction",
           "list-page CSV case does not reopen editor and targets saved report row download",
           "manual_ai cases disable helper pre-run and build no helper actions",
           "multi-variant date helper hints are degraded to Codex visible UI",
           "selectAllFields helper hints preserve sourceReports/expected count and avoid synthetic field text",
+          "metadata expected-field reader keeps source-specific scope separate from all-source scope",
           "active filter cases remain blocked until helper support exists"
         ]
       },

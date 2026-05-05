@@ -1272,7 +1272,9 @@ const buildPrompt = (
     "- If `input/test-package-consistency.json` has status=error, treat it as a testcase package design conflict and do not touch the browser.",
 	    "- If `input/capability-gate.json` says supportStatus=unsupported, do not run trusted browser testcase steps. Write a single-case BLOCKED result with fail_category=UNSUPPORTED_ONLINE_CAPABILITY and the gate blocking reason.",
 	    "- If locator hints drift, write concise JSONL or text observations to `output/locator-drift.log`; do not edit the locator registry during the run.",
-    "- The first Codex-owned browser MCP action must be preflight only: open DEV URL, verify auth/reachability, detect SSO/login/載入失敗/401/403/blank blocker. If current-run Agent helper evidence already performed browser actions for this same case and covers required evidence, do not require an additional Codex browser preflight.",
+    "- The first Codex-owned browser MCP action must be preflight only: call Playwright MCP `browser_tabs` list, then open DEV URL only if needed, verify auth/reachability, detect SSO/login/載入失敗/401/403/blank blocker. Do not conclude browser automation is unavailable before attempting `browser_tabs` when the Playwright MCP tool is callable.",
+    "- Playwright MCP tools are expected in this Agent runtime (`browser_tabs`, `browser_navigate`, `browser_click`, `browser_type`, `browser_select_option`, `browser_press_key`, `browser_run_code`/read-only evaluate). If `browser_tabs` succeeds, browser tooling is available; continue with the current case or helper evidence judgment instead of writing TOOL_EXECUTION_UNAVAILABLE.",
+    "- If current-run Agent helper evidence already performed browser actions for this same case and covers required evidence, do not require an additional Codex browser preflight.",
     "- Browser foreground policy: the dedicated Chrome tab is background-safe. Do not ask the Agent to bring Chrome to front, do not rely on the OS foreground window, and do not open or switch tabs unless a Tool Bridge recovery explicitly requires human handling.",
     "- Browser target policy: when reading browser state, first verify `window.name` or `sessionStorage.__uatToolBrowserSession` matches `input/browser-session.json`. Do not operate the first Galaxy tab, active tab, or any URL-only match if the lease marker is absent or stale.",
     "- Helper blocked reasons `BROWSER_SESSION_*` and `FIELD_LIST_LOAD_TIMEOUT` are terminal helper blockers only after the helper report shows current-run evidence and a completed wait/target check. Do not convert an early helper partial into PASS/FAIL.",
@@ -1307,7 +1309,7 @@ const buildPrompt = (
     "- Screenshot retry budget: after structured evidence is captured, a screenshot timeout must not cause repeated full-page retries. Try at most one smaller/viewport screenshot; if it still times out, continue with structured evidence and note screenshot_unavailable_reason.",
     "- Never trade correctness gates for speed. Keep evidence, Tool Bridge, stale-evidence and one-case-at-a-time gates intact.",
     "- Keep the final response concise; the workbook and log are the primary artifacts.",
-    "- Playwright MCP is configured to connect to a persistent local Chrome session through CDP when available.",
+    "- Playwright MCP is configured to connect to a persistent local Chrome session through CDP when available. Treat shell-only execution as insufficient for visible UI cases; use MCP tools for preflight/action evidence unless complete helper current-run evidence exists.",
     config.keep_chrome_warm
       ? "- The Mac Agent may keep the dedicated Chrome process warm between runs, but each run/case starts from a freshly leased single DEV tab and must collect fresh current-run evidence."
       : "- The Mac Agent uses run-scoped Chrome and closes the dedicated Chrome process after terminal run states.",

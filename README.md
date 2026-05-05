@@ -24,7 +24,7 @@ Production endpoints:
 Current semantic versions:
 
 - App/API: `1.1.2`
-- Mac Agent: `0.2.8`
+- Mac Agent: `0.2.9`
 
 Active branches:
 
@@ -53,9 +53,12 @@ The current line is the Mac Agent MVP. It supports:
 - Metadata dropdown extraction uses the same field-list wait as metric configuration; A-03 style helpers should not report `ADD_FIELD_BUTTON_NOT_CLICKABLE` while the BI field list is still loading.
 - Reopen helpers settle after the report editor reloads and record reopen DOM/network evidence for date/field state restoration cases.
 - Metadata dropdown evidence is source-group scoped when the BI picker exposes group headers such as `DAILY_REPORT`; source-list cases compare distinct source groups, missing source groups are recorded as evidence instead of all-items fallback, and source-specific cases preserve exact field-name diffs plus normalized known-alias diffs.
+- Source-specific metadata comparisons keep `expectedFieldCount` scoped to the requested source report; all-source comparisons must use all-source scope/total count explicitly, so A-04/A-05 style cases do not silently fall back to all 4 sources.
+- Select-all field helpers reconcile selected fields by stable field code and nearby visible label, so code-style buttons such as `MAX_CCU` are not mistaken for missing fields or merged with unrelated labels.
 - Multi-variant or dynamic date cases are routed to Codex visible UI instead of helper pre-run, avoiding single-action helper false BLOCKED results for cases such as shortcut comparisons, dynamic offsets, half-dynamic ranges, and 90/91-day boundary checks.
 - Optional support files are indexed with lightweight profiles in `input/supporting-docs-manifest.json` so Codex can inspect CSV headers/row counts or markdown headings before choosing a full file to read.
 - Successful same-run helper browser evidence can satisfy preflight for helper-assisted cases; Codex should not mark `TOOL_EXECUTION_UNAVAILABLE` solely because Codex-side browser tools are absent.
+- Codex-side visible-UI cases must first attempt Playwright MCP `browser_tabs`; a successful tab listing proves browser tooling is available and prevents false `TOOL_EXECUTION_UNAVAILABLE`.
 - Degraded-case trusted `BLOCKED` result handling when browser/manual UI tools are unavailable.
 - Mandatory BI rule loading for each BI case.
 - Metadata reference and CSV download authoring contracts.

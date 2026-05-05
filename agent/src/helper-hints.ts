@@ -124,7 +124,7 @@ const firstHeadingSectionForCase = (markdown: string, caseNo: string): string | 
 };
 
 const extractHelperJsonAfterLabel = (markdown: string): { jsonText: string | null; warning: string | null } => {
-  const label = markdown.match(/(^|\n)\s*Helper hints\s*:?\s*(?:\n|$)/i);
+  const label = markdown.match(/(^|\n)\s*(?:[-*]\s*)?(?:\*\*)?\s*Helper hints\s*(?:\*\*)?\s*:?\s*(?:\n|$)/i);
   if (!label || label.index === undefined) return { jsonText: null, warning: null };
   const afterLabel = markdown.slice(label.index + label[0].length);
   const block = afterLabel.match(/```(?:json)?\s*([\s\S]*?)```/i);

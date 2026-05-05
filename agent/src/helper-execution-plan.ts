@@ -179,6 +179,9 @@ const stringArrayParam = (params: Record<string, unknown>, key: string): string[
   return value.filter((item): item is string => typeof item === "string" && item.trim().length > 0).map((item) => item.trim());
 };
 
+const rawArrayParam = (params: Record<string, unknown>, key: string): unknown[] | null =>
+  Array.isArray(params[key]) ? (params[key] as unknown[]) : null;
+
 const dateObjectParam = (value: unknown): string | null => {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const record = value as Record<string, unknown>;
@@ -233,20 +236,32 @@ const inferCollageParams = (currentCase: CaseManifestCase | null, helperHints: H
     (dateVariants.length === 1 ? nonNeutral(dateVariants[0]) : null) ??
     nonNeutral(cleanup["時間"]) ??
     firstMatch(text, [/(\d{4}\/\d{2}\/\d{2}\s*[~～-]\s*\d{4}\/\d{2}\/\d{2})/]);
+  const sourceReports = stringArrayParam(params, "sourceReports");
+  const explicitSource = stringParam(params, ["source", "sourceReport"]);
+  const inferredSource = selectAllFields && sourceReports.length > 0
+    ? null
+    : firstMatch(text, [/來源報表[=：: ]*「?([^」\n,， ]+)/]);
 
   return {
+    ...params,
     devUrl: stringParam(params, ["devUrl"]) ?? null,
     projectName: stringParam(params, ["projectName", "project"]) ?? firstMatch(text, [/(拼貼test[_\d]+)/i]),
-    source: stringParam(params, ["source", "sourceReport"]) ?? firstMatch(text, [/來源報表[=：: ]*「?([^」\n,， ]+)/]),
+    source: explicitSource ?? inferredSource,
     referenceCsv: stringParam(params, ["referenceCsv"]) ?? "rules/BI_DATA/metadata.csv",
+    referenceSourcePath: stringParam(params, ["referenceSourcePath"]) ?? null,
     referenceSourceName: stringParam(params, ["referenceSourceName"]) ?? firstMatch(text, [/原始指定檔名[=：: ]+`?([^`\n;]+)/, /source filename[=：: ]+`?([^`\n;]+)/i]),
     referenceIndexKey: stringParam(params, ["referenceIndexKey"]) ?? firstMatch(text, [/reference-index key[=：: ]+`?([^`\n;]+)/i, /reference_index_key[=：: ]+`?([^`\n;]+)/i]) ?? "bi_metadata_csv",
     matchKey: stringParam(params, ["matchKey"]) ?? "欄位名稱",
-    compareFields: Array.isArray(params.compareFields) ? params.compareFields : ["欄位名稱", "資料類型"],
+    compareFields: rawArrayParam(params, "compareFields") ?? ["欄位名稱", "資料類型"],
+    comparisonScope: stringParam(params, ["comparisonScope"]) ?? null,
     downloadScope: stringParam(params, ["downloadScope"]) ?? (/清單|列表|專案頁|報表列|report list/i.test(text) ? "report_list" : null),
     field,
     fields,
-    sourceReports: stringArrayParam(params, "sourceReports"),
+    sourceReports,
+    sourceReport: stringParam(params, ["sourceReport"]) ?? stringParam(params, ["source"]) ?? null,
+    expectedReportSources: stringArrayParam(params, "expectedReportSources"),
+    expectedReportSourceCount: numberParam(params, ["expectedReportSourceCount"]),
+    expectedTotalFieldCount: numberParam(params, ["expectedTotalFieldCount", "totalFieldCount"]),
     selectAllFields,
     selectAllFieldsInSourceReport: booleanishParam(params, ["selectAllFieldsInSourceReport", "selectAllSourceFields"]),
     expectedFieldCount: numberParam(params, ["expectedFieldCount", "fieldCount", "expectedFieldsCount"]),
