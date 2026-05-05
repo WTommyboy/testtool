@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { inferVisibleCollageProjectName } from "../agent/src/bi-ui-helper-executor";
 import { summarizeCsvAgainstPreview } from "../agent/src/csv-preview-comparison";
 import { collectPendingHelperToolBridgeRequests, validateHelperReportArtifact } from "../agent/src/helper-pre-runner";
 
@@ -116,6 +117,38 @@ const main = (): void => {
     assert.equal(csvComparison.checks.tableRowsMatched, true);
     assert.equal(csvComparison.checks.allSeriesMatched, true);
     assert.equal(csvComparison.preview.tableRowCount, 3);
+
+    const projectHomeText = [
+      "📊 報表管理",
+      "▶",
+      "報表",
+      "📂",
+      "公司共享",
+      "▶",
+      "我的自訂",
+      "▶",
+      "拼貼模式",
+      "拼貼test_001",
+      "🗑️",
+      "UAT_G01測試專案",
+      "🗑️",
+      "▶",
+      "明細檢視",
+      "▶",
+      "指標趨勢",
+      "➕ 新增專案",
+      "請從左側選擇專案查看報表"
+    ].join("\n");
+    assert.equal(
+      inferVisibleCollageProjectName(projectHomeText),
+      "拼貼test_001",
+      "helper should infer the first visible collage project when testcase omits projectName"
+    );
+    assert.equal(
+      inferVisibleCollageProjectName(projectHomeText, "UAT_G01測試專案"),
+      "UAT_G01測試專案",
+      "explicit projectName should override inferred project"
+    );
 
     const pendingRunDir = path.join(tempRoot, "pending-run");
     const pendingCaseId = "TOOL-A-05";

@@ -1651,16 +1651,76 @@ const clickByText = async (page: Page, text: string, timeout = 12000): Promise<v
   }
 };
 
+const hasCreateReportEntry = (bodyText: string): boolean => /(?:[+＋➕]\s*)?新增報表/.test(bodyText);
+
+export const inferVisibleCollageProjectName = (bodyText: string, explicitProjectName: string | null = null): string | null => {
+  if (explicitProjectName?.trim()) return explicitProjectName.trim();
+  const lines = bodyText.split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const collageIndex = lines.findIndex((line) => line === "拼貼模式" || /拼貼模式/.test(line));
+  const stopPattern = /^(?:▶\s*)?(?:明細檢視|指標趨勢|➕\s*新增專案|\+\s*新增專案)$/;
+  const ignored = new Set(["▶", "▼", "🗑️", "報表", "📂", "公司共享", "我的自訂", "拼貼模式"]);
+  const start = collageIndex >= 0 ? collageIndex + 1 : 0;
+  for (let index = start; index < lines.length; index += 1) {
+    const line = lines[index] ?? "";
+    if (index > start && stopPattern.test(line)) break;
+    if (ignored.has(line) || /^🗑/.test(line) || /新增報表|新增專案|請從左側選擇/.test(line)) continue;
+    if (/^(?:拼貼test[_\d]*|.+專案)$/.test(line)) return line;
+  }
+  return lines.find((line) => /拼貼test[_\d]*|.+專案/.test(line) && !/新增專案/.test(line)) ?? null;
+};
+
+const ensureCollageProjectSelected = async (
+  options: CliOptions,
+  page: Page
+): Promise<{ projectName: string | null; bodyText: string; selectedBy: "already_selected" | "param" | "inferred" }> => {
+  let bodyText = await page.locator("body").innerText({ timeout: 5000 }).catch(() => "");
+  if (hasCreateReportEntry(bodyText)) {
+    return { projectName: stringParam(options.params, "projectName"), bodyText, selectedBy: "already_selected" };
+  }
+
+  const explicitProjectName = stringParam(options.params, "projectName");
+  const projectName = inferVisibleCollageProjectName(bodyText, explicitProjectName);
+  if (!projectName) {
+    throw new HelperBlockedError(`COLLAGE_PROJECT_NOT_SELECTED: no projectName param and no visible collage project could be inferred; bodyText=${bodyText.slice(0, 500)}`);
+  }
+
+  await clickByText(page, projectName, 12000);
+  await page.waitForTimeout(1200);
+  bodyText = await page.locator("body").innerText({ timeout: 5000 }).catch(() => "");
+  return { projectName, bodyText, selectedBy: explicitProjectName ? "param" : "inferred" };
+};
+
+const clickCreateReportButton = async (page: Page): Promise<void> => {
+  const attempts: Array<() => Promise<void>> = [
+    () => page.getByText("+ 新增報表", { exact: false }).first().click({ timeout: 5000 }),
+    () => page.getByText("新增報表", { exact: false }).first().click({ timeout: 5000 }),
+    () => page.locator("button, a, [role='button']").filter({ hasText: /新增報表/ }).first().click({ timeout: 5000 })
+  ];
+  const errors: string[] = [];
+  for (const attempt of attempts) {
+    try {
+      await attempt();
+      return;
+    } catch (error) {
+      errors.push(error instanceof Error ? error.message.slice(0, 300) : String(error).slice(0, 300));
+    }
+  }
+  throw new HelperBlockedError(`CREATE_REPORT_BUTTON_NOT_CLICKABLE:${errors.join(" | ")}`);
+};
+
 const openProject = async (options: CliOptions, page: Page, startedAt: string): Promise<HelperReport> => {
   const devUrl = stringParam(options.params, "devUrl");
-  const projectName = stringParam(options.params, "projectName");
   if (devUrl && !page.url().includes("galaxy.games.gamania.com")) {
     await page.goto(devUrl, { waitUntil: "domcontentloaded", timeout: 20000 });
   }
   await page.waitForTimeout(800);
-  if (projectName) {
-    await clickByText(page, projectName);
-    await page.waitForTimeout(1200);
+  const projectSelection = await ensureCollageProjectSelected(options, page);
+  if (!hasCreateReportEntry(projectSelection.bodyText)) {
+    throw new HelperBlockedError(
+      `COLLAGE_PROJECT_OPEN_DID_NOT_REACH_REPORT_LIST:${projectSelection.projectName ?? "unknown"}; selectedBy=${projectSelection.selectedBy}; bodyText=${projectSelection.bodyText.slice(0, 500)}`
+    );
   }
   const shot = await screenshot(options, page, "open-project");
   const uiProfile = await captureUiDomProfile(options, page, "openProject.after");
@@ -1668,35 +1728,31 @@ const openProject = async (options: CliOptions, page: Page, startedAt: string): 
     options,
     "ok",
     startedAt,
-    { domState: await readDomState(page), uiProfile },
+    { domState: await readDomState(page), uiProfile, projectSelection },
     shot ? { screenshot: shot } : {},
     shot ? [] : ["SCREENSHOT_UNAVAILABLE"]
   );
 };
 
 const createCollageReport = async (options: CliOptions, page: Page, startedAt: string): Promise<HelperReport> => {
-  const projectName = stringParam(options.params, "projectName");
-  const bodyText = await page.locator("body").innerText({ timeout: 5000 }).catch(() => "");
-  if (!bodyText.includes("+ 新增報表") && projectName) {
-    await clickByText(page, projectName);
-    await page.waitForTimeout(1200);
+  const projectSelection = await ensureCollageProjectSelected(options, page);
+  if (!hasCreateReportEntry(projectSelection.bodyText)) {
+    throw new HelperBlockedError(
+      `CREATE_REPORT_PRECONDITION_NOT_READY:${projectSelection.projectName ?? "unknown"}; selectedBy=${projectSelection.selectedBy}; bodyText=${projectSelection.bodyText.slice(0, 500)}`
+    );
   }
-  await page.getByText("+ 新增報表", { exact: false }).first().click({ timeout: 15000 });
+  await clickCreateReportButton(page);
   await page.waitForTimeout(1200);
   const shot = await screenshot(options, page, "create-report");
   const uiProfile = await captureUiDomProfile(options, page, "createReport.after");
-  return createReport(options, "ok", startedAt, { domState: await readDomState(page), uiProfile }, shot ? { screenshot: shot } : {}, shot ? [] : ["SCREENSHOT_UNAVAILABLE"]);
+  return createReport(options, "ok", startedAt, { domState: await readDomState(page), uiProfile, projectSelection }, shot ? { screenshot: shot } : {}, shot ? [] : ["SCREENSHOT_UNAVAILABLE"]);
 };
 
 const openExistingReport = async (options: CliOptions, page: Page, startedAt: string): Promise<HelperReport> => {
-  const projectName = stringParam(options.params, "projectName");
   const uiProfileBefore = await captureUiDomProfile(options, page, "openExistingReport.before");
-  if (projectName) {
-    const bodyText = await page.locator("body").innerText({ timeout: 5000 }).catch(() => "");
-    if (!bodyText.includes(projectName) || /報表設定|儲存報表|執行/.test(bodyText)) {
-      await clickByText(page, projectName, 8000).catch(() => undefined);
-      await page.waitForTimeout(1000);
-    }
+  const bodyText = await page.locator("body").innerText({ timeout: 5000 }).catch(() => "");
+  if (!/報表設定|儲存報表|執行/.test(bodyText)) {
+    await ensureCollageProjectSelected(options, page);
   }
 
   let resolved = await resolveExistingReportName(options, page);
@@ -1704,10 +1760,7 @@ const openExistingReport = async (options: CliOptions, page: Page, startedAt: st
   if (!listText.includes(resolved.reportName)) {
     await page.reload({ waitUntil: "domcontentloaded", timeout: 15000 }).catch(() => undefined);
     await page.waitForTimeout(1200);
-    if (projectName) {
-      await clickByText(page, projectName, 8000).catch(() => undefined);
-      await page.waitForTimeout(1000);
-    }
+    await ensureCollageProjectSelected(options, page);
     resolved = await resolveExistingReportName(options, page);
     listText = await page.locator("body").innerText({ timeout: 5000 }).catch(() => "");
   }
@@ -2537,7 +2590,6 @@ const ensureSavedReportListRowVisible = async (
 ): Promise<{ state: ReportListRowState; attempts: Array<ReportListRowState & { label: string }>; recoveryActions: string[] }> => {
   const attempts: Array<ReportListRowState & { label: string }> = [];
   const recoveryActions: string[] = [];
-  const projectName = stringParam(options.params, "projectName");
   const capture = async (label: string): Promise<ReportListRowState> => {
     const state = await readReportListRowState(page, reportName);
     attempts.push({ ...state, label });
@@ -2547,9 +2599,9 @@ const ensureSavedReportListRowVisible = async (
   let state = await capture("initial");
   if (state.found) return { state, attempts, recoveryActions };
 
-  if (/報表設定|儲存報表|執行/.test(state.bodyTextExcerpt) && projectName) {
+  if (/報表設定|儲存報表|執行/.test(state.bodyTextExcerpt)) {
     recoveryActions.push("click_project_from_editor");
-    await clickByText(page, projectName, 8000).catch((error) => {
+    await ensureCollageProjectSelected(options, page).catch((error) => {
       recoveryActions.push(`click_project_from_editor_failed:${error instanceof Error ? error.message : String(error)}`);
     });
     await page.waitForTimeout(1200);
@@ -2565,14 +2617,12 @@ const ensureSavedReportListRowVisible = async (
   state = await capture("after_reload");
   if (state.found) return { state, attempts, recoveryActions };
 
-  if (projectName) {
-    recoveryActions.push("click_project_after_reload");
-    await clickByText(page, projectName, 8000).catch((error) => {
-      recoveryActions.push(`click_project_after_reload_failed:${error instanceof Error ? error.message : String(error)}`);
-    });
-    await page.waitForTimeout(1200);
-    state = await capture("after_project_click");
-  }
+  recoveryActions.push("click_project_after_reload");
+  await ensureCollageProjectSelected(options, page).catch((error) => {
+    recoveryActions.push(`click_project_after_reload_failed:${error instanceof Error ? error.message : String(error)}`);
+  });
+  await page.waitForTimeout(1200);
+  state = await capture("after_project_click");
 
   return { state, attempts, recoveryActions };
 };
@@ -3086,25 +3136,21 @@ const saveReport = async (options: CliOptions, page: Page, startedAt: string): P
 
 const reopenReport = async (options: CliOptions, page: Page, startedAt: string): Promise<HelperReport> => {
   const reportName = readSavedReportName(options);
-  const projectName = stringParam(options.params, "projectName");
   if (!reportName) throw new HelperBlockedError("SAVED_REPORT_NAME_MISSING");
   const uiProfileBefore = await captureUiDomProfile(options, page, "reopenReport.before");
   const stateBefore = await readStateDelta(page, options.params).catch((error) => ({
     readError: error instanceof Error ? error.message : String(error)
   }));
   const beforeText = await page.locator("body").innerText({ timeout: 5000 }).catch(() => "");
-  if (!beforeText.includes(reportName) && projectName) {
-    await clickByText(page, projectName, 8000);
-    await page.waitForTimeout(1200);
+  if (!beforeText.includes(reportName) && !/報表設定|儲存報表|執行/.test(beforeText)) {
+    await ensureCollageProjectSelected(options, page);
   }
   const refreshedText = await page.locator("body").innerText({ timeout: 5000 }).catch(() => "");
   if (!refreshedText.includes(reportName)) {
     await page.reload({ waitUntil: "domcontentloaded", timeout: 15000 }).catch(() => undefined);
     await page.waitForTimeout(1200);
-    if (projectName) {
-      await clickByText(page, projectName, 8000).catch(() => undefined);
-      await page.waitForTimeout(800);
-    }
+    await ensureCollageProjectSelected(options, page).catch(() => undefined);
+    await page.waitForTimeout(800);
   }
   const finalListText = await page.locator("body").innerText({ timeout: 5000 }).catch(() => "");
   if (!finalListText.includes(reportName)) {
@@ -3298,6 +3344,8 @@ const run = async (): Promise<void> => {
   }
 };
 
-void run().then(() => {
-  process.exit(process.exitCode ?? 0);
-});
+if (require.main === module) {
+  void run().then(() => {
+    process.exit(process.exitCode ?? 0);
+  });
+}
