@@ -13,6 +13,10 @@ export type ParsedCase = {
   expectedResult?: string;
   executionMethodRaw?: string;
   executionType: "auto" | "semi" | "manual";
+  resultStatusRaw?: string;
+  failCategory?: string;
+  testDate?: string;
+  validationMethod?: string;
   detailJson?: unknown;
 };
 
@@ -111,6 +115,10 @@ export const parseTestcaseXlsx = async (
   const caseTitleIdx = headerIndex(caseHeaderMap, "casetitle", "case_title", "測試項目", "測試案例名稱", "title");
   const preconditionIdx = headerIndex(caseHeaderMap, "precondition", "condition", "前置條件", "設定條件");
   const executionTypeIdx = headerIndex(caseHeaderMap, "executiontype", "execution_type", "執行方式");
+  const resultStatusIdx = headerIndex(caseHeaderMap, "result", "status", "resultstatus", "result_status", "結果");
+  const failCategoryIdx = headerIndex(caseHeaderMap, "failcategory", "fail_category", "verdictreason", "失敗分類");
+  const testDateIdx = headerIndex(caseHeaderMap, "testdate", "test_date", "測試日", "測試日期");
+  const validationMethodIdx = headerIndex(caseHeaderMap, "validationmethod", "validation_method", "verification", "驗證方法");
   const expectedResultIdx = headerIndex(caseHeaderMap, "expectedresult", "expected_result", "預期結果");
   const detailJsonIdx = headerIndex(caseHeaderMap, "detailjson", "detail_json", "詳細紀錄json");
   const stepsTextIdx = headerIndex(caseHeaderMap, "steps", "步驟", "測試步驟");
@@ -143,6 +151,10 @@ export const parseTestcaseXlsx = async (
     const stepText = getCellValue(row, resolvedStepsTextIdx);
     const expectedResult = getCellValue(row, resolvedExpectedResultIdx);
     const executionMethodRaw = getCellValue(row, resolvedExecutionTypeIdx);
+    const resultStatusRaw = resultStatusIdx ? getCellValue(row, resultStatusIdx) : "";
+    const failCategory = failCategoryIdx ? getCellValue(row, failCategoryIdx) : "";
+    const testDate = testDateIdx ? getCellValue(row, testDateIdx) : "";
+    const validationMethod = validationMethodIdx ? getCellValue(row, validationMethodIdx) : "";
 
     const baseDetail = {
       測試類型: testType || "未分類",
@@ -150,7 +162,9 @@ export const parseTestcaseXlsx = async (
       設定條件: precondition || "未提供前置條件",
       執行步驟: stepText || "未提供執行步驟",
       預期行為: expectedResult || "未提供預期結果",
-      執行方式: executionMethodRaw || "未指定"
+      執行方式: executionMethodRaw || "未指定",
+      ...(validationMethod ? { 驗證方法: validationMethod } : {}),
+      ...(testDate ? { 測試日: testDate } : {})
     } as Record<string, unknown>;
 
     const detailRaw = detailJsonIdx ? getCellValue(row, detailJsonIdx) : "";
@@ -188,6 +202,10 @@ export const parseTestcaseXlsx = async (
       expectedResult: expectedResult || undefined,
       executionMethodRaw: executionMethodRaw || undefined,
       executionType: normalizeExecutionType(executionMethodRaw),
+      resultStatusRaw: resultStatusRaw || undefined,
+      failCategory: failCategory || undefined,
+      testDate: testDate || undefined,
+      validationMethod: validationMethod || undefined,
       detailJson
     });
   }
@@ -400,6 +418,10 @@ const parseMinimalXlsx = async (filePath: string): Promise<{ cases: ParsedCase[]
   const caseTitleIdx = headerIndex(caseHeaderMap, "casetitle", "case_title", "測試項目", "測試案例名稱", "title");
   const preconditionIdx = headerIndex(caseHeaderMap, "precondition", "condition", "前置條件", "設定條件");
   const executionTypeIdx = headerIndex(caseHeaderMap, "executiontype", "execution_type", "執行方式");
+  const resultStatusIdx = headerIndex(caseHeaderMap, "result", "status", "resultstatus", "result_status", "結果");
+  const failCategoryIdx = headerIndex(caseHeaderMap, "failcategory", "fail_category", "verdictreason", "失敗分類");
+  const testDateIdx = headerIndex(caseHeaderMap, "testdate", "test_date", "測試日", "測試日期");
+  const validationMethodIdx = headerIndex(caseHeaderMap, "validationmethod", "validation_method", "verification", "驗證方法");
   const expectedResultIdx = headerIndex(caseHeaderMap, "expectedresult", "expected_result", "預期結果");
   const detailJsonIdx = headerIndex(caseHeaderMap, "detailjson", "detail_json", "詳細紀錄json");
   const stepsTextIdx = headerIndex(caseHeaderMap, "steps", "步驟", "測試步驟");
@@ -431,6 +453,10 @@ const parseMinimalXlsx = async (filePath: string): Promise<{ cases: ParsedCase[]
     const stepText = getArrayCellValue(row, resolvedStepsTextIdx);
     const expectedResult = getArrayCellValue(row, resolvedExpectedResultIdx);
     const executionMethodRaw = getArrayCellValue(row, resolvedExecutionTypeIdx);
+    const resultStatusRaw = getArrayCellValue(row, resultStatusIdx);
+    const failCategory = getArrayCellValue(row, failCategoryIdx);
+    const testDate = getArrayCellValue(row, testDateIdx);
+    const validationMethod = getArrayCellValue(row, validationMethodIdx);
 
     const baseDetail = {
       測試類型: testType || "未分類",
@@ -438,7 +464,9 @@ const parseMinimalXlsx = async (filePath: string): Promise<{ cases: ParsedCase[]
       設定條件: precondition || "未提供前置條件",
       執行步驟: stepText || "未提供執行步驟",
       預期行為: expectedResult || "未提供預期結果",
-      執行方式: executionMethodRaw || "未指定"
+      執行方式: executionMethodRaw || "未指定",
+      ...(validationMethod ? { 驗證方法: validationMethod } : {}),
+      ...(testDate ? { 測試日: testDate } : {})
     } as Record<string, unknown>;
 
     const detailRaw = detailJsonIdx ? getArrayCellValue(row, detailJsonIdx) : "";
@@ -469,6 +497,10 @@ const parseMinimalXlsx = async (filePath: string): Promise<{ cases: ParsedCase[]
       expectedResult: expectedResult || undefined,
       executionMethodRaw: executionMethodRaw || undefined,
       executionType: normalizeExecutionType(executionMethodRaw),
+      resultStatusRaw: resultStatusRaw || undefined,
+      failCategory: failCategory || undefined,
+      testDate: testDate || undefined,
+      validationMethod: validationMethod || undefined,
       detailJson
     });
   }

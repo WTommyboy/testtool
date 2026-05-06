@@ -595,9 +595,9 @@ const writeAgentCaseProgress = (runDir: string, progress: AgentCaseProgress): vo
   });
 };
 
-const hasWorkbookResultEvidence = (item: CaseManifestResult["cases"][number]): boolean => {
-  const status = item.resultStatus?.trim();
-  return Boolean((status && !/^pending$/i.test(status)) || item.detailJson?.trim());
+const hasWorkbookTerminalResult = (item: CaseManifestResult["cases"][number]): boolean => {
+  const status = item.resultStatus?.trim().toUpperCase().replace(/\s+/g, "_");
+  return Boolean(status && status !== "PENDING" && status !== "MANUAL_PENDING");
 };
 
 const markCurrentCaseCompleted = (
@@ -633,7 +633,7 @@ const nextCaseAfterProgress = (caseManifest: CaseManifestResult, progress: Agent
   const next = caseManifest.cases.find((item) => {
     if (item.order < startOrder) return false;
     if (completed.has(item.caseNo)) return false;
-    if (hasWorkbookResultEvidence(item)) return false;
+    if (hasWorkbookTerminalResult(item)) return false;
     return true;
   });
   return next?.caseNo ?? null;

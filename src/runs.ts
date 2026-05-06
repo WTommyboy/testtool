@@ -86,6 +86,8 @@ const createCasesSchema = z.object({
         groupName: z.string().optional(),
         caseTitle: z.string().min(1),
         executionType: z.enum(CASE_EXECUTION_TYPE),
+        resultStatus: z.enum(CASE_RESULT_STATUS).optional(),
+        failCategory: z.string().optional(),
         detailJson: z.unknown().optional()
       })
     )
@@ -998,9 +1000,9 @@ const prepareUpsertCaseStmt = () =>
   db.prepare(
     `
       INSERT INTO run_cases (
-        id, run_id, case_no, group_id, group_name, case_title, execution_type, result_status, detail_json, created_at, updated_at
+        id, run_id, case_no, group_id, group_name, case_title, execution_type, result_status, fail_category, detail_json, created_at, updated_at
       ) VALUES (
-        @id, @run_id, @case_no, @group_id, @group_name, @case_title, @execution_type, @result_status, @detail_json, @created_at, @updated_at
+        @id, @run_id, @case_no, @group_id, @group_name, @case_title, @execution_type, @result_status, @fail_category, @detail_json, @created_at, @updated_at
       )
       ON CONFLICT(run_id, case_no) DO UPDATE SET
         group_id = excluded.group_id,
@@ -1008,6 +1010,7 @@ const prepareUpsertCaseStmt = () =>
         case_title = excluded.case_title,
         execution_type = excluded.execution_type,
         result_status = excluded.result_status,
+        fail_category = excluded.fail_category,
         detail_json = excluded.detail_json,
         updated_at = excluded.updated_at
     `
@@ -1018,10 +1021,10 @@ const prepareUpsertStepStmt = () =>
     `
       INSERT INTO run_case_steps (
         id, run_id, case_no, step_no, action_type, target_type, target_value, input_value, expected,
-        require_approval, timeout_ms, retry, status, created_at, updated_at
+        require_approval, timeout_ms, retry, status, actual_json, created_at, updated_at
       ) VALUES (
         @id, @run_id, @case_no, @step_no, @action_type, @target_type, @target_value, @input_value, @expected,
-        @require_approval, @timeout_ms, @retry, @status, @created_at, @updated_at
+        @require_approval, @timeout_ms, @retry, @status, @actual_json, @created_at, @updated_at
       )
       ON CONFLICT(run_id, case_no, step_no) DO UPDATE SET
         action_type = excluded.action_type,
@@ -1032,6 +1035,8 @@ const prepareUpsertStepStmt = () =>
         require_approval = excluded.require_approval,
         timeout_ms = excluded.timeout_ms,
         retry = excluded.retry,
+        status = excluded.status,
+        actual_json = excluded.actual_json,
         updated_at = excluded.updated_at
     `
   );
@@ -1040,6 +1045,71 @@ const uploadRoot = path.resolve(config.storageRoot, "uploads");
 fs.mkdirSync(uploadRoot, { recursive: true });
 const outputRoot = path.resolve(config.storageRoot, "outputs");
 fs.mkdirSync(outputRoot, { recursive: true });
+
+const SOURCE_TERMINAL_RESULT_STATUSES = new Set([
+  "PASS",
+  "FAIL",
+  "BLOCKED",
+  "PARTIAL",
+  "SKIPPED",
+  "MANUAL_PASS",
+  "MANUAL_FAIL",
+  "MANUAL_BLOCKED"
+]);
+
+const normalizeSourceResultStatus = (status: string | null | undefined): string | null => {
+  const normalized = status?.trim().toUpperCase().replace(/\s+/g, "_");
+  return normalized && SOURCE_TERMINAL_RESULT_STATUSES.has(normalized) ? normalized : null;
+};
+
+const detailJsonObjectFromUnknown = (value: unknown): Record<string, unknown> => {
+  return value && typeof value === "object" && !Array.isArray(value) ? { ...(value as Record<string, unknown>) } : {};
+};
+
+const sourceResultBlockedReason = (detail: Record<string, unknown>): string | null => {
+  for (const key of ["blocked_reason", "blockedReason", "阻塞原因", "skip_reason", "skipped_reason", "跳過原因"]) {
+    const value = detail[key];
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return null;
+};
+
+const buildSourcePrefilledDetailJson = (item: ParsedCase, resultStatus: string): Record<string, unknown> => {
+  const detail = detailJsonObjectFromUnknown(item.detailJson);
+  const blockedReason = sourceResultBlockedReason(detail);
+  const executionMethod = item.executionMethodRaw ?? item.executionType;
+  return {
+    ...detail,
+    測試類型: typeof detail.測試類型 === "string" && detail.測試類型.trim() ? detail.測試類型 : item.testType ?? "未分類",
+    測試目的: typeof detail.測試目的 === "string" && detail.測試目的.trim() ? detail.測試目的 : item.caseTitle || item.caseNo,
+    設定條件: typeof detail.設定條件 === "string" && detail.設定條件.trim() ? detail.設定條件 : item.precondition ?? "未提供前置條件",
+    執行步驟: typeof detail.執行步驟 === "string" && detail.執行步驟.trim() ? detail.執行步驟 : item.stepText ?? "未提供執行步驟",
+    預期行為: typeof detail.預期行為 === "string" && detail.預期行為.trim() ? detail.預期行為 : item.expectedResult ?? "未提供預期結果",
+    實際行為: typeof detail.實際行為 === "string" && detail.實際行為.trim()
+      ? detail.實際行為
+      : resultStatus === "BLOCKED"
+        ? "Source testcase row already contains result=BLOCKED; Agent execution skipped."
+        : `Source testcase row already contains result=${resultStatus}; Agent execution skipped.`,
+    執行方式: typeof detail.執行方式 === "string" && detail.執行方式.trim() ? detail.執行方式 : executionMethod,
+    ...(item.validationMethod && !detail.驗證方法 ? { 驗證方法: item.validationMethod } : {}),
+    ...(item.testDate && !detail.測試日 ? { 測試日: item.testDate } : {}),
+    ...(resultStatus === "BLOCKED" && !detail.blocked_reason ? { blocked_reason: blockedReason ?? "Source testcase row prefilled BLOCKED." } : {}),
+    sourcePrefilledResult: {
+      source: "testcase_xlsx",
+      resultStatus,
+      originalResult: item.resultStatusRaw ?? resultStatus,
+      importedAt: nowIso()
+    }
+  };
+};
+
+const resultStatusForImportedCase = (item: ParsedCase): string =>
+  normalizeSourceResultStatus(item.resultStatusRaw) ?? (item.executionType === "manual" ? "MANUAL_PENDING" : "PENDING");
+
+const executionTypeForImportedCase = (item: ParsedCase, resultStatus: string): string => {
+  if (SOURCE_TERMINAL_RESULT_STATUSES.has(resultStatus)) return item.executionMethodRaw ?? item.executionType;
+  return item.executionType;
+};
 
 const upload = multer({
   storage: multer.diskStorage({
@@ -1116,19 +1186,27 @@ const countRunArtifactsByType = (runId: string): { total: number; screenshots: n
   }, { total: 0, screenshots: 0, manifests: 0 });
 };
 
-const upsertImportedTestcase = (
+export const upsertImportedTestcase = (
   runId: string,
   imported: { cases: ParsedCase[]; steps: ParsedStep[] }
-): { manualCases: number } => {
+): { manualCases: number; prefilledCases: number } => {
   const now = nowIso();
   let manualCases = 0;
+  let prefilledCases = 0;
+  const sourceResultStatusByCase = new Map<string, string>();
   const upsertCaseStmt = prepareUpsertCaseStmt();
   const upsertStepStmt = prepareUpsertStepStmt();
 
   const tx = db.transaction(() => {
     for (const item of imported.cases) {
-      const resultStatus = item.executionType === "manual" ? "MANUAL_PENDING" : "PENDING";
-      if (item.executionType === "manual") manualCases += 1;
+      const resultStatus = resultStatusForImportedCase(item);
+      const sourcePrefilled = SOURCE_TERMINAL_RESULT_STATUSES.has(resultStatus);
+      if (sourcePrefilled) {
+        prefilledCases += 1;
+        sourceResultStatusByCase.set(item.caseNo, resultStatus);
+      } else if (item.executionType === "manual") {
+        manualCases += 1;
+      }
       upsertCaseStmt.run({
         id: randomUUID(),
         run_id: runId,
@@ -1136,15 +1214,21 @@ const upsertImportedTestcase = (
         group_id: item.groupId ?? null,
         group_name: item.groupName ?? null,
         case_title: item.caseTitle,
-        execution_type: item.executionType,
+        execution_type: executionTypeForImportedCase(item, resultStatus),
         result_status: resultStatus,
-        detail_json: item.detailJson ? JSON.stringify(item.detailJson) : null,
+        fail_category: item.failCategory ?? null,
+        detail_json: sourcePrefilled
+          ? JSON.stringify(buildSourcePrefilledDetailJson(item, resultStatus))
+          : item.detailJson
+            ? JSON.stringify(item.detailJson)
+            : null,
         created_at: now,
         updated_at: now
       });
     }
 
     for (const step of imported.steps) {
+      const prefilledStatus = sourceResultStatusByCase.get(step.caseNo);
       upsertStepStmt.run({
         id: randomUUID(),
         run_id: runId,
@@ -1158,7 +1242,14 @@ const upsertImportedTestcase = (
         require_approval: step.requireApproval ? 1 : 0,
         timeout_ms: step.timeoutMs,
         retry: step.retry,
-        status: "PENDING",
+        status: prefilledStatus ? "SKIPPED" : "PENDING",
+        actual_json: prefilledStatus
+          ? JSON.stringify({
+              source: "source_prefilled_result",
+              resultStatus: prefilledStatus,
+              skippedAt: now
+            })
+          : null,
         created_at: now,
         updated_at: now
       });
@@ -1167,7 +1258,7 @@ const upsertImportedTestcase = (
   tx();
 
   db.prepare("UPDATE runs SET updated_at = ? WHERE id = ?").run(now, runId);
-  return { manualCases };
+  return { manualCases, prefilledCases };
 };
 
 const normalizeParsedResultStatus = (status: string): string => {
@@ -1809,7 +1900,7 @@ router.post(
 
       try {
         const imported = await parseTestcaseXlsx(testcaseXlsx.path);
-        const { manualCases } = upsertImportedTestcase(runId, imported);
+        const { manualCases, prefilledCases } = upsertImportedTestcase(runId, imported);
         db.prepare(
           `
             UPDATE runs
@@ -1832,13 +1923,15 @@ router.post(
           referenceCsv: referenceCsv?.path ?? null,
           importedCases: imported.cases.length,
           importedSteps: imported.steps.length,
-          manualCases
+          manualCases,
+          prefilledCases
         });
         insertRunEvent(runId, "input.xlsx_parsed", {
           sourceMode,
           importedCases: imported.cases.length,
           importedSteps: imported.steps.length,
-          manualCases
+          manualCases,
+          prefilledCases
         });
       } catch (error) {
         deleteRunCascade(runId);
@@ -1881,12 +1974,29 @@ router.post("/:id/cases", (req, res) => {
 
   const now = nowIso();
   let manualCases = 0;
+  let prefilledCases = 0;
   const upsertCaseStmt = prepareUpsertCaseStmt();
 
   const tx = db.transaction(() => {
     for (const item of parsed.data.items) {
-      const resultStatus = item.executionType === "manual" ? "MANUAL_PENDING" : "PENDING";
-      if (item.executionType === "manual") manualCases += 1;
+      const sourceResultStatus = normalizeSourceResultStatus(item.resultStatus);
+      const resultStatus = sourceResultStatus ?? (item.executionType === "manual" ? "MANUAL_PENDING" : "PENDING");
+      if (sourceResultStatus) {
+        prefilledCases += 1;
+      } else if (item.executionType === "manual") {
+        manualCases += 1;
+      }
+      const sourcePrefilledDetail = sourceResultStatus
+        ? {
+            ...detailJsonObjectFromUnknown(item.detailJson),
+            sourcePrefilledResult: {
+              source: "api",
+              resultStatus,
+              originalResult: item.resultStatus,
+              importedAt: now
+            }
+          }
+        : null;
 
       upsertCaseStmt.run({
         id: randomUUID(),
@@ -1897,7 +2007,12 @@ router.post("/:id/cases", (req, res) => {
         case_title: item.caseTitle,
         execution_type: item.executionType,
         result_status: resultStatus,
-        detail_json: item.detailJson ? JSON.stringify(item.detailJson) : null,
+        fail_category: item.failCategory ?? null,
+        detail_json: sourcePrefilledDetail
+          ? JSON.stringify(sourcePrefilledDetail)
+          : item.detailJson
+            ? JSON.stringify(item.detailJson)
+            : null,
         created_at: now,
         updated_at: now
       });
@@ -1909,13 +2024,15 @@ router.post("/:id/cases", (req, res) => {
   db.prepare("UPDATE runs SET updated_at = ? WHERE id = ?").run(now, req.params.id);
   insertRunLog(req.params.id, "INFO", "Cases upserted", {
     total: parsed.data.items.length,
-    manualCases
+    manualCases,
+    prefilledCases
   });
 
   return res.status(201).json({
     runId: req.params.id,
     total: parsed.data.items.length,
-    manualCases
+    manualCases,
+    prefilledCases
   });
 });
 
@@ -1935,8 +2052,17 @@ router.post("/:id/steps", (req, res) => {
 
   const now = nowIso();
   const upsertStepStmt = prepareUpsertStepStmt();
+  const caseStatuses = db
+    .prepare("SELECT case_no, result_status FROM run_cases WHERE run_id = ?")
+    .all(req.params.id) as Array<{ case_no: string; result_status: string | null }>;
+  const sourceResultStatusByCase = new Map(
+    caseStatuses
+      .map((item) => [item.case_no, normalizeSourceResultStatus(item.result_status)] as const)
+      .filter((item): item is readonly [string, string] => Boolean(item[1]))
+  );
   const tx = db.transaction(() => {
     for (const step of parsed.data.items) {
+      const prefilledStatus = sourceResultStatusByCase.get(step.caseNo);
       upsertStepStmt.run({
         id: randomUUID(),
         run_id: req.params.id,
@@ -1950,7 +2076,14 @@ router.post("/:id/steps", (req, res) => {
         require_approval: step.requireApproval ? 1 : 0,
         timeout_ms: step.timeoutMs ?? 10000,
         retry: step.retry ?? 0,
-        status: "PENDING",
+        status: prefilledStatus ? "SKIPPED" : "PENDING",
+        actual_json: prefilledStatus
+          ? JSON.stringify({
+              source: "source_prefilled_result",
+              resultStatus: prefilledStatus,
+              skippedAt: now
+            })
+          : null,
         created_at: now,
         updated_at: now
       });
@@ -1981,20 +2114,22 @@ router.post("/:id/import-xlsx", async (req, res) => {
 
   try {
     const imported = await parseTestcaseXlsx(parsed.data.filePath);
-    const { manualCases } = upsertImportedTestcase(req.params.id, imported);
+    const { manualCases, prefilledCases } = upsertImportedTestcase(req.params.id, imported);
 
     insertRunLog(req.params.id, "INFO", "XLSX imported", {
       filePath: parsed.data.filePath,
       cases: imported.cases.length,
       steps: imported.steps.length,
-      manualCases
+      manualCases,
+      prefilledCases
     });
 
     return res.status(201).json({
       runId: req.params.id,
       importedCases: imported.cases.length,
       importedSteps: imported.steps.length,
-      manualCases
+      manualCases,
+      prefilledCases
     });
   } catch (error) {
     insertRunLog(req.params.id, "ERROR", "XLSX import failed", {

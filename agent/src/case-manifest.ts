@@ -41,7 +41,7 @@ export type CaseManifestCurrentCaseSelection = {
   selectedCaseNo: string | null;
   requestedCaseNo: string | null;
   source: string | null;
-  reason: "first_case" | "startup_instruction" | "requested_case_not_found";
+  reason: "first_case" | "first_runnable_case" | "startup_instruction" | "requested_case_not_found" | "requested_case_has_result";
 };
 
 export type CaseManifestResult = {
@@ -111,6 +111,19 @@ const safeFilePart = (value: string): string => {
 };
 
 const normalizeCaseNo = (value: string): string => value.trim().replace(/\s+/g, "").toUpperCase();
+
+const PENDING_WORKBOOK_RESULT_STATUSES = new Set(["PENDING", "MANUAL_PENDING"]);
+
+const normalizeWorkbookResultStatus = (value: string | null | undefined): string =>
+  value?.trim().toUpperCase().replace(/\s+/g, "_") ?? "";
+
+const hasWorkbookTerminalResult = (item: Pick<CaseManifestCase, "resultStatus">): boolean => {
+  const status = normalizeWorkbookResultStatus(item.resultStatus);
+  return Boolean(status && !PENDING_WORKBOOK_RESULT_STATUSES.has(status));
+};
+
+const firstRunnableCase = (cases: CaseManifestCase[], minOrder = 1): CaseManifestCase | null =>
+  cases.find((item) => item.order >= minOrder && !hasWorkbookTerminalResult(item)) ?? null;
 
 const deriveGroupId = (groupId: string | null, groupName: string | null, caseNo: string): string | null => {
   const explicit = groupId?.trim();
@@ -344,15 +357,31 @@ const writeManifestFiles = (
   const requestedCaseNo = options.preferredStartCaseNo?.trim() ? normalizeCaseNo(options.preferredStartCaseNo) : null;
   const requestedCaseMatch = requestedCaseNo ? findPreferredCase(cases, requestedCaseNo) : { caseItem: null, ambiguous: false };
   const requestedCase = requestedCaseMatch.caseItem;
-  const selectedCase = requestedCase ?? cases[0] ?? null;
   if (requestedCaseNo && !requestedCase) {
     warnings.push(`${requestedCaseMatch.ambiguous ? "START_CASE_AMBIGUOUS" : "START_CASE_NOT_FOUND"}:${requestedCaseNo}`);
+  }
+  let selectedCase: CaseManifestCase | null = null;
+  let selectionReason: CaseManifestCurrentCaseSelection["reason"];
+  if (requestedCase && hasWorkbookTerminalResult(requestedCase)) {
+    warnings.push(`START_CASE_ALREADY_HAS_RESULT:${requestedCase.caseNo}`);
+    selectedCase = firstRunnableCase(cases, requestedCase.order + 1) ?? firstRunnableCase(cases);
+    selectionReason = "requested_case_has_result";
+  } else if (requestedCase) {
+    selectedCase = requestedCase;
+    selectionReason = "startup_instruction";
+  } else {
+    selectedCase = firstRunnableCase(cases);
+    selectionReason = requestedCaseNo
+      ? "requested_case_not_found"
+      : selectedCase?.order === cases[0]?.order
+        ? "first_case"
+        : "first_runnable_case";
   }
   const currentCaseSelection: CaseManifestCurrentCaseSelection = {
     selectedCaseNo: selectedCase?.caseNo ?? null,
     requestedCaseNo,
     source: requestedCaseNo ? options.preferredStartCaseSource ?? "startup_instruction" : null,
-    reason: requestedCase ? "startup_instruction" : requestedCaseNo ? "requested_case_not_found" : "first_case"
+    reason: selectionReason
   };
 
   const manifest: CaseManifest = {

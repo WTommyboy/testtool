@@ -24,7 +24,7 @@ Production endpoints:
 Current semantic versions:
 
 - App/API: `1.1.2`
-- Mac Agent: `0.2.14`
+- Mac Agent: `0.2.15`
 
 Active branches:
 
@@ -43,6 +43,7 @@ The current line is the Mac Agent MVP. It supports:
 - Tool Bridge for native dialogs, irreversible actions, SSO/auth blockers, and ambiguity handling.
 - One-case-at-a-time execution discipline.
 - Single-case `output/result.xlsx` upload and evidence gate, with Tool Bridge claim detection scoped to explicit approval/native-dialog/irreversible-action claims rather than ordinary testcase prose.
+- Source testcase rows with a prefilled terminal `結果` such as `BLOCKED` are imported as terminal normalized cases; their steps are marked `SKIPPED`, and Agent manifests advance to the next runnable case instead of executing them.
 - Server-side normalized result state.
 - Final aggregate result workbook download after all cases finish.
 - Concise report Markdown download and complete archive Markdown download; the archive includes timeline, logs, events, artifact inventory, timing summary, and per-case state.
@@ -106,6 +107,8 @@ The `測試案例` sheet must include:
 - `詳細紀錄JSON`
 
 Railway ingests each single-case workbook into normalized state. The UI result download is generated from server-normalized run state: final aggregate when all cases are terminal, partial aggregate when a run fails or is interrupted with completed cases. It should not fall back to the last raw single-case workbook unless no normalized case result exists yet.
+
+Source testcase xlsx rows may also be prefilled before a run. When the source row has a terminal `結果` (`PASS`, `FAIL`, `BLOCKED`, `PARTIAL`, `SKIPPED`, or manual terminal status), Railway imports that result directly and marks that case's steps `SKIPPED`. Agent manifests and case advancement skip rows with a non-pending result, but do not skip merely because `詳細紀錄JSON` is present.
 
 `detail_json` is a hard-gated contract. `PASS` and `BLOCKED` both require `測試目的`, `設定條件`, `預期行為`, and `實際行為`; `BLOCKED` additionally requires `blocked_reason` and current-run evidence. `FAIL` adds RD-facing root-cause fields, and `PARTIAL` requires explicit matching/non-matching subitem lists.
 

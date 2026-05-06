@@ -1135,3 +1135,12 @@ Tommy 曾討論是否改成腳本。最後決策是採「半腳本化 / helper �
 - Fixture：`scripts/verify-result-evidence-gate.ts` 新增 benign overwrite prose workbook，確認「同一 session 重新執行，第二次結果覆蓋第一次 preview 顯示」可通過 gate；既有「Tommy 已授權刪除，並已完成刪除動作」仍會被 `TOOL_BRIDGE_RESPONSE_MISSING` 擋下，外部 Tool Bridge event evidence 仍可解除。
 - 文件：README、`docs/refactor/工程spac.md`、`docs/refactor/規劃說明.md` 同步說明 result gate false-positive guard。A-06 native validation dialog lifecycle 與 PM-skip runtime ingestion 仍是後續 P0。
 - 驗證：已跑 `npm run verify:result-evidence-gate`、`npm run typecheck`、`npm run build`、`git diff --check` 通過；commit/push `refactor/mac-agent-mvp` 與 `codex/uat-tool-mvp` 待本批收尾執行。
+
+### 2026-05-06 11:08 - OTTEST004_014 follow-up：source result / PM-skip runtime skip ingestion
+
+- 背景：Tommy 指出 PM-skip 不應發明 `blocked_preassigned`、`doNotExecute` 等 helper/control schema；更單純的契約是 source testcase row 若已填 `結果=BLOCKED` 等終態，工具直接視為已有結果並跳過 Agent 執行。OTTEST004 A-06 正是這類 case。
+- 修正：`src/xlsx-parser.ts` 現在讀取 source xlsx 的 `結果`、`失敗分類`、`測試日`、`驗證方法`。`src/runs.ts` 匯入 terminal source result 時直接寫入 `run_cases.result_status`，保留 source detail/fail category，並把該 case 的 `run_case_steps` 標成 `SKIPPED` / `actual_json.source=source_prefilled_result`。API `POST /api/runs/:id/cases` 與 `POST /api/runs/:id/steps` 也補齊 `fail_category` / `actual_json` binding，避免新 SQL 欄位半套。
+- Agent：`agent/src/case-manifest.ts` 會跳過 source workbook 中非 pending `結果` 的 case；若指定 start case 已有結果，manifest 會加 `START_CASE_ALREADY_HAS_RESULT:<case>` warning 並選下一個 runnable case。`agent/src/task-runner.ts` 的 next-case 判斷不再因 `detail_json` 存在就跳過，只認非 pending `結果`。
+- Fixture：新增 `scripts/verify-source-prefilled-results.ts` 與 `npm run verify:source-prefilled-results`，覆蓋 source `BLOCKED` 匯入、step skip、detail_json-only runnable case、manifest 跳過已填結果 row。
+- 版本與文件：Mac Agent 升到 `0.2.15`；README、`docs/refactor/工程spac.md`、`docs/refactor/規劃說明.md` 同步更新 source-result runtime skip contract。A-06 native validation dialog lifecycle / selected-field guard 仍是下一個 runtime P0。
+- 驗證：已跑 `npm run verify:source-prefilled-results`、`npm run verify:result-evidence-gate`、`npm run typecheck`、`npm run typecheck --prefix agent`、`npm run build`、`npm run build --prefix agent`、`git diff --check` 通過；commit/push `refactor/mac-agent-mvp` 與 `codex/uat-tool-mvp` 待本批收尾執行。
