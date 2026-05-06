@@ -253,7 +253,7 @@ const hasCurrentRunEvidence = (detail: Record<string, unknown>): boolean => {
 const claimsToolBridgeAction = (detail: Record<string, unknown>): boolean => {
   let text = flattenedDetailText(detail);
   for (const pattern of NEGATIVE_OR_MISSING_TOOL_BRIDGE_CLAIM_PATTERNS) {
-    text = text.replace(pattern, "NEGATED_OR_MISSING_TOOL_BRIDGE_CLAIM");
+    text = text.replace(pattern, "NEGATED_OR_MISSING_EVIDENCE_TEXT");
   }
   const allowlistedNativeValidation =
     /browser_handle_dialog|native\s*(?:alert|dialog)|原生\s*(?:alert|dialog)|alert|dialog/i.test(text) &&

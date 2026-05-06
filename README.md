@@ -23,8 +23,8 @@ Production endpoints:
 
 Current semantic versions:
 
-- App/API: `1.1.4`
-- Mac Agent: `0.2.21`
+- App/API: `1.1.5`
+- Mac Agent: `0.2.22`
 
 Active branches:
 
@@ -43,7 +43,7 @@ The current line is the Mac Agent MVP. It supports:
 - Tool Bridge for native dialogs, irreversible actions, SSO/auth blockers, and ambiguity handling.
 - Web run detail now exposes Tool Bridge request lifecycle status (`pending_approval`, `response_sent`, `response_delivered`, `response_missing`) so missing App/Agent responses are distinguishable from Tommy not approving.
 - One-case-at-a-time execution discipline.
-- Single-case `output/result.xlsx` upload and evidence gate, with Tool Bridge claim detection scoped to explicit approval/native-dialog/irreversible-action claims rather than ordinary testcase prose; negative or insufficient evidence prose such as `無 native confirm` / `缺少 native dialog 驗證` does not require a Tool Bridge response.
+- Single-case `output/result.xlsx` upload and evidence gate, with Tool Bridge claim detection scoped to explicit approval/native-dialog/irreversible-action claims rather than ordinary testcase prose; negative or insufficient evidence prose such as `無 native confirm` / `缺少 native dialog 驗證` / formula modal blocked wording does not require a Tool Bridge response.
 - If Codex accidentally writes a full 17-column testcase-style workbook as `output/result.xlsx`, Mac Agent normalizes only the expected current-case row into the result-contract workbook before self-check/upload; blank or future testcase rows are not sent to the parser.
 - Result self-check uses normalized date UI evidence for configureMetric date-range checks, so static dates such as `2026-03-01` vs `2026/03/01` do not false-block a PASS when `date-ui-evidence` proves the represented range; reopen date regressions still block PASS.
 - Helper preview/date-variant execution now checks that at least one metric field is selected before clicking BI `執行`; non-destructive BI validation alerts such as `請至少選擇一個欄位` are treated as execute-precondition BLOCKED evidence rather than missing PM authorization.
@@ -64,7 +64,7 @@ The current line is the Mac Agent MVP. It supports:
 - Multi-variant preset date cases and static date regression cases can use `collage.runDateVariantsPreviewEvidence`, which sets each date through visible UI and captures per-variant date UI, request body, chart/table, and screenshot evidence; Codex still judges PASS/FAIL/BLOCKED.
 - Static editor-session CSV cases can chain `collage.runDateVariantsPreviewEvidence` directly into `collage.downloadCsvAndComparePreview`, keeping the flow inside the same report editor session without save/reopen/report-list navigation.
 - Dynamic custom date and half-dynamic date cases can use structured `dateMode=relative|hybrid` with `collage.runDateVariantsPreviewEvidence`, which fills the visible dynamic/static date controls and captures UI/network/chart/table evidence.
-- Formula/calculated-field cases can use `collage.configureCalculatedMetricAndPreview`, which adds base fields, opens the formula modal, fills the calculated field, sets date/display, and captures preview evidence without judging PASS/FAIL.
+- Formula/calculated-field cases can use `collage.configureCalculatedMetricAndPreview`, which adds base fields, opens the formula modal, fills `#calculatedFieldNameInput` and `#formulaInput` through stable modal selectors, submits `saveFormula()`, sets date/display, and captures preview evidence without judging PASS/FAIL.
 - Create-project cases can use `collage.createProject` after Tool Bridge approval; the helper selects project mode = `拼貼`, fills a current-case test project name, blocks on `請選擇模式` alerts, and verifies the project appears in the sidebar.
 - Temporary report deletion cases can use `collage.createAndDeleteTemporaryReport`: the helper creates a current-case temp report, requires Tool Bridge approval before delete, accepts only known BI delete confirmation, rejects protected/main report names, and verifies the temp row is gone.
 - Date UI evidence is first-class: `collage.configureMetric` writes `date-ui-evidence.json`, and manual/Codex-visible date cases can use `collage.captureDateUiEvidence` to record the requested UI label plus the visible or baseDate-computed represented date range.

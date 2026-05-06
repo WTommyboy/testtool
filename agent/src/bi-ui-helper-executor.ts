@@ -3211,48 +3211,66 @@ const fillCalculatedFieldModal = async (
   formula: string
 ): Promise<Record<string, unknown>> => {
   const before = await readVisibleFormulaModalState(page);
-  const dialogs = Array.isArray(before.dialogs) ? before.dialogs as Array<Record<string, unknown>> : [];
-  const dialog = dialogs[0];
+  const dialog = Array.isArray(before.dialogs) ? (before.dialogs as Array<Record<string, unknown>>)[0] : null;
   if (!dialog) throw new HelperBlockedError(`FORMULA_MODAL_NOT_VISIBLE: state=${JSON.stringify(before).slice(0, 1500)}`);
-  const inputs = Array.isArray(dialog.inputs) ? dialog.inputs as Array<Record<string, unknown>> : [];
-  const formulaInput =
-    inputs.find((item) => /公式|運算|formula|expression/i.test(String(item.placeholder ?? ""))) ??
-    inputs.find((item) => item.type === "textarea" || item.tagName === "textarea") ??
-    inputs.filter((item) => !/報表名稱|專案名稱|project|report/i.test(String(item.placeholder ?? ""))).at(-1);
-  const nameInput =
-    inputs.find((item) => /欄位名稱|名稱|name/i.test(String(item.placeholder ?? "")) && item.inputIndex !== formulaInput?.inputIndex) ??
-    inputs.find((item) => item.inputIndex !== formulaInput?.inputIndex && !/報表名稱|專案名稱|project|report/i.test(String(item.placeholder ?? "")));
-  if (!formulaInput) {
-    throw new HelperBlockedError(`FORMULA_INPUT_NOT_FOUND: modal=${JSON.stringify(before).slice(0, 1500)}; inputs=${JSON.stringify(inputs).slice(0, 1000)}`);
+
+  const modalLocator = page.locator("#formulaEditorModal").first();
+  await modalLocator.waitFor({ state: "visible", timeout: 8000 });
+  const nameInputLocator = modalLocator
+    .locator("#calculatedFieldNameInput, input[placeholder*='運算欄位名稱'], input[placeholder*='欄位名稱']")
+    .first();
+  const formulaInputLocator = modalLocator
+    .locator("#formulaInput, input[placeholder*='公式'], textarea[placeholder*='公式']")
+    .first();
+
+  if ((await nameInputLocator.count()) === 0) {
+    throw new HelperBlockedError(`FORMULA_NAME_INPUT_NOT_FOUND: modal=${JSON.stringify(before).slice(0, 1500)}`);
   }
-  const dialogIndex = typeof dialog.dialogIndex === "number" ? dialog.dialogIndex : 0;
-  const inputLocator = (input: Record<string, unknown>) =>
-    page.locator("#formulaEditorModal, [role='dialog'], .modal, .ant-modal, .MuiDialog-root")
-      .nth(dialogIndex)
-      .locator("input, textarea")
-      .nth(typeof input.inputIndex === "number" ? input.inputIndex : 0);
-  if (nameInput) {
-    await inputLocator(nameInput).fill(fieldName, { timeout: 8000 });
+  if ((await formulaInputLocator.count()) === 0) {
+    throw new HelperBlockedError(`FORMULA_INPUT_NOT_FOUND: modal=${JSON.stringify(before).slice(0, 1500)}`);
   }
-  await inputLocator(formulaInput).fill(formula, { timeout: 10000 });
+
+  await nameInputLocator.fill(fieldName, { timeout: 8000 });
+  await formulaInputLocator.fill(formula, { timeout: 10000 });
+  const nameValue = await nameInputLocator.inputValue({ timeout: 8000 });
+  const formulaValue = await formulaInputLocator.inputValue({ timeout: 8000 });
   const afterFill = await readVisibleFormulaModalState(page);
-  const dialogLocator = page.locator("#formulaEditorModal, [role='dialog'], .modal, .ant-modal, .MuiDialog-root").nth(dialogIndex);
+  if (nameValue !== fieldName) {
+    throw new HelperBlockedError(`FORMULA_NAME_INPUT_VALUE_MISMATCH: expected=${fieldName}; actual=${nameValue}; afterFill=${JSON.stringify(afterFill).slice(0, 1200)}`);
+  }
+  if (formulaValue !== formula) {
+    throw new HelperBlockedError(`FORMULA_INPUT_VALUE_MISMATCH: expected=${formula}; actual=${formulaValue}; afterFill=${JSON.stringify(afterFill).slice(0, 1200)}`);
+  }
   const submitted = await clickFirstVisible([
-    dialogLocator.locator("button").filter({ hasText: /新增|加入|確認|確定|套用|儲存|保存/ }),
+    modalLocator.locator("button[onclick=\"saveFormula()\"]"),
+    modalLocator.locator("button.btn-primary").filter({ hasText: /^(新增|加入|確認|確定|套用|儲存|保存)$/ }),
+    modalLocator.locator("button").filter({ hasText: /^(新增|加入|確認|確定|套用|儲存|保存)$/ }),
     page.locator("#formulaEditorModal button").filter({ hasText: /新增|加入|確認|確定|套用|儲存|保存/ }),
     page.locator("[role=dialog] button").filter({ hasText: /新增|加入|確認|確定|套用|儲存|保存/ }),
     page.locator(".modal button").filter({ hasText: /新增|加入|確認|確定|套用|儲存|保存/ })
   ], 10000);
   if (!submitted) throw new HelperBlockedError(`FORMULA_MODAL_SUBMIT_NOT_CLICKABLE: afterFill=${JSON.stringify(afterFill).slice(0, 1500)}`);
-  await page.waitForTimeout(1000);
+  await modalLocator.waitFor({ state: "hidden", timeout: 5000 }).catch(() => null);
+  await page.waitForTimeout(500);
+  const afterSubmit = await readVisibleFormulaModalState(page);
+  const remainingDialogs = Array.isArray(afterSubmit.dialogs) ? afterSubmit.dialogs as Array<Record<string, unknown>> : [];
+  if (remainingDialogs.length > 0) {
+    throw new HelperBlockedError(`FORMULA_MODAL_STILL_VISIBLE_AFTER_SUBMIT: afterSubmit=${JSON.stringify(afterSubmit).slice(0, 1500)}`);
+  }
   return {
     fieldName,
     formula,
-    selectedNameInput: nameInput ?? null,
-    selectedFormulaInput: formulaInput,
+    selectedNameInput: {
+      selector: "#calculatedFieldNameInput",
+      value: nameValue
+    },
+    selectedFormulaInput: {
+      selector: "#formulaInput",
+      value: formulaValue
+    },
     before,
     afterFill,
-    afterSubmit: await readVisibleFormulaModalState(page)
+    afterSubmit
   };
 };
 

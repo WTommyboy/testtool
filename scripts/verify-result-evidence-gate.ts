@@ -265,6 +265,29 @@ const main = async (): Promise<void> => {
       `negative or missing native-confirm evidence prose should not require Tool Bridge response; issues=${JSON.stringify(blockedNoNativeConfirmReport.issues)}`
     );
 
+    const formulaModalBlocked = path.join(tempRoot, "formula-modal-blocked-result.xlsx");
+    await writeWorkbook(formulaModalBlocked, [
+      {
+        caseNo: "FIX-H-01",
+        status: "BLOCKED",
+        detailJson: JSON.stringify({
+          測試目的: "驗證拼貼模式運算欄位公式可完成 UI 設定與 preview。",
+          設定條件: "helper 已完成開啟專案與進入新增報表頁，第三步在公式視窗送出卡住。",
+          預期行為: "成功新增運算欄位並執行 preview。",
+          實際行為:
+            "helper action H3 於公式編輯器發生 FORMULA_MODAL_SUBMIT_NOT_CLICKABLE，無法完成公式確認與後續執行，未取得本題必需 network.requestBody 與 chart.datasets。",
+          blocked_reason: "EVIDENCE_INSUFFICIENT: helper current-run evidence 顯示關鍵 UI 步驟被阻斷。",
+          currentRunEvidence: goodDetail.currentRunEvidence
+        })
+      }
+    ]);
+    const formulaModalBlockedReport = await runGate(formulaModalBlocked);
+    assert.equal(
+      formulaModalBlockedReport.status,
+      "ok",
+      `formula modal blocked wording should not require Tool Bridge response; issues=${JSON.stringify(formulaModalBlockedReport.issues)}`
+    );
+
     const externalToolBridgeReport = await runGate(missingToolBridge, {
       externalToolBridgeEvidenceByCase: {
         "FIX-H-01": [{ requestId: "fixture-FIX-H-01-save", eventType: "tool_response.delivered" }]
@@ -301,6 +324,7 @@ const main = async (): Promise<void> => {
             "Tool Bridge action claim without response evidence is blocked",
             "non-destructive selected-field validation alert does not require Tool Bridge response",
             "negative or insufficient native-confirm prose does not require Tool Bridge response",
+            "formula modal blocked prose does not require Tool Bridge response",
             "Tool Bridge action claim can be satisfied by current-run server event evidence",
             "invalid detail_json is blocked"
           ]
