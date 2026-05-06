@@ -145,6 +145,12 @@ const NON_DESTRUCTIVE_NATIVE_VALIDATION_DIALOG_PATTERN =
   /(?:請至少選擇一個欄位|至少選擇.{0,12}欄位|請選擇.{0,12}欄位|select\s+at\s+least\s+one\s+field|at\s+least\s+one\s+field)/i;
 const TOOL_BRIDGE_AUTH_OR_DESTRUCTIVE_PATTERN =
   /(?:Tommy|PM|授權|同意|approved|authorized|authorization|request_id|tool[-_ ]response|刪除|删除|delete|trash|remove|覆寫|覆蓋儲存|overwrite|儲存|保存|save|SSO|login|auth|登入|未授權|不可逆)/i;
+const NEGATIVE_OR_MISSING_TOOL_BRIDGE_CLAIM_PATTERNS = [
+  /(?:無|未|沒有|不會|不應|不需|不需要|不出現|未出現|沒有出現|未觸發|沒有觸發).{0,24}(?:native\s*)?(?:confirm|alert|dialog|原生\s*(?:confirm|alert|dialog)|確認)/gi,
+  /(?:native\s*)?(?:confirm|alert|dialog|原生\s*(?:confirm|alert|dialog)|確認).{0,24}(?:無|未|沒有|不會|不應|不需|不需要|不出現|未出現|沒有出現|未觸發|沒有觸發)/gi,
+  /(?:缺少|缺乏|未取得|沒有取得|無法取得|不足).{0,40}(?:tool\s*bridge|toolbridge|tool_bridge|approval|authorization|授權|回覆|response|native\s*)?(?:confirm|alert|dialog|原生\s*(?:confirm|alert|dialog)|證據|驗證|紀錄)/gi,
+  /(?:不測|超出本題範圍).{0,80}(?:未儲存|離開警告|native\s*confirm|confirm|alert|dialog|原生\s*(?:confirm|alert|dialog))/gi
+];
 
 const normalizeStatus = (status: string): string => status.trim().toUpperCase().replace(/\s+/g, "_");
 
@@ -245,7 +251,10 @@ const hasCurrentRunEvidence = (detail: Record<string, unknown>): boolean => {
 };
 
 const claimsToolBridgeAction = (detail: Record<string, unknown>): boolean => {
-  const text = flattenedDetailText(detail);
+  let text = flattenedDetailText(detail);
+  for (const pattern of NEGATIVE_OR_MISSING_TOOL_BRIDGE_CLAIM_PATTERNS) {
+    text = text.replace(pattern, "NEGATED_OR_MISSING_TOOL_BRIDGE_CLAIM");
+  }
   const allowlistedNativeValidation =
     /browser_handle_dialog|native\s*(?:alert|dialog)|原生\s*(?:alert|dialog)|alert|dialog/i.test(text) &&
     NON_DESTRUCTIVE_NATIVE_VALIDATION_DIALOG_PATTERN.test(text) &&

@@ -243,6 +243,28 @@ const main = async (): Promise<void> => {
       `non-destructive validation alert should not require Tool Bridge response; issues=${JSON.stringify(allowlistedNativeValidationReport.issues)}`
     );
 
+    const blockedNoNativeConfirm = path.join(tempRoot, "blocked-no-native-confirm-result.xlsx");
+    await writeWorkbook(blockedNoNativeConfirm, [
+      {
+        caseNo: "FIX-H-01",
+        status: "BLOCKED",
+        detailJson: JSON.stringify({
+          測試目的: "驗證從設定頁按下返回可回專案頁，且不出現 native confirm。",
+          設定條件: "同一 run/case 使用 dedicated browser session。",
+          預期行為: "點返回成功回到專案頁，無 native confirm 干擾。",
+          實際行為: "現有 current-run helper 證據缺少返回按鈕動作鏈與對應 native dialog 驗證紀錄，無法產生可信 PASS/FAIL。",
+          blocked_reason: "EVIDENCE_INSUFFICIENT: 缺少返回後狀態同步證據。",
+          currentRunEvidence: goodDetail.currentRunEvidence
+        })
+      }
+    ]);
+    const blockedNoNativeConfirmReport = await runGate(blockedNoNativeConfirm);
+    assert.equal(
+      blockedNoNativeConfirmReport.status,
+      "ok",
+      `negative or missing native-confirm evidence prose should not require Tool Bridge response; issues=${JSON.stringify(blockedNoNativeConfirmReport.issues)}`
+    );
+
     const externalToolBridgeReport = await runGate(missingToolBridge, {
       externalToolBridgeEvidenceByCase: {
         "FIX-H-01": [{ requestId: "fixture-FIX-H-01-save", eventType: "tool_response.delivered" }]
@@ -275,12 +297,13 @@ const main = async (): Promise<void> => {
             "BLOCKED detail_json missing core fields is blocked",
             "agent fallback result is blocked",
             "diagnostic result source is blocked",
-      "benign overwrite prose does not require Tool Bridge response",
-      "Tool Bridge action claim without response evidence is blocked",
-      "non-destructive selected-field validation alert does not require Tool Bridge response",
-      "Tool Bridge action claim can be satisfied by current-run server event evidence",
-      "invalid detail_json is blocked"
-    ]
+            "benign overwrite prose does not require Tool Bridge response",
+            "Tool Bridge action claim without response evidence is blocked",
+            "non-destructive selected-field validation alert does not require Tool Bridge response",
+            "negative or insufficient native-confirm prose does not require Tool Bridge response",
+            "Tool Bridge action claim can be satisfied by current-run server event evidence",
+            "invalid detail_json is blocked"
+          ]
         },
         null,
         2

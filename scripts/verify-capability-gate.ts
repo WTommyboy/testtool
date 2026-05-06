@@ -357,6 +357,68 @@ const main = (): void => {
       "multi-variant date cases should expose optional date UI evidence capture"
     );
 
+    const editorSessionCsvCase = {
+      ...collageSaveReopenCase,
+      caseNo: "OTTEST004-F-03",
+      caseTitle: "下載 CSV — 與 preview 一致(同 editor session,絕不 save / reopen / 回專案頁)",
+      cleanupChecklist: "欄位=新增帳號數;篩選=0組;分組=不影響;時間=2026/03/01~2026/03/31;顯示=每天",
+      stepsSummary: "1. 進入設定頁\n2. 設定欄位與 2026/03/01~2026/03/31\n3. 按執行取得 preview\n4. 在同 editor session 下載 CSV，比對 preview；絕不 save / reopen / 回專案頁"
+    };
+    const editorSessionCsvHints: HelperHints = {
+      ...manualAiDateHints,
+      caseId: "OTTEST004-F-03",
+      params: {
+        mode: "拼貼",
+        field: "新增帳號數",
+        sourceReport: "每日報表",
+        dateRange: { start: "2026-03-01", end: "2026-03-31" },
+        display: "每天",
+        scope: "preview_only",
+        doNotSave: true,
+        doNotReopen: true
+      }
+    };
+    const editorSessionCsvPlan = buildHelperExecutionPlan({ runDir, currentCase: editorSessionCsvCase, helperHints: editorSessionCsvHints });
+    assert.deepEqual(
+      editorSessionCsvPlan.actions.map((item) => item.template),
+      ["collage.openProject", "collage.createReport", "collage.runDateVariantsPreviewEvidence", "collage.downloadCsvAndComparePreview"],
+      "F-03 static editor-session CSV case should chain preview evidence directly into CSV download/compare"
+    );
+    assert.equal(
+      editorSessionCsvPlan.actions.find((item) => item.template === "collage.downloadCsvAndComparePreview")?.params.downloadScope,
+      "editor_session",
+      "F-03 CSV helper should stay in editor session"
+    );
+
+    const deleteReportCase = {
+      ...collageSaveReopenCase,
+      caseNo: "OTTEST004-G-03",
+      caseTitle: "刪除報表(不可逆,需臨時報表 + Tool Bridge + 確認機制)",
+      riskLevel: "🔴 刪除",
+      cleanupChecklist: "欄位=不影響;篩選=不影響;分組=不影響;時間=不影響;顯示=不影響",
+      stepsSummary: "建立本輪臨時報表 OTTEST004_G03_temp_<timestamp>，Tool Bridge 授權後刪除該臨時報表並驗證 row 消失"
+    };
+    const deleteReportHints: HelperHints = {
+      ...manualAiDateHints,
+      caseId: "OTTEST004-G-03",
+      automationLevel: "manual_ai",
+      operationTemplate: "manual_ai",
+      params: {
+        mode: "拼貼",
+        projectName: "拼貼test_001"
+      }
+    };
+    const deleteReportGate = evaluateCapabilityGate(deleteReportCase, deleteReportHints);
+    assert.equal(deleteReportGate.supportStatus, "supported", `G-03 delete temporary report should be helper-supported; report=${JSON.stringify(deleteReportGate)}`);
+    assert.ok(deleteReportGate.supportedHelperTemplates.includes("collage.createAndDeleteTemporaryReport"), "G-03 should advertise the create/delete temporary report helper");
+    const deleteReportPlan = buildHelperExecutionPlan({ runDir, currentCase: deleteReportCase, helperHints: deleteReportHints });
+    assert.deepEqual(
+      deleteReportPlan.actions.map((item) => item.template),
+      ["collage.openProject", "collage.createAndDeleteTemporaryReport"],
+      "G-03 should create a pending helper action instead of leaving deletion to Codex-only Tool Bridge"
+    );
+    assert.equal(deleteReportPlan.actions[1]?.requiresToolBridge, true, "G-03 delete helper action must require Tool Bridge");
+
     const manualProjectNavigationCase = {
       ...collageSaveReopenCase,
       caseNo: "OTTEST004-A-02",
@@ -493,6 +555,8 @@ const main = (): void => {
           "manual_ai date cases expose optional read-only date UI evidence capture",
           "multi-variant date helper hints are degraded to Codex visible UI",
           "multi-variant date cases expose optional date UI evidence capture",
+          "editor-session CSV cases chain date preview evidence into CSV download without save/reopen",
+          "delete temporary report cases create a pending Tool Bridge helper action",
           "selectAllFields helper hints preserve sourceReports/expected count and avoid synthetic field text",
           "A-06 all-zero field inspection uses a dedicated select-all preview evidence helper",
           "metadata expected-field reader keeps source-specific scope separate from all-source scope",

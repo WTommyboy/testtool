@@ -23,8 +23,8 @@ Production endpoints:
 
 Current semantic versions:
 
-- App/API: `1.1.3`
-- Mac Agent: `0.2.19`
+- App/API: `1.1.4`
+- Mac Agent: `0.2.20`
 
 Active branches:
 
@@ -43,7 +43,7 @@ The current line is the Mac Agent MVP. It supports:
 - Tool Bridge for native dialogs, irreversible actions, SSO/auth blockers, and ambiguity handling.
 - Web run detail now exposes Tool Bridge request lifecycle status (`pending_approval`, `response_sent`, `response_delivered`, `response_missing`) so missing App/Agent responses are distinguishable from Tommy not approving.
 - One-case-at-a-time execution discipline.
-- Single-case `output/result.xlsx` upload and evidence gate, with Tool Bridge claim detection scoped to explicit approval/native-dialog/irreversible-action claims rather than ordinary testcase prose.
+- Single-case `output/result.xlsx` upload and evidence gate, with Tool Bridge claim detection scoped to explicit approval/native-dialog/irreversible-action claims rather than ordinary testcase prose; negative or insufficient evidence prose such as `無 native confirm` / `缺少 native dialog 驗證` does not require a Tool Bridge response.
 - If Codex accidentally writes a full 17-column testcase-style workbook as `output/result.xlsx`, Mac Agent normalizes only the expected current-case row into the result-contract workbook before self-check/upload; blank or future testcase rows are not sent to the parser.
 - Result self-check uses normalized date UI evidence for configureMetric date-range checks, so static dates such as `2026-03-01` vs `2026/03/01` do not false-block a PASS when `date-ui-evidence` proves the represented range; reopen date regressions still block PASS.
 - Helper preview/date-variant execution now checks that at least one metric field is selected before clicking BI `執行`; non-destructive BI validation alerts such as `請至少選擇一個欄位` are treated as execute-precondition BLOCKED evidence rather than missing PM authorization.
@@ -62,7 +62,9 @@ The current line is the Mac Agent MVP. It supports:
 - Source-specific metadata comparisons keep `expectedFieldCount` scoped to the requested source report; all-source comparisons must use all-source scope/total count explicitly, so A-04/A-05 style cases do not silently fall back to all 4 sources.
 - Select-all field helpers reconcile selected fields by stable field code and nearby visible label, so code-style buttons such as `MAX_CCU` are not mistaken for missing fields or merged with unrelated labels.
 - Multi-variant preset date cases and static date regression cases can use `collage.runDateVariantsPreviewEvidence`, which sets each date through visible UI and captures per-variant date UI, request body, chart/table, and screenshot evidence; Codex still judges PASS/FAIL/BLOCKED.
+- Static editor-session CSV cases can chain `collage.runDateVariantsPreviewEvidence` directly into `collage.downloadCsvAndComparePreview`, keeping the flow inside the same report editor session without save/reopen/report-list navigation.
 - Dynamic custom date and half-dynamic date cases remain Codex-visible for the core date-form interaction until a dedicated dynamic-date form helper exists; helper pre-run only performs safe navigation/setup for those cases.
+- Temporary report deletion cases can use `collage.createAndDeleteTemporaryReport`: the helper creates a current-case temp report, requires Tool Bridge approval before delete, accepts only known BI delete confirmation, rejects protected/main report names, and verifies the temp row is gone.
 - Date UI evidence is first-class: `collage.configureMetric` writes `date-ui-evidence.json`, and manual/Codex-visible date cases can use `collage.captureDateUiEvidence` to record the requested UI label plus the visible or baseDate-computed represented date range.
 - Optional support files are indexed with lightweight profiles in `input/supporting-docs-manifest.json` so Codex can inspect CSV headers/row counts or markdown headings before choosing a full file to read.
 - Successful same-run helper browser evidence can satisfy preflight for helper-assisted cases; Codex should not mark `TOOL_EXECUTION_UNAVAILABLE` solely because Codex-side browser tools are absent.
@@ -159,7 +161,7 @@ The Mac Agent may auto-approve non-auth Tool Bridge requests only when the local
 
 Run detail includes a Tool Bridge status panel and `/api/runs/:id/tool-bridge` API. It shows request id, case, action, approval status, response dispatch/delivery timestamps, and flags `TOOL_BRIDGE_RESPONSE_MISSING` when an approval was resolved but the App/Agent did not send or bind a response.
 
-The result evidence gate only requires Tool Bridge response evidence when `detail_json` explicitly claims approval, native dialog handling, or an irreversible action. Test language such as "second preview result overwrites the first preview display" is treated as ordinary evidence prose, not an irreversible overwrite/save claim.
+The result evidence gate only requires Tool Bridge response evidence when `detail_json` explicitly claims approval, native dialog handling, or an irreversible action. Test language such as "second preview result overwrites the first preview display" is treated as ordinary evidence prose, not an irreversible overwrite/save claim. Negative or insufficient evidence wording such as "no native confirm" or "missing native dialog evidence" is also treated as a BLOCKED evidence statement, not as a claim that a native dialog was handled.
 
 Non-destructive validation alerts caused by failed execute preconditions, such as `請至少選擇一個欄位`, are not treated as Tool Bridge authorization failures. The correct result is a current-case `BLOCKED` with explicit DOM/alert evidence.
 

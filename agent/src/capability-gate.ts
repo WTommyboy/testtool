@@ -71,8 +71,16 @@ const helperRequestsNoSave = (params: Record<string, unknown>): boolean =>
 const helperRequestsNoReopen = (params: Record<string, unknown>): boolean =>
   helperRequestsPreviewOnly(params) || booleanishParam(params, ["skipReopen", "doNotReopen", "noReopen", "previewOnly"]);
 
+const helperRequestsDownload = (params: Record<string, unknown>): boolean =>
+  booleanishParam(params, ["downloadCsv", "doDownloadCsv", "downloadCSV", "download", "csvDownload", "needCsv"]);
+
+const helperExplicitlyDisablesDownload = (params: Record<string, unknown>): boolean =>
+  booleanishParam(params, ["skipDownload", "doNotDownload", "noDownload", "doNotDownloadCsv", "skipCsv", "noCsv"]);
+
 const helperRequestsNoDownload = (params: Record<string, unknown>): boolean =>
-  helperRequestsPreviewOnly(params) || booleanishParam(params, ["skipDownload", "doNotDownload", "noDownload", "doNotDownloadCsv", "skipCsv", "noCsv"]);
+  helperRequestsDownload(params)
+    ? false
+    : helperRequestsPreviewOnly(params) || helperExplicitlyDisablesDownload(params);
 
 const stringArrayParam = (params: Record<string, unknown>, key: string): string[] => {
   const value = params[key];
@@ -119,7 +127,7 @@ const canRunDatePreviewEvidenceHelper = (params: Record<string, unknown>): boole
   const dateVariants = firstStringArrayParam(params, ["dateVariants", "uiLabels"]);
   const dateMode = String(params.dateMode ?? "").trim().toLowerCase();
   if (dateVariants.length > 0 && (!dateMode || dateMode === "preset")) return true;
-  return dateMode === "static";
+  return dateMode === "static" || Boolean(dateObjectParam(params.dateRange));
 };
 
 const needsCollageNavigationPrelude = (currentCase: CaseManifestCase | null, helperHints: HelperHints | null): boolean => {
@@ -130,6 +138,13 @@ const needsCollageNavigationPrelude = (currentCase: CaseManifestCase | null, hel
     return false;
   }
   return /拼貼模式|專案頁|新增報表|報表設定|設定頁|\+\s*新增欄位|欄位選擇|時間區間|preview|預覽|執行/.test(text);
+};
+
+const isDeleteReportFlow = (currentCase: CaseManifestCase | null, helperHints: HelperHints | null): boolean => {
+  const operationTemplate = helperHints?.operationTemplate ?? "";
+  const text = detectCaseFeatures(currentCase, helperHints).text;
+  return operationTemplate === "collage_delete_temporary_report" ||
+    /刪除報表|刪除.*臨時報表|delete\s+(?:temporary\s+)?report|delete-temp-report/i.test(text);
 };
 
 export const evaluateCapabilityGate = (
@@ -149,11 +164,12 @@ export const evaluateCapabilityGate = (
   const isAllZeroFieldInspection =
     operationTemplate === "collage_all_zero_field_inspection" ||
     (isA06LikeCase && /全為\s*0\s*欄位|全\s*0\s*欄位|值全為\s*0|all[-_ ]?zero/i.test(text));
+  const isDeleteReport = isDeleteReportFlow(currentCase, helperHints);
   const unsupportedFeatures: string[] = [];
   const supportedHelperTemplates: string[] = [];
   const params = paramsObject(helperHints);
   const noSave = helperRequestsNoSave(params);
-  const noDownload = helperRequestsNoDownload(params);
+  const noDownload = helperRequestsNoDownload(params) && !(/下載|CSV/i.test(text) && !helperExplicitlyDisablesDownload(params));
   const explicitlyNoReopen =
     helperRequestsNoReopen(params) ||
     /不(?:需|要|應)?重開|不要重開|無需重開|不用重開|不重開\s*editor|不應產生\s*reopen/i.test(text);
@@ -179,6 +195,11 @@ export const evaluateCapabilityGate = (
       "collage.createReport",
       "collage.inspectAllZeroFields"
     );
+  } else if (mode === "collage" && !hasFilter && !hasGroup && isDeleteReport) {
+    supportedHelperTemplates.push(
+      "collage.openProject",
+      "collage.createAndDeleteTemporaryReport"
+    );
   } else if (mode === "collage" && !hasFilter && !hasGroup) {
     supportedHelperTemplates.push(
       "collage.openProject",
@@ -193,11 +214,12 @@ export const evaluateCapabilityGate = (
     if (datePreviewEvidenceAllowed) supportedHelperTemplates.push("collage.runDateVariantsPreviewEvidence");
   }
 
-  if (manualAiRequested || dateNeedsCodexVisibleUi) {
+  if ((manualAiRequested || dateNeedsCodexVisibleUi) && !isDeleteReport) {
     const degradedAllowed = new Set([
       "collage.openProject",
       "collage.createReport",
-      ...(datePreviewEvidenceAllowed ? ["collage.runDateVariantsPreviewEvidence"] : [])
+      ...(datePreviewEvidenceAllowed ? ["collage.runDateVariantsPreviewEvidence"] : []),
+      ...(!noDownload && /下載|CSV/i.test(text) && datePreviewEvidenceAllowed ? ["collage.downloadCsvAndComparePreview"] : [])
     ]);
     const filtered = supportedHelperTemplates.filter((template) => degradedAllowed.has(template));
     supportedHelperTemplates.splice(0, supportedHelperTemplates.length, ...filtered);
@@ -208,7 +230,7 @@ export const evaluateCapabilityGate = (
   let helperPreRunAllowed = false;
   let blockingReason: string | null = null;
 
-  if (manualAiRequested || dateNeedsCodexVisibleUi) {
+  if ((manualAiRequested || dateNeedsCodexVisibleUi) && !isDeleteReport) {
     supportStatus = "degraded";
     executionMode = "codex_visible_ui";
     helperPreRunAllowed = navigationPreludeAllowed;

@@ -1193,3 +1193,13 @@ Tommy 曾討論是否改成腳本。最後決策是採「半腳本化 / helper �
 - 回驗：用新 self-check 回放 `61f48100-ce11-4cbb-81b9-f2dfa207aa1d/output/result.xlsx`，結果從 `RESULT_PASS_CONTRADICTS_HELPER_EVIDENCE` 變為 `status=ok`。
 - 版本：Mac Agent 升到 `0.2.19`；App/API 維持 `1.1.3`。
 - 驗證：已跑 `npm run verify:agent-result-contract` 與真實 B-09 self-check 回放通過；完整 typecheck/build、git diff check、commit/push 與本機 Agent 重啟狀態由本批收尾回報補列。
+
+### 2026-05-06 21:35 - OTTEST004_018 follow-up：可跑 case 第一批 runtime 修正
+
+- 背景：Tommy 檢視 run `a9a3d5af-9740-4fb2-85ae-b0170946813e` 後指出部分 case 應可跑但被 BLOCKED/未完整處理，先鎖定第一批 runtime 問題：F-03 同 editor session CSV、G-03 刪除報表，以及 G-05 類「無 native confirm / 缺少 native dialog 驗證」文字被誤判成 Tool Bridge action claim。
+- Result gate：`src/result-parser/result-evidence-gate.ts` 在 Tool Bridge claim detection 前先遮罩 negative/missing native-dialog wording，例如 `無 native confirm`、`不出現 native dialog`、`缺少 native dialog 驗證`。這類文字代表 BLOCKED evidence 不足，不代表 Codex 已處理 native dialog，因此不應觸發 `TOOL_BRIDGE_RESPONSE_MISSING`。
+- Helper plan：F-03 類 static date + 同 editor session CSV case 現在會產生 `openProject -> createReport -> runDateVariantsPreviewEvidence -> downloadCsvAndComparePreview`，`downloadScope=editor_session`，不 save、不 reopen、不回專案頁。單一日期 variant helper 會同步寫 `preview-evidence.json`，供 CSV comparator 使用。
+- Delete helper：新增 `collage.createAndDeleteTemporaryReport`。G-03 類 case 先建立名稱含 `OTTEST004_G03/temp` 的 current-case 臨時報表，Tool Bridge approval 後才點該 row 的刪除控制；只接受已知 BI delete confirm，遇到 auth/未知 native dialog 會 dismiss 並 blocked；刪除後 reload/reselect project 驗證 row 消失。非臨時或疑似主報表名稱直接 blocked。
+- Fixture：`scripts/verify-capability-gate.ts` 新增 F-03 editor-session CSV chain 與 G-03 temp report delete helper；`scripts/verify-result-evidence-gate.ts` 新增 negative native-confirm prose fixture。
+- 版本與文件：App/API 升到 `1.1.4`，Mac Agent 升到 `0.2.20`；README、`docs/refactor/工程spac.md`、`docs/refactor/規劃說明.md` 同步更新。B-07/B-08 動態/半動態日期、G-01 新增專案、E 群公式/helper authoring 仍是下一批待修。
+- 驗證：已跑 `npm run verify:capability-gate`、`npm run verify:result-evidence-gate`、`npm run typecheck --prefix agent` 通過；完整 typecheck/build、git diff check、commit/push、Railway `/version`/`/health` 與本機 Agent 重啟狀態由本批收尾回報補列。

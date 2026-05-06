@@ -242,6 +242,7 @@ const resolveReportName = (options: CliOptions): string => {
 const savedReportStatePath = (options: CliOptions): string => path.join(artifactRoot(options), "saved-report.json");
 const previewEvidencePath = (options: CliOptions): string => path.join(artifactRoot(options), "preview-evidence.json");
 const allZeroFieldInspectionEvidencePath = (options: CliOptions): string => path.join(artifactRoot(options), "all-zero-field-inspection-evidence.json");
+const deleteTemporaryReportEvidencePath = (options: CliOptions): string => path.join(artifactRoot(options), "delete-temporary-report-evidence.json");
 const dateUiEvidencePath = (options: CliOptions, suffix: string | null = null): string =>
   path.join(artifactRoot(options), suffix ? `date-ui-evidence-${sanitize(suffix)}.json` : "date-ui-evidence.json");
 
@@ -2888,6 +2889,19 @@ const runDateVariantsPreviewEvidence = async (options: CliOptions, page: Page, s
   };
   ensureDir(artifactRoot(options));
   fs.writeFileSync(dateVariantsPreviewEvidencePath(options), `${JSON.stringify(evidence, null, 2)}\n`);
+  if (variants.length === 1) {
+    const only = variants[0] as Record<string, unknown>;
+    const singlePreviewEvidence = {
+      generatedAt: new Date().toISOString(),
+      caseId: options.caseId,
+      source: "collage.runDateVariantsPreviewEvidence.singleVariant",
+      requestedLabel: only.requestedLabel ?? null,
+      chart: only.chart ?? null,
+      table: only.table ?? null,
+      network: only.network ?? { requests: [], responses: [] }
+    };
+    fs.writeFileSync(previewEvidencePath(options), `${JSON.stringify(singlePreviewEvidence, null, 2)}\n`);
+  }
   const afterProfile = await captureUiDomProfile(options, page, "dateVariants.after");
   const ok = variants.length > 0 && variants.every((variant) => variant.status === "ok");
   return createReport(
@@ -3563,6 +3577,7 @@ type ReportListRowState = {
   bodyTextExcerpt: string;
   rowText: string | null;
   downloadControls: Array<Record<string, unknown>>;
+  deleteControls: Array<Record<string, unknown>>;
 };
 
 type CsvDownloadTriggerEvidence = {
@@ -3584,6 +3599,7 @@ const readReportListRowState = async (page: Page, reportName: string): Promise<R
       return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden" && style.opacity !== "0";
     };
     const downloadPattern = /下載|CSV|匯出|download|export|⬇/i;
+    const deletePattern = /刪除|删除|delete|trash|remove|🗑/i;
     const allBodyElements = Array.from(document.querySelectorAll<HTMLElement>("body *"));
     const rowElements = Array.from(document.querySelectorAll<HTMLElement>(
       "tr, [class*=row], [class*=Row], [class*=card], [class*=Card], [class*=item], [class*=Item]"
@@ -3591,7 +3607,7 @@ const readReportListRowState = async (page: Page, reportName: string): Promise<R
     const matchingRows = rowElements
       .filter((element) => isVisible(element) && normalize(element.innerText || element.textContent).includes(targetReportName))
       .map((row) => {
-        const controls = Array.from(row.querySelectorAll<HTMLElement>("button, a, [role=button]")).flatMap((control) => {
+        const controlsFor = (pattern: RegExp) => Array.from(row.querySelectorAll<HTMLElement>("button, a, [role=button]")).flatMap((control) => {
           if (!isVisible(control)) return [];
           const text = normalize(control.innerText || control.textContent);
           const attrs = [
@@ -3602,7 +3618,7 @@ const readReportListRowState = async (page: Page, reportName: string): Promise<R
             control.getAttribute("onclick"),
             typeof control.className === "string" ? control.className : ""
           ].join(" ");
-          if (!downloadPattern.test(`${text} ${attrs}`)) return [];
+          if (!pattern.test(`${text} ${attrs}`)) return [];
           const rect = control.getBoundingClientRect();
           return [{
             bodyIndex: allBodyElements.indexOf(control),
@@ -3618,11 +3634,12 @@ const readReportListRowState = async (page: Page, reportName: string): Promise<R
         const rect = row.getBoundingClientRect();
         return {
           text: normalize(row.innerText || row.textContent),
-          downloadControls: controls,
+          downloadControls: controlsFor(downloadPattern),
+          deleteControls: controlsFor(deletePattern),
           rect: { x: Math.round(rect.x), y: Math.round(rect.y), width: Math.round(rect.width), height: Math.round(rect.height) }
         };
       })
-      .sort((a, b) => a.text.length - b.text.length || b.downloadControls.length - a.downloadControls.length);
+      .sort((a, b) => a.text.length - b.text.length || b.downloadControls.length + b.deleteControls.length - (a.downloadControls.length + a.deleteControls.length));
     const row = matchingRows[0] ?? null;
     return {
       found: row !== null,
@@ -3630,7 +3647,8 @@ const readReportListRowState = async (page: Page, reportName: string): Promise<R
       url: window.location.href,
       bodyTextExcerpt: normalize(document.body?.innerText ?? "").slice(0, 3000),
       rowText: row?.text ?? null,
-      downloadControls: row?.downloadControls ?? []
+      downloadControls: row?.downloadControls ?? [],
+      deleteControls: row?.deleteControls ?? []
     };
   }, reportName);
 };
@@ -3758,6 +3776,95 @@ const clickReportListCsvDownload = async (
     return { clicked: true, trigger: "report-list-row-nearby-download-control", candidates, rowState };
   }
   return { clicked: false, trigger: "report-list-row-download-not-found", candidates, rowState };
+};
+
+type DeleteReportTriggerEvidence = {
+  clicked: boolean;
+  trigger: string;
+  rowState?: ReportListRowState;
+  selectedControl?: Record<string, unknown>;
+  candidates?: unknown[];
+  clickError?: string;
+};
+
+const clickReportListDeleteControl = async (
+  page: Page,
+  reportName: string,
+  state: ReportListRowState | null = null
+): Promise<DeleteReportTriggerEvidence> => {
+  const rowState = state ?? await readReportListRowState(page, reportName);
+  if (!rowState.found) return { clicked: false, trigger: "report-list-row-not-found", rowState };
+  const selectedControl = rowState.deleteControls[0];
+  if (typeof selectedControl?.bodyIndex === "number" && selectedControl.bodyIndex >= 0) {
+    try {
+      await clickVisibleBodyElementByIndex(page, selectedControl.bodyIndex, 8000);
+      return { clicked: true, trigger: "report-list-row-delete-control", rowState, selectedControl };
+    } catch (error) {
+      const fallbackClicked = await clickFirstVisible([
+        page.locator("tr").filter({ hasText: reportName }).locator("button, a, [role=button]").filter({ hasText: /刪除|删除|delete|trash|remove|🗑/i }),
+        page.locator("[class*=row], [class*=Row], [class*=card], [class*=Card], [class*=item], [class*=Item], [class*=list], [class*=List]")
+          .filter({ hasText: reportName })
+          .locator("button, a, [role=button]")
+          .filter({ hasText: /刪除|删除|delete|trash|remove|🗑/i })
+      ], 8000);
+      if (fallbackClicked) return { clicked: true, trigger: "report-list-row-text-delete-button", rowState, selectedControl };
+      return {
+        clicked: false,
+        trigger: "report-list-row-delete-click-failed",
+        rowState,
+        selectedControl,
+        clickError: error instanceof Error ? error.message : String(error)
+      };
+    }
+  }
+
+  const candidates = await page.evaluate((targetReportName) => {
+    const normalize = (value: string | null | undefined) => (value ?? "").trim().replace(/\s+/g, " ");
+    const isVisible = (element: Element): boolean => {
+      const rect = element.getBoundingClientRect();
+      const style = window.getComputedStyle(element);
+      return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden" && style.opacity !== "0";
+    };
+    const deletePattern = /刪除|删除|delete|trash|remove|🗑/i;
+    const all = Array.from(document.querySelectorAll<HTMLElement>("body *"));
+    const reportElements = all.filter((element) => isVisible(element) && normalize(element.innerText || element.textContent).includes(targetReportName));
+    const reportRects = reportElements.map((element) => element.getBoundingClientRect());
+    return all.flatMap((element, index) => {
+      if (!isVisible(element)) return [];
+      const text = normalize(element.innerText || element.textContent);
+      const attrs = [
+        element.getAttribute("aria-label"),
+        element.getAttribute("title"),
+        element.getAttribute("href"),
+        element.getAttribute("onclick"),
+        typeof element.className === "string" ? element.className : ""
+      ].join(" ");
+      if (!deletePattern.test(`${text} ${attrs}`)) return [];
+      const tag = element.tagName.toLowerCase();
+      const role = element.getAttribute("role");
+      if (!["button", "a"].includes(tag) && role !== "button") return [];
+      const rect = element.getBoundingClientRect();
+      const nearReport = reportRects.some((reportRect) => Math.abs((reportRect.y + reportRect.height / 2) - (rect.y + rect.height / 2)) < 90);
+      const ancestorHasReport = Boolean(element.closest("tr, [class*=row], [class*=Row], [class*=card], [class*=Card], [class*=item], [class*=Item]")?.textContent?.includes(targetReportName));
+      if (!nearReport && !ancestorHasReport) return [];
+      return [{
+        index,
+        text,
+        tagName: tag,
+        role,
+        ariaLabel: element.getAttribute("aria-label"),
+        title: element.getAttribute("title"),
+        onclick: element.getAttribute("onclick"),
+        rect: { x: Math.round(rect.x), y: Math.round(rect.y), width: Math.round(rect.width), height: Math.round(rect.height) }
+      }];
+    });
+  }, reportName);
+  const target = candidates[0] as { index?: unknown } | undefined;
+  if (typeof target?.index === "number") {
+    await clickVisibleBodyElementByIndex(page, target.index, 8000);
+    return { clicked: true, trigger: "report-list-row-nearby-delete-control", candidates, rowState };
+  }
+  return { clicked: false, trigger: "report-list-row-delete-not-found", candidates, rowState };
 };
 
 const isLikelyCsvDownloadResponse = (response: Response): boolean => {
@@ -4186,6 +4293,274 @@ const saveReport = async (options: CliOptions, page: Page, startedAt: string): P
   );
 };
 
+const reportSummary = (report: HelperReport): Record<string, unknown> => ({
+  action: report.action,
+  status: report.status,
+  warnings: report.warnings,
+  artifacts: report.artifacts,
+  evidence: report.evidence
+});
+
+const isTemporaryDeleteReportName = (reportName: string): boolean =>
+  /(?:temp|temporary|臨時|OTTEST004[_-]?G03|OTTEST004[_-]?G[_-]?03|G03[_-]?temp)/i.test(reportName) &&
+  !/tommytest|主報表|正式|production|prod/i.test(reportName);
+
+const clickDeleteConfirmIfVisible = async (page: Page): Promise<Record<string, unknown>> => {
+  const clicked = await clickFirstVisible([
+    page.locator(".modal button").filter({ hasText: /刪除|删除|確認|確定|OK|Yes/i }),
+    page.locator("[role=dialog] button").filter({ hasText: /刪除|删除|確認|確定|OK|Yes/i }),
+    page.locator(".ant-modal button").filter({ hasText: /刪除|删除|確認|確定|OK|Yes/i }),
+    page.locator(".swal2-popup button").filter({ hasText: /刪除|删除|確認|確定|OK|Yes/i })
+  ], 5000);
+  return {
+    clicked,
+    checkedAt: new Date().toISOString()
+  };
+};
+
+const createAndDeleteTemporaryReport = async (options: CliOptions, page: Page, startedAt: string): Promise<HelperReport> => {
+  if (!options.approvedToolRequestId) return approvalRequired(options, "create then delete current-case temporary report", startedAt);
+
+  const requestedFields = metricFieldsFromParams(options.params);
+  const reportNameOptions: CliOptions = {
+    ...options,
+    params: {
+      ...options.params,
+      reportNamePattern: firstStringParam(options.params, ["reportName", "reportNamePattern", "name"]) ?? "OTTEST004_G03_temp_<timestamp>",
+      field: firstStringParam(options.params, ["field", "metric", "metricField"]) ?? requestedFields[0] ?? "新增帳號數",
+      fields: requestedFields.length > 0 ? requestedFields : ["新增帳號數"],
+      dateRange: stringParam(options.params, "dateRange") ?? "2026/03/01~2026/03/31",
+      display: stringParam(options.params, "display") ?? "每天"
+    }
+  };
+  const reportName = resolveReportName(reportNameOptions);
+  if (!isTemporaryDeleteReportName(reportName)) {
+    throw new HelperBlockedError(`DELETE_TEMP_REPORT_NAME_NOT_SAFE:${reportName}`);
+  }
+  const effectiveOptions: CliOptions = {
+    ...reportNameOptions,
+    params: {
+      ...reportNameOptions.params,
+      reportName,
+      name: reportName
+    }
+  };
+
+  const warnings: string[] = [];
+  const uiProfileBefore = await captureUiDomProfile(effectiveOptions, page, "createDeleteTemporary.before");
+  const createStep = await createCollageReport(effectiveOptions, page, startedAt);
+  if (createStep.status !== "ok") {
+    return createReport(
+      effectiveOptions,
+      "blocked",
+      startedAt,
+      { workflowStatus: "failed_precondition", failedSubcondition: "create_report", createStep: reportSummary(createStep) },
+      createStep.artifacts,
+      [...createStep.warnings, "DELETE_TEMP_CREATE_REPORT_NOT_OK"]
+    );
+  }
+
+  const configureStep = await configureMetric(effectiveOptions, page, startedAt);
+  if (configureStep.status !== "ok") {
+    return createReport(
+      effectiveOptions,
+      "blocked",
+      startedAt,
+      {
+        workflowStatus: "failed_precondition",
+        failedSubcondition: "configure_metric",
+        createStep: reportSummary(createStep),
+        configureStep: reportSummary(configureStep)
+      },
+      { ...createStep.artifacts, ...configureStep.artifacts },
+      [...configureStep.warnings, "DELETE_TEMP_CONFIGURE_NOT_OK"]
+    );
+  }
+
+  const previewStep = await runPreview(effectiveOptions, page, startedAt);
+  if (previewStep.status !== "ok") {
+    return createReport(
+      effectiveOptions,
+      "blocked",
+      startedAt,
+      {
+        workflowStatus: "failed_precondition",
+        failedSubcondition: "run_preview",
+        createStep: reportSummary(createStep),
+        configureStep: reportSummary(configureStep),
+        previewStep: reportSummary(previewStep)
+      },
+      { ...createStep.artifacts, ...configureStep.artifacts, ...previewStep.artifacts },
+      [...previewStep.warnings, "DELETE_TEMP_PREVIEW_NOT_OK"]
+    );
+  }
+
+  const saveStep = await saveReport(effectiveOptions, page, startedAt);
+  if (saveStep.status !== "ok") {
+    return createReport(
+      effectiveOptions,
+      "blocked",
+      startedAt,
+      {
+        workflowStatus: "failed_precondition",
+        failedSubcondition: "save_temporary_report",
+        createStep: reportSummary(createStep),
+        configureStep: reportSummary(configureStep),
+        previewStep: reportSummary(previewStep),
+        saveStep: reportSummary(saveStep)
+      },
+      { ...createStep.artifacts, ...configureStep.artifacts, ...previewStep.artifacts, ...saveStep.artifacts },
+      [...saveStep.warnings, "DELETE_TEMP_SAVE_NOT_OK"]
+    );
+  }
+
+  const savedReportName = readSavedReportName(effectiveOptions) ?? reportName;
+  if (!isTemporaryDeleteReportName(savedReportName)) {
+    throw new HelperBlockedError(`DELETE_SAVED_REPORT_NAME_NOT_SAFE:${savedReportName}`);
+  }
+  const listRecovery = await ensureSavedReportListRowVisible(effectiveOptions, page, savedReportName);
+  if (!listRecovery.state.found || listRecovery.state.deleteControls.length === 0) {
+    const shot = await screenshot(effectiveOptions, page, "delete-temp-row-not-ready");
+    const evidence = {
+      workflowStatus: "failed_precondition",
+      failedSubcondition: !listRecovery.state.found ? "temporary_report_row_missing" : "temporary_report_delete_control_missing",
+      reportName: savedReportName,
+      listRecovery,
+      createStep: reportSummary(createStep),
+      configureStep: reportSummary(configureStep),
+      previewStep: reportSummary(previewStep),
+      saveStep: reportSummary(saveStep)
+    };
+    fs.writeFileSync(deleteTemporaryReportEvidencePath(effectiveOptions), `${JSON.stringify(evidence, null, 2)}\n`);
+    return createReport(
+      effectiveOptions,
+      "blocked",
+      startedAt,
+      evidence,
+      { ...createStep.artifacts, ...configureStep.artifacts, ...previewStep.artifacts, ...saveStep.artifacts, deleteTemporaryReportEvidence: deleteTemporaryReportEvidencePath(effectiveOptions), ...(shot ? { screenshot: shot } : {}) },
+      [shot ? "" : "SCREENSHOT_UNAVAILABLE", "DELETE_TEMP_ROW_OR_CONTROL_NOT_FOUND"].filter(Boolean)
+    );
+  }
+
+  const dialogs: Record<string, unknown>[] = [];
+  let unknownDialog = false;
+  const dialogHandler = async (dialog: Dialog) => {
+    const record: Record<string, unknown> = {
+      sequence: dialogs.length + 1,
+      type: dialog.type(),
+      message: dialog.message(),
+      defaultValue: dialog.defaultValue()
+    };
+    const message = String(record.message ?? "");
+    const authLike = /sso|login|登入|密碼|password|驗證|認證/i.test(message);
+    const deleteLike = /刪除|删除|delete|remove|確定|確認|是否|confirm/i.test(message);
+    record.handledAction = authLike || !deleteLike ? "dismiss" : "accept";
+    record.handledReason = authLike
+      ? "auth_like_dialog_not_auto_approved"
+      : deleteLike
+        ? "known_bi_delete_confirm_after_tool_bridge_approval"
+        : "unknown_native_dialog_dismissed_for_recovery";
+    if (authLike || !deleteLike) unknownDialog = true;
+    dialogs.push(record);
+    try {
+      if (record.handledAction === "accept") await dialog.accept();
+      else await dialog.dismiss();
+      record.handledAt = new Date().toISOString();
+    } catch (error) {
+      record.handledError = error instanceof Error ? error.message : String(error);
+      unknownDialog = true;
+    }
+  };
+
+  page.on("dialog", dialogHandler);
+  let deleteObserved: { result: { trigger: DeleteReportTriggerEvidence; modalConfirm: Record<string, unknown> }; requests: Record<string, unknown>[]; responses: Record<string, unknown>[] } | null = null;
+  try {
+    deleteObserved = await observeDuring(page, async () => {
+      const trigger = await clickReportListDeleteControl(page, savedReportName, listRecovery.state);
+      if (!trigger.clicked) return { trigger, modalConfirm: { clicked: false, reason: "delete-trigger-not-clicked" } };
+      await page.waitForTimeout(600);
+      const modalConfirm = await clickDeleteConfirmIfVisible(page);
+      await page.waitForTimeout(1500);
+      return { trigger, modalConfirm };
+    });
+  } finally {
+    page.off("dialog", dialogHandler);
+  }
+
+  const afterDeleteInitial = await readReportListRowState(page, savedReportName).catch((error) => ({
+    found: true,
+    reportName: savedReportName,
+    url: page.url(),
+    bodyTextExcerpt: "",
+    rowText: null,
+    downloadControls: [],
+    deleteControls: [],
+    readError: error instanceof Error ? error.message : String(error)
+  }));
+  if (afterDeleteInitial.found) {
+    await page.reload({ waitUntil: "domcontentloaded", timeout: 15000 }).catch(() => undefined);
+    await page.waitForTimeout(1200);
+    await ensureCollageProjectSelected(effectiveOptions, page).catch((error) => warnings.push(`DELETE_TEMP_RESELECT_PROJECT_FAILED:${error instanceof Error ? error.message : String(error)}`));
+  }
+  const afterDeleteReload = await readReportListRowState(page, savedReportName).catch((error) => ({
+    found: true,
+    reportName: savedReportName,
+    url: page.url(),
+    bodyTextExcerpt: "",
+    rowText: null,
+    downloadControls: [],
+    deleteControls: [],
+    readError: error instanceof Error ? error.message : String(error)
+  }));
+  const rowGone = afterDeleteReload.found === false;
+  const shot = await screenshot(effectiveOptions, page, rowGone ? "delete-temp-report" : "delete-temp-report-still-visible");
+  const uiProfileAfter = await captureUiDomProfile(effectiveOptions, page, "createDeleteTemporary.after");
+  const evidence = {
+    workflowStatus: rowGone && !unknownDialog && deleteObserved?.result.trigger.clicked ? "ok" : "blocked",
+    approvedToolRequestId: effectiveOptions.approvedToolRequestId,
+    reportName: savedReportName,
+    temporaryNamePolicy: "reportName must contain temp/temporary/臨時 or OTTEST004_G03 and must not match protected main-resource keywords",
+    uiProfiles: { before: uiProfileBefore, after: uiProfileAfter },
+    createStep: reportSummary(createStep),
+    configureStep: reportSummary(configureStep),
+    previewStep: reportSummary(previewStep),
+    saveStep: reportSummary(saveStep),
+    listRecovery,
+    deleteAction: {
+      trigger: deleteObserved?.result.trigger ?? null,
+      modalConfirm: deleteObserved?.result.modalConfirm ?? null,
+      nativeDialogs: dialogs,
+      network: deleteObserved ? { requests: deleteObserved.requests, responses: deleteObserved.responses } : null
+    },
+    verification: {
+      afterDeleteInitial,
+      afterDeleteReload,
+      rowGone
+    },
+    warnings
+  };
+  fs.writeFileSync(deleteTemporaryReportEvidencePath(effectiveOptions), `${JSON.stringify(evidence, null, 2)}\n`);
+  if (!deleteObserved?.result.trigger.clicked) warnings.push("DELETE_TEMP_TRIGGER_NOT_CLICKED");
+  if (unknownDialog) warnings.push("DELETE_TEMP_UNKNOWN_OR_AUTH_DIALOG");
+  if (!rowGone) warnings.push("DELETE_TEMP_ROW_STILL_VISIBLE_AFTER_DELETE");
+  if (!shot) warnings.push("SCREENSHOT_UNAVAILABLE");
+  return createReport(
+    effectiveOptions,
+    rowGone && !unknownDialog && Boolean(deleteObserved?.result.trigger.clicked) ? "ok" : "blocked",
+    startedAt,
+    evidence,
+    {
+      ...createStep.artifacts,
+      ...configureStep.artifacts,
+      ...previewStep.artifacts,
+      ...saveStep.artifacts,
+      deleteTemporaryReportEvidence: deleteTemporaryReportEvidencePath(effectiveOptions),
+      ...(shot ? { screenshot: shot } : {})
+    },
+    warnings
+  );
+};
+
 const reopenReport = async (options: CliOptions, page: Page, startedAt: string): Promise<HelperReport> => {
   const reportName = readSavedReportName(options);
   if (!reportName) throw new HelperBlockedError("SAVED_REPORT_NAME_MISSING");
@@ -4344,6 +4719,9 @@ const run = async (): Promise<void> => {
         break;
       case "collage.downloadCsvAndComparePreview":
         report = await downloadCsvAndComparePreview(options, page, startedAt);
+        break;
+      case "collage.createAndDeleteTemporaryReport":
+        report = await createAndDeleteTemporaryReport(options, page, startedAt);
         break;
       case "collage.deleteTemporaryReport":
         report = options.approvedToolRequestId

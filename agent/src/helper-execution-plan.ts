@@ -122,8 +122,16 @@ const helperRequestsNoSave = (params: Record<string, unknown>): boolean =>
 const helperRequestsNoReopen = (params: Record<string, unknown>): boolean =>
   helperRequestsPreviewOnly(params) || booleanishParam(params, ["skipReopen", "doNotReopen", "noReopen", "previewOnly"]);
 
+const helperRequestsDownload = (params: Record<string, unknown>): boolean =>
+  booleanishParam(params, ["downloadCsv", "doDownloadCsv", "downloadCSV", "download", "csvDownload", "needCsv"]);
+
+const helperExplicitlyDisablesDownload = (params: Record<string, unknown>): boolean =>
+  booleanishParam(params, ["skipDownload", "doNotDownload", "noDownload", "doNotDownloadCsv", "skipCsv", "noCsv"]);
+
 const helperRequestsNoDownload = (params: Record<string, unknown>): boolean =>
-  helperRequestsPreviewOnly(params) || booleanishParam(params, ["skipDownload", "doNotDownload", "noDownload", "doNotDownloadCsv", "skipCsv", "noCsv"]);
+  helperRequestsDownload(params)
+    ? false
+    : helperRequestsPreviewOnly(params) || helperExplicitlyDisablesDownload(params);
 
 const helperHintsRequestManualAi = (helperHints: HelperHints | null): boolean =>
   helperHints?.automationLevel === "manual_ai" || helperHints?.operationTemplate === "manual_ai";
@@ -133,6 +141,13 @@ const isAllZeroFieldInspectionCase = (currentCase: CaseManifestCase | null, help
   const isA06LikeCase = /(?:^|[-_])A[-_]?06$/i.test(currentCase?.caseNo ?? "");
   return operationTemplate === "collage_all_zero_field_inspection" ||
     (isA06LikeCase && /全為\s*0\s*欄位|全\s*0\s*欄位|值全為\s*0|all[-_ ]?zero/i.test(textBlob(currentCase)));
+};
+
+const isDeleteReportFlow = (currentCase: CaseManifestCase | null, helperHints: HelperHints | null): boolean => {
+  const operationTemplate = helperHints?.operationTemplate ?? "";
+  const text = textBlob(currentCase);
+  return operationTemplate === "collage_delete_temporary_report" ||
+    /刪除報表|刪除.*臨時報表|delete\s+(?:temporary\s+)?report|delete-temp-report/i.test(text);
 };
 
 const needsCollageNavigationPrelude = (currentCase: CaseManifestCase | null, helperHints: HelperHints | null): boolean => {
@@ -319,7 +334,12 @@ const inferCollageParams = (currentCase: CaseManifestCase | null, helperHints: H
     matchKey: stringParam(params, ["matchKey"]) ?? "欄位名稱",
     compareFields: rawArrayParam(params, "compareFields") ?? ["欄位名稱", "資料類型"],
     comparisonScope: stringParam(params, ["comparisonScope"]) ?? null,
-    downloadScope: stringParam(params, ["downloadScope"]) ?? (/清單|列表|專案頁|報表列|report list/i.test(text) ? "report_list" : null),
+    downloadScope: stringParam(params, ["downloadScope"]) ??
+      (/同\s*editor|editor\s*session|設定頁|絕不\s*(?:save|儲存|reopen|重開|回專案頁)|不\s*(?:save|儲存|reopen|重開)/i.test(text)
+        ? "editor_session"
+        : /清單|列表|專案頁|報表列|report list/i.test(text)
+          ? "report_list"
+          : null),
     allZeroFieldInspection,
     field,
     fields,
@@ -350,8 +370,12 @@ const inferCollageParams = (currentCase: CaseManifestCase | null, helperHints: H
 const canRunDatePreviewEvidenceHelper = (params: Record<string, unknown>, currentCase: CaseManifestCase | null): boolean => {
   const dateVariants = stringArrayParam(params, "dateVariants");
   const dateMode = String(params.dateMode ?? "").trim().toLowerCase();
+  const dateRange = typeof params.dateRange === "string" ? params.dateRange.trim() : "";
   if (dateVariants.length > 0 && (!dateMode || dateMode === "preset")) return true;
-  if (dateMode === "static" && typeof params.dateRange === "string" && params.dateRange.trim()) return true;
+  if (dateMode === "static" && dateRange) return true;
+  if ((dateRange.match(/\d{4}[/-]\d{1,2}[/-]\d{1,2}/g) ?? []).length >= 2) return true;
+  if (dateObjectParam(params.dateRange)) return true;
+  if (structuredStaticDateRangeParam(params)) return true;
   return /operationTemplate[：:]\s*collage_date_variants_preview/.test(textBlob(currentCase));
 };
 
@@ -391,16 +415,48 @@ const buildActions = (currentCase: CaseManifestCase | null, helperHints: HelperH
     features.hasGroup;
   const metadataOnly = features.isMetadataDropdown;
   if (unsupportedHelperTarget) return [];
+  const deleteReportFlow = isDeleteReportFlow(currentCase, helperHints);
+  if (deleteReportFlow) {
+    const requestedFields = firstStringArrayParam(params, ["fields", "metrics"]);
+    const deleteParams = {
+      ...params,
+      reportNamePattern: stringParam(helperParams, ["reportName", "reportNamePattern", "name"]) ?? "OTTEST004_G03_temp_<timestamp>",
+      field: nonNeutral(stringParam(params, ["field", "metric", "metricField"])) ?? "新增帳號數",
+      fields: requestedFields.length > 0 ? requestedFields : ["新增帳號數"],
+      dateRange: nonNeutral(stringParam(params, ["dateRange", "timeRange"])) ?? "2026/03/01~2026/03/31",
+      display: nonNeutral(stringParam(params, ["display", "displayMode"])) ?? "每天",
+      skipSave: false,
+      skipReopen: true,
+      skipDownload: true
+    };
+    return [
+      action("H1", "collage.openProject", "開啟指定拼貼專案", deleteParams, {
+        requiredEvidence: ["dom.url", "dom.pageTitle", "dom.state", "screenshot"],
+        notes: ["先定位拼貼專案頁，不執行刪除。"]
+      }),
+      action("H2", "collage.createAndDeleteTemporaryReport", "建立本輪臨時報表後刪除並驗證", deleteParams, {
+        requiresToolBridge: true,
+        requiredEvidence: ["toolBridge.response", "dom.state", "network.requestBody", "nativeDialog", "screenshot"],
+        screenshotPolicy: "required_if_possible",
+        notes: [
+          "單一授權只允許本 current case 建立並刪除名稱含 temp 的臨時報表。",
+          "helper 必須先建立臨時報表，再點該報表列刪除控制，處理已知刪除 confirm，最後驗證該 row 不再可見。",
+          "helper 不可刪除非臨時報表；找不到臨時 row 或遇到未知 native dialog 必須 blocked。"
+        ]
+      })
+    ];
+  }
   const helperMustLeaveCoreToCodex = helperHintsRequestManualAi(helperHints) || dateRequiresCodexVisibleUi(currentCase, helperHints);
   if (helperMustLeaveCoreToCodex) {
     if (!needsCollageNavigationPrelude(currentCase, helperHints)) return [];
+    const editorPreludeNeeded = needsReportEditorPrelude(currentCase);
     const prelude: HelperPlanAction[] = [
       action("H1", "collage.openProject", "開啟指定拼貼專案（manual_ai 前置導航）", params, {
         requiredEvidence: ["dom.url", "dom.pageTitle", "dom.state", "screenshot"],
         notes: ["manual_ai / 動態日期題只允許 helper 做安全前置導航；不可判斷 testcase 結果。"]
       })
     ];
-    if (needsReportEditorPrelude(currentCase)) {
+    if (editorPreludeNeeded) {
       prelude.push(
         action("H2", "collage.createReport", "進入新增報表頁（manual_ai 前置導航）", params, {
           requiredEvidence: ["dom.url", "dom.pageTitle", "dom.state", "screenshot"],
@@ -408,7 +464,7 @@ const buildActions = (currentCase: CaseManifestCase | null, helperHints: HelperH
         })
       );
     }
-    if (canRunDatePreviewEvidenceHelper(params, currentCase)) {
+    if (editorPreludeNeeded && canRunDatePreviewEvidenceHelper(params, currentCase)) {
       prelude.push(
         action("H3", "collage.runDateVariantsPreviewEvidence", "逐輪設定日期並收集 preview evidence（manual_ai 日期合題）", params, {
           requiredEvidence: ["dom.state", "date.uiState", "date.representedRange", "network.requestBody", "chart.datasets", "screenshot"],
@@ -417,6 +473,23 @@ const buildActions = (currentCase: CaseManifestCase | null, helperHints: HelperH
             "此 helper 只適用 preset dateVariants/uiLabels 或全靜態 start/end 日期；不支援自訂動態/半動態右側天數輸入。",
             "每個日期 variant 必須透過 visible UI 設定後按執行，收集 per-variant date UI、network request body、chart/table evidence。",
             "helper 不判 PASS/FAIL；Codex 必須比對 UI label、representedRange、requestBody.dateRange 與 preview 筆數後寫 result.xlsx。"
+          ]
+        })
+      );
+    }
+    const manualDateCsvDownload =
+      /下載|CSV/i.test(text) &&
+      !helperExplicitlyDisablesDownload(helperParams) &&
+      editorPreludeNeeded &&
+      canRunDatePreviewEvidenceHelper(params, currentCase);
+    if (manualDateCsvDownload) {
+      prelude.push(
+        action("H4", "collage.downloadCsvAndComparePreview", "在 editor session 下載 CSV 並與 preview evidence 比對", params, {
+          requiredEvidence: ["downloaded.csv", "csv.rows", "preview.table_or_chart", "screenshot"],
+          screenshotPolicy: "required_if_possible",
+          notes: [
+            "僅在同一 editor session 已由 date preview helper 產生 preview evidence 後執行。",
+            "不得 save、reopen 或回專案頁；CSV 必須由 UI 下載控制觸發並與目前 preview 比對。"
           ]
         })
       );
@@ -468,7 +541,9 @@ const buildActions = (currentCase: CaseManifestCase | null, helperHints: HelperH
   const isCollageFlow = /collage_build_preview_save_reopen/.test(operationTemplate) || /拼貼|新增報表|儲存報表|重開|重新檢視/.test(text);
   const modifiesExistingReport = params.openExistingReport === true;
   const noSave = helperRequestsNoSave({ ...params, ...helperParams });
-  const noDownload = helperRequestsNoDownload({ ...params, ...helperParams });
+  const noDownload =
+    helperRequestsNoDownload({ ...params, ...helperParams }) &&
+    !(/下載|CSV/i.test(text) && !helperExplicitlyDisablesDownload({ ...params, ...helperParams }));
   const explicitlyNoReopen =
     helperRequestsNoReopen({ ...params, ...helperParams }) ||
     /不(?:需|要|應)?重開|不要重開|無需重開|不用重開|不重開\s*editor|不應產生\s*reopen/i.test(text);
