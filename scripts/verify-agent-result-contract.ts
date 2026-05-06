@@ -6,6 +6,7 @@ import ExcelJS from "exceljs";
 import { writeResultTemplate } from "../agent/src/result-template";
 import { validateResultWorkbookContract } from "../agent/src/result-contract";
 import { ensureBlockedResultCurrentRunEvidence } from "../agent/src/result-evidence-enricher";
+import { normalizeCodexResultWorkbook } from "../agent/src/result-workbook-normalizer";
 import { repairSingleCaseResultWorkbook } from "../agent/src/result-workbook-repair";
 import { parseResultXlsx } from "../src/result-parser/result-xlsx-parser";
 import { evaluateResultEvidenceGate } from "../src/result-parser/result-evidence-gate";
@@ -134,6 +135,67 @@ const writeLegacySingleCaseWithoutGroupId = async (filePath: string): Promise<vo
   await workbook.xlsx.writeFile(filePath);
 };
 
+const writeTestcaseStyleCodexWorkbook = async (filePath: string): Promise<void> => {
+  const workbook = new ExcelJS.Workbook();
+  const index = workbook.addWorksheet("索引");
+  index.addRow(["輪次ID", "位置", "功能主項", "功能細項", "輪次名稱", "日期", "測試者", "MD連結"]);
+  index.addRow(["OTTEST004", "數據中心", "BI工具", "拼貼模式", "OTTEST004 fixture", "2026-05-06", "Codex", "fixture"]);
+
+  const sheet = workbook.addWorksheet("測試案例");
+  sheet.addRow([
+    "輪次ID",
+    "群組ID",
+    "群組",
+    "編號",
+    "測試類型",
+    "測試項目",
+    "風險等級",
+    "測試標的",
+    "狀態清理",
+    "前置條件",
+    "步驟",
+    "預期結果",
+    "結果",
+    "執行方式",
+    "測試日",
+    "詳細紀錄JSON",
+    "驗證方法"
+  ]);
+  sheet.addRow(["OTTEST004", "A", "A:欄位清單檢查", "OTTEST004-A-01", "功能流程", "A-01 fixture", "🟢 觀察", "功能流程", "", "", "", "", "", "", "", "", "DOM"]);
+  sheet.addRow([
+    "OTTEST004",
+    "B",
+    "B:日期區間邏輯",
+    "OTTEST004-B-04",
+    "功能流程",
+    "全動態區間 — 「上週」/「本週」",
+    "🟢 觀察",
+    "功能流程",
+    "欄位=新增帳號數;篩選=0組;分組=不影響;時間=上週/本週;顯示=每天",
+    "fixture",
+    "fixture",
+    "fixture",
+    "PASS",
+    "Agent helper + Codex judgment",
+    "2026-05-06",
+    JSON.stringify({
+      測試目的: "驗證拼貼模式「上週/本週」日期切換。",
+      設定條件: "欄位=新增帳號數;顯示=每天",
+      預期行為: "上週與本週 dateRange 和 preview 筆數正確。",
+      實際行為: "上週 7 筆，本週 3 筆，request dateRange 均符合預期。",
+      currentRunEvidence: {
+        helperReport: "output/helper-artifacts/OTTEST004-B-04/helper-report.jsonl"
+      }
+    }),
+    "date-variants-preview-evidence.json"
+  ]);
+  sheet.addRow(["OTTEST004", "B", "B:日期區間邏輯", "OTTEST004-B-05", "功能流程", "B-05 fixture", "🟢 觀察", "功能流程", "", "", "", "", "", "", "", "", "DOM"]);
+
+  const bugs = workbook.addWorksheet("Bug");
+  bugs.addRow(["輪次ID", "嚴重度", "關聯編號", "描述", "建議確認方式", "是否已修正", "修正複測日期"]);
+  await workbook.xlsx.writeFile(filePath);
+};
+
 const main = async (): Promise<void> => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "uat-agent-result-contract-"));
   try {
@@ -174,6 +236,35 @@ const main = async (): Promise<void> => {
     assert.equal(repairedReport.status, "ok", JSON.stringify(repairedReport.issues));
     const repairedParsed = await parseResultXlsx(legacySingleCase);
     assert.equal(repairedParsed.cases[0]?.groupId, "A");
+
+    const testcaseStyle = path.join(tempRoot, "testcase-style-codex-result.xlsx");
+    await writeTestcaseStyleCodexWorkbook(testcaseStyle);
+    const testcaseStyleBefore = await validateResultWorkbookContract(testcaseStyle);
+    assert.equal(testcaseStyleBefore.status, "error");
+    assert.ok(testcaseStyleBefore.issues.some((item) => item.code === "RESULT_XLSX_HEADER_MISSING"));
+    const normalizeReport = await normalizeCodexResultWorkbook({
+      filePath: testcaseStyle,
+      runId: "fixture-run",
+      roundId: "OTTEST004_016",
+      currentCase: {
+        groupId: "B",
+        groupName: "B:日期區間邏輯",
+        caseNo: "OTTEST004-B-04",
+        caseTitle: "全動態區間 — 「上週」/「本週」",
+        testType: "功能流程",
+        executionMethod: "Agent helper + Codex judgment"
+      },
+      expectedCaseNos: ["OTTEST004-B-04"]
+    });
+    assert.equal(normalizeReport.status, "updated", JSON.stringify(normalizeReport));
+    assert.equal(normalizeReport.detectedFormat, "testcase-style");
+    assert.ok(normalizeReport.backupPath && fs.existsSync(normalizeReport.backupPath));
+    const normalizedContract = await validateResultWorkbookContract(testcaseStyle);
+    assert.equal(normalizedContract.status, "ok", JSON.stringify(normalizedContract.issues));
+    const normalizedParsed = await parseResultXlsx(testcaseStyle);
+    assert.equal(normalizedParsed.cases.length, 1);
+    assert.equal(normalizedParsed.cases[0]?.caseNo, "OTTEST004-B-04");
+    assert.equal(normalizedParsed.cases[0]?.status, "PASS");
 
     fs.mkdirSync(path.join(tempRoot, "output", "helper-artifacts", "TOOL-A-01"), { recursive: true });
     fs.writeFileSync(path.join(tempRoot, "output", "helper-pre-run-summary.json"), JSON.stringify({
@@ -243,6 +334,7 @@ const main = async (): Promise<void> => {
         "legacy Bug header 來源 Case is rejected by agent self-check",
         "FAIL detail_json missing required fields is rejected before upload",
 	        "single-case legacy result workbook missing 群組ID is repaired before self-check",
+	        "testcase-style Codex output is normalized to one current-case result-contract row before self-check",
 	        "BLOCKED detail_json with core fields but without current-run evidence is enriched before upload",
 	        "PASS result contradicting helper false checks is rejected before upload"
       ]

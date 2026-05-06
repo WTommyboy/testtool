@@ -7,6 +7,7 @@ import type { AgentConnection } from "./connection";
 import { readFirstInputCase, writeAgentResultXlsx } from "./result-writer";
 import { validateResultWorkbookContract } from "./result-contract";
 import { ensureBlockedResultCurrentRunEvidence } from "./result-evidence-enricher";
+import { normalizeCodexResultWorkbook } from "./result-workbook-normalizer";
 import { repairSingleCaseResultWorkbook } from "./result-workbook-repair";
 import { parseToolRequests, type ParsedToolRequest } from "./tool-bridge";
 import { writeBiUiHelperGuidance } from "./bi-ui-helper-guidance";
@@ -186,7 +187,8 @@ const prepareCodexContext = (config: AgentConfig, runDir: string): void => {
     "- Use `input/run-state.json` for allowed carryover only; previous-case evidence is isolated.",
     "- Helper report must match current runId/caseId/action/timestamp before it can support current-run evidence.",
     "- Never execute or write results for multiple cases in one Playwright tool call or one workbook write.",
-    "- Write the final workbook to `output/result.xlsx` when real UAT cases are executed.",
+    "- Write the final workbook to `output/result.xlsx` when real UAT cases are executed. This file is a single-case result-contract workbook, not a copy of `input/testcase.xlsx`.",
+    `- Preferred fixed result writer: node ${path.join(__dirname, "result-cli.js")} write --run-dir ${runDir} --case <current-case-no> --status <PASS|FAIL|BLOCKED|PARTIAL> --detail-json <detail-json-file> [--fail-category <category>]`,
     "- Before clicking BI `執行` / preview, verify at least one metric field is actually selected through visible UI/DOM evidence. If selected field count is zero and the case is not explicitly a no-field validation case, do not click Execute; write current-case BLOCKED with `EXECUTE_PRECONDITION_NO_SELECTED_FIELDS` and DOM evidence.",
     "- Native dialog guard: known BI save/overwrite dialogs may be handled only after a Tool Bridge response; unknown follow-up native dialogs become blocked unless there is a real recovery handler.",
     "- Result detail_json hard gate: PASS must include 測試目的/設定條件/預期行為/實際行為; FAIL must also include 錯誤原因/根因層級/驗證方法/RD 分派; BLOCKED must include the same four core fields plus blocked_reason; PARTIAL must include 部分符合的子項清單/不符的子項清單.",
@@ -1369,7 +1371,9 @@ const buildPrompt = (
     "",
     "Result workbook contract:",
     `- Use ${guides.resultTemplatePath} as a column/shape reference when useful; do not edit the template in place.`,
+    `- Preferred fixed writer command: node ${path.join(__dirname, "result-cli.js")} write --run-dir ${runDir} --case ${guides.caseManifest.currentCaseNo ?? "<current-case-no>"} --status <PASS|FAIL|BLOCKED|PARTIAL> --detail-json <detail-json-file> [--fail-category <category>]`,
     "- Preferred: create output/result.xlsx yourself with sheets named 索引, 測試案例, Bug.",
+    "- Do not copy `input/testcase.xlsx` or the full 17-column testcase workbook as `output/result.xlsx`; output/result.xlsx must contain only the current case result row in the result-contract shape.",
     "- 測試案例 sheet should include at minimum: 群組ID, 群組, 編號, 測試項目, 測試類型, 執行方式, 結果, 失敗分類, 詳細紀錄JSON.",
     "- Bug sheet should include at minimum: 嚴重度, Bug ID, 關聯編號, 標題, 描述, 建議, 狀態. You may add Evidence as an extra column.",
     "- 詳細紀錄JSON required fields: PASS => 測試目的, 設定條件, 預期行為, 實際行為; FAIL => PASS fields plus 錯誤原因, 根因層級, 驗證方法, RD 分派; BLOCKED => PASS core fields plus blocked_reason; PARTIAL => 部分符合的子項清單, 不符的子項清單.",
@@ -2527,6 +2531,55 @@ const uploadRunArtifacts = async (options: UploadArtifactsOptions): Promise<Uplo
       false
     );
   } else if (outputUrls.result_xlsx) {
+    const normalizationReport = resultSource === "codex_generated"
+      ? await normalizeCodexResultWorkbook({
+        filePath: resultXlsxPath,
+        runId,
+        roundId: getStringPayload(message, "round_id") ?? runId,
+        currentCase: currentSourceCase,
+        expectedCaseNos: resultUploadMetadata.expectedCaseNos
+      })
+      : null;
+    if (normalizationReport) {
+      writeJson(path.join(runDir, "output", "result-xlsx-normalization.json"), normalizationReport);
+      if (normalizationReport.status === "updated") {
+        sendBestEffort(
+          connection,
+          "run.stdout",
+          {
+            run_id: runId,
+            text: "uat-agent normalized testcase-style output/result.xlsx to single-case result contract before upload."
+          },
+          false
+        );
+      } else if (normalizationReport.status === "error") {
+        const message = `RESULT_XLSX_NORMALIZATION_FAILED ${normalizationReport.errors.join(",") || "unknown"}`;
+        writeJson(path.join(runDir, "output", "result-xlsx.json"), {
+          path: resultXlsxPath,
+          uploaded: false,
+          source: resultSource,
+          upload_metadata: resultUploadMetadata,
+          normalization: normalizationReport,
+          error: message
+        });
+        sendBestEffort(
+          connection,
+          "run.stderr",
+          {
+            run_id: runId,
+            text: `uat-agent could not normalize Codex result workbook before upload: ${message}`
+          },
+          false
+        );
+        if (throwOnResultUploadError) throw new Error(message);
+        return {
+          combinedLogPath,
+          resultXlsxPath,
+          resultXlsxUploaded,
+          usedCodexGeneratedResult: Boolean(codexGeneratedResultXlsx)
+        };
+      }
+    }
     const evidenceEnrichmentReport = resultSource === "codex_generated"
       ? await ensureBlockedResultCurrentRunEvidence({
         filePath: resultXlsxPath,

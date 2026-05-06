@@ -1173,3 +1173,13 @@ Tommy 曾討論是否改成腳本。最後決策是採「半腳本化 / helper �
 - Fixture：`scripts/verify-agent-roundtrip.ts` 擴充 manual approval roundtrip：approval 前應為 `pending_approval`，按 continue 後應為 `response_sent`；auto-approval roundtrip 在 Agent 回報 delivered 後應為 `response_delivered`。
 - 版本與文件：root App/API 升到 `1.1.3`；README、`docs/refactor/工程spac.md`、`docs/refactor/規劃說明.md` 同步更新。完整 current-case BLOCKED without whole-run abort 的真實 Codex/Playwright regression 仍需後續 production package 驗證。
 - 驗證：已跑 `npm run verify:agent-roundtrip`、`npm run verify:tool-bridge`、`npm run typecheck`、`npm run build --prefix web`、`git diff --check` 通過；commit/push 與 Railway `/version` / `/health` 待本批收尾執行。
+
+### 2026-05-06 16:12 - Result workbook contract hardening：testcase-style output normalizer
+
+- 背景：OTTEST004_016 / run `eb2ee3ec-50f8-4962-8263-2db0c0f46d95` 不是 package gate 或 helper 未跑完。A-01~B-03 已成功 ingest，B-04 helper 與 Codex 判定也完成 `PASS`；失敗點在 Agent 上傳前 self-check。Codex 將 `output/result.xlsx` 寫成整份 17 欄 testcase workbook，僅填 B-04 一列，導致 parser 把 A-01~H-04 空白/未跑 row 全部當作 result rows，報 `RESULT_XLSX_HEADER_MISSING`、大量 `RESULT_XLSX_DETAIL_JSON_INVALID` / `RESULT_XLSX_DETAIL_FIELD_MISSING`，整輪標 `FAILED`。
+- 修正：新增 `agent/src/result-workbook-normalizer.ts`。Agent 上傳前若偵測 `output/result.xlsx` 已是 result-contract workbook，維持原流程；若偵測為 testcase-style workbook，且 `expectedCaseNos` 只有一題、該 current case row 已有 PASS/FAIL/BLOCKED/PARTIAL 與合法 detail_json，Agent 會備份原檔為 `result.testcase-style-original.xlsx`，只抽該 current case row 轉成單題 result-contract workbook，再進入 evidence enrichment / legacy repair / self-check / upload。若找不到 current case 或該 row 未完成，明確回 `RESULT_XLSX_NORMALIZATION_FAILED`。
+- Fixed writer：新增 `agent/src/result-cli.ts`，提供 `node agent/dist/result-cli.js write --run-dir <runDir> --case <caseNo> --status <PASS|FAIL|BLOCKED|PARTIAL> --detail-json <detail.json> [--fail-category <category>]`，讓 Codex 可先產 JSON payload，再由 Agent 固定 writer 輸出合法 result-contract workbook，降低手刻 xlsx schema 風險。
+- Prompt/契約：`task-runner` generated AGENTS 與 run brief 補強 `output/result.xlsx` 不是 `input/testcase.xlsx` 複本，必須是單題 result-contract workbook，並列出固定 writer command。authoring spec 與 README 同步澄清 PM-skip/source prefilled rows 由 server/import 與 manifest skip 處理，不應要求 Codex 把整份 source xlsx 複製成結果檔。
+- Fixture：`scripts/verify-agent-result-contract.ts` 新增 testcase-style Codex output fixture，模擬整份 17 欄 workbook 只有 `OTTEST004-B-04` 有 PASS 的情境；normalizer 應只抽 B-04 並讓 self-check/parser 通過。
+- 版本：Mac Agent 升到 `0.2.18`；App/API 維持 `1.1.3`。
+- 驗證：已跑 `npm run typecheck --prefix agent`、`npm run verify:agent-result-contract` 通過；完整 build、真實 B-04 複本 smoke、git diff check、commit/push 與本機 Agent 重啟狀態由本批收尾回報補列。

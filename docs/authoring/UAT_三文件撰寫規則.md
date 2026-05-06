@@ -436,7 +436,7 @@ xlsx 對應 row 必須填齊:
 
 - 指派文字與執行說明都列出 PM-skip case 編號與原因。
 - 總 case 數、實際執行 case 數、跳過 case 數必須一致。
-- 交付要求必須明寫 Agent/Codex 不可碰這些 row,只原樣複製到 `output/result.xlsx`。
+- 交付要求必須明寫 Agent/Codex 不可執行或改判這些 row；source xlsx 的預填終態由 Railway 匯入並由 Agent manifest 跳過。`output/result.xlsx` 仍是單題 result-contract workbook,不可把整份 source testcase row 複製成結果檔。
 - 報表統計應將 `detail_json.skip_decided_by = "Tommy"` 類 case 歸為 PM-skip,不要和 runtime BLOCKED 混在一起。
 
 PM-skip case **不要放 Helper hints block**。預先跳過不是 helper automation level,不需要也不允許用 Helper hints 表達。
@@ -728,6 +728,9 @@ Case 清單或 summary 表格中的 `風險等級`、`測試標的` 必須和 xl
 - 不可修改原始 xlsx。
 - 必須產出 `output/result.xlsx`。
 - `output/result.xlsx` 必須包含 `索引`、`測試案例`、`Bug` sheet。
+- `output/result.xlsx` 是單題 result-contract workbook,不是原始 testcase.xlsx 的複本；`測試案例` sheet 只應包含本次 current case 的結果 row。
+- `測試案例` sheet 必須至少包含 `群組ID`、`群組`、`編號`、`測試項目`、`測試類型`、`執行方式`、`結果`、`失敗分類`、`詳細紀錄JSON`。原始 17 欄 testcase 設計欄位（前置條件、步驟、預期結果、狀態清理、驗證方法等）不屬於 result contract。
+- 建議 Codex 先寫單題 `detail.json`,再用 Agent 固定 writer 產生 result-contract workbook: `node agent/dist/result-cli.js write --run-dir <runDir> --case <caseNo> --status <PASS|FAIL|BLOCKED|PARTIAL> --detail-json <detail.json> [--fail-category <category>]`。
 - Agent 會上傳結果並由 Railway parser 入庫。
 ```
 

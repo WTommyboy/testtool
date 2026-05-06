@@ -24,7 +24,7 @@ Production endpoints:
 Current semantic versions:
 
 - App/API: `1.1.3`
-- Mac Agent: `0.2.17`
+- Mac Agent: `0.2.18`
 
 Active branches:
 
@@ -44,6 +44,7 @@ The current line is the Mac Agent MVP. It supports:
 - Web run detail now exposes Tool Bridge request lifecycle status (`pending_approval`, `response_sent`, `response_delivered`, `response_missing`) so missing App/Agent responses are distinguishable from Tommy not approving.
 - One-case-at-a-time execution discipline.
 - Single-case `output/result.xlsx` upload and evidence gate, with Tool Bridge claim detection scoped to explicit approval/native-dialog/irreversible-action claims rather than ordinary testcase prose.
+- If Codex accidentally writes a full 17-column testcase-style workbook as `output/result.xlsx`, Mac Agent normalizes only the expected current-case row into the result-contract workbook before self-check/upload; blank or future testcase rows are not sent to the parser.
 - Helper preview/date-variant execution now checks that at least one metric field is selected before clicking BI `執行`; non-destructive BI validation alerts such as `請至少選擇一個欄位` are treated as execute-precondition BLOCKED evidence rather than missing PM authorization.
 - A-06 style all-zero-field inspection cases can use `collage.inspectAllZeroFields`: the helper selects all fields for the requested source report through visible UI, guards selected-field count before Execute, captures request/response/chart/table evidence, and writes `all-zero-field-inspection-evidence.json` with all-zero candidates for Codex to judge.
 - Source testcase rows with a prefilled terminal `結果` such as `BLOCKED` are imported as terminal normalized cases; their steps are marked `SKIPPED`, and Agent manifests advance to the next runnable case instead of executing them.
@@ -108,6 +109,14 @@ The `測試案例` sheet must include:
 - `結果`
 - `失敗分類`
 - `詳細紀錄JSON`
+
+`output/result.xlsx` is not the uploaded testcase package. Do not copy `input/testcase.xlsx` into `output/result.xlsx`; the result workbook should contain only the current case's result-contract row. As a guardrail, the Mac Agent can normalize a Codex-written testcase-style workbook by extracting the expected current case row and replacing the file with a proper result-contract workbook before self-check.
+
+For deterministic result writing, Codex may write `detail.json` first and use the fixed writer:
+
+```bash
+node agent/dist/result-cli.js write --run-dir <runDir> --case <caseNo> --status <PASS|FAIL|BLOCKED|PARTIAL> --detail-json <detail.json> [--fail-category <category>]
+```
 
 Railway ingests each single-case workbook into normalized state. The UI result download is generated from server-normalized run state: final aggregate when all cases are terminal, partial aggregate when a run fails or is interrupted with completed cases. It should not fall back to the last raw single-case workbook unless no normalized case result exists yet.
 
