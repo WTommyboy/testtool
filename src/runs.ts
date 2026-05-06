@@ -874,6 +874,18 @@ const dispatchToolResponseIfNeeded = (
   const requestId = extractToolRequestIdFromReason(reason);
   const event = findToolRequestEvent(runId, requestId);
   if (!event) {
+    insertRunEvent(runId, "tool_response.dispatch_failed", {
+      requestId,
+      caseNo: approval.case_no,
+      stepNo: approval.step_no,
+      error: "TOOL_REQUEST_EVENT_NOT_FOUND",
+      message: "Tool Bridge response missing: the approval was resolved, but the original Tool Bridge request event could not be found or bound."
+    });
+    insertRunLog(runId, "ERROR", "Tool Bridge response missing: request event not found", {
+      requestId,
+      caseNo: approval.case_no,
+      stepNo: approval.step_no
+    });
     return { sent: false, requestId, error: "TOOL_REQUEST_EVENT_NOT_FOUND" };
   }
 
@@ -905,6 +917,14 @@ const dispatchToolResponseIfNeeded = (
     return { sent: true, agentId: event.agentId, messageId: message.id, requestId: event.requestId ?? requestId };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
+    insertRunEvent(runId, "tool_response.dispatch_failed", {
+      agentId: event.agentId,
+      requestId: event.requestId ?? requestId,
+      caseNo: approval.case_no,
+      stepNo: approval.step_no,
+      error: message,
+      message: "Tool Bridge response dispatch failed: the App attempted to send the response to the Mac Agent but delivery failed."
+    });
     insertRunLog(runId, "ERROR", "Tool response dispatch failed", {
       agentId: event.agentId,
       requestId: event.requestId ?? requestId,
@@ -912,6 +932,116 @@ const dispatchToolResponseIfNeeded = (
     });
     return { sent: false, agentId: event.agentId, requestId: event.requestId ?? requestId, error: message };
   }
+};
+
+type ToolBridgeStatusItem = {
+  id: string;
+  caseNo: string;
+  stepNo: number;
+  requestId: string | null;
+  requestType: string;
+  action: string;
+  reason: string;
+  approvalStatus: string;
+  responseState: "pending_approval" | "rejected" | "response_missing" | "response_sent" | "response_delivered";
+  resolvedBy: string | null;
+  createdAt: string | null;
+  resolvedAt: string | null;
+  responseSentAt: string | null;
+  responseDeliveredAt: string | null;
+  error: string | null;
+};
+
+const parseToolRequestReason = (reason: string): { requestType: string; action: string; requestId: string | null; reason: string } => {
+  const lines = reason.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  const firstLine = lines[0] ?? reason.trim();
+  const toolMatch = firstLine.match(/^TOOL_REQUEST\s+([^:]+):\s*(.*)$/i);
+  const lineValue = (prefix: string): string | null => {
+    const found = lines.find((line) => line.toLowerCase().startsWith(prefix.toLowerCase()));
+    const value = found ? found.slice(prefix.length).trim() : "";
+    return value || null;
+  };
+  return {
+    requestType: toolMatch?.[1] ?? "manual_approval",
+    action: toolMatch?.[2] ?? firstLine,
+    requestId: lineValue("request_id:"),
+    reason: lineValue("reason:") ?? ""
+  };
+};
+
+const collectToolBridgeStatusItems = (runId: string): ToolBridgeStatusItem[] => {
+  const approvals = db
+    .prepare("SELECT * FROM approvals WHERE run_id = ? AND reason LIKE 'TOOL_REQUEST%' ORDER BY created_at ASC")
+    .all(runId) as Array<Record<string, unknown>>;
+  if (approvals.length === 0) return [];
+
+  const events = db
+    .prepare(
+      `
+        SELECT event_type, payload_json, created_at
+        FROM run_events
+        WHERE run_id = ?
+          AND event_type IN ('tool_response.sent', 'tool_response.delivered', 'tool_response.dispatch_failed')
+        ORDER BY rowid ASC
+      `
+    )
+    .all(runId) as Array<{ event_type: string; payload_json: string | null; created_at: string | null }>;
+
+  const sentByRequestId = new Map<string, { createdAt: string | null }>();
+  const deliveredByRequestId = new Map<string, { createdAt: string | null }>();
+  const failureByRequestId = new Map<string, { createdAt: string | null; error: string | null }>();
+  for (const event of events) {
+    const payload = parseJsonObject(event.payload_json);
+    const requestId = requestIdFromToolBridgePayload(payload);
+    if (!requestId) continue;
+    if (event.event_type === "tool_response.sent") {
+      sentByRequestId.set(requestId, { createdAt: event.created_at });
+    } else if (event.event_type === "tool_response.delivered") {
+      deliveredByRequestId.set(requestId, { createdAt: event.created_at });
+    } else if (event.event_type === "tool_response.dispatch_failed") {
+      failureByRequestId.set(requestId, {
+        createdAt: event.created_at,
+        error: stringValue(payload?.error) ?? stringValue(payload?.message)
+      });
+    }
+  }
+
+  return approvals.map((approval) => {
+    const reasonText = String(approval.reason ?? "");
+    const parsed = parseToolRequestReason(reasonText);
+    const requestId = parsed.requestId;
+    const sent = requestId ? sentByRequestId.get(requestId) ?? null : null;
+    const delivered = requestId ? deliveredByRequestId.get(requestId) ?? null : null;
+    const failure = requestId ? failureByRequestId.get(requestId) ?? null : null;
+    const approvalStatus = String(approval.status ?? "");
+    const responseState: ToolBridgeStatusItem["responseState"] =
+      approvalStatus === "PENDING"
+        ? "pending_approval"
+        : approvalStatus === "SKIPPED"
+          ? "rejected"
+          : delivered
+            ? "response_delivered"
+            : sent
+              ? "response_sent"
+              : "response_missing";
+    return {
+      id: String(approval.id ?? `${requestId ?? "unknown"}-${approval.step_no ?? 0}`),
+      caseNo: String(approval.case_no ?? ""),
+      stepNo: Number(approval.step_no ?? 0),
+      requestId,
+      requestType: parsed.requestType,
+      action: parsed.action,
+      reason: parsed.reason || reasonText,
+      approvalStatus,
+      responseState,
+      resolvedBy: stringValue(approval.resolved_by),
+      createdAt: stringValue(approval.created_at),
+      resolvedAt: stringValue(approval.resolved_at),
+      responseSentAt: sent?.createdAt ?? null,
+      responseDeliveredAt: delivered?.createdAt ?? null,
+      error: failure?.error ?? (responseState === "response_missing" && approvalStatus === "APPROVED" ? "TOOL_BRIDGE_RESPONSE_MISSING" : null)
+    };
+  });
 };
 
 const safeSendRunInputFile = (res: Response, filePath: unknown, downloadName: string): Response | void => {
@@ -3077,6 +3207,15 @@ router.get("/:id/approvals", (req, res) => {
 
   const items = db.prepare("SELECT * FROM approvals WHERE run_id = ? ORDER BY created_at ASC").all(req.params.id);
   return res.json({ items });
+});
+
+router.get("/:id/tool-bridge", (req, res) => {
+  const run = getRun(req.params.id);
+  if (!run) {
+    return res.status(404).json({ error: "RUN_NOT_FOUND" });
+  }
+
+  return res.json({ items: collectToolBridgeStatusItems(req.params.id) });
 });
 
 router.get("/:id/summary", (req, res) => {

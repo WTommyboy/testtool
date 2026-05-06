@@ -6,6 +6,13 @@ import path from "node:path";
 import WebSocket from "ws";
 
 type JsonObject = Record<string, unknown>;
+type ToolBridgeStatusItem = {
+  caseNo: string;
+  requestId: string | null;
+  approvalStatus: string;
+  responseState: "pending_approval" | "rejected" | "response_missing" | "response_sent" | "response_delivered";
+  error: string | null;
+};
 
 const rootDir = process.cwd();
 const distServer = path.join(rootDir, "dist", "server.js");
@@ -242,6 +249,13 @@ const verifyToolResponseRoundtrip = async (baseUrl: string): Promise<void> => {
       );
       assert.equal(approvals.items.length, 1, "tool request should create one pending approval");
       assert.match(approvals.items[0]?.reason ?? "", /request_id: roundtrip-req-1/);
+      const bridgeStatus = await requestJson<{ items: ToolBridgeStatusItem[] }>(
+        baseUrl,
+        `/api/runs/${run.id}/tool-bridge`
+      );
+      assert.equal(bridgeStatus.items.length, 1, "tool bridge status should include the pending request");
+      assert.equal(bridgeStatus.items[0]?.requestId, "roundtrip-req-1");
+      assert.equal(bridgeStatus.items[0]?.responseState, "pending_approval");
       await postJson(baseUrl, `/api/runs/${run.id}/approve`, {
         caseNo: approvals.items[0].case_no,
         stepNo: approvals.items[0].step_no,
@@ -258,6 +272,10 @@ const verifyToolResponseRoundtrip = async (baseUrl: string): Promise<void> => {
   const summary = await requestJson<{ runStatus: string; pendingApprovals: number }>(baseUrl, `/api/runs/${run.id}/summary`);
   assert.equal(summary.runStatus, "RUNNING");
   assert.equal(summary.pendingApprovals, 0);
+  const bridgeStatus = await requestJson<{ items: ToolBridgeStatusItem[] }>(baseUrl, `/api/runs/${run.id}/tool-bridge`);
+  assert.equal(bridgeStatus.items[0]?.requestId, "roundtrip-req-1");
+  assert.equal(bridgeStatus.items[0]?.responseState, "response_sent");
+  assert.equal(bridgeStatus.items[0]?.error, null);
 
   ws.close();
 };
@@ -366,6 +384,11 @@ const verifyAutoApprovedToolRequestIsClosed = async (baseUrl: string): Promise<v
   assert.equal(approvals.items[0]?.status, "APPROVED");
   assert.equal(approvals.items[0]?.resolved_by, "mac_agent_auto_policy");
   assert.match(approvals.items[0]?.reason ?? "", /request_id: roundtrip-auto-req-1/);
+  const bridgeStatus = await requestJson<{ items: ToolBridgeStatusItem[] }>(baseUrl, `/api/runs/${run.id}/tool-bridge`);
+  assert.equal(bridgeStatus.items.length, 1, "auto-approved tool bridge request should be visible in status endpoint");
+  assert.equal(bridgeStatus.items[0]?.requestId, "roundtrip-auto-req-1");
+  assert.equal(bridgeStatus.items[0]?.approvalStatus, "APPROVED");
+  assert.equal(bridgeStatus.items[0]?.responseState, "response_delivered");
 
   const summary = await requestJson<{ runStatus: string; pendingApprovals: number }>(baseUrl, `/api/runs/${run.id}/summary`);
   assert.equal(summary.runStatus, "RUNNING");

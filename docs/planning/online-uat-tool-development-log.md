@@ -1163,4 +1163,13 @@ Tommy 曾討論是否改成腳本。最後決策是採「半腳本化 / helper �
 - Authoring：`docs/authoring/UAT_三文件撰寫規則.md` 新增 A-06 template 範例，要求 structured params 帶 `sourceReport/sourceReports`、`selectAllFieldsInSourceReport`、`expectedFieldCount`、靜態 `dateRange`、`display` 與 `network.responseBody/chart.datasets` evidence；PM-skip row 仍不得放 Helper hints。
 - Fixture：`scripts/verify-capability-gate.ts` 新增 A-06 fixture，確認 capability gate advertises `collage.inspectAllZeroFields`，helper plan 只含三段 dedicated flow，且保留 `sourceReports/expectedFieldCount/dateRange`。
 - 版本與文件：Mac Agent 升到 `0.2.17`；README、`docs/refactor/工程spac.md`、`docs/refactor/規劃說明.md`、authoring spec 同步更新。Web UI pending Tool Bridge request 顯示與完整 current-case BLOCKED without whole-run abort flow 仍是後續 P0。
-- 驗證：已先跑 `npm run verify:capability-gate`、`npm run typecheck --prefix agent` 通過；完整 build/typecheck/git diff check 待本批收尾執行。
+- 驗證：已跑 `npm run verify:capability-gate`、`npm run verify:helper-hints`、`npm run typecheck`、`npm run typecheck --prefix agent`、`npm run build`、`npm run build --prefix agent`、`npm run build --prefix web`、`git diff --check` 通過；commit/push 後 production 已部署至 `d51cd65`。
+
+### 2026-05-06 12:08 - Tool Bridge lifecycle status panel / missing response wording
+
+- 背景：OTTEST004 v1.8.x 的 `TOOL_BRIDGE_RESPONSE_MISSING` 不能再被描述成 Tommy 沒授權或按取消。要讓 App 清楚呈現每個 Tool Bridge request 是 pending、已送出 response、Agent 已 delivered，還是 App/Agent response lifecycle 失敗。
+- 修正：`src/runs.ts` 新增 `tool_response.dispatch_failed` run event。當 approval resolved 後找不到原始 `tool_request.created` event，或 App 無法把 response 送到 Mac Agent 時，server 會留下 dispatch_failed event 與 ERROR log。
+- API/UI：新增 `GET /api/runs/:id/tool-bridge`，依 request id 回報 `pending_approval`、`rejected`、`response_missing`、`response_sent`、`response_delivered`。Web run detail 的「等待人工處理」卡片新增 lifecycle panel，顯示 request id、case、action、reason、時間戳與 `TOOL_BRIDGE_RESPONSE_MISSING`，並明講這不是 Tommy 取消或未授權。
+- Fixture：`scripts/verify-agent-roundtrip.ts` 擴充 manual approval roundtrip：approval 前應為 `pending_approval`，按 continue 後應為 `response_sent`；auto-approval roundtrip 在 Agent 回報 delivered 後應為 `response_delivered`。
+- 版本與文件：root App/API 升到 `1.1.3`；README、`docs/refactor/工程spac.md`、`docs/refactor/規劃說明.md` 同步更新。完整 current-case BLOCKED without whole-run abort 的真實 Codex/Playwright regression 仍需後續 production package 驗證。
+- 驗證：已跑 `npm run verify:agent-roundtrip`、`npm run verify:tool-bridge`、`npm run typecheck`、`npm run build --prefix web`、`git diff --check` 通過；commit/push 與 Railway `/version` / `/health` 待本批收尾執行。

@@ -210,6 +210,24 @@ type ApprovalRequestInfo = {
   reason: string;
 };
 
+type ToolBridgeStatusItem = {
+  id: string;
+  caseNo: string;
+  stepNo: number;
+  requestId: string | null;
+  requestType: string;
+  action: string;
+  reason: string;
+  approvalStatus: string;
+  responseState: "pending_approval" | "rejected" | "response_missing" | "response_sent" | "response_delivered";
+  resolvedBy: string | null;
+  createdAt: string | null;
+  resolvedAt: string | null;
+  responseSentAt: string | null;
+  responseDeliveredAt: string | null;
+  error: string | null;
+};
+
 type AuthUser = {
   login: string;
   id: string;
@@ -318,6 +336,32 @@ const parseApprovalReason = (reason: string): ApprovalRequestInfo => {
   };
 };
 
+const toolBridgeStateLabel = (state: ToolBridgeStatusItem["responseState"]): string => {
+  if (state === "pending_approval") return "等待處理";
+  if (state === "rejected") return "已拒絕";
+  if (state === "response_missing") return "Response missing";
+  if (state === "response_sent") return "已送出";
+  return "已送達";
+};
+
+const toolBridgeStateBadgeClass = (state: ToolBridgeStatusItem["responseState"]): string => {
+  if (state === "pending_approval") return "waiting";
+  if (state === "rejected") return "pending";
+  if (state === "response_missing") return "blocked";
+  if (state === "response_sent") return "running";
+  return "pass";
+};
+
+const toolBridgeStateMessage = (item: ToolBridgeStatusItem): string => {
+  if (item.responseState === "pending_approval") return "等待 PM 在此卡片處理。";
+  if (item.responseState === "rejected") return "此 request 已拒絕或跳過，Agent 不會繼續這個 Tool Bridge request。";
+  if (item.responseState === "response_missing") {
+    return "App/Agent 沒有送出或綁定 Tool Bridge response；這不是 PM 取消，也不是未授權。";
+  }
+  if (item.responseState === "response_sent") return "App 已送出 response，等待 Agent 回報 delivered。";
+  return "Agent 已回報收到 response。";
+};
+
 const getCaseGroupName = (c: RunCase): string => {
   if (c.group_name && c.group_name.trim()) return c.group_name.trim();
   const m = c.case_no.match(/^[A-Za-z]+/);
@@ -382,6 +426,7 @@ function App() {
   const [caseStatusFilter, setCaseStatusFilter] = useState("ALL");
   const [expandedCaseId, setExpandedCaseId] = useState<string | null>(null);
   const [approvals, setApprovals] = useState<Approval[]>([]);
+  const [toolBridgeItems, setToolBridgeItems] = useState<ToolBridgeStatusItem[]>([]);
   const [timingSummary, setTimingSummary] = useState<TimingSummary | null>(null);
   const [diagnosticSummary, setDiagnosticSummary] = useState<DiagnosticSummary | null>(null);
   const [runArtifacts, setRunArtifacts] = useState<RunArtifact[]>([]);
@@ -414,6 +459,7 @@ function App() {
   const selectedAgentFailedChecks = selectedAgent?.doctorChecks.filter((check) => check.verdict === "FAIL") ?? [];
   const selectedAgentMacPermissionCheck = selectedAgent?.doctorChecks.find((check) => check.name === "macos-ui-automation-permissions");
   const pendingApprovals = approvals.filter((x) => x.status === "PENDING");
+  const missingToolBridgeResponses = toolBridgeItems.filter((item) => item.responseState === "response_missing");
   const getSelectedAgentBlockingReason = (): string | null => {
     if (runExecutionMode === "offline") return null;
     if (!selectedAgent) return "請先選擇一台在線 Agent";
@@ -786,6 +832,51 @@ function App() {
             取消整個 Run
           </button>
         </div>
+      </div>
+    );
+  };
+
+  const renderToolBridgeStatusPanel = () => {
+    if (toolBridgeItems.length === 0) {
+      return <p className="muted">尚無 Tool Bridge request</p>;
+    }
+
+    return (
+      <div className="tool-bridge-panel">
+        {toolBridgeItems.map((item) => (
+          <div key={item.id} className={`tool-bridge-item ${item.responseState}`}>
+            <div className="tool-bridge-title-row">
+              <div>
+                <span className={`badge ${toolBridgeStateBadgeClass(item.responseState)}`}>
+                  {toolBridgeStateLabel(item.responseState)}
+                </span>
+              </div>
+              <span className="approval-request-id">{item.requestId || "-"}</span>
+            </div>
+            <div className="approval-detail-grid tool-bridge-detail-grid">
+              <span>Case</span>
+              <strong>{item.caseNo || "-"}</strong>
+              <span>Step</span>
+              <strong>{item.stepNo || "-"}</strong>
+              <span>Type</span>
+              <strong>{item.requestType || "-"}</strong>
+              <span>動作</span>
+              <strong>{item.action || "-"}</strong>
+              <span>原因</span>
+              <strong>{item.reason || "-"}</strong>
+            </div>
+            <div className={`tool-bridge-state-note ${item.responseState === "response_missing" ? "missing" : ""}`}>
+              {toolBridgeStateMessage(item)}
+            </div>
+            {item.error ? <div className="tool-bridge-error">{item.error}</div> : null}
+            <div className="meta">
+              created {formatDate(item.createdAt ?? undefined)}
+              {item.resolvedAt ? ` / resolved ${formatDate(item.resolvedAt)}` : ""}
+              {item.responseSentAt ? ` / sent ${formatDate(item.responseSentAt)}` : ""}
+              {item.responseDeliveredAt ? ` / delivered ${formatDate(item.responseDeliveredAt)}` : ""}
+            </div>
+          </div>
+        ))}
       </div>
     );
   };
@@ -1168,11 +1259,12 @@ function App() {
     if (!runId) return;
     try {
       const resetActivity = Boolean(options.resetActivity);
-      const [summaryData, activityData, casesData, approvalsData, artifactsData] = await Promise.all([
+      const [summaryData, activityData, casesData, approvalsData, toolBridgeData, artifactsData] = await Promise.all([
         api<Summary>(`/api/runs/${runId}/summary`),
         fetchRunActivity(runId, resetActivity),
         api<{ items: RunCase[] }>(`/api/runs/${runId}/cases`),
         api<{ items: Approval[] }>(`/api/runs/${runId}/approvals`),
+        api<{ items: ToolBridgeStatusItem[] }>(`/api/runs/${runId}/tool-bridge`),
         optionalJson<{ items: RunArtifact[] }>(`/api/runs/${runId}/artifacts`)
       ]);
       const [timingData, diagnosticData] = await Promise.all([
@@ -1183,6 +1275,7 @@ function App() {
       applyRunActivity(resetActivity, activityData.eventsData, activityData.logsData);
       setRunCases(casesData.items);
       setApprovals(approvalsData.items);
+      setToolBridgeItems(toolBridgeData.items);
       setTimingSummary(timingData);
       setDiagnosticSummary(diagnosticData);
       setRunArtifacts(artifactsData?.items ?? []);
@@ -1213,6 +1306,7 @@ function App() {
     setRunCases([]);
     setRunBugs([]);
     setApprovals([]);
+    setToolBridgeItems([]);
     setTimingSummary(null);
     setDiagnosticSummary(null);
     setRunArtifacts([]);
@@ -2267,12 +2361,18 @@ function App() {
             <div className="card">
               <div className="card-header">
                 <h2>⚠️ 等待人工處理</h2>
-                <span className="badge waiting">{pendingApprovals.length} PENDING</span>
+                <div className="header-badges">
+                  <span className="badge waiting">{pendingApprovals.length} PENDING</span>
+                  {missingToolBridgeResponses.length > 0 ? (
+                    <span className="badge blocked">{missingToolBridgeResponses.length} MISSING</span>
+                  ) : null}
+                </div>
               </div>
               <div className="form-group">
                 <label>Resolved By</label>
                 <input value={resolvedBy} onChange={(e) => setResolvedBy(e.target.value)} />
               </div>
+              {renderToolBridgeStatusPanel()}
               {pendingApprovals.length === 0 ? <p className="muted">目前沒有待處理 approval</p> : null}
               {pendingApprovals.map((a) => renderApprovalCard(a))}
             </div>

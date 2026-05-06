@@ -1,7 +1,7 @@
 # UAT Tool 最新工程 Spec
 
 **版本**: v2026-05-06
-**狀態**: Mac Agent MVP / App 1.1.2 + Agent 0.2.17 / Indexed Guidance + Preflight Safeguards + groupId schema + final/partial aggregate result + complete archive MD export + OTTEST002 Collage helper P0 + metadata dropdown source-group scoping + metadata expected-source fallback + metadata source-scope count guard + list-page CSV row refresh + response-body fallback + preview table evidence + CSV header/date normalization + helper-plan auto continuation + existing-report field exact reconciliation + helper-evidence preflight replacement + support-file profile + result repair guard + degraded BLOCKED result guard + Tool Bridge run-event evidence gate + Tool Bridge result-gate false-positive guard + source-result runtime skip ingestion + execute selected-field precondition guard + non-destructive validation alert allowlist + A-06 all-zero field inspection helper + PASS-vs-helper-false-check gate + PM skip classification + preview-only helper skip guards + case-type must-read rules + CSV/metadata authoring contract + exact metadata source filename contract + background-safe browser lease + no-foreground helper policy + field-list loading wait + inline cleanup consistency parser guard / helper project auto-selection guard / manual_ai helper pre-run guard / manual_ai safe navigation prelude guard / date-variants preview evidence helper / multi-variant date visible-UI routing guard / date UI represented-range evidence / Monday-week date preset guard with weekStart override / select-all fields params guard / selected-field code-label reconciliation / Playwright browser_tabs availability guard / active-question-first session handoff contract
+**狀態**: Mac Agent MVP / App 1.1.3 + Agent 0.2.17 / Indexed Guidance + Preflight Safeguards + groupId schema + final/partial aggregate result + complete archive MD export + OTTEST002 Collage helper P0 + metadata dropdown source-group scoping + metadata expected-source fallback + metadata source-scope count guard + list-page CSV row refresh + response-body fallback + preview table evidence + CSV header/date normalization + helper-plan auto continuation + existing-report field exact reconciliation + helper-evidence preflight replacement + support-file profile + result repair guard + degraded BLOCKED result guard + Tool Bridge run-event evidence gate + Tool Bridge lifecycle status panel + Tool Bridge result-gate false-positive guard + source-result runtime skip ingestion + execute selected-field precondition guard + non-destructive validation alert allowlist + A-06 all-zero field inspection helper + PASS-vs-helper-false-check gate + PM skip classification + preview-only helper skip guards + case-type must-read rules + CSV/metadata authoring contract + exact metadata source filename contract + background-safe browser lease + no-foreground helper policy + field-list loading wait + inline cleanup consistency parser guard / helper project auto-selection guard / manual_ai helper pre-run guard / manual_ai safe navigation prelude guard / date-variants preview evidence helper / multi-variant date visible-UI routing guard / date UI represented-range evidence / Monday-week date preset guard with weekStart override / select-all fields params guard / selected-field code-label reconciliation / Playwright browser_tabs availability guard / active-question-first session handoff contract
 **適用分支**: `refactor/mac-agent-mvp` / `codex/uat-tool-mvp`  
 **說明**: 檔名沿用 Tommy 提供的 `工程spac.md`;本文內容為工程 spec。
 
@@ -943,10 +943,15 @@ Implemented in Agent `0.2.17`:
 
 - `collage.inspectAllZeroFields` supports A-06 style all-zero-field inspection. It selects all fields for the requested source report through visible UI, verifies selected field count before Execute, runs preview, and writes `all-zero-field-inspection-evidence.json` with selected labels/codes, network request/response observations, chart/table summaries, and all-zero candidates. Helper output remains evidence only; Codex still judges PASS/BLOCKED.
 
+Implemented in App/API `1.1.3`:
+
+- `dispatchToolResponseIfNeeded` now records `tool_response.dispatch_failed` and an ERROR run log when an approval is resolved but the original Tool Bridge request event cannot be found or the App cannot send the response to the Mac Agent.
+- `/api/runs/:id/tool-bridge` reports Tool Bridge request lifecycle state by request id: `pending_approval`, `rejected`, `response_missing`, `response_sent`, or `response_delivered`.
+- Web run detail displays Tool Bridge request id, case, action, reason, timestamps, and `TOOL_BRIDGE_RESPONSE_MISSING` wording. This separates App/Agent response lifecycle failure from Tommy not approving.
+
 Required fixes:
 
-1. Surface pending Tool Bridge requests clearly in Web UI / run events, including request id, case id, dialog text and required operator action. If the App cannot deliver a response, the failure reason must say "Tool Bridge response missing" instead of implying Tommy did not authorize.
-2. Add regression fixtures covering the full current-case BLOCKED without whole-run abort flow after a native validation alert appears in a real Codex/Playwright session.
+1. Add regression fixtures covering the full current-case BLOCKED without whole-run abort flow after a native validation alert appears in a real Codex/Playwright session.
 
 ### 6.3.2 Source Prefilled Results / PM-Skip Runtime Contract
 
@@ -1840,11 +1845,11 @@ codex/uat-tool-mvp
 
 ### P0
 
-1. Finish OTTEST004-A-06 runtime recovery: visible Tool Bridge pending state, missing-response wording, and full current-case BLOCKED recovery without whole-run abort. Selected-field-count guard / non-destructive validation alert allowlist are implemented in Agent `0.2.16`; A-06 all-zero-field inspection helper is implemented in Agent `0.2.17`.
+1. Finish OTTEST004-A-06 runtime recovery: full current-case BLOCKED recovery without whole-run abort. Selected-field-count guard / non-destructive validation alert allowlist are implemented in Agent `0.2.16`; A-06 all-zero-field inspection helper is implemented in Agent `0.2.17`; visible Tool Bridge pending state and missing-response wording are implemented in App/API `1.1.3`.
 2. Run OTTEST002 production regression against the deployed helper P0, metadata dropdown source-group scoping, list-page CSV helper, helper-evidence preflight replacement, case-type must-read rules, exact metadata source filename contract and final aggregate pipeline.
 3. Verify A-01 field-add actionability fallback and A-03 metadata dropdown helper writes `metadata-dropdown-evidence.json` with source-group scoped DOM actual list, exact diff, normalized diff and metadata expected list.
 4. Verify the Agent pre-upload repair guard with OTTEST002 Codex-generated result workbooks that still omit `群組ID`.
-5. Add Web UI display for `BATCH_CASE_POLICY_VIOLATION`, result gate errors, Tool Bridge pending requests, missing Tool Bridge response errors, and Tool Bridge schema errors with clear explanation.
+5. Add Web UI display for `BATCH_CASE_POLICY_VIOLATION`, result gate errors, and Tool Bridge schema errors with clear explanation. Tool Bridge pending/missing-response status is covered by `/api/runs/:id/tool-bridge` and the run detail panel.
 6. Add per-case progress events and current-case pointer visibility.
 7. If OTTEST002 exposes BI locator drift, metadata dropdown DOM mismatch, helper continuation gap, list-page CSV control mismatch or CSV format mismatch, tune `collage.configureMetric` / `collage.extractMetadataDropdownFields` / `collage.openExistingReport` / `collage.downloadCsvAndComparePreview` using the helper DOM profile artifacts.
 

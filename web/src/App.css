@@ -223,6 +223,15 @@
   min-width: 0;
 }
 
+.header-badges {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
 /* ─── Stats Row ─── */
 .stats {
   display: flex;
@@ -915,6 +924,63 @@
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
+}
+
+.tool-bridge-panel {
+  display: grid;
+  gap: 8px;
+  margin: 10px 0 12px;
+}
+
+.tool-bridge-item {
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--card);
+  padding: 12px;
+}
+
+.tool-bridge-item.response_missing {
+  border-color: var(--blocked);
+  background: var(--blocked-bg);
+}
+
+.tool-bridge-item.response_delivered {
+  border-color: var(--border-light);
+}
+
+.tool-bridge-title-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.tool-bridge-detail-grid {
+  margin-bottom: 8px;
+}
+
+.tool-bridge-state-note {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-2);
+  margin-bottom: 6px;
+}
+
+.tool-bridge-state-note.missing {
+  color: var(--blocked);
+  font-weight: 600;
+}
+
+.tool-bridge-error {
+  font: 500 12px var(--mono);
+  color: var(--blocked);
+  background: var(--bg);
+  border: 1px solid var(--border-light);
+  border-radius: var(--r-sm);
+  padding: 6px 8px;
+  margin-bottom: 8px;
+  overflow-wrap: anywhere;
 }
 
 /* ─── Log Entries (Tab B-1) ─── */

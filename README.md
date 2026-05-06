@@ -23,7 +23,7 @@ Production endpoints:
 
 Current semantic versions:
 
-- App/API: `1.1.2`
+- App/API: `1.1.3`
 - Mac Agent: `0.2.17`
 
 Active branches:
@@ -41,6 +41,7 @@ The current line is the Mac Agent MVP. It supports:
 - Layer 1 platform skill and BI domain pack injection.
 - Preflight, auth, package consistency, capability gate, and run-state safeguards.
 - Tool Bridge for native dialogs, irreversible actions, SSO/auth blockers, and ambiguity handling.
+- Web run detail now exposes Tool Bridge request lifecycle status (`pending_approval`, `response_sent`, `response_delivered`, `response_missing`) so missing App/Agent responses are distinguishable from Tommy not approving.
 - One-case-at-a-time execution discipline.
 - Single-case `output/result.xlsx` upload and evidence gate, with Tool Bridge claim detection scoped to explicit approval/native-dialog/irreversible-action claims rather than ordinary testcase prose.
 - Helper preview/date-variant execution now checks that at least one metric field is selected before clicking BI `執行`; non-destructive BI validation alerts such as `請至少選擇一個欄位` are treated as execute-precondition BLOCKED evidence rather than missing PM authorization.
@@ -145,6 +146,8 @@ Normal runs do not call `page.bringToFront()` or CDP `/json/activate`. Opening t
 Native dialogs, irreversible actions, overwrite/delete/save flows, SSO/auth blockers, and ambiguous package conflicts must go through Tool Bridge. Testcase text or startup instructions are not authorization.
 
 The Mac Agent may auto-approve non-auth Tool Bridge requests only when the local policy allows it.
+
+Run detail includes a Tool Bridge status panel and `/api/runs/:id/tool-bridge` API. It shows request id, case, action, approval status, response dispatch/delivery timestamps, and flags `TOOL_BRIDGE_RESPONSE_MISSING` when an approval was resolved but the App/Agent did not send or bind a response.
 
 The result evidence gate only requires Tool Bridge response evidence when `detail_json` explicitly claims approval, native dialog handling, or an irreversible action. Test language such as "second preview result overwrites the first preview display" is treated as ordinary evidence prose, not an irreversible overwrite/save claim.
 
