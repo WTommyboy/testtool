@@ -24,7 +24,7 @@ Production endpoints:
 Current semantic versions:
 
 - App/API: `1.1.2`
-- Mac Agent: `0.2.15`
+- Mac Agent: `0.2.16`
 
 Active branches:
 
@@ -43,6 +43,7 @@ The current line is the Mac Agent MVP. It supports:
 - Tool Bridge for native dialogs, irreversible actions, SSO/auth blockers, and ambiguity handling.
 - One-case-at-a-time execution discipline.
 - Single-case `output/result.xlsx` upload and evidence gate, with Tool Bridge claim detection scoped to explicit approval/native-dialog/irreversible-action claims rather than ordinary testcase prose.
+- Helper preview/date-variant execution now checks that at least one metric field is selected before clicking BI `執行`; non-destructive BI validation alerts such as `請至少選擇一個欄位` are treated as execute-precondition BLOCKED evidence rather than missing PM authorization.
 - Source testcase rows with a prefilled terminal `結果` such as `BLOCKED` are imported as terminal normalized cases; their steps are marked `SKIPPED`, and Agent manifests advance to the next runnable case instead of executing them.
 - Server-side normalized result state.
 - Final aggregate result workbook download after all cases finish.
@@ -145,6 +146,8 @@ Native dialogs, irreversible actions, overwrite/delete/save flows, SSO/auth bloc
 The Mac Agent may auto-approve non-auth Tool Bridge requests only when the local policy allows it.
 
 The result evidence gate only requires Tool Bridge response evidence when `detail_json` explicitly claims approval, native dialog handling, or an irreversible action. Test language such as "second preview result overwrites the first preview display" is treated as ordinary evidence prose, not an irreversible overwrite/save claim.
+
+Non-destructive validation alerts caused by failed execute preconditions, such as `請至少選擇一個欄位`, are not treated as Tool Bridge authorization failures. The correct result is a current-case `BLOCKED` with explicit DOM/alert evidence.
 
 ## Test Package Source Of Truth
 

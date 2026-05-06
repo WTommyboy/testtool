@@ -2043,6 +2043,32 @@ const selectedFieldText = async (page: Page): Promise<string> => {
   ].filter(Boolean).join("\n");
 };
 
+const selectedMetricFieldGuardEvidence = async (page: Page): Promise<Record<string, unknown>> => {
+  const selected = await readSelectedMetricFields(page).catch(() => []);
+  const dom = await readDomState(page).catch(() => null);
+  const cleanupState = dom?.cleanupState && typeof dom.cleanupState === "object" ? dom.cleanupState as Record<string, unknown> : {};
+  return {
+    selectedCount: selected.length,
+    selectedMetricFields: selected.map((item) => ({
+      label: item.label,
+      code: item.code,
+      buttonIndex: item.buttonIndex
+    })),
+    fieldSelectionText: cleanupState.fieldSelectionText ?? null,
+    bodyTextExcerpt: typeof dom?.bodyTextExcerpt === "string" ? dom.bodyTextExcerpt.slice(0, 800) : null
+  };
+};
+
+const ensureMetricFieldSelectedBeforeExecute = async (page: Page, context: string): Promise<Record<string, unknown>> => {
+  const evidence = await selectedMetricFieldGuardEvidence(page);
+  if (Number(evidence.selectedCount ?? 0) <= 0) {
+    throw new HelperBlockedError(
+      `EXECUTE_PRECONDITION_NO_SELECTED_FIELDS:${context}; evidence=${JSON.stringify(evidence).slice(0, 1200)}`
+    );
+  }
+  return evidence;
+};
+
 const metricAddFieldPattern = /(?:\+\s*)?新增(?:欄位|指標|資料)|(?:欄位|指標).{0,6}(?:新增|選擇)|選擇(?:欄位|指標)|\+.*欄位/i;
 
 const metricFieldControlsVisible = async (page: Page): Promise<boolean> => {
@@ -2334,6 +2360,7 @@ const captureDateUiEvidenceReport = async (options: CliOptions, page: Page, star
 
 const runPreview = async (options: CliOptions, page: Page, startedAt: string): Promise<HelperReport> => {
   const uiProfileBefore = await captureUiDomProfile(options, page, "runPreview.before");
+  const executePrecondition = await ensureMetricFieldSelectedBeforeExecute(page, "runPreview");
   const observed = await observeDuring(page, async () => {
     await page.getByText("執行", { exact: true }).first().click({ timeout: 15000 });
     await page.waitForTimeout(2500);
@@ -2358,6 +2385,7 @@ const runPreview = async (options: CliOptions, page: Page, startedAt: string): P
         before: uiProfileBefore,
         after: uiProfileAfter
       },
+      executePrecondition,
       network: { requests: observed.requests, responses: observed.responses },
       chart,
       table,
@@ -2411,7 +2439,9 @@ const runDateVariantsPreviewEvidence = async (options: CliOptions, page: Page, s
     let observed: { requests: Record<string, unknown>[]; responses: Record<string, unknown>[] } = { requests: [], responses: [] };
     let chart: Record<string, unknown> | null = null;
     let table: Record<string, unknown> | null = null;
+    let executePrecondition: Record<string, unknown> | null = null;
     if (setResult.ok) {
+      executePrecondition = await ensureMetricFieldSelectedBeforeExecute(page, `dateVariant:${label}`);
       const previewObserved = await observeDuring(page, async () => {
         await page.getByText("執行", { exact: true }).first().click({ timeout: 15000 });
         await page.waitForTimeout(2500);
@@ -2434,6 +2464,7 @@ const runDateVariantsPreviewEvidence = async (options: CliOptions, page: Page, s
       status: setResult.ok && hasPreviewEvidence ? "ok" : "blocked",
       setDateResult: setEvidence,
       dateUiEvidence,
+      executePrecondition,
       network: observed,
       chart,
       table,

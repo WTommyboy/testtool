@@ -1144,3 +1144,13 @@ Tommy 曾討論是否改成腳本。最後決策是採「半腳本化 / helper �
 - Fixture：新增 `scripts/verify-source-prefilled-results.ts` 與 `npm run verify:source-prefilled-results`，覆蓋 source `BLOCKED` 匯入、step skip、detail_json-only runnable case、manifest 跳過已填結果 row。
 - 版本與文件：Mac Agent 升到 `0.2.15`；README、`docs/refactor/工程spac.md`、`docs/refactor/規劃說明.md` 同步更新 source-result runtime skip contract。A-06 native validation dialog lifecycle / selected-field guard 仍是下一個 runtime P0。
 - 驗證：已跑 `npm run verify:source-prefilled-results`、`npm run verify:result-evidence-gate`、`npm run typecheck`、`npm run typecheck --prefix agent`、`npm run build`、`npm run build --prefix agent`、`git diff --check` 通過；commit/push `refactor/mac-agent-mvp` 與 `codex/uat-tool-mvp` 待本批收尾執行。
+
+### 2026-05-06 11:18 - OTTEST004-A-06 runtime hardening：Execute precondition 與 validation alert allowlist
+
+- 背景：A-06 的根本 runtime 風險是 Codex/helper 在未選到任何欄位時按 BI `執行`，導致 native alert `請至少選擇一個欄位`。這類 alert 是非破壞性 validation，不應等同刪除/覆寫 native dialog，也不應被寫成 Tommy 未授權。
+- 修正：`agent/src/bi-ui-helper-executor.ts` 新增 `EXECUTE_PRECONDITION_NO_SELECTED_FIELDS` guard。`collage.runPreviewAndCollectEvidence` 與 `collage.runDateVariantsPreviewEvidence` 在按 `執行` 前先讀 selected metric fields；若 count=0，helper 直接回 `blocked`，留下 DOM/fieldSelection evidence，不按出 native alert。
+- Codex guidance：`agent/src/task-runner.ts` 的 generated AGENTS 與 task prompt 明確要求 visible-UI case 按 `執行` 前先驗證 selected field count > 0；若為 0，寫 current-case `BLOCKED / EXECUTE_PRECONDITION_NO_SELECTED_FIELDS`，不要點 Execute。
+- Tool Bridge / gate：`agent/src/task-runner.ts` policy scan 與 `src/result-parser/result-evidence-gate.ts` 允許 `請至少選擇一個欄位` / `select at least one field` 這類非破壞性 validation alert 作為 BLOCKED evidence，不再因 `browser_handle_dialog` 字樣本身要求 Tool Bridge response。刪除、覆寫、儲存、SSO/auth 或明確授權 claim 仍維持 Tool Bridge response gate。
+- Fixture：`scripts/verify-result-evidence-gate.ts` 新增 non-destructive selected-field validation alert fixture，確認 `BLOCKED / EXECUTE_PRECONDITION_NO_SELECTED_FIELDS` 可通過；刪除/授權類缺 response 仍會擋。
+- 版本與文件：Mac Agent 升到 `0.2.16`；README、`docs/refactor/工程spac.md`、`docs/refactor/規劃說明.md` 同步更新。A-06 all-zero-field inspection helper、Web UI pending Tool Bridge request 顯示與完整 current-case BLOCKED without whole-run abort flow 仍是後續 P0。
+- 驗證：已跑 `npm run verify:result-evidence-gate`、`npm run typecheck`、`npm run typecheck --prefix agent`、`npm run build`、`npm run build --prefix agent`、`git diff --check` 通過；commit/push `refactor/mac-agent-mvp` 與 `codex/uat-tool-mvp` 待本批收尾執行。

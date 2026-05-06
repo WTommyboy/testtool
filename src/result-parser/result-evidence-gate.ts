@@ -141,6 +141,11 @@ const TOOL_BRIDGE_RESPONSE_PATTERNS = [
   /Tool Bridge response/i
 ];
 
+const NON_DESTRUCTIVE_NATIVE_VALIDATION_DIALOG_PATTERN =
+  /(?:請至少選擇一個欄位|至少選擇.{0,12}欄位|請選擇.{0,12}欄位|select\s+at\s+least\s+one\s+field|at\s+least\s+one\s+field)/i;
+const TOOL_BRIDGE_AUTH_OR_DESTRUCTIVE_PATTERN =
+  /(?:Tommy|PM|授權|同意|approved|authorized|authorization|request_id|tool[-_ ]response|刪除|删除|delete|trash|remove|覆寫|覆蓋儲存|overwrite|儲存|保存|save|SSO|login|auth|登入|未授權|不可逆)/i;
+
 const normalizeStatus = (status: string): string => status.trim().toUpperCase().replace(/\s+/g, "_");
 
 const normalizeCaseNo = (value: string): string =>
@@ -241,6 +246,11 @@ const hasCurrentRunEvidence = (detail: Record<string, unknown>): boolean => {
 
 const claimsToolBridgeAction = (detail: Record<string, unknown>): boolean => {
   const text = flattenedDetailText(detail);
+  const allowlistedNativeValidation =
+    /browser_handle_dialog|native\s*(?:alert|dialog)|原生\s*(?:alert|dialog)|alert|dialog/i.test(text) &&
+    NON_DESTRUCTIVE_NATIVE_VALIDATION_DIALOG_PATTERN.test(text) &&
+    !TOOL_BRIDGE_AUTH_OR_DESTRUCTIVE_PATTERN.test(text);
+  if (allowlistedNativeValidation) return false;
   return TOOL_BRIDGE_ACTION_CLAIM_PATTERNS.some((pattern) => pattern.test(text));
 };
 

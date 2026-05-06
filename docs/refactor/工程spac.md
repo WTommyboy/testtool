@@ -1,7 +1,7 @@
 # UAT Tool 最新工程 Spec
 
 **版本**: v2026-05-06
-**狀態**: Mac Agent MVP / App 1.1.2 + Agent 0.2.15 / Indexed Guidance + Preflight Safeguards + groupId schema + final/partial aggregate result + complete archive MD export + OTTEST002 Collage helper P0 + metadata dropdown source-group scoping + metadata expected-source fallback + metadata source-scope count guard + list-page CSV row refresh + response-body fallback + preview table evidence + CSV header/date normalization + helper-plan auto continuation + existing-report field exact reconciliation + helper-evidence preflight replacement + support-file profile + result repair guard + degraded BLOCKED result guard + Tool Bridge run-event evidence gate + Tool Bridge result-gate false-positive guard + source-result runtime skip ingestion + PASS-vs-helper-false-check gate + PM skip classification + preview-only helper skip guards + case-type must-read rules + CSV/metadata authoring contract + exact metadata source filename contract + background-safe browser lease + no-foreground helper policy + field-list loading wait + inline cleanup consistency parser guard / helper project auto-selection guard / manual_ai helper pre-run guard / manual_ai safe navigation prelude guard / date-variants preview evidence helper / multi-variant date visible-UI routing guard / date UI represented-range evidence / Monday-week date preset guard with weekStart override / select-all fields params guard / selected-field code-label reconciliation / Playwright browser_tabs availability guard / active-question-first session handoff contract
+**狀態**: Mac Agent MVP / App 1.1.2 + Agent 0.2.16 / Indexed Guidance + Preflight Safeguards + groupId schema + final/partial aggregate result + complete archive MD export + OTTEST002 Collage helper P0 + metadata dropdown source-group scoping + metadata expected-source fallback + metadata source-scope count guard + list-page CSV row refresh + response-body fallback + preview table evidence + CSV header/date normalization + helper-plan auto continuation + existing-report field exact reconciliation + helper-evidence preflight replacement + support-file profile + result repair guard + degraded BLOCKED result guard + Tool Bridge run-event evidence gate + Tool Bridge result-gate false-positive guard + source-result runtime skip ingestion + execute selected-field precondition guard + non-destructive validation alert allowlist + PASS-vs-helper-false-check gate + PM skip classification + preview-only helper skip guards + case-type must-read rules + CSV/metadata authoring contract + exact metadata source filename contract + background-safe browser lease + no-foreground helper policy + field-list loading wait + inline cleanup consistency parser guard / helper project auto-selection guard / manual_ai helper pre-run guard / manual_ai safe navigation prelude guard / date-variants preview evidence helper / multi-variant date visible-UI routing guard / date UI represented-range evidence / Monday-week date preset guard with weekStart override / select-all fields params guard / selected-field code-label reconciliation / Playwright browser_tabs availability guard / active-question-first session handoff contract
 **適用分支**: `refactor/mac-agent-mvp` / `codex/uat-tool-mvp`  
 **說明**: 檔名沿用 Tommy 提供的 `工程spac.md`;本文內容為工程 spec。
 
@@ -150,7 +150,7 @@ package:
 ```text
 package name: uat-tool-agent
 binary: uat-agent
-version: 0.2.15
+version: 0.2.16
 ```
 
 The Agent WebSocket `X-Agent-Version` header and `agent.online.payload.agent_version` are read from `agent/package.json`; they must not be hard-coded in `agent/src/connection.ts`.
@@ -933,13 +933,17 @@ Clarification:
 - This must not be treated as Tommy failing to approve in chat. In Agent mode, only an App / Agent Tool Bridge response counts.
 - A missing Tool Bridge response for a recoverable validation dialog should not silently look like user inaction.
 
+Implemented in Agent `0.2.16`:
+
+- Helper preview and date-variant preview actions now run `EXECUTE_PRECONDITION_NO_SELECTED_FIELDS` before clicking BI `執行`; if no metric field is selected, helper returns current-case `blocked` evidence and does not trigger the native alert.
+- Codex run guidance now explicitly requires selected-field-count evidence before pressing BI `執行`.
+- `browser_handle_dialog` / result detail mentioning non-destructive BI validation alerts such as `請至少選擇一個欄位` no longer triggers missing Tool Bridge response failure by itself. It should be recorded as execute-precondition BLOCKED evidence.
+
 Required fixes:
 
-1. Add an Execute precondition guard for visible-UI and helper flows: when the case requires at least one selected field, verify selected field count is greater than zero before clicking Execute. If the guard fails, do not click Execute; mark the current case BLOCKED with explicit evidence.
-2. Add an allowlisted non-destructive native validation dialog path for BI alerts such as `請至少選擇一個欄位`. The runner must either safely dismiss it through a recorded Tool Bridge response or convert only the current case to BLOCKED/recoverable state, rather than aborting the full run as a policy violation.
-3. Surface pending Tool Bridge requests clearly in Web UI / run events, including request id, case id, dialog text and required operator action. If the App cannot deliver a response, the failure reason must say "Tool Bridge response missing" instead of implying Tommy did not authorize.
-4. Add an A-06-specific helper or guardrail for all-zero-field inspection: enumerate/select fields through visible UI, verify selected field labels/codes, run preview, and collect zero-column evidence. Avoid leaving this large field-selection flow entirely to generic visible UI.
-5. Add regression fixtures covering: selected-field-count guard before Execute, native validation alert recovery, missing Tool Bridge response handling, and "current case BLOCKED without whole-run abort" behavior.
+1. Surface pending Tool Bridge requests clearly in Web UI / run events, including request id, case id, dialog text and required operator action. If the App cannot deliver a response, the failure reason must say "Tool Bridge response missing" instead of implying Tommy did not authorize.
+2. Add an A-06-specific helper or guardrail for all-zero-field inspection: enumerate/select fields through visible UI, verify selected field labels/codes, run preview, and collect zero-column evidence. Avoid leaving this large field-selection flow entirely to generic visible UI.
+3. Add regression fixtures covering the full current-case BLOCKED without whole-run abort flow after a native validation alert appears in a real Codex/Playwright session.
 
 ### 6.3.2 Source Prefilled Results / PM-Skip Runtime Contract
 
@@ -1833,7 +1837,7 @@ codex/uat-tool-mvp
 
 ### P0
 
-1. Fix OTTEST004-A-06 native validation dialog recovery: selected-field-count guard before Execute, allowlisted non-destructive alert handling, visible Tool Bridge pending state, and current-case BLOCKED recovery without whole-run abort.
+1. Finish OTTEST004-A-06 runtime recovery: visible Tool Bridge pending state, missing-response wording, and full current-case BLOCKED recovery without whole-run abort. Selected-field-count guard and non-destructive validation alert allowlist are implemented in Agent `0.2.16`.
 2. Add A-06 all-zero-field inspection helper or guarded visible-UI flow: enumerate/select fields, verify selected field labels/codes, run preview, and collect zero-column evidence.
 3. Run OTTEST002 production regression against the deployed helper P0, metadata dropdown source-group scoping, list-page CSV helper, helper-evidence preflight replacement, case-type must-read rules, exact metadata source filename contract and final aggregate pipeline.
 4. Verify A-01 field-add actionability fallback and A-03 metadata dropdown helper writes `metadata-dropdown-evidence.json` with source-group scoped DOM actual list, exact diff, normalized diff and metadata expected list.
