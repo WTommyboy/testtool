@@ -325,6 +325,73 @@ const main = async (): Promise<void> => {
     assert.equal(contradictoryReport.status, "error");
     assert.ok(contradictoryReport.issues.some((item) => item.code === "RESULT_PASS_CONTRADICTS_HELPER_EVIDENCE"));
 
+    const configureMetricContradictoryPass = path.join(tempRoot, "pass-configure-metric-contradicts-helper-evidence.xlsx");
+    await writePassWorkbook(configureMetricContradictoryPass, "OTTEST004-B-10");
+    fs.mkdirSync(path.join(tempRoot, "output", "helper-artifacts", "OTTEST004-B-10"), { recursive: true });
+    fs.writeFileSync(path.join(tempRoot, "output", "helper-artifacts", "OTTEST004-B-10", "collage.configureMetric-latest.json"), JSON.stringify({
+      schemaVersion: "bi-ui-helper-report-v1",
+      caseId: "OTTEST004-B-10",
+      action: "collage.configureMetric",
+      status: "ok",
+      evidence: {
+        stateDelta: {
+          after: {
+            checks: {
+              field: true,
+              dateRange: false,
+              display: true
+            }
+          }
+        }
+      }
+    }, null, 2));
+    const configureMetricContradictoryReport = await validateResultWorkbookContract(configureMetricContradictoryPass, undefined, { runDir: tempRoot });
+    assert.equal(configureMetricContradictoryReport.status, "error");
+    assert.ok(configureMetricContradictoryReport.issues.some((item) => item.code === "RESULT_PASS_CONTRADICTS_HELPER_EVIDENCE"));
+
+    const normalizedDateRangePass = path.join(tempRoot, "pass-configure-metric-normalized-date-evidence.xlsx");
+    await writePassWorkbook(normalizedDateRangePass, "OTTEST004-B-09");
+    fs.mkdirSync(path.join(tempRoot, "output", "helper-artifacts", "OTTEST004-B-09"), { recursive: true });
+    fs.writeFileSync(path.join(tempRoot, "output", "helper-artifacts", "OTTEST004-B-09", "collage.configureMetric-latest.json"), JSON.stringify({
+      schemaVersion: "bi-ui-helper-report-v1",
+      caseId: "OTTEST004-B-09",
+      action: "collage.configureMetric",
+      status: "ok",
+      evidence: {
+        dateRangeEvidence: {
+          ok: true,
+          dateUiEvidence: {
+            schemaVersion: "date-ui-evidence-v1",
+            checks: {
+              requestedLabelVisible: true,
+              staticRequestedRangeObserved: true,
+              representedRangeMatchesRequested: true
+            },
+            requestedRange: {
+              startIso: "2026-03-01",
+              endIso: "2026-03-15"
+            },
+            matchedRepresentedRange: {
+              startIso: "2026-03-01",
+              endIso: "2026-03-15",
+              display: "2026/03/01 ~ 2026/03/15"
+            }
+          }
+        },
+        stateDelta: {
+          after: {
+            checks: {
+              field: true,
+              dateRange: false,
+              display: true
+            }
+          }
+        }
+      }
+    }, null, 2));
+    const normalizedDateRangeReport = await validateResultWorkbookContract(normalizedDateRangePass, undefined, { runDir: tempRoot });
+    assert.equal(normalizedDateRangeReport.status, "ok", JSON.stringify(normalizedDateRangeReport.issues));
+
     console.log(JSON.stringify({
       ok: true,
       fixture: "agent-result-contract",
@@ -333,10 +400,12 @@ const main = async (): Promise<void> => {
         "generated result-template contains no EX-* example result rows",
         "legacy Bug header 來源 Case is rejected by agent self-check",
         "FAIL detail_json missing required fields is rejected before upload",
-	        "single-case legacy result workbook missing 群組ID is repaired before self-check",
-	        "testcase-style Codex output is normalized to one current-case result-contract row before self-check",
-	        "BLOCKED detail_json with core fields but without current-run evidence is enriched before upload",
-	        "PASS result contradicting helper false checks is rejected before upload"
+        "single-case legacy result workbook missing 群組ID is repaired before self-check",
+        "testcase-style Codex output is normalized to one current-case result-contract row before self-check",
+        "BLOCKED detail_json with core fields but without current-run evidence is enriched before upload",
+        "PASS result contradicting helper false checks is rejected before upload",
+        "configureMetric dateRange=false still blocks without normalized date evidence",
+        "configureMetric dateRange=false is allowed when date-ui-evidence proves the represented range"
       ]
     }, null, 2));
   } finally {

@@ -163,6 +163,10 @@ const readJsonIfExists = <T>(filePath: string): T | null => {
 
 const sanitizePathPart = (value: string): string => value.replace(/[^a-zA-Z0-9._-]+/g, "_").replace(/^_+|_+$/g, "") || "unknown-case";
 
+const record = (value: unknown): Record<string, unknown> | null => (
+  value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null
+);
+
 const falseChecks = (checks: unknown): string[] => {
   if (!checks || typeof checks !== "object" || Array.isArray(checks)) return [];
   return Object.entries(checks as Record<string, unknown>)
@@ -170,48 +174,52 @@ const falseChecks = (checks: unknown): string[] => {
     .map(([key]) => key);
 };
 
+const dateUiEvidenceMatchesRequested = (value: unknown): boolean => {
+  const dateUiEvidence = record(value);
+  const checks = record(dateUiEvidence?.checks);
+  return checks?.representedRangeMatchesRequested === true || checks?.staticRequestedRangeObserved === true;
+};
+
+const configureMetricDateRangeVerified = (parsed: Record<string, unknown>): boolean => {
+  const evidence = record(parsed.evidence);
+  const dateRangeEvidence = record(evidence?.dateRangeEvidence);
+  if (dateRangeEvidence?.ok === false) return false;
+  return dateUiEvidenceMatchesRequested(dateRangeEvidence?.dateUiEvidence) || dateUiEvidenceMatchesRequested(evidence?.dateUiEvidence);
+};
+
+const configureMetricFalseChecksForPass = (parsed: Record<string, unknown>): string[] => {
+  const evidence = record(parsed.evidence) ?? {};
+  const stateDelta = record(evidence.stateDelta) ?? {};
+  const after = record(stateDelta.after) ?? {};
+  const failed = falseChecks(after.checks);
+  if (!failed.includes("dateRange")) return failed;
+  if (!configureMetricDateRangeVerified(parsed)) return failed;
+  return failed.filter((item) => item !== "dateRange");
+};
+
 const helperEvidenceFalseChecksForPass = (runDir: string, caseNo: string): Array<{ reportPath: string; falseChecks: string[] }> => {
   const caseDir = path.join(runDir, "output", "helper-artifacts", sanitizePathPart(caseNo));
   const reports = [
     {
       fileName: "collage.configureMetric-latest.json",
-      readChecks: (parsed: Record<string, unknown>) => {
-        const evidence = parsed.evidence && typeof parsed.evidence === "object" && !Array.isArray(parsed.evidence)
-          ? parsed.evidence as Record<string, unknown>
-          : {};
-        const stateDelta = evidence.stateDelta && typeof evidence.stateDelta === "object" && !Array.isArray(evidence.stateDelta)
-          ? evidence.stateDelta as Record<string, unknown>
-          : {};
-        const after = stateDelta.after && typeof stateDelta.after === "object" && !Array.isArray(stateDelta.after)
-          ? stateDelta.after as Record<string, unknown>
-          : {};
-        return after.checks;
-      }
+      readFalseChecks: configureMetricFalseChecksForPass
     },
     {
       fileName: "collage.reopenReport-latest.json",
-      readChecks: (parsed: Record<string, unknown>) => {
-        const evidence = parsed.evidence && typeof parsed.evidence === "object" && !Array.isArray(parsed.evidence)
-          ? parsed.evidence as Record<string, unknown>
-          : {};
-        const reopen = evidence.reopenReportEvidence && typeof evidence.reopenReportEvidence === "object" && !Array.isArray(evidence.reopenReportEvidence)
-          ? evidence.reopenReportEvidence as Record<string, unknown>
-          : {};
-        const stateDelta = reopen.stateDelta && typeof reopen.stateDelta === "object" && !Array.isArray(reopen.stateDelta)
-          ? reopen.stateDelta as Record<string, unknown>
-          : {};
-        const after = stateDelta.after && typeof stateDelta.after === "object" && !Array.isArray(stateDelta.after)
-          ? stateDelta.after as Record<string, unknown>
-          : {};
-        return after.checks;
+      readFalseChecks: (parsed: Record<string, unknown>) => {
+        const evidence = record(parsed.evidence) ?? {};
+        const reopen = record(evidence.reopenReportEvidence) ?? {};
+        const stateDelta = record(reopen.stateDelta) ?? {};
+        const after = record(stateDelta.after) ?? {};
+        return falseChecks(after.checks);
       }
     }
   ];
-  return reports.flatMap(({ fileName, readChecks }) => {
+  return reports.flatMap(({ fileName, readFalseChecks }) => {
     const reportPath = path.join(caseDir, fileName);
     const parsed = readJsonIfExists<Record<string, unknown>>(reportPath);
     if (!parsed) return [];
-    const failed = falseChecks(readChecks(parsed));
+    const failed = readFalseChecks(parsed);
     return failed.length > 0 ? [{ reportPath: path.relative(runDir, reportPath), falseChecks: failed }] : [];
   });
 };

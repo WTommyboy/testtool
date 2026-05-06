@@ -24,7 +24,7 @@ Production endpoints:
 Current semantic versions:
 
 - App/API: `1.1.3`
-- Mac Agent: `0.2.18`
+- Mac Agent: `0.2.19`
 
 Active branches:
 
@@ -45,6 +45,7 @@ The current line is the Mac Agent MVP. It supports:
 - One-case-at-a-time execution discipline.
 - Single-case `output/result.xlsx` upload and evidence gate, with Tool Bridge claim detection scoped to explicit approval/native-dialog/irreversible-action claims rather than ordinary testcase prose.
 - If Codex accidentally writes a full 17-column testcase-style workbook as `output/result.xlsx`, Mac Agent normalizes only the expected current-case row into the result-contract workbook before self-check/upload; blank or future testcase rows are not sent to the parser.
+- Result self-check uses normalized date UI evidence for configureMetric date-range checks, so static dates such as `2026-03-01` vs `2026/03/01` do not false-block a PASS when `date-ui-evidence` proves the represented range; reopen date regressions still block PASS.
 - Helper preview/date-variant execution now checks that at least one metric field is selected before clicking BI `執行`; non-destructive BI validation alerts such as `請至少選擇一個欄位` are treated as execute-precondition BLOCKED evidence rather than missing PM authorization.
 - A-06 style all-zero-field inspection cases can use `collage.inspectAllZeroFields`: the helper selects all fields for the requested source report through visible UI, guards selected-field count before Execute, captures request/response/chart/table evidence, and writes `all-zero-field-inspection-evidence.json` with all-zero candidates for Codex to judge.
 - Source testcase rows with a prefilled terminal `結果` such as `BLOCKED` are imported as terminal normalized cases; their steps are marked `SKIPPED`, and Agent manifests advance to the next runnable case instead of executing them.
@@ -232,7 +233,7 @@ Important current decisions:
 - CSV comparison normalizes preview table exports by dropping a duplicated header row and treating `Date` / `日期` as the same date column, so successful list-page downloads are not reported as false mismatches.
 - When a helper plan reaches a pending save/overwrite action and Mac Agent auto-approval is enabled, Agent records a Tool Bridge auto-approval from the helper plan, runs the approved helper continuation, and exposes `helper-continuation-summary.json` before Codex writes the case result.
 - Existing-report collage edits reconcile selected fields exactly before save: the Agent reads visible selected-field remove controls, removes extra/duplicated fields through UI clicks, adds missing target fields through the normal picker, and requires exact field evidence instead of mere text containment.
-- Result self-check blocks any `PASS` result that contradicts current-run helper state checks, such as `collage.reopenReport` reporting `dateRange=false`.
+- Result self-check blocks any `PASS` result that contradicts current-run helper state checks, such as `collage.reopenReport` reporting `dateRange=false`; configureMetric dateRange checks are allowed only when normalized `date-ui-evidence` proves the requested represented range.
 - If a visible row download click produces a CSV/attachment response but no browser `download` event, the Agent may save that UI-triggered response body as CSV evidence and label `downloadedCsv.source`.
 - Google Sheets is only a manual exploratory fallback, not a formal evidence path.
 - If save/list-row/download preconditions fail before CSV comparison, write `csv_comparison_status="not_reached"` and judge the failed necessary subcondition directly.

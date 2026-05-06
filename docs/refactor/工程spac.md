@@ -1544,7 +1544,7 @@ Known sources:
 - Date UI evidence uses `date-ui-evidence.json` to record requested label, normalized UI label, visible date control text, visible represented ranges, and preset-derived represented ranges computed from `baseDate`/`testDate` when the UI only shows the label. `collage.captureDateUiEvidence` is an optional read-only helper for Codex-visible/manual date cases after Codex performs the UI transition.
 - Supporting docs manifest profiles decompose optional CSV/MD inputs into compact metadata before full-file loading.
 - Successful helper evidence can replace Codex-owned browser preflight for helper-assisted cases when the evidence is current-run/current-case and covers required steps.
-- Agent result contract rejects `PASS` rows that contradict helper state checks, including configure/reopen helper reports with any expected state check recorded as false.
+- Agent result contract rejects `PASS` rows that contradict helper state checks, including configure/reopen helper reports with expected state checks recorded as false. For `collage.configureMetric` date-range checks, normalized `date-ui-evidence` is authoritative: if it proves the requested represented range, a raw `stateDelta.after.checks.dateRange=false` caused only by display-format mismatch (`YYYY-MM-DD` vs `YYYY/MM/DD`) must not block upload. Reopen helper `dateRange=false` still blocks PASS.
 - Result evidence gate scopes `TOOL_BRIDGE_RESPONSE_MISSING` to explicit approval/native-dialog/irreversible-action claims; benign testcase prose such as preview-result overwrite no longer aborts ingestion.
 - structured evidence priority
 - batch-case policy detector

@@ -1183,3 +1183,13 @@ Tommy 曾討論是否改成腳本。最後決策是採「半腳本化 / helper �
 - Fixture：`scripts/verify-agent-result-contract.ts` 新增 testcase-style Codex output fixture，模擬整份 17 欄 workbook 只有 `OTTEST004-B-04` 有 PASS 的情境；normalizer 應只抽 B-04 並讓 self-check/parser 通過。
 - 版本：Mac Agent 升到 `0.2.18`；App/API 維持 `1.1.3`。
 - 驗證：已跑 `npm run typecheck --prefix agent`、`npm run verify:agent-result-contract` 通過；完整 build、真實 B-04 複本 smoke、git diff check、commit/push 與本機 Agent 重啟狀態由本批收尾回報補列。
+
+### 2026-05-06 19:04 - OTTEST004_017：configureMetric dateRange PASS contradiction false positive
+
+- 背景：OTTEST004_017 / run `61f48100-ce11-4cbb-81b9-f2dfa207aa1d` 已完成並 ingest 到 B-08；B-09 helper 實際完成，Codex 依 current-run helper evidence 判 `PASS`，但 Agent 上傳前 self-check 以 `RESULT_XLSX_SELF_CHECK_FAILED RESULT_PASS_CONTRADICTS_HELPER_EVIDENCE` 擋下。self-check 指向 `collage.configureMetric-latest.json` 的 `stateDelta.after.checks.dateRange=false`；同一 helper report 內的 `dateRangeEvidence.dateUiEvidence` 與獨立 `date-ui-evidence.json` 卻已證明 UI / request / table 都是 `2026-03-01~2026-03-15`。
+- 根因：configureMetric 的 raw stateDelta check 仍用文字包含判定，將 testcase target `2026-03-01 ~ 2026-03-15` 與 UI text `2026/03/01 ~ 2026/03/15` 視為不一致；self-check 又直接採用該 raw false，未優先採用 normalized date UI evidence。
+- 修正：`agent/src/result-contract.ts` 的 PASS contradiction gate 對 `collage.configureMetric` 新增窄例外：若 false check 只有或包含 `dateRange`，且 `dateRangeEvidence.dateUiEvidence.checks.representedRangeMatchesRequested` 或 `staticRequestedRangeObserved` 為 true，則移除該 dateRange false，不阻斷 upload。`collage.reopenReport` 的 `dateRange=false` 仍維持阻斷，保護 save/reopen 後日期回退的真 regression。
+- Fixture：`scripts/verify-agent-result-contract.ts` 新增兩個案例：configureMetric `dateRange=false` 但沒有 normalized date evidence 時仍應擋；configureMetric `dateRange=false` 但 `date-ui-evidence` 證明 represented range 正確時應通過。
+- 回驗：用新 self-check 回放 `61f48100-ce11-4cbb-81b9-f2dfa207aa1d/output/result.xlsx`，結果從 `RESULT_PASS_CONTRADICTS_HELPER_EVIDENCE` 變為 `status=ok`。
+- 版本：Mac Agent 升到 `0.2.19`；App/API 維持 `1.1.3`。
+- 驗證：已跑 `npm run verify:agent-result-contract` 與真實 B-09 self-check 回放通過；完整 typecheck/build、git diff check、commit/push 與本機 Agent 重啟狀態由本批收尾回報補列。
