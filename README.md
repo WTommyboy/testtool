@@ -65,6 +65,7 @@ The current line is the Mac Agent MVP. It supports:
 - Static editor-session CSV cases can chain `collage.runDateVariantsPreviewEvidence` directly into `collage.downloadCsvAndComparePreview`, keeping the flow inside the same report editor session without save/reopen/report-list navigation.
 - Dynamic custom date and half-dynamic date cases can use structured `dateMode=relative|hybrid` with `collage.runDateVariantsPreviewEvidence`, which fills the visible dynamic/static date controls and captures UI/network/chart/table evidence.
 - Formula/calculated-field cases can use `collage.configureCalculatedMetricAndPreview`, which adds base fields, opens the formula modal, fills `#calculatedFieldNameInput` and `#formulaInput` through stable modal selectors, submits `saveFormula()`, sets date/display, and captures preview evidence without judging PASS/FAIL.
+- Formula/calculated-field testcase packages should use modal-aware helper hints with explicit `baseFields`, `calculatedFieldName`, `formula`, formula modal UI labels, date/display, and `formula.uiState` / request / chart evidence; testcase prose should not rely on a single generic "新增運算欄位" sentence.
 - Create-project cases can use `collage.createProject` after Tool Bridge approval; the helper selects project mode = `拼貼`, fills a current-case test project name, blocks on `請選擇模式` alerts, and verifies the project appears in the sidebar.
 - Temporary report deletion cases can use `collage.createAndDeleteTemporaryReport`: the helper creates a current-case temp report, requires Tool Bridge approval before delete, accepts only known BI delete confirmation, rejects protected/main report names, and verifies the temp row is gone.
 - Date UI evidence is first-class: `collage.configureMetric` writes `date-ui-evidence.json`, and manual/Codex-visible date cases can use `collage.captureDateUiEvidence` to record the requested UI label plus the visible or baseDate-computed represented date range.
@@ -73,7 +74,7 @@ The current line is the Mac Agent MVP. It supports:
 - Codex-side visible-UI cases must first attempt Playwright MCP `browser_tabs`; a successful tab listing proves browser tooling is available and prevents false `TOOL_EXECUTION_UNAVAILABLE`.
 - Degraded-case trusted `BLOCKED` result handling when browser/manual UI tools are unavailable.
 - Mandatory BI rule loading for each BI case.
-- Metadata reference and CSV download authoring contracts.
+- Metadata reference, CSV download, and formula/calculated-field modal authoring contracts.
 
 ## Core Contracts
 

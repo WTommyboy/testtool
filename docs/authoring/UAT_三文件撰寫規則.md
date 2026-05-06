@@ -562,6 +562,52 @@ multi-variant 日期 case 優先拆成多題，例如 `B-03a 昨日快捷`、`B-
 }
 ```
 
+拼貼運算欄位 / 公式 case 不要只寫「新增運算欄位,公式=...」。這類 case 必須明確拆出 modal 操作契約與公式參數,避免 Agent 把「欄位名稱」「公式」「搜尋欄位」等輸入框互相誤判。建議在 `測試執行說明_*.md` 的 Helper hints 使用:
+
+```json
+{
+  "automationLevel": "helper",
+  "operationTemplate": "collage.configureCalculatedMetricAndPreview",
+  "params": {
+    "mode": "拼貼",
+    "baseFields": ["新增帳號數", "MAU(帳號)"],
+    "calculatedFieldName": "E01_運算",
+    "formula": "[新增帳號數]+[MAU(帳號)]/2",
+    "formulaModal": {
+      "openButtonText": "+ 新增運算欄位",
+      "title": "公式編輯器 - 新運算欄位",
+      "nameInputLabel": "欄位名稱",
+      "formulaInputLabel": "公式",
+      "availableFieldsSection": "可用欄位",
+      "requiredFieldButtons": ["新增帳號數", "MAU(帳號)"],
+      "submitButtonText": "確認"
+    },
+    "dateRange": {
+      "start": "2026-03-01",
+      "end": "2026-03-31"
+    },
+    "display": "每天"
+  },
+  "requiredEvidence": [
+    "formula.uiState",
+    "network.requestBody",
+    "network.responseBody",
+    "chart.datasets",
+    "screenshot"
+  ]
+}
+```
+
+公式 case 的 xlsx 步驟仍要維持人類可讀,但必須逐步寫出:
+
+1. 先加入公式需要的基底欄位。
+2. 點「+ 新增運算欄位」。
+3. 在「公式編輯器 - 新運算欄位」modal 填「欄位名稱」與「公式」。
+4. 按「確認」後驗證 modal 關閉且 DOM / request body 可讀到運算欄位定義。
+5. 設定日期與顯示方式,按「執行」取得 preview evidence。
+
+不要在 testcase 寫 CSS selector 或 helper 實作細節;只寫 UI label、case 參數與 evidence requirement。公式、基底欄位、運算欄位名稱必須逐題提供,不可只靠自然語言讓 helper 猜。
+
 `狀態清理` 不要在前置條件重複成另一套 checklist，避免和 xlsx 獨立欄位衝突。若需補充背景，放在 `備註`。
 
 ### 2.6 步驟寫法
@@ -946,6 +992,7 @@ Helper hints:
 | `metric_group_series` | 指標趨勢分組與多 series 驗證 |
 | `chart_csv_consistency` | Chart.js 與 downloaded CSV 數值一致性 |
 | `collage_all_zero_field_inspection` | 拼貼欄位全選 preview 後列出全 0 欄位清單 |
+| `collage.configureCalculatedMetricAndPreview` | 拼貼新增運算欄位公式 modal、設定日期/顯示並產生 preview evidence |
 | `download_csv_verify` | 下載檔名、表頭、row count 驗證 |
 | `save_load_flow` | 儲存、清單出現、重開還原驗證 |
 
@@ -1056,6 +1103,35 @@ A-06 類「只列全 0 欄位清單、不判斷根因」case 應使用專用 hel
 
 此 helper 會輸出 `all-zero-field-inspection-evidence.json`。它只列候選全 0 欄位與 evidence；Codex 仍須依 testcase 判定 PASS/BLOCKED，且不得把 helper output 當作全 0 成因結論。
 
+拼貼運算欄位 / 公式 case 應使用 `collage.configureCalculatedMetricAndPreview`。Helper 會透過 visible UI 加入 base fields、開啟「+ 新增運算欄位」modal、依 UI label 填運算欄位名稱與公式、按「確認」後設定日期/顯示並執行 preview。Helper 只產 evidence,不判 PASS/FAIL/BLOCKED。
+
+```json
+{
+  "automationLevel": "helper",
+  "operationTemplate": "collage.configureCalculatedMetricAndPreview",
+  "params": {
+    "baseFields": ["新增帳號數", "MAU(帳號)"],
+    "calculatedFieldName": "E01_運算",
+    "formula": "[新增帳號數]+[MAU(帳號)]/2",
+    "formulaModal": {
+      "openButtonText": "+ 新增運算欄位",
+      "nameInputLabel": "欄位名稱",
+      "formulaInputLabel": "公式",
+      "availableFieldsSection": "可用欄位",
+      "submitButtonText": "確認"
+    },
+    "dateRange": {
+      "start": "2026-03-01",
+      "end": "2026-03-31"
+    },
+    "display": "每天"
+  },
+  "requiredEvidence": ["formula.uiState", "network.requestBody", "network.responseBody", "chart.datasets", "screenshot"]
+}
+```
+
+公式 case 若缺少 `baseFields`、`calculatedFieldName` 或 `formula`,不得標 `automationLevel=helper`。若本題要測的是 modal UI 異常、公式編輯器文案、或需要 Codex 做延伸判讀,可標 `manual_ai`,但仍須在步驟中完整描述 modal 操作與 evidence。
+
 `download_csv_verify` 或同時含 `save_load_flow` 的 CSV case，`expected` 與 `requiredEvidence` 要分清楚「重開還原」「preview 存在」「CSV 下載」「CSV 比對」四層，不要把全部混成一句「下載資料一致」。若 helper plan 已產生 save/reopen/download actions，Codex 不可在只完成 preview 後直接判 `BLOCKED/EVIDENCE_INSUFFICIENT`；必須先要求 Tool Bridge/continuation 執行剩餘必要步驟，或明確記錄哪個前置必要子條件失敗。
 
 若 CSV case 的目的只是驗證下載檔與 preview 一致,且已知 editor 重開會混入 date-range restore regression,建議改成「儲存後回專案/報表清單,從該報表列下載 CSV,比對儲存前 preview」。此時 testcase 要明寫:
@@ -1074,6 +1150,7 @@ A-06 類「只列全 0 欄位清單、不判斷根因」case 應使用專用 hel
 - `dom.list`
 - `date.uiState`
 - `date.representedRange`
+- `formula.uiState`
 - `network.requestBody`
 - `network.responseBody`
 - `chart.datasets`
@@ -1105,10 +1182,11 @@ Claude 產出 testcase package 後，建議先用以下規則自檢；未來若�
 4. `comparisonScope=all_sources_fields` 必須有 `expectedTotalFieldCount`。
 5. `selectAllFields=true` 必須有 `sourceReports`，且必須有 `expectedFieldCount` 或 `expectedTotalFieldCount`。
 6. `collage_all_zero_field_inspection` 必須有 `sourceReport` 或 `sourceReports`、`selectAllFields` / `selectAllFieldsInSourceReport`、`expectedFieldCount`、靜態 `dateRange`、`display`。
-7. multi-variant date case 不得標 `automationLevel=helper`；應標 `automationLevel=manual_ai`。
-8. `operationTemplate=manual_ai` 時，`automationLevel` 必須是 `manual_ai`。
-9. `automationLevel=helper` 時，params 必須足以形成 deterministic helper plan，不可只靠自然語言讓 helper 猜。
-10. PM-skip / 預先 BLOCKED case 不得有 Helper hints block；不得使用 `automationLevel=blocked_preassigned`、`operationTemplate=n/a` 或 `doNotExecute`。
+7. `collage.configureCalculatedMetricAndPreview` 必須有 `baseFields`、`calculatedFieldName`、`formula`、`dateRange`、`display`,且 `requiredEvidence` 至少包含 `formula.uiState`、`network.requestBody`、`chart.datasets`。
+8. multi-variant date case 不得標 `automationLevel=helper`；應標 `automationLevel=manual_ai`。
+9. `operationTemplate=manual_ai` 時，`automationLevel` 必須是 `manual_ai`。
+10. `automationLevel=helper` 時，params 必須足以形成 deterministic helper plan，不可只靠自然語言讓 helper 猜。
+11. PM-skip / 預先 BLOCKED case 不得有 Helper hints block；不得使用 `automationLevel=blocked_preassigned`、`operationTemplate=n/a` 或 `doNotExecute`。
 
 ---
 
