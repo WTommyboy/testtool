@@ -145,6 +145,10 @@ export const evaluateCapabilityGate = (
   const hasGroup = detectedFeatures.hasGroup;
   const isMetadataDropdown = detectedFeatures.isMetadataDropdown;
   const isSaveReopenFlow = detectedFeatures.isSaveReopenFlow;
+  const isA06LikeCase = /(?:^|[-_])A[-_]?06$/i.test(currentCase?.caseNo ?? "");
+  const isAllZeroFieldInspection =
+    operationTemplate === "collage_all_zero_field_inspection" ||
+    (isA06LikeCase && /全為\s*0\s*欄位|全\s*0\s*欄位|值全為\s*0|all[-_ ]?zero/i.test(text));
   const unsupportedFeatures: string[] = [];
   const supportedHelperTemplates: string[] = [];
   const params = paramsObject(helperHints);
@@ -168,6 +172,12 @@ export const evaluateCapabilityGate = (
       "collage.openProject",
       "collage.createReport",
       "collage.extractMetadataDropdownFields"
+    );
+  } else if (mode === "collage" && !hasFilter && !hasGroup && isAllZeroFieldInspection) {
+    supportedHelperTemplates.push(
+      "collage.openProject",
+      "collage.createReport",
+      "collage.inspectAllZeroFields"
     );
   } else if (mode === "collage" && !hasFilter && !hasGroup) {
     supportedHelperTemplates.push(

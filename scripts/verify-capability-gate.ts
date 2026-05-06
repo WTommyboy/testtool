@@ -182,6 +182,31 @@ const selectAllFieldsHints: HelperHints = {
   warnings: []
 };
 
+const allZeroFieldInspectionHints: HelperHints = {
+  caseId: "OTTEST004-A-06",
+  automationLevel: "helper",
+  operationTemplate: "collage_all_zero_field_inspection",
+  params: {
+    mode: "拼貼",
+    sourceReport: "每日報表",
+    selectAllFieldsInSourceReport: true,
+    expectedFieldCount: 32,
+    dateRange: { start: "2026-03-01", end: "2026-03-31" },
+    display: "每天",
+    scope: "preview_only",
+    skipSave: true,
+    skipReopen: true,
+    skipDownload: true
+  },
+  requiredEvidence: ["dom.list", "network.requestBody", "network.responseBody", "chart.datasets", "screenshot"],
+  forbiddenAutomation: ["direct_bi_api", "internal_js_setter", "multi_case_batch"],
+  aiDecisionRequired: true,
+  raw: {},
+  sourcePath: "fixture/helper-hints.md",
+  sourceRelativePath: "fixture/helper-hints.md",
+  warnings: []
+};
+
 const metadataSourceScopeHints: HelperHints = {
   caseId: "OTTEST004-A-04",
   automationLevel: "helper",
@@ -363,6 +388,35 @@ const main = (): void => {
     assert.ok(selectAllPlan.actions.some((item) => item.template === "collage.downloadCsvAndComparePreview"), "select-all CSV case should still download CSV");
     assert.ok(!selectAllPlan.actions.some((item) => item.template === "collage.saveReport"), "select-all preview case should not save when skipSave is set");
 
+    const allZeroCase = {
+      ...collageSaveReopenCase,
+      caseNo: "OTTEST004-A-06",
+      caseTitle: "全為 0 欄位的合理性釐清(僅列清單,不判 PASS/FAIL)",
+      testType: "資料確認(全 0 欄位清單)",
+      riskLevel: "🟢 觀察",
+      testTarget: "後端功能",
+      cleanupChecklist: "欄位=新增帳號數;篩選=0組;分組=不影響;時間=2026/03/01~2026/03/31;顯示=每天",
+      preconditions: "建構模式: 拼貼\n來源報表: 每日報表\n參考資料: rules/BI_DATA/metadata.csv",
+      stepsSummary: "1. 進入設定頁,選來源報表「每日報表」,加入該來源報表所有可選欄位\n2. 設定時間 = 2026/03/01~2026/03/31\n3. 顯示方式選每天,按執行\n4. 從 preview 表格 / Chart.js datasets 抽每欄位的值,標出整段區間值全為 0 的欄位",
+      expected: "列出全 0 欄位清單；本題不判斷全 0 根因"
+    };
+    const allZeroGate = evaluateCapabilityGate(allZeroCase, allZeroFieldInspectionHints);
+    assert.equal(allZeroGate.supportStatus, "supported", `A-06 all-zero inspection should be helper supported; report=${JSON.stringify(allZeroGate)}`);
+    assert.ok(allZeroGate.supportedHelperTemplates.includes("collage.inspectAllZeroFields"), "A-06 should advertise the dedicated all-zero inspection helper");
+    const allZeroPlan = buildHelperExecutionPlan({ runDir, currentCase: allZeroCase, helperHints: allZeroFieldInspectionHints });
+    assert.deepEqual(
+      allZeroPlan.actions.map((item) => item.template),
+      ["collage.openProject", "collage.createReport", "collage.inspectAllZeroFields"],
+      "A-06 all-zero inspection should use the dedicated helper flow instead of generic preview/save actions"
+    );
+    const allZeroAction = allZeroPlan.actions.find((item) => item.template === "collage.inspectAllZeroFields");
+    assert.equal(allZeroAction?.params.selectAllFields, true, "all-zero helper should force select-all semantics");
+    assert.deepEqual(allZeroAction?.params.sourceReports, ["每日報表"], "all-zero helper should derive sourceReports from sourceReport when needed");
+    assert.equal(allZeroAction?.params.expectedFieldCount, 32);
+    assert.equal(allZeroAction?.params.dateRange, "2026/03/01~2026/03/31");
+    assert.ok(!allZeroPlan.actions.some((item) => item.template === "collage.runPreviewAndCollectEvidence"), "all-zero helper should not rely on generic runPreview evidence");
+    assert.ok(!allZeroPlan.actions.some((item) => item.template === "collage.saveReport"), "all-zero helper should not save reports");
+
     const metadataCsvPath = path.join(runDir, "metadata-fixture.csv");
     fs.writeFileSync(
       metadataCsvPath,
@@ -440,6 +494,7 @@ const main = (): void => {
           "multi-variant date helper hints are degraded to Codex visible UI",
           "multi-variant date cases expose optional date UI evidence capture",
           "selectAllFields helper hints preserve sourceReports/expected count and avoid synthetic field text",
+          "A-06 all-zero field inspection uses a dedicated select-all preview evidence helper",
           "metadata expected-field reader keeps source-specific scope separate from all-source scope",
           "active filter cases remain blocked until helper support exists"
         ]

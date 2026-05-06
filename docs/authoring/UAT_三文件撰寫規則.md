@@ -942,6 +942,7 @@ Helper hints:
 | `metric_filter_operator` | 指標趨勢篩選欄位 + operator + value |
 | `metric_group_series` | 指標趨勢分組與多 series 驗證 |
 | `chart_csv_consistency` | Chart.js 與 downloaded CSV 數值一致性 |
+| `collage_all_zero_field_inspection` | 拼貼欄位全選 preview 後列出全 0 欄位清單 |
 | `download_csv_verify` | 下載檔名、表頭、row count 驗證 |
 | `save_load_flow` | 儲存、清單出現、重開還原驗證 |
 
@@ -1032,6 +1033,26 @@ Helper hints:
 }
 ```
 
+A-06 類「只列全 0 欄位清單、不判斷根因」case 應使用專用 helper template，不要標 `manual_ai` 讓 Codex 自行摸索大量欄位 picker：
+
+```json
+{
+  "automationLevel": "helper",
+  "operationTemplate": "collage_all_zero_field_inspection",
+  "sourceReport": "每日報表",
+  "selectAllFieldsInSourceReport": true,
+  "expectedFieldCount": 32,
+  "dateRange": {
+    "start": "2026-03-01",
+    "end": "2026-03-31"
+  },
+  "display": "每天",
+  "requiredEvidence": ["dom.list", "network.requestBody", "network.responseBody", "chart.datasets", "screenshot"]
+}
+```
+
+此 helper 會輸出 `all-zero-field-inspection-evidence.json`。它只列候選全 0 欄位與 evidence；Codex 仍須依 testcase 判定 PASS/BLOCKED，且不得把 helper output 當作全 0 成因結論。
+
 `download_csv_verify` 或同時含 `save_load_flow` 的 CSV case，`expected` 與 `requiredEvidence` 要分清楚「重開還原」「preview 存在」「CSV 下載」「CSV 比對」四層，不要把全部混成一句「下載資料一致」。若 helper plan 已產生 save/reopen/download actions，Codex 不可在只完成 preview 後直接判 `BLOCKED/EVIDENCE_INSUFFICIENT`；必須先要求 Tool Bridge/continuation 執行剩餘必要步驟，或明確記錄哪個前置必要子條件失敗。
 
 若 CSV case 的目的只是驗證下載檔與 preview 一致,且已知 editor 重開會混入 date-range restore regression,建議改成「儲存後回專案/報表清單,從該報表列下載 CSV,比對儲存前 preview」。此時 testcase 要明寫:
@@ -1080,10 +1101,11 @@ Claude 產出 testcase package 後，建議先用以下規則自檢；未來若�
 3. `comparisonScope=source_report_fields` 必須有 `expectedFieldCount`。
 4. `comparisonScope=all_sources_fields` 必須有 `expectedTotalFieldCount`。
 5. `selectAllFields=true` 必須有 `sourceReports`，且必須有 `expectedFieldCount` 或 `expectedTotalFieldCount`。
-6. multi-variant date case 不得標 `automationLevel=helper`；應標 `automationLevel=manual_ai`。
-7. `operationTemplate=manual_ai` 時，`automationLevel` 必須是 `manual_ai`。
-8. `automationLevel=helper` 時，params 必須足以形成 deterministic helper plan，不可只靠自然語言讓 helper 猜。
-9. PM-skip / 預先 BLOCKED case 不得有 Helper hints block；不得使用 `automationLevel=blocked_preassigned`、`operationTemplate=n/a` 或 `doNotExecute`。
+6. `collage_all_zero_field_inspection` 必須有 `sourceReport` 或 `sourceReports`、`selectAllFields` / `selectAllFieldsInSourceReport`、`expectedFieldCount`、靜態 `dateRange`、`display`。
+7. multi-variant date case 不得標 `automationLevel=helper`；應標 `automationLevel=manual_ai`。
+8. `operationTemplate=manual_ai` 時，`automationLevel` 必須是 `manual_ai`。
+9. `automationLevel=helper` 時，params 必須足以形成 deterministic helper plan，不可只靠自然語言讓 helper 猜。
+10. PM-skip / 預先 BLOCKED case 不得有 Helper hints block；不得使用 `automationLevel=blocked_preassigned`、`operationTemplate=n/a` 或 `doNotExecute`。
 
 ---
 

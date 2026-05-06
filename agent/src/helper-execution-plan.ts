@@ -128,6 +128,13 @@ const helperRequestsNoDownload = (params: Record<string, unknown>): boolean =>
 const helperHintsRequestManualAi = (helperHints: HelperHints | null): boolean =>
   helperHints?.automationLevel === "manual_ai" || helperHints?.operationTemplate === "manual_ai";
 
+const isAllZeroFieldInspectionCase = (currentCase: CaseManifestCase | null, helperHints: HelperHints | null): boolean => {
+  const operationTemplate = helperHints?.operationTemplate ?? "";
+  const isA06LikeCase = /(?:^|[-_])A[-_]?06$/i.test(currentCase?.caseNo ?? "");
+  return operationTemplate === "collage_all_zero_field_inspection" ||
+    (isA06LikeCase && /全為\s*0\s*欄位|全\s*0\s*欄位|值全為\s*0|all[-_ ]?zero/i.test(textBlob(currentCase)));
+};
+
 const needsCollageNavigationPrelude = (currentCase: CaseManifestCase | null, helperHints: HelperHints | null): boolean => {
   const features = detectCaseFeatures(currentCase, helperHints);
   if (features.mode !== "collage" || features.hasFilter || features.hasGroup) return false;
@@ -266,7 +273,9 @@ const inferCollageParams = (currentCase: CaseManifestCase | null, helperHints: H
   const text = textBlob(currentCase);
   const cleanup = parseCleanupTargets(currentCase?.cleanupChecklist);
   const params = paramsObject(helperHints);
+  const allZeroFieldInspection = isAllZeroFieldInspectionCase(currentCase, helperHints);
   const selectAllFields =
+    allZeroFieldInspection ||
     booleanishParam(params, ["selectAllFields", "selectAll", "selectAllMetrics"]) ||
     booleanishParam(params, ["selectAllFieldsInSourceReport", "selectAllSourceFields"]);
   const dateVariants = firstStringArrayParam(params, ["dateVariants", "uiLabels"]);
@@ -286,11 +295,17 @@ const inferCollageParams = (currentCase: CaseManifestCase | null, helperHints: H
     (dateVariants.length === 1 ? nonNeutral(dateVariants[0]) : null) ??
     nonNeutral(cleanup["時間"]) ??
     firstMatch(text, [/(\d{4}\/\d{2}\/\d{2}\s*[~～-]\s*\d{4}\/\d{2}\/\d{2})/]);
-  const sourceReports = stringArrayParam(params, "sourceReports");
+  const sourceReportsParam = stringArrayParam(params, "sourceReports");
   const explicitSource = stringParam(params, ["source", "sourceReport"]);
-  const inferredSource = selectAllFields && sourceReports.length > 0
+  const inferredSource = selectAllFields && sourceReportsParam.length > 0
     ? null
     : firstMatch(text, [/來源報表[=：: ]*「?([^」\n,， ]+)/]);
+  const effectiveSource = explicitSource ?? inferredSource;
+  const sourceReports = sourceReportsParam.length > 0
+    ? sourceReportsParam
+    : allZeroFieldInspection && effectiveSource
+      ? [effectiveSource]
+      : sourceReportsParam;
 
   return {
     ...params,
@@ -305,10 +320,11 @@ const inferCollageParams = (currentCase: CaseManifestCase | null, helperHints: H
     compareFields: rawArrayParam(params, "compareFields") ?? ["欄位名稱", "資料類型"],
     comparisonScope: stringParam(params, ["comparisonScope"]) ?? null,
     downloadScope: stringParam(params, ["downloadScope"]) ?? (/清單|列表|專案頁|報表列|report list/i.test(text) ? "report_list" : null),
+    allZeroFieldInspection,
     field,
     fields,
     sourceReports,
-    sourceReport: stringParam(params, ["sourceReport"]) ?? stringParam(params, ["source"]) ?? null,
+    sourceReport: stringParam(params, ["sourceReport"]) ?? stringParam(params, ["source"]) ?? effectiveSource,
     expectedReportSources: stringArrayParam(params, "expectedReportSources"),
     expectedReportSourceCount: numberParam(params, ["expectedReportSourceCount"]),
     expectedTotalFieldCount: numberParam(params, ["expectedTotalFieldCount", "totalFieldCount"]),
@@ -424,6 +440,27 @@ const buildActions = (currentCase: CaseManifestCase | null, helperHints: HelperH
           "helper 只能透過 visible `+ 新增欄位` 開啟 picker，之後用 read-only DOM extraction 擷取欄位清單。",
           "expected list 必須來自 run packet 的 `rules/BI_DATA/metadata.csv` 或 reference-index 指向檔案；不可打 BI API 或 broad-read 所有 CSV。",
           "helper 只產生 actual/expected/missing/extra evidence；Codex 仍需依 testcase 規則判 PASS/FAIL/BLOCKED。"
+        ]
+      })
+    ];
+  }
+  const allZeroFieldInspection = isAllZeroFieldInspectionCase(currentCase, helperHints);
+  if (allZeroFieldInspection) {
+    return [
+      action("H1", "collage.openProject", "開啟指定拼貼專案", params, {
+        requiredEvidence: ["dom.url", "dom.pageTitle", "dom.state", "screenshot"],
+        notes: ["只開啟/切換專案，不判斷 testcase 結果。"]
+      }),
+      action("H2", "collage.createReport", "進入新增報表頁", params, {
+        requiredEvidence: ["dom.url", "dom.pageTitle", "dom.state", "screenshot"]
+      }),
+      action("H3", "collage.inspectAllZeroFields", "全選指定來源欄位並收集全 0 欄位 evidence", params, {
+        requiredEvidence: ["dom.list", "network.requestBody", "network.responseBody", "chart.datasets", "dom.previewState", "screenshot"],
+        screenshotPolicy: "required_if_possible",
+        notes: [
+          "此 helper 只負責目前 case 的 A-06 類 evidence：透過 visible UI 選欄位、設定日期/顯示、按執行前做 selected-field-count guard。",
+          "helper 會輸出 `all-zero-field-inspection-evidence.json`，包含 selected fields、request/response observation、chart/table summaries 與 allZeroCandidates。",
+          "helper 不判 PASS/FAIL；Codex 必須確認全 0 清單是否可讀、是否符合 testcase 本題範圍，再寫 result.xlsx。"
         ]
       })
     ];

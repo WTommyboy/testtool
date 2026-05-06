@@ -1154,3 +1154,13 @@ Tommy 曾討論是否改成腳本。最後決策是採「半腳本化 / helper �
 - Fixture：`scripts/verify-result-evidence-gate.ts` 新增 non-destructive selected-field validation alert fixture，確認 `BLOCKED / EXECUTE_PRECONDITION_NO_SELECTED_FIELDS` 可通過；刪除/授權類缺 response 仍會擋。
 - 版本與文件：Mac Agent 升到 `0.2.16`；README、`docs/refactor/工程spac.md`、`docs/refactor/規劃說明.md` 同步更新。A-06 all-zero-field inspection helper、Web UI pending Tool Bridge request 顯示與完整 current-case BLOCKED without whole-run abort flow 仍是後續 P0。
 - 驗證：已跑 `npm run verify:result-evidence-gate`、`npm run typecheck`、`npm run typecheck --prefix agent`、`npm run build`、`npm run build --prefix agent`、`git diff --check` 通過；commit/push `refactor/mac-agent-mvp` 與 `codex/uat-tool-mvp` 待本批收尾執行。
+
+### 2026-05-06 11:45 - OTTEST004-A-06 runtime hardening：all-zero-field inspection helper
+
+- 背景：A-06 原始目的不是讓 Agent 判斷 0 值成因，而是列出 `每日報表` 在靜態區間 `2026/03/01~2026/03/31` 下全 0 欄位清單。v1.8.x 讓 Codex visible UI 自行處理大量欄位全選，導致未選欄位就按 Execute 的 native alert 風險；光有 selected-field guard 還不夠，仍需要 A-06 專用 helper。
+- 修正：新增 canonical `operationTemplate=collage_all_zero_field_inspection` 與 helper action `collage.inspectAllZeroFields`。helper plan 對 A-06 類 case 產生 `openProject -> createReport -> inspectAllZeroFields`，不走 generic preview/save/reopen。executor 會透過 visible UI 依 `sourceReport/sourceReports` 與 metadata 全選欄位，驗證 selected field count，設定靜態日期與 display，按 Execute 後收集 request/response、Chart.js datasets、preview table summary，並輸出 `all-zero-field-inspection-evidence.json`。
+- Evidence：全 0 候選欄位由 chart datasets、preview table numeric columns 與可讀 JSON response body best-effort 彙整；helper 只列 `allZeroCandidates` 與 selected field labels/codes，不判 PASS/FAIL，不寫 result.xlsx，也不判斷全 0 根因。
+- Authoring：`docs/authoring/UAT_三文件撰寫規則.md` 新增 A-06 template 範例，要求 structured params 帶 `sourceReport/sourceReports`、`selectAllFieldsInSourceReport`、`expectedFieldCount`、靜態 `dateRange`、`display` 與 `network.responseBody/chart.datasets` evidence；PM-skip row 仍不得放 Helper hints。
+- Fixture：`scripts/verify-capability-gate.ts` 新增 A-06 fixture，確認 capability gate advertises `collage.inspectAllZeroFields`，helper plan 只含三段 dedicated flow，且保留 `sourceReports/expectedFieldCount/dateRange`。
+- 版本與文件：Mac Agent 升到 `0.2.17`；README、`docs/refactor/工程spac.md`、`docs/refactor/規劃說明.md`、authoring spec 同步更新。Web UI pending Tool Bridge request 顯示與完整 current-case BLOCKED without whole-run abort flow 仍是後續 P0。
+- 驗證：已先跑 `npm run verify:capability-gate`、`npm run typecheck --prefix agent` 通過；完整 build/typecheck/git diff check 待本批收尾執行。

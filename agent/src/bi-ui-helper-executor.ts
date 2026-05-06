@@ -241,6 +241,7 @@ const resolveReportName = (options: CliOptions): string => {
 
 const savedReportStatePath = (options: CliOptions): string => path.join(artifactRoot(options), "saved-report.json");
 const previewEvidencePath = (options: CliOptions): string => path.join(artifactRoot(options), "preview-evidence.json");
+const allZeroFieldInspectionEvidencePath = (options: CliOptions): string => path.join(artifactRoot(options), "all-zero-field-inspection-evidence.json");
 const dateUiEvidencePath = (options: CliOptions, suffix: string | null = null): string =>
   path.join(artifactRoot(options), suffix ? `date-ui-evidence-${sanitize(suffix)}.json` : "date-ui-evidence.json");
 
@@ -1780,6 +1781,252 @@ const observeDuring = async <T>(page: Page, fn: () => Promise<T>): Promise<{ res
   }
 };
 
+const observeDuringWithResponseBodies = async <T>(
+  page: Page,
+  fn: () => Promise<T>,
+  responseBodyLimit = 120_000
+): Promise<{ result: T; requests: Record<string, unknown>[]; responses: Record<string, unknown>[] }> => {
+  const requests: Record<string, unknown>[] = [];
+  const responses: Record<string, unknown>[] = [];
+  const pendingResponseReads: Array<Promise<void>> = [];
+  const matchesPreviewTraffic = (url: string): boolean => /biapi|preview|report|chart|custom/i.test(url);
+  const onRequest = (request: Request) => {
+    if (!matchesPreviewTraffic(request.url())) return;
+    requests.push({
+      url: request.url(),
+      method: request.method(),
+      postData: request.postData()?.slice(0, 12000) ?? null,
+      postDataTruncated: (request.postData()?.length ?? 0) > 12000,
+      timestamp: new Date().toISOString()
+    });
+  };
+  const onResponse = (response: Response) => {
+    if (!matchesPreviewTraffic(response.url())) return;
+    const responseEntry: Record<string, unknown> = {
+      url: response.url(),
+      status: response.status(),
+      timestamp: new Date().toISOString()
+    };
+    responses.push(responseEntry);
+    pendingResponseReads.push(
+      response.text().then((bodyText) => {
+        responseEntry.bodyTextSample = bodyText.slice(0, responseBodyLimit);
+        responseEntry.bodyLength = bodyText.length;
+        responseEntry.bodyTruncated = bodyText.length > responseBodyLimit;
+        try {
+          responseEntry.jsonBody = JSON.parse(bodyText) as unknown;
+        } catch {
+          responseEntry.jsonParseStatus = "not_json";
+        }
+      }).catch((error) => {
+        responseEntry.bodyReadError = error instanceof Error ? error.message : String(error);
+      })
+    );
+  };
+  page.on("request", onRequest);
+  page.on("response", onResponse);
+  try {
+    const result = await fn();
+    await Promise.allSettled(pendingResponseReads);
+    return { result, requests, responses };
+  } finally {
+    page.off("request", onRequest);
+    page.off("response", onResponse);
+  }
+};
+
+type AllZeroCandidate = {
+  source: "chart.datasets" | "preview.table" | "network.responseBody";
+  field: string;
+  valueCount: number;
+  zeroCount: number;
+  sum: number;
+  min: number;
+  max: number;
+  path?: string;
+  sample?: unknown[];
+};
+
+const numericValue = (value: unknown): number | null => {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  if (!trimmed || /^[-–—]$/.test(trimmed)) return null;
+  const normalized = trimmed.replace(/,/g, "").replace(/%$/, "");
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
+const numericSummaryFromValues = (values: unknown[]): { values: number[]; sum: number; min: number; max: number; allZero: boolean } | null => {
+  const numeric = values.map(numericValue).filter((item): item is number => item !== null);
+  if (numeric.length === 0) return null;
+  const sum = numeric.reduce((total, item) => total + item, 0);
+  const min = Math.min(...numeric);
+  const max = Math.max(...numeric);
+  return {
+    values: numeric,
+    sum,
+    min,
+    max,
+    allZero: numeric.every((item) => Object.is(item, -0) || item === 0)
+  };
+};
+
+const isDateLikeField = (field: string): boolean => /^(date|日期|時間|time|day|日)$/i.test(field.trim());
+
+const allZeroCandidatesFromChart = (chart: Record<string, unknown> | null): AllZeroCandidate[] => {
+  const datasets = Array.isArray(chart?.datasets) ? chart.datasets : [];
+  return datasets.flatMap((dataset, index) => {
+    if (!dataset || typeof dataset !== "object" || Array.isArray(dataset)) return [];
+    const record = dataset as Record<string, unknown>;
+    const label = typeof record.label === "string" && record.label.trim() ? record.label.trim() : `dataset_${index}`;
+    if (isDateLikeField(label)) return [];
+    const values = Array.isArray(record.values)
+      ? record.values
+      : Array.isArray(record.sample)
+        ? record.sample
+        : [];
+    const summary = numericSummaryFromValues(values);
+    if (!summary?.allZero) return [];
+    return [{
+      source: "chart.datasets" as const,
+      field: label,
+      valueCount: summary.values.length,
+      zeroCount: summary.values.length,
+      sum: summary.sum,
+      min: summary.min,
+      max: summary.max,
+      path: `chart.datasets[${index}]`,
+      sample: values.slice(0, 10)
+    }];
+  });
+};
+
+const allZeroCandidatesFromTable = (table: Record<string, unknown> | null): AllZeroCandidate[] => {
+  const numericColumns = Array.isArray(table?.numericColumns) ? table.numericColumns : [];
+  return numericColumns.flatMap((column, index) => {
+    if (!column || typeof column !== "object" || Array.isArray(column)) return [];
+    const record = column as Record<string, unknown>;
+    const header = typeof record.header === "string" && record.header.trim() ? record.header.trim() : `column_${index}`;
+    if (isDateLikeField(header)) return [];
+    const values = Array.isArray(record.values) ? record.values : [];
+    const summary = numericSummaryFromValues(values);
+    if (!summary?.allZero) return [];
+    return [{
+      source: "preview.table" as const,
+      field: header,
+      valueCount: summary.values.length,
+      zeroCount: summary.values.length,
+      sum: summary.sum,
+      min: summary.min,
+      max: summary.max,
+      path: `table.numericColumns[${index}]`,
+      sample: values.slice(0, 10)
+    }];
+  });
+};
+
+const networkBodyAllZeroCandidates = (value: unknown, pathPrefix = "$", maxCandidates = 200): AllZeroCandidate[] => {
+  const candidates: AllZeroCandidate[] = [];
+  const visit = (node: unknown, currentPath: string, depth: number): void => {
+    if (depth > 7 || candidates.length >= maxCandidates) return;
+    if (Array.isArray(node)) {
+      for (const [index, item] of node.entries()) {
+        if (candidates.length >= maxCandidates) break;
+        if (item && typeof item === "object" && !Array.isArray(item)) {
+          const record = item as Record<string, unknown>;
+          const label = firstStringFromRecord(record, ["label", "name", "field", "fieldName", "title", "metricName"]);
+          const values = firstArrayFromRecord(record, ["data", "values", "items", "points"]);
+          if (label && values && !isDateLikeField(label)) {
+            const summary = numericSummaryFromValues(values);
+            if (summary?.allZero) {
+              candidates.push({
+                source: "network.responseBody",
+                field: label,
+                valueCount: summary.values.length,
+                zeroCount: summary.values.length,
+                sum: summary.sum,
+                min: summary.min,
+                max: summary.max,
+                path: `${currentPath}[${index}]`,
+                sample: values.slice(0, 10)
+              });
+            }
+          }
+        }
+      }
+
+      const objectItems = node.filter((item) => item && typeof item === "object" && !Array.isArray(item)) as Array<Record<string, unknown>>;
+      if (objectItems.length > 0 && objectItems.length === node.length) {
+        const keys = [...new Set(objectItems.flatMap((item) => Object.keys(item)))];
+        for (const key of keys) {
+          if (isDateLikeField(key)) continue;
+          const values = objectItems.map((item) => item[key]).filter((item) => numericValue(item) !== null);
+          const summary = numericSummaryFromValues(values);
+          if (summary?.allZero) {
+            candidates.push({
+              source: "network.responseBody",
+              field: key,
+              valueCount: summary.values.length,
+              zeroCount: summary.values.length,
+              sum: summary.sum,
+              min: summary.min,
+              max: summary.max,
+              path: `${currentPath}[*].${key}`,
+              sample: values.slice(0, 10)
+            });
+          }
+          if (candidates.length >= maxCandidates) break;
+        }
+      }
+
+      for (const [index, item] of node.slice(0, 30).entries()) visit(item, `${currentPath}[${index}]`, depth + 1);
+      return;
+    }
+    if (!node || typeof node !== "object") return;
+    for (const [key, child] of Object.entries(node as Record<string, unknown>)) {
+      visit(child, `${currentPath}.${key}`, depth + 1);
+      if (candidates.length >= maxCandidates) break;
+    }
+  };
+  visit(value, pathPrefix, 0);
+  return candidates;
+};
+
+const firstStringFromRecord = (record: Record<string, unknown>, keys: string[]): string | null => {
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return null;
+};
+
+const firstArrayFromRecord = (record: Record<string, unknown>, keys: string[]): unknown[] | null => {
+  for (const key of keys) {
+    const value = record[key];
+    if (Array.isArray(value)) return value;
+  }
+  return null;
+};
+
+const allZeroCandidatesFromResponses = (responses: Record<string, unknown>[]): AllZeroCandidate[] => {
+  return responses.flatMap((response, responseIndex) =>
+    response.jsonBody === undefined
+      ? []
+      : networkBodyAllZeroCandidates(response.jsonBody, `responses[${responseIndex}].jsonBody`)
+  );
+};
+
+const dedupeAllZeroCandidates = (candidates: AllZeroCandidate[]): AllZeroCandidate[] => {
+  const seen = new Set<string>();
+  return candidates.filter((candidate) => {
+    const key = `${candidate.source}:${candidate.field}:${candidate.path ?? ""}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+};
+
 const clickByText = async (page: Page, text: string, timeout = 12000): Promise<void> => {
   const locator = page.getByText(text, { exact: false }).first();
   try {
@@ -2396,6 +2643,150 @@ const runPreview = async (options: CliOptions, page: Page, startedAt: string): P
       ...(shot ? [] : ["SCREENSHOT_UNAVAILABLE"]),
       ...(hasPreviewEvidence ? [] : ["PREVIEW_UI_ACTION_NOT_VERIFIED_NO_NETWORK_OR_CHART_EVIDENCE"])
     ]
+  );
+};
+
+const inspectAllZeroFields = async (options: CliOptions, page: Page, startedAt: string): Promise<HelperReport> => {
+  const warnings: string[] = [];
+  const operations: string[] = [];
+  const uiProfileBefore = await captureUiDomProfile(options, page, "allZeroInspection.before");
+  const stateBefore = await readStateDelta(page, options.params).catch((error) => ({
+    readError: error instanceof Error ? error.message : String(error)
+  }));
+  const expectedSelection = readSelectAllExpectedFields(options);
+  warnings.push(...expectedSelection.warnings);
+
+  const fields = metricFieldsFromParams(options.params);
+  if (paramsRequestSelectAllFields(options.params) || fields.length === 0) {
+    operations.push(...await selectAllMetricFieldsThroughUi(options, page));
+  } else {
+    operations.push(...await reconcileMetricFieldsThroughUi(page, fields));
+  }
+
+  const dateRange = nonNeutralUiTarget(stringParam(options.params, "dateRange"));
+  let dateRangeEvidence: Record<string, unknown> | null = null;
+  let dateUiArtifact: string | null = null;
+  let dateRangeUiProfiles: UiDomProfileRef[] = [];
+  if (dateRange) {
+    const result = await setDateRange(options, page, dateRange);
+    const { uiProfiles, ...resultEvidence } = result;
+    dateRangeUiProfiles = uiProfiles ?? [];
+    const dateUiEvidence = await readDateUiEvidence(page, dateRange, options.params);
+    dateUiArtifact = writeDateUiEvidenceArtifact(options, dateUiEvidence);
+    dateRangeEvidence = {
+      ...resultEvidence,
+      dateUiEvidence
+    };
+    warnings.push(...dateUiEvidence.warnings);
+    if (!result.ok) {
+      warnings.push(`ALL_ZERO_DATE_RANGE_UI_SETTING_NOT_COMPLETED:${result.warning ?? "unknown"}`);
+      operations.push(`dateRange:blocked:${dateRange}`);
+    } else {
+      operations.push(`dateRange:verified:${dateRange}`);
+    }
+  }
+
+  const displayOperation = await setDisplayModeThroughUi(page, stringParam(options.params, "display"));
+  if (displayOperation) operations.push(displayOperation);
+
+  const executePrecondition = await ensureMetricFieldSelectedBeforeExecute(page, "allZeroFieldInspection");
+  const selectedBeforeExecute = await readSelectedMetricFields(page).catch(() => []);
+  const observed = await observeDuringWithResponseBodies(page, async () => {
+    await page.getByText("執行", { exact: true }).first().click({ timeout: 15000 });
+    await page.waitForTimeout(3000);
+  });
+  const chart = await readChartSummary(page);
+  const table = await readPreviewTableSummary(page);
+  const selectedAfterExecute = await readSelectedMetricFields(page).catch(() => []);
+  const allZeroCandidates = dedupeAllZeroCandidates([
+    ...allZeroCandidatesFromChart(chart),
+    ...allZeroCandidatesFromTable(table),
+    ...allZeroCandidatesFromResponses(observed.responses)
+  ]);
+  const responseBodiesRead = observed.responses.filter((response) => response.jsonBody !== undefined || response.bodyTextSample !== undefined).length;
+  const chartDatasetCount = typeof chart?.datasetCount === "number" ? chart.datasetCount : 0;
+  const tableNumericColumnCount = Array.isArray(table?.numericColumns) ? table.numericColumns.length : 0;
+  const hasPreviewEvidence =
+    observed.requests.length > 0 ||
+    observed.responses.length > 0 ||
+    chart !== null ||
+    table !== null;
+  const hasValueEvidence = chartDatasetCount > 0 || tableNumericColumnCount > 0 || responseBodiesRead > 0;
+  if (!hasPreviewEvidence) warnings.push("ALL_ZERO_PREVIEW_UI_ACTION_NOT_VERIFIED_NO_NETWORK_OR_CHART_EVIDENCE");
+  if (!hasValueEvidence) warnings.push("ALL_ZERO_VALUE_EVIDENCE_NOT_READABLE");
+
+  ensureDir(artifactRoot(options));
+  const previewEvidence = {
+    generatedAt: new Date().toISOString(),
+    caseId: options.caseId,
+    chart,
+    table,
+    network: { requests: observed.requests, responses: observed.responses }
+  };
+  fs.writeFileSync(previewEvidencePath(options), `${JSON.stringify(previewEvidence, null, 2)}\n`);
+
+  const allZeroEvidence = {
+    generatedAt: new Date().toISOString(),
+    caseId: options.caseId,
+    operation: "collage.inspectAllZeroFields",
+    expectedSelection: {
+      sourceReports: expectedSelection.sourceReports,
+      metadataPath: expectedSelection.metadataPath,
+      expectedFieldCount: numberParam(options.params, ["expectedFieldCount", "fieldCount", "expectedFieldsCount"]),
+      expectedFields: expectedSelection.fields
+    },
+    selectedFields: {
+      beforeExecute: selectedBeforeExecute.map((item) => ({ label: item.label, code: item.code })),
+      afterExecute: selectedAfterExecute.map((item) => ({ label: item.label, code: item.code })),
+      countBeforeExecute: selectedBeforeExecute.length,
+      countAfterExecute: selectedAfterExecute.length
+    },
+    dateRange,
+    dateRangeEvidence,
+    display: stringParam(options.params, "display"),
+    executePrecondition,
+    operations,
+    network: { requests: observed.requests, responses: observed.responses },
+    chart,
+    table,
+    allZeroCandidates,
+    summary: {
+      allZeroCandidateCount: allZeroCandidates.length,
+      chartDatasetCount,
+      tableNumericColumnCount,
+      responseBodiesRead,
+      helperCanJudgeResult: false
+    },
+    stateBefore,
+    stateAfter: await readStateDelta(page, options.params).catch((error) => ({
+      readError: error instanceof Error ? error.message : String(error)
+    })),
+    warnings
+  };
+  fs.writeFileSync(allZeroFieldInspectionEvidencePath(options), `${JSON.stringify(allZeroEvidence, null, 2)}\n`);
+
+  const shot = await screenshot(options, page, "all-zero-field-inspection");
+  const uiProfileAfter = await captureUiDomProfile(options, page, "allZeroInspection.after");
+  return createReport(
+    options,
+    hasPreviewEvidence && hasValueEvidence ? "ok" : "blocked",
+    startedAt,
+    {
+      domState: await readDomState(page),
+      uiProfiles: {
+        before: uiProfileBefore,
+        after: uiProfileAfter,
+        dateRange: dateRangeUiProfiles
+      },
+      allZeroFieldInspection: allZeroEvidence
+    },
+    {
+      previewEvidence: previewEvidencePath(options),
+      allZeroFieldInspectionEvidence: allZeroFieldInspectionEvidencePath(options),
+      ...(dateUiArtifact ? { dateUiEvidence: dateUiArtifact } : {}),
+      ...(shot ? { screenshot: shot } : {})
+    },
+    shot ? warnings : [...warnings, "SCREENSHOT_UNAVAILABLE"]
   );
 };
 
@@ -3932,6 +4323,9 @@ const run = async (): Promise<void> => {
         break;
       case "collage.runPreviewAndCollectEvidence":
         report = await runPreview(options, page, startedAt);
+        break;
+      case "collage.inspectAllZeroFields":
+        report = await inspectAllZeroFields(options, page, startedAt);
         break;
       case "collage.runDateVariantsPreviewEvidence":
         report = await runDateVariantsPreviewEvidence(options, page, startedAt);

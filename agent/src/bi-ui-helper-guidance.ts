@@ -46,6 +46,12 @@ const templateGuidance: Record<string, string[]> = {
     "CSV 只能使用 UI 下載或 run packet 提供的本地檔案做一致性驗算。",
     "Chart/CSV 對照是 evidence，不代表可跳過 UI preview。"
   ],
+  collage_all_zero_field_inspection: [
+    "此模板用於 A-06 類「列出全 0 欄位清單」case；helper 只產生 all-zero evidence，不判 PASS/FAIL。",
+    "欄位全選必須來自 structured params：`selectAllFields` / `selectAllFieldsInSourceReport`、`sourceReports` 或 `sourceReport`、`expectedFieldCount`；不可把「全選 72 欄」當 UI 文字點擊。",
+    "helper 會透過 visible UI 逐欄選取、設定日期與顯示方式，按 `執行` 前先驗證 selected metric field count > 0。",
+    "輸出 `all-zero-field-inspection-evidence.json`，包含 selected field labels/codes、request/response observation、chart/table summaries 與全 0 候選欄位。Codex 仍需依 testcase 判定。"
+  ],
   download_csv_verify: [
     "下載必須由 UI 操作觸發。",
     "下載成功後可用本地 CSV parser 檢查檔名、表頭、row count、aggregate；Agent 可以讀 UI 下載到本機的檔案。",
