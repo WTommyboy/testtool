@@ -335,7 +335,9 @@ const inferCollageParams = (currentCase: CaseManifestCase | null, helperHints: H
     compareFields: rawArrayParam(params, "compareFields") ?? ["欄位名稱", "資料類型"],
     comparisonScope: stringParam(params, ["comparisonScope"]) ?? null,
     downloadScope: stringParam(params, ["downloadScope"]) ??
-      (/同\s*editor|editor\s*session|設定頁|絕不\s*(?:save|儲存|reopen|重開|回專案頁)|不\s*(?:save|儲存|reopen|重開)/i.test(text)
+      (helperRequestsDownload(params) && helperRequestsNoSave(params)
+        ? "editor_session"
+        : /同\s*editor|editor\s*session|設定頁|絕不\s*(?:save|儲存|reopen|重開|回專案頁)|不\s*(?:save|儲存|reopen|重開)/i.test(text)
         ? "editor_session"
         : /清單|列表|專案頁|報表列|report list/i.test(text)
           ? "report_list"
@@ -372,11 +374,29 @@ const canRunDatePreviewEvidenceHelper = (params: Record<string, unknown>, curren
   const dateMode = String(params.dateMode ?? "").trim().toLowerCase();
   const dateRange = typeof params.dateRange === "string" ? params.dateRange.trim() : "";
   if (dateVariants.length > 0 && (!dateMode || dateMode === "preset")) return true;
+  if (
+    (dateMode === "relative" || dateMode === "hybrid") &&
+    (typeof params.startOffsetDays === "number" || typeof params.endOffsetDays === "number" || params.start || params.end)
+  ) {
+    return true;
+  }
   if (dateMode === "static" && dateRange) return true;
   if ((dateRange.match(/\d{4}[/-]\d{1,2}[/-]\d{1,2}/g) ?? []).length >= 2) return true;
   if (dateObjectParam(params.dateRange)) return true;
   if (structuredStaticDateRangeParam(params)) return true;
   return /operationTemplate[：:]\s*collage_date_variants_preview/.test(textBlob(currentCase));
+};
+
+const hasFormulaParams = (params: Record<string, unknown>): boolean =>
+  typeof params.formula === "string" && params.formula.trim().length > 0;
+
+const isCreateProjectFlow = (currentCase: CaseManifestCase | null, helperHints: HelperHints | null): boolean => {
+  const operationTemplate = helperHints?.operationTemplate ?? "";
+  const text = textBlob(currentCase);
+  const params = paramsObject(helperHints);
+  return operationTemplate === "collage_create_project" ||
+    Boolean(stringParam(params, ["projectNamePrefix", "projectNamePattern"])) ||
+    /新增專案|create\s+project/i.test(text);
 };
 
 const action = (
@@ -415,6 +435,30 @@ const buildActions = (currentCase: CaseManifestCase | null, helperHints: HelperH
     features.hasGroup;
   const metadataOnly = features.isMetadataDropdown;
   if (unsupportedHelperTarget) return [];
+  const createProjectFlow = isCreateProjectFlow(currentCase, helperHints);
+  if (createProjectFlow) {
+    const projectParams = {
+      ...params,
+      projectNamePrefix: stringParam(helperParams, ["projectNamePrefix"]) ?? "OTTEST004_G01_",
+      projectMode: stringParam(helperParams, ["projectMode", "mode"]) ?? "拼貼"
+    };
+    return [
+      action("H1", "collage.openProject", "開啟報表管理頁並定位拼貼區塊", projectParams, {
+        requiredEvidence: ["dom.url", "dom.pageTitle", "dom.state", "screenshot"],
+        notes: ["只定位報表管理頁 / 拼貼模式區塊，不建立專案。"]
+      }),
+      action("H2", "collage.createProject", "新增本輪測試拼貼專案並驗證左側選單", projectParams, {
+        requiresToolBridge: true,
+        requiredEvidence: ["toolBridge.response", "dom.state", "nativeDialog", "screenshot"],
+        screenshotPolicy: "required_if_possible",
+        notes: [
+          "單一授權只允許本 current case 建立名稱含 OTTEST004_G01 的測試專案。",
+          "helper 必須透過 visible UI 點 + 新增專案、選建構模式=拼貼、輸入專案名稱、點建立。",
+          "若出現「請選擇模式」alert，代表模式選擇未生效，helper 必須 blocked 並留下 dialog evidence。"
+        ]
+      })
+    ];
+  }
   const deleteReportFlow = isDeleteReportFlow(currentCase, helperHints);
   if (deleteReportFlow) {
     const requestedFields = firstStringArrayParam(params, ["fields", "metrics"]);
@@ -446,6 +490,27 @@ const buildActions = (currentCase: CaseManifestCase | null, helperHints: HelperH
       })
     ];
   }
+  const formulaHelperFlow = hasFormulaParams(helperParams) || hasFormulaParams(params);
+  if (formulaHelperFlow) {
+    return [
+      action("H1", "collage.openProject", "開啟指定拼貼專案", params, {
+        requiredEvidence: ["dom.url", "dom.pageTitle", "dom.state", "screenshot"],
+        notes: ["只開啟/切換專案，不判斷 testcase 結果。"]
+      }),
+      action("H2", "collage.createReport", "進入新增報表頁", params, {
+        requiredEvidence: ["dom.url", "dom.pageTitle", "dom.state", "screenshot"]
+      }),
+      action("H3", "collage.configureCalculatedMetricAndPreview", "新增運算欄位、設定日期並執行 preview evidence", params, {
+        requiredEvidence: ["dom.state", "formula.uiState", "network.requestBody", "network.responseBody", "chart.datasets", "screenshot"],
+        screenshotPolicy: "required_if_possible",
+        notes: [
+          "helper 會透過 visible UI 加入 fieldA/fieldB、開啟「+ 新增運算欄位」modal、輸入名稱與公式、按確認後設定日期/顯示並按執行。",
+          "helper 不驗算公式正確性、不判 PASS/FAIL；Codex 必須用 chart/network evidence 做逐日驗算。",
+          "若公式 modal 無可見可輸入欄位、關不掉或攔截後續點擊，helper 必須 blocked 並留下 modal DOM profile。"
+        ]
+      })
+    ];
+  }
   const helperMustLeaveCoreToCodex = helperHintsRequestManualAi(helperHints) || dateRequiresCodexVisibleUi(currentCase, helperHints);
   if (helperMustLeaveCoreToCodex) {
     if (!needsCollageNavigationPrelude(currentCase, helperHints)) return [];
@@ -470,7 +535,7 @@ const buildActions = (currentCase: CaseManifestCase | null, helperHints: HelperH
           requiredEvidence: ["dom.state", "date.uiState", "date.representedRange", "network.requestBody", "chart.datasets", "screenshot"],
           screenshotPolicy: "required_if_possible",
           notes: [
-            "此 helper 只適用 preset dateVariants/uiLabels 或全靜態 start/end 日期；不支援自訂動態/半動態右側天數輸入。",
+            "此 helper 適用 preset dateVariants/uiLabels、全靜態 start/end 日期，以及 structured relative/hybrid dateMode（例如 B-07/B-08）。",
             "每個日期 variant 必須透過 visible UI 設定後按執行，收集 per-variant date UI、network request body、chart/table evidence。",
             "helper 不判 PASS/FAIL；Codex 必須比對 UI label、representedRange、requestBody.dateRange 與 preview 筆數後寫 result.xlsx。"
           ]

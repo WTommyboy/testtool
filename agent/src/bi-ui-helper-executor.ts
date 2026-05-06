@@ -224,6 +224,18 @@ const splitCompositeMetricFields = (value: string | null): string[] => {
 const paramsRequestSelectAllFields = (params: Record<string, unknown>): boolean =>
   booleanishParam(params, ["selectAllFields", "selectAll", "selectAllMetrics", "selectAllFieldsInSourceReport", "selectAllSourceFields"]);
 
+const helperRequestsCsvDownload = (params: Record<string, unknown>): boolean =>
+  booleanishParam(params, ["downloadCsv", "doDownloadCsv", "downloadCSV", "download", "csvDownload", "needCsv"]);
+
+const strictSelectAllFieldCountRequired = (params: Record<string, unknown>): boolean =>
+  booleanishParam(params, ["strictFieldCount", "requireExactFieldCount"]) ||
+  params.allZeroFieldInspection === true ||
+  (
+    paramsRequestSelectAllFields(params) &&
+    numberParam(params, ["expectedFieldCount", "fieldCount", "expectedFieldsCount"]) !== null &&
+    (helperRequestsCsvDownload(params) || stringArrayParam(params, "sourceReports").length > 1)
+  );
+
 const metricFieldsFromParams = (params: Record<string, unknown>): string[] => {
   if (paramsRequestSelectAllFields(params)) return [];
   const explicit = stringArrayParam(params, "fields");
@@ -243,6 +255,8 @@ const savedReportStatePath = (options: CliOptions): string => path.join(artifact
 const previewEvidencePath = (options: CliOptions): string => path.join(artifactRoot(options), "preview-evidence.json");
 const allZeroFieldInspectionEvidencePath = (options: CliOptions): string => path.join(artifactRoot(options), "all-zero-field-inspection-evidence.json");
 const deleteTemporaryReportEvidencePath = (options: CliOptions): string => path.join(artifactRoot(options), "delete-temporary-report-evidence.json");
+const calculatedFieldEvidencePath = (options: CliOptions): string => path.join(artifactRoot(options), "calculated-field-evidence.json");
+const createProjectEvidencePath = (options: CliOptions): string => path.join(artifactRoot(options), "create-project-evidence.json");
 const dateUiEvidencePath = (options: CliOptions, suffix: string | null = null): string =>
   path.join(artifactRoot(options), suffix ? `date-ui-evidence-${sanitize(suffix)}.json` : "date-ui-evidence.json");
 
@@ -297,13 +311,79 @@ const structuredStaticDateRangeParam = (params: Record<string, unknown>): string
   return `${startDate.replaceAll("-", "/")} ~ ${endDate.replaceAll("-", "/")}`;
 };
 
-const datePreviewLabelsFromParams = (params: Record<string, unknown>): string[] => {
+type DateEndpointSpec =
+  | { type: "static"; date: string }
+  | { type: "relative"; offsetDays: number };
+
+type DatePreviewSpec = {
+  requestedLabel: string;
+  mode: "preset_or_static_label" | "structured";
+  start?: DateEndpointSpec;
+  end?: DateEndpointSpec;
+};
+
+const formatOffsetLabel = (offsetDays: number): string => {
+  if (offsetDays === 0) return "今天";
+  return `${Math.abs(offsetDays)} 天${offsetDays < 0 ? "前" : "後"}`;
+};
+
+const normalizeIsoDateString = (value: string): string => value.trim().replaceAll("/", "-");
+
+const dateEndpointSpecFromValue = (value: unknown): DateEndpointSpec | null => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  const type = typeof record.type === "string" ? record.type.trim().toLowerCase() : "";
+  if (type === "static" && typeof record.date === "string" && record.date.trim()) {
+    return { type: "static", date: normalizeIsoDateString(record.date) };
+  }
+  if (type === "relative") {
+    const rawOffset = typeof record.offsetDays === "number" ? record.offsetDays : Number(record.offsetDays);
+    if (Number.isFinite(rawOffset)) return { type: "relative", offsetDays: rawOffset };
+  }
+  return null;
+};
+
+const labelForDateEndpointSpec = (spec: DateEndpointSpec): string =>
+  spec.type === "static" ? spec.date.replaceAll("-", "/") : formatOffsetLabel(spec.offsetDays);
+
+const structuredDatePreviewSpecFromParams = (params: Record<string, unknown>): DatePreviewSpec | null => {
+  const dateMode = String(params.dateMode ?? "").trim().toLowerCase();
+  if (dateMode === "relative") {
+    const startOffset = numberParam(params, ["startOffsetDays"]);
+    const endOffset = numberParam(params, ["endOffsetDays"]);
+    if (startOffset === null || endOffset === null) return null;
+    const start: DateEndpointSpec = { type: "relative", offsetDays: startOffset };
+    const end: DateEndpointSpec = { type: "relative", offsetDays: endOffset };
+    return {
+      requestedLabel: `${labelForDateEndpointSpec(start)} ~ ${labelForDateEndpointSpec(end)}`,
+      mode: "structured",
+      start,
+      end
+    };
+  }
+  if (dateMode === "hybrid") {
+    const start = dateEndpointSpecFromValue(params.start);
+    const end = dateEndpointSpecFromValue(params.end);
+    if (!start || !end) return null;
+    return {
+      requestedLabel: `${labelForDateEndpointSpec(start)} ~ ${labelForDateEndpointSpec(end)}`,
+      mode: "structured",
+      start,
+      end
+    };
+  }
+  return null;
+};
+
+const datePreviewSpecsFromParams = (params: Record<string, unknown>): DatePreviewSpec[] => {
   const variants = firstStringArrayParam(params, ["dateVariants", "uiLabels"]);
-  if (variants.length > 0) return variants;
+  if (variants.length > 0) return variants.map((requestedLabel) => ({ requestedLabel, mode: "preset_or_static_label" as const }));
+  const structured = structuredDatePreviewSpecFromParams(params);
+  if (structured) return [structured];
   const staticRange = structuredStaticDateRangeParam(params);
-  if (staticRange) return [staticRange];
+  if (staticRange) return [{ requestedLabel: staticRange, mode: "preset_or_static_label" }];
   const direct = nonNeutralUiTarget(firstStringParam(params, ["dateRange", "timeRange", "datePreset"]));
-  return direct ? [direct] : [];
+  return direct ? [{ requestedLabel: direct, mode: "preset_or_static_label" }] : [];
 };
 
 export const readDateUiEvidence = async (page: Page, requested: string | null, params: Record<string, unknown>): Promise<DateUiEvidence> => {
@@ -1533,6 +1613,139 @@ const setStaticDateRangeByCalendar = async (
   };
 };
 
+const openDatePicker = async (options: CliOptions, page: Page, context: string): Promise<DateRangeUiResult> => {
+  const uiProfiles: UiDomProfileRef[] = [];
+  if (!(await isDatePickerOpen(page))) {
+    const opened = await clickFirstVisible([
+      page.locator("#dateRangeBtn"),
+      page.locator("button").filter({ hasText: /過去|最近|今日|昨日|本週|上週|本月|上月|\d{4}[/-]\d{1,2}[/-]\d{1,2}/ }),
+      page.getByText(/過去7天|最近7天|過去30天|最近30天|今日|昨日|本週|上週|本月|上月|\d{4}[/-]\d{1,2}[/-]\d{1,2}/, { exact: false })
+    ], 8000);
+    if (!opened) return { ok: false, warning: "DATE_RANGE_CONTROL_NOT_CLICKABLE", uiProfiles };
+    await page.waitForTimeout(400);
+  }
+  uiProfiles.push(await captureUiDomProfile(options, page, context));
+  return { ok: true, uiProfiles };
+};
+
+const clickCalendarModeTab = async (page: Page, side: "start" | "end", mode: "dynamic" | "static"): Promise<boolean> => {
+  const selector = `#${side}${mode === "dynamic" ? "Dynamic" : "Static"}Tab`;
+  const clicked = await page.locator(selector).first().click({ timeout: 5000 }).then(() => true).catch(() => false);
+  if (clicked) return true;
+  const text = mode === "dynamic" ? "動態時間" : "靜態時間";
+  const calendarSide: CalendarSide = side === "start" ? "left" : "right";
+  return clickSideButton(page, text, calendarSide, 5000);
+};
+
+const fillRelativeDateEndpoint = async (page: Page, side: "start" | "end", offsetDays: number): Promise<Record<string, unknown>> => {
+  const tabClicked = await clickCalendarModeTab(page, side, "dynamic");
+  await page.waitForTimeout(250);
+  const selector = side === "start" ? "#startDayInput" : "#endDayInput";
+  const dayValue = String(Math.abs(offsetDays));
+  await page.locator(selector).first().fill(dayValue, { timeout: 5000 });
+  const observedValue = await page.locator(selector).first().inputValue({ timeout: 3000 }).catch(() => null);
+  return {
+    side,
+    type: "relative",
+    offsetDays,
+    tabClicked,
+    selector,
+    requestedInputValue: dayValue,
+    observedValue,
+    verified: observedValue === dayValue
+  };
+};
+
+const setStaticDateEndpoint = async (
+  options: CliOptions,
+  page: Page,
+  side: "start" | "end",
+  date: string
+): Promise<Record<string, unknown>> => {
+  const tabClicked = await clickCalendarModeTab(page, side, "static");
+  await page.waitForTimeout(250);
+  const iso = normalizeIsoDateString(date);
+  const parsedDate = new Date(`${iso}T00:00:00Z`);
+  const year = parsedDate.getUTCFullYear();
+  const month = parsedDate.getUTCMonth() + 1;
+  const day = parsedDate.getUTCDate();
+  const calendarSide: CalendarSide = side === "start" ? "left" : "right";
+  const monthReady = await moveCalendarToMonth(page, calendarSide, year, month);
+  const dayClicked = monthReady ? await clickCalendarDay(page, calendarSide, day) : false;
+  await page.waitForTimeout(250);
+  return {
+    side,
+    type: "static",
+    date: iso,
+    tabClicked,
+    monthReady,
+    dayClicked,
+    verified: tabClicked && monthReady && dayClicked,
+    uiProfile: await captureUiDomProfile(options, page, `dateRange.${side}.staticEndpoint`)
+  };
+};
+
+const setDateEndpoint = async (
+  options: CliOptions,
+  page: Page,
+  side: "start" | "end",
+  spec: DateEndpointSpec
+): Promise<Record<string, unknown>> => {
+  return spec.type === "relative"
+    ? fillRelativeDateEndpoint(page, side, spec.offsetDays)
+    : setStaticDateEndpoint(options, page, side, spec.date);
+};
+
+const setStructuredDateRange = async (
+  options: CliOptions,
+  page: Page,
+  spec: DatePreviewSpec
+): Promise<DateRangeUiResult> => {
+  const opened = await openDatePicker(options, page, "dateRange.structuredPopupOpened");
+  const uiProfiles = [...(opened.uiProfiles ?? [])];
+  if (!opened.ok) return opened;
+  if (!spec.start || !spec.end) return { ok: false, warning: "STRUCTURED_DATE_ENDPOINTS_MISSING", uiProfiles };
+
+  const startResult = await setDateEndpoint(options, page, "start", spec.start);
+  uiProfiles.push(await captureUiDomProfile(options, page, "dateRange.afterStructuredStart"));
+  const endResult = await setDateEndpoint(options, page, "end", spec.end);
+  uiProfiles.push(await captureUiDomProfile(options, page, "dateRange.afterStructuredEnd"));
+  const endpointsVerified = Boolean(startResult.verified) && Boolean(endResult.verified);
+  if (!endpointsVerified) {
+    return {
+      ok: false,
+      warning: `STRUCTURED_DATE_ENDPOINT_VERIFY_FAILED:start=${JSON.stringify(startResult)};end=${JSON.stringify(endResult)}`,
+      observedAfter: (await page.locator("body").innerText({ timeout: 5000 }).catch(() => "")).slice(0, 1200),
+      inputs: { startResult, endResult },
+      uiProfiles
+    };
+  }
+
+  const confirmed = await clickFirstVisible([
+    page.locator("button[onclick=\"confirmDateRange()\"]"),
+    page.getByText("確認", { exact: true }),
+    page.locator("button").filter({ hasText: "確認" })
+  ], 5000);
+  if (!confirmed) {
+    return {
+      ok: false,
+      warning: "STRUCTURED_DATE_CONFIRM_NOT_CLICKABLE",
+      observedAfter: (await page.locator("body").innerText({ timeout: 5000 }).catch(() => "")).slice(0, 1200),
+      inputs: { startResult, endResult },
+      uiProfiles
+    };
+  }
+  await page.waitForTimeout(800);
+  const observedAfter = (await page.locator("body").innerText({ timeout: 5000 }).catch(() => "")).slice(0, 1200);
+  uiProfiles.push(await captureUiDomProfile(options, page, "dateRange.afterStructuredConfirm"));
+  return {
+    ok: true,
+    observedAfter,
+    inputs: { startResult, endResult },
+    uiProfiles
+  };
+};
+
 const setDateRange = async (options: CliOptions, page: Page, dateRange: string): Promise<DateRangeUiResult> => {
   const uiProfiles: UiDomProfileRef[] = [];
   const parsed = parseDateRange(dateRange);
@@ -2144,6 +2357,272 @@ const createCollageReport = async (options: CliOptions, page: Page, startedAt: s
   return createReport(options, "ok", startedAt, { domState: await readDomState(page), uiProfile, projectSelection }, shot ? { screenshot: shot } : {}, shot ? [] : ["SCREENSHOT_UNAVAILABLE"]);
 };
 
+const createProjectNameFromParams = (options: CliOptions): string => {
+  const explicit = firstStringParam(options.params, ["newProjectName", "projectName", "name"]);
+  if (explicit) return explicit.replace("<timestamp>", timestampId());
+  const pattern = firstStringParam(options.params, ["projectNamePattern"]);
+  if (pattern) return pattern.replace("<timestamp>", timestampId());
+  const prefix = firstStringParam(options.params, ["projectNamePrefix"]) ?? "OTTEST004_G01_";
+  return `${prefix}${timestampId()}`;
+};
+
+const readCreateProjectModalState = async (page: Page): Promise<Record<string, unknown>> => {
+  return page.evaluate(() => {
+    const normalize = (value: string | null | undefined) => (value ?? "").trim().replace(/\s+/g, " ");
+    const isVisible = (element: Element): boolean => {
+      const rect = element.getBoundingClientRect();
+      const style = window.getComputedStyle(element);
+      return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden" && style.opacity !== "0";
+    };
+    const dialogSelectors = "[role='dialog'], .modal, .ant-modal, .MuiDialog-root, .swal2-popup";
+    const dialogs = Array.from(document.querySelectorAll<HTMLElement>(dialogSelectors)).flatMap((dialog, dialogIndex) => {
+      if (!isVisible(dialog)) return [];
+      const selects = Array.from(dialog.querySelectorAll<HTMLSelectElement>("select")).flatMap((select, selectIndex) => {
+        if (!isVisible(select) || select.disabled) return [];
+        return [{
+          selectIndex,
+          value: select.value,
+          selectedText: normalize(select.selectedOptions?.[0]?.textContent),
+          options: Array.from(select.options).map((option) => ({
+            value: option.value,
+            text: normalize(option.textContent),
+            selected: option.selected,
+            disabled: option.disabled
+          }))
+        }];
+      });
+      const inputs = Array.from(dialog.querySelectorAll<HTMLInputElement>("input")).flatMap((input, inputIndex) => {
+        if (!isVisible(input) || input.disabled || input.readOnly) return [];
+        return [{
+          inputIndex,
+          type: input.type,
+          placeholder: normalize(input.placeholder),
+          value: input.value
+        }];
+      });
+      const buttons = Array.from(dialog.querySelectorAll<HTMLButtonElement>("button")).flatMap((button, buttonIndex) => {
+        if (!isVisible(button) || button.disabled) return [];
+        return [{
+          buttonIndex,
+          text: normalize(button.innerText || button.textContent),
+          onclick: button.getAttribute("onclick")
+        }];
+      });
+      return [{
+        dialogIndex,
+        id: dialog.id || null,
+        className: typeof dialog.className === "string" ? dialog.className : "",
+        textExcerpt: normalize(dialog.innerText || dialog.textContent).slice(0, 1600),
+        selects,
+        inputs,
+        buttons
+      }];
+    });
+    return {
+      dialogs,
+      bodyTextExcerpt: normalize(document.body.innerText).slice(0, 2400)
+    };
+  });
+};
+
+const clickCreateProjectButton = async (page: Page): Promise<void> => {
+  const clicked = await clickFirstVisible([
+    page.getByText("+ 新增專案", { exact: false }),
+    page.getByText("新增專案", { exact: false }),
+    page.locator("button, a, [role='button']").filter({ hasText: /新增專案/ })
+  ], 8000);
+  if (!clicked) {
+    const buttons = await visibleButtons(page).catch(() => []);
+    throw new HelperBlockedError(`CREATE_PROJECT_BUTTON_NOT_CLICKABLE: visibleButtons=${JSON.stringify(buttons.slice(0, 30)).slice(0, 1200)}`);
+  }
+};
+
+const selectCreateProjectMode = async (page: Page, requestedMode: string): Promise<Record<string, unknown>> => {
+  const before = await readCreateProjectModalState(page);
+  const dialogs = Array.isArray(before.dialogs) ? before.dialogs as Array<Record<string, unknown>> : [];
+  const dialog = dialogs.find((item) => /新增專案|專案名稱|建構模式|類型|模式/.test(String(item.textExcerpt ?? ""))) ?? dialogs[0];
+  if (!dialog) throw new HelperBlockedError(`CREATE_PROJECT_MODAL_NOT_VISIBLE: state=${JSON.stringify(before).slice(0, 1500)}`);
+  const dialogIndex = typeof dialog.dialogIndex === "number" ? dialog.dialogIndex : 0;
+  const dialogLocator = page.locator("[role='dialog'], .modal, .ant-modal, .MuiDialog-root, .swal2-popup").nth(dialogIndex);
+  const selects = Array.isArray(dialog.selects) ? dialog.selects as Array<Record<string, unknown>> : [];
+  const selectCandidate = selects.flatMap((select) => {
+    const options = Array.isArray(select.options) ? select.options as Array<Record<string, unknown>> : [];
+    const option = options.find((item) =>
+      !item.disabled &&
+      (
+        String(item.text ?? "").includes(requestedMode) ||
+        String(item.value ?? "").toLowerCase().includes("collage") ||
+        /拼貼/.test(String(item.text ?? ""))
+      )
+    );
+    return option && typeof select.selectIndex === "number"
+      ? [{ selectIndex: select.selectIndex, optionValue: String(option.value ?? ""), optionText: String(option.text ?? "") }]
+      : [];
+  })[0];
+  if (selectCandidate) {
+    await dialogLocator.locator("select").nth(selectCandidate.selectIndex).selectOption(selectCandidate.optionValue, { timeout: 8000 });
+    await page.waitForTimeout(300);
+    return {
+      method: "select",
+      requestedMode,
+      selectCandidate,
+      before,
+      after: await readCreateProjectModalState(page)
+    };
+  }
+
+  const clicked = await clickFirstVisible([
+    dialogLocator.getByText(requestedMode, { exact: false }),
+    dialogLocator.getByText("拼貼模式", { exact: false }),
+    dialogLocator.locator("label, button, [role='button']").filter({ hasText: /拼貼|Collage/i })
+  ], 8000);
+  if (!clicked) throw new HelperBlockedError(`CREATE_PROJECT_MODE_OPTION_NOT_CLICKABLE: modal=${JSON.stringify(before).slice(0, 1800)}`);
+  await page.waitForTimeout(300);
+  return {
+    method: "click",
+    requestedMode,
+    before,
+    after: await readCreateProjectModalState(page)
+  };
+};
+
+const fillCreateProjectName = async (page: Page, projectName: string): Promise<Record<string, unknown>> => {
+  const inputs = await visibleInputIndexes(page);
+  const candidate =
+    inputs.find((item) => /專案|project/i.test(item.placeholder)) ??
+    inputs.find((item) => /名稱|name/i.test(item.placeholder) && !/報表|report/i.test(item.placeholder)) ??
+    inputs.find((item) => item.type === "text" && item.value.trim().length === 0) ??
+    inputs.at(-1);
+  if (!candidate) throw new HelperBlockedError(`CREATE_PROJECT_NAME_INPUT_NOT_FOUND: inputs=${JSON.stringify(inputs).slice(0, 1000)}`);
+  await page.locator("input").nth(candidate.index).fill(projectName, { timeout: 8000 });
+  const observedValue = await page.locator("input").nth(candidate.index).inputValue({ timeout: 3000 }).catch(() => null);
+  return {
+    projectName,
+    selectedInput: candidate,
+    observedValue,
+    verified: observedValue === projectName,
+    visibleInputs: inputs
+  };
+};
+
+const clickCreateProjectSubmit = async (page: Page): Promise<void> => {
+  const clicked = await clickFirstVisible([
+    page.locator("[role='dialog'] button").filter({ hasText: /建立|新增|確認|確定|Create/i }),
+    page.locator(".modal button").filter({ hasText: /建立|新增|確認|確定|Create/i }),
+    page.locator(".ant-modal button").filter({ hasText: /建立|新增|確認|確定|Create/i }),
+    page.locator(".MuiDialog-root button").filter({ hasText: /建立|新增|確認|確定|Create/i })
+  ], 8000);
+  if (!clicked) throw new HelperBlockedError("CREATE_PROJECT_SUBMIT_BUTTON_NOT_CLICKABLE");
+};
+
+const decideCreateProjectDialogHandling = (dialog: Dialog): { action: "accept" | "dismiss"; reason: string; blocksFlow: boolean } => {
+  const message = dialog.message();
+  if (/sso|login|登入|密碼|password|驗證|認證/i.test(message)) {
+    return { action: "dismiss", reason: "auth_like_dialog_not_auto_approved", blocksFlow: true };
+  }
+  if (/請選擇模式|選擇.*模式|select.*mode/i.test(message)) {
+    return { action: "accept", reason: "project_mode_not_selected_alert", blocksFlow: true };
+  }
+  if (/成功|已建立|新增完成|建立完成|created|success/i.test(message)) {
+    return { action: "accept", reason: "known_bi_create_project_success_dialog", blocksFlow: false };
+  }
+  return { action: "dismiss", reason: "unknown_native_dialog_dismissed_for_recovery", blocksFlow: true };
+};
+
+const createProject = async (options: CliOptions, page: Page, startedAt: string): Promise<HelperReport> => {
+  if (!options.approvedToolRequestId) return approvalRequired(options, "Create current-case temporary/test project through visible BI UI.", startedAt);
+
+  const projectName = createProjectNameFromParams(options);
+  if (!/OTTEST004_G01|OTTEST004-Project|OTTEST004/.test(projectName)) {
+    throw new HelperBlockedError(`CREATE_PROJECT_NAME_NOT_CURRENT_CASE_SAFE:${projectName}`);
+  }
+  const projectMode = firstStringParam(options.params, ["projectMode", "mode"]) ?? "拼貼";
+  const warnings: string[] = [];
+  const operations: string[] = [];
+  const nativeDialogs: Array<Record<string, unknown>> = [];
+  let dialogBlocksFlow = false;
+  const uiProfileBefore = await captureUiDomProfile(options, page, "createProject.before");
+
+  const dialogHandler = async (dialog: Dialog) => {
+    const handling = decideCreateProjectDialogHandling(dialog);
+    const record: Record<string, unknown> = {
+      sequence: nativeDialogs.length + 1,
+      type: dialog.type(),
+      message: dialog.message(),
+      defaultValue: dialog.defaultValue(),
+      handledAction: handling.action,
+      handledReason: handling.reason
+    };
+    nativeDialogs.push(record);
+    if (handling.blocksFlow) dialogBlocksFlow = true;
+    try {
+      if (handling.action === "accept") await dialog.accept();
+      else await dialog.dismiss();
+      record.handledAt = new Date().toISOString();
+    } catch (error) {
+      record.handledError = error instanceof Error ? error.message : String(error);
+      dialogBlocksFlow = true;
+    }
+  };
+
+  page.on("dialog", dialogHandler);
+  try {
+    await clickCreateProjectButton(page);
+    operations.push("project:create:openModal");
+    await page.waitForTimeout(600);
+    const modalOpened = await readCreateProjectModalState(page);
+    operations.push("project:create:modalStateCaptured");
+    const modeSelection = await selectCreateProjectMode(page, projectMode);
+    operations.push(`project:create:mode:${projectMode}:${modeSelection.method}`);
+    const nameInput = await fillCreateProjectName(page, projectName);
+    operations.push(`project:create:name:${projectName}`);
+    if (!nameInput.verified) warnings.push("CREATE_PROJECT_NAME_INPUT_VERIFY_FAILED");
+    await clickCreateProjectSubmit(page);
+    operations.push("project:create:submitClicked");
+    await page.waitForTimeout(1800);
+    const bodyText = await page.locator("body").innerText({ timeout: 5000 }).catch(() => "");
+    const projectVisible = bodyText.includes(projectName);
+    const modalAfterSubmit = await readCreateProjectModalState(page).catch((error) => ({ readError: error instanceof Error ? error.message : String(error) }));
+    const evidence = {
+      generatedAt: new Date().toISOString(),
+      caseId: options.caseId,
+      projectName,
+      projectMode,
+      approvedToolRequestId: options.approvedToolRequestId,
+      operations,
+      modalOpened,
+      modeSelection,
+      nameInput,
+      nativeDialogs,
+      dialogBlocksFlow,
+      projectVisible,
+      bodyTextExcerpt: bodyText.slice(0, 2400),
+      modalAfterSubmit,
+      warnings
+    };
+    ensureDir(artifactRoot(options));
+    fs.writeFileSync(createProjectEvidencePath(options), `${JSON.stringify(evidence, null, 2)}\n`);
+    if (dialogBlocksFlow) warnings.push("CREATE_PROJECT_NATIVE_DIALOG_BLOCKED_FLOW");
+    if (!projectVisible) warnings.push("CREATE_PROJECT_NOT_VISIBLE_AFTER_SUBMIT");
+    const shot = await screenshot(options, page, "create-project");
+    const uiProfileAfter = await captureUiDomProfile(options, page, "createProject.after");
+    return createReport(
+      options,
+      projectVisible && !dialogBlocksFlow ? "ok" : "blocked",
+      startedAt,
+      {
+        domState: await readDomState(page),
+        uiProfiles: { before: uiProfileBefore, after: uiProfileAfter },
+        createProjectEvidence: evidence
+      },
+      { createProjectEvidence: createProjectEvidencePath(options), ...(shot ? { screenshot: shot } : {}) },
+      shot ? warnings : [...warnings, "SCREENSHOT_UNAVAILABLE"]
+    );
+  } finally {
+    page.off("dialog", dialogHandler);
+  }
+};
+
 const openExistingReport = async (options: CliOptions, page: Page, startedAt: string): Promise<HelperReport> => {
   const uiProfileBefore = await captureUiDomProfile(options, page, "openExistingReport.before");
   const bodyText = await page.locator("body").innerText({ timeout: 5000 }).catch(() => "");
@@ -2647,6 +3126,239 @@ const runPreview = async (options: CliOptions, page: Page, startedAt: string): P
   );
 };
 
+const calculatedBaseFieldsFromParams = (params: Record<string, unknown>): string[] => {
+  const explicit = stringArrayParam(params, "baseFields");
+  if (explicit.length > 0) return explicit;
+  const fields = [
+    firstStringParam(params, ["fieldA", "baseFieldA", "metricA"]),
+    firstStringParam(params, ["fieldB", "baseFieldB", "metricB"])
+  ].filter((item): item is string => Boolean(nonNeutralUiTarget(item)));
+  return [...new Set(fields)];
+};
+
+const calculatedFieldNameFromParams = (options: CliOptions): string => {
+  const explicit = firstStringParam(options.params, ["calculatedFieldName", "formulaName", "name"]);
+  if (explicit) return explicit.replace("<timestamp>", timestampId());
+  const match = options.caseId.match(/-E-(\d{2})$/i);
+  return match ? `E${match[1]}_運算` : `${sanitize(options.caseId)}_運算`;
+};
+
+const readVisibleFormulaModalState = async (page: Page): Promise<Record<string, unknown>> => {
+  return page.evaluate(() => {
+    const normalize = (value: string | null | undefined) => (value ?? "").trim().replace(/\s+/g, " ");
+    const isVisible = (element: Element): boolean => {
+      const rect = element.getBoundingClientRect();
+      const style = window.getComputedStyle(element);
+      return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden" && style.opacity !== "0";
+    };
+    const dialogSelectors = "#formulaEditorModal, [role='dialog'], .modal, .ant-modal, .MuiDialog-root";
+    const dialogs = Array.from(document.querySelectorAll<HTMLElement>(dialogSelectors)).flatMap((dialog, dialogIndex) => {
+      if (!isVisible(dialog)) return [];
+      const inputs = Array.from(dialog.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>("input, textarea")).flatMap((input, inputIndex) => {
+        if (!isVisible(input) || input.disabled || input.readOnly) return [];
+        return [{
+          inputIndex,
+          tagName: input.tagName.toLowerCase(),
+          type: input instanceof HTMLInputElement ? input.type : "textarea",
+          placeholder: normalize(input.placeholder),
+          value: input.value
+        }];
+      });
+      const buttons = Array.from(dialog.querySelectorAll<HTMLButtonElement>("button")).flatMap((button, buttonIndex) => {
+        if (!isVisible(button) || button.disabled) return [];
+        return [{
+          buttonIndex,
+          text: normalize(button.innerText || button.textContent),
+          className: typeof button.className === "string" ? button.className : "",
+          onclick: button.getAttribute("onclick")
+        }];
+      });
+      return [{
+        dialogIndex,
+        id: dialog.id || null,
+        className: typeof dialog.className === "string" ? dialog.className : "",
+        textExcerpt: normalize(dialog.innerText || dialog.textContent).slice(0, 1200),
+        inputs,
+        buttons
+      }];
+    });
+    return {
+      dialogs,
+      bodyTextExcerpt: normalize(document.body.innerText).slice(0, 1600)
+    };
+  });
+};
+
+const clickCalculatedFieldControl = async (page: Page): Promise<string> => {
+  const clicked = await clickFirstVisible([
+    page.locator("button[onclick=\"openCalculatedFieldEditor()\"]"),
+    page.getByText("+ 新增運算欄位", { exact: false }),
+    page.locator("button").filter({ hasText: /新增運算|運算欄位|Calculated|Formula/i })
+  ], 10000);
+  if (clicked) return "calculatedField:openButton";
+  const buttons = await visibleButtons(page).catch(() => []);
+  const match = buttons.find((button) => /新增運算|運算欄位|Calculated|Formula/i.test(button.text));
+  if (match) {
+    await clickVisibleButtonByIndex(page, match.index, 8000);
+    return `calculatedField:visibleButton:${match.text}`;
+  }
+  throw new HelperBlockedError(`CALCULATED_FIELD_BUTTON_NOT_CLICKABLE: visibleButtons=${JSON.stringify(buttons.slice(0, 30)).slice(0, 1200)}`);
+};
+
+const fillCalculatedFieldModal = async (
+  page: Page,
+  fieldName: string,
+  formula: string
+): Promise<Record<string, unknown>> => {
+  const before = await readVisibleFormulaModalState(page);
+  const dialogs = Array.isArray(before.dialogs) ? before.dialogs as Array<Record<string, unknown>> : [];
+  const dialog = dialogs[0];
+  if (!dialog) throw new HelperBlockedError(`FORMULA_MODAL_NOT_VISIBLE: state=${JSON.stringify(before).slice(0, 1500)}`);
+  const inputs = Array.isArray(dialog.inputs) ? dialog.inputs as Array<Record<string, unknown>> : [];
+  const formulaInput =
+    inputs.find((item) => /公式|運算|formula|expression/i.test(String(item.placeholder ?? ""))) ??
+    inputs.find((item) => item.type === "textarea" || item.tagName === "textarea") ??
+    inputs.filter((item) => !/報表名稱|專案名稱|project|report/i.test(String(item.placeholder ?? ""))).at(-1);
+  const nameInput =
+    inputs.find((item) => /欄位名稱|名稱|name/i.test(String(item.placeholder ?? "")) && item.inputIndex !== formulaInput?.inputIndex) ??
+    inputs.find((item) => item.inputIndex !== formulaInput?.inputIndex && !/報表名稱|專案名稱|project|report/i.test(String(item.placeholder ?? "")));
+  if (!formulaInput) {
+    throw new HelperBlockedError(`FORMULA_INPUT_NOT_FOUND: modal=${JSON.stringify(before).slice(0, 1500)}; inputs=${JSON.stringify(inputs).slice(0, 1000)}`);
+  }
+  const dialogIndex = typeof dialog.dialogIndex === "number" ? dialog.dialogIndex : 0;
+  const inputLocator = (input: Record<string, unknown>) =>
+    page.locator("#formulaEditorModal, [role='dialog'], .modal, .ant-modal, .MuiDialog-root")
+      .nth(dialogIndex)
+      .locator("input, textarea")
+      .nth(typeof input.inputIndex === "number" ? input.inputIndex : 0);
+  if (nameInput) {
+    await inputLocator(nameInput).fill(fieldName, { timeout: 8000 });
+  }
+  await inputLocator(formulaInput).fill(formula, { timeout: 10000 });
+  const afterFill = await readVisibleFormulaModalState(page);
+  const dialogLocator = page.locator("#formulaEditorModal, [role='dialog'], .modal, .ant-modal, .MuiDialog-root").nth(dialogIndex);
+  const submitted = await clickFirstVisible([
+    dialogLocator.locator("button").filter({ hasText: /新增|加入|確認|確定|套用|儲存|保存/ }),
+    page.locator("#formulaEditorModal button").filter({ hasText: /新增|加入|確認|確定|套用|儲存|保存/ }),
+    page.locator("[role=dialog] button").filter({ hasText: /新增|加入|確認|確定|套用|儲存|保存/ }),
+    page.locator(".modal button").filter({ hasText: /新增|加入|確認|確定|套用|儲存|保存/ })
+  ], 10000);
+  if (!submitted) throw new HelperBlockedError(`FORMULA_MODAL_SUBMIT_NOT_CLICKABLE: afterFill=${JSON.stringify(afterFill).slice(0, 1500)}`);
+  await page.waitForTimeout(1000);
+  return {
+    fieldName,
+    formula,
+    selectedNameInput: nameInput ?? null,
+    selectedFormulaInput: formulaInput,
+    before,
+    afterFill,
+    afterSubmit: await readVisibleFormulaModalState(page)
+  };
+};
+
+const configureCalculatedMetricAndPreview = async (options: CliOptions, page: Page, startedAt: string): Promise<HelperReport> => {
+  const warnings: string[] = [];
+  const operations: string[] = [];
+  const formula = stringParam(options.params, "formula");
+  if (!formula) throw new HelperBlockedError("FORMULA_PARAM_MISSING");
+  const baseFields = calculatedBaseFieldsFromParams(options.params);
+  if (baseFields.length === 0) throw new HelperBlockedError("FORMULA_BASE_FIELDS_MISSING");
+  const calculatedFieldName = calculatedFieldNameFromParams(options);
+  const uiProfileBefore = await captureUiDomProfile(options, page, "calculatedMetric.before");
+  const stateBefore = await readStateDelta(page, options.params).catch((error) => ({ readError: error instanceof Error ? error.message : String(error) }));
+
+  operations.push(...await reconcileMetricFieldsThroughUi(page, baseFields));
+  operations.push(await clickCalculatedFieldControl(page));
+  await page.waitForTimeout(700);
+  const modalOpenedProfile = await captureUiDomProfile(options, page, "calculatedMetric.modalOpened");
+  const formulaUi = await fillCalculatedFieldModal(page, calculatedFieldName, formula);
+  const modalAfterSubmitProfile = await captureUiDomProfile(options, page, "calculatedMetric.modalAfterSubmit");
+
+  const dateRange = nonNeutralUiTarget(stringParam(options.params, "dateRange"));
+  let dateRangeEvidence: Record<string, unknown> | null = null;
+  let dateUiArtifact: string | null = null;
+  let dateRangeUiProfiles: UiDomProfileRef[] = [];
+  if (dateRange) {
+    const result = await setDateRange(options, page, dateRange);
+    const { uiProfiles, ...resultEvidence } = result;
+    dateRangeUiProfiles = uiProfiles ?? [];
+    const dateUiEvidence = await readDateUiEvidence(page, dateRange, options.params);
+    dateUiArtifact = writeDateUiEvidenceArtifact(options, dateUiEvidence);
+    dateRangeEvidence = { ...resultEvidence, dateUiEvidence };
+    warnings.push(...dateUiEvidence.warnings);
+    if (!result.ok) {
+      warnings.push(`CALCULATED_DATE_RANGE_UI_SETTING_NOT_COMPLETED:${result.warning ?? "unknown"}`);
+      operations.push(`dateRange:blocked:${dateRange}`);
+    } else {
+      operations.push(`dateRange:verified:${dateRange}`);
+    }
+  }
+  const displayOperation = await setDisplayModeThroughUi(page, stringParam(options.params, "display"));
+  if (displayOperation) operations.push(displayOperation);
+
+  const executePrecondition = await ensureMetricFieldSelectedBeforeExecute(page, "calculatedMetricPreview");
+  const observed = await observeDuringWithResponseBodies(page, async () => {
+    await page.getByText("執行", { exact: true }).first().click({ timeout: 15000 });
+    await page.waitForTimeout(3000);
+  });
+  const chart = await readChartSummary(page);
+  const table = await readPreviewTableSummary(page);
+  const hasPreviewEvidence = observed.requests.length > 0 || observed.responses.length > 0 || chart !== null || table !== null;
+  if (!hasPreviewEvidence) warnings.push("CALCULATED_PREVIEW_ACTION_NOT_VERIFIED_NO_NETWORK_OR_CHART_EVIDENCE");
+
+  const evidence = {
+    generatedAt: new Date().toISOString(),
+    caseId: options.caseId,
+    baseFields,
+    calculatedFieldName,
+    formula,
+    formulaUi,
+    dateRange,
+    dateRangeEvidence,
+    display: stringParam(options.params, "display"),
+    executePrecondition,
+    network: { requests: observed.requests, responses: observed.responses },
+    chart,
+    table,
+    stateBefore,
+    stateAfter: await readStateDelta(page, options.params).catch((error) => ({ readError: error instanceof Error ? error.message : String(error) })),
+    operations,
+    warnings
+  };
+  ensureDir(artifactRoot(options));
+  fs.writeFileSync(calculatedFieldEvidencePath(options), `${JSON.stringify(evidence, null, 2)}\n`);
+  fs.writeFileSync(
+    previewEvidencePath(options),
+    `${JSON.stringify({ generatedAt: new Date().toISOString(), caseId: options.caseId, source: "collage.configureCalculatedMetricAndPreview", chart, table, network: { requests: observed.requests, responses: observed.responses } }, null, 2)}\n`
+  );
+
+  const shot = await screenshot(options, page, "calculated-metric-preview");
+  const uiProfileAfter = await captureUiDomProfile(options, page, "calculatedMetric.after");
+  return createReport(
+    options,
+    hasPreviewEvidence ? "ok" : "blocked",
+    startedAt,
+    {
+      domState: await readDomState(page),
+      uiProfiles: {
+        before: uiProfileBefore,
+        modalOpened: modalOpenedProfile,
+        modalAfterSubmit: modalAfterSubmitProfile,
+        dateRange: dateRangeUiProfiles,
+        after: uiProfileAfter
+      },
+      calculatedField: evidence
+    },
+    {
+      calculatedFieldEvidence: calculatedFieldEvidencePath(options),
+      previewEvidence: previewEvidencePath(options),
+      ...(dateUiArtifact ? { dateUiEvidence: dateUiArtifact } : {}),
+      ...(shot ? { screenshot: shot } : {})
+    },
+    shot ? warnings : [...warnings, "SCREENSHOT_UNAVAILABLE"]
+  );
+};
+
 const inspectAllZeroFields = async (options: CliOptions, page: Page, startedAt: string): Promise<HelperReport> => {
   const warnings: string[] = [];
   const operations: string[] = [];
@@ -2796,8 +3508,8 @@ const dateVariantsPreviewEvidencePath = (options: CliOptions): string => path.jo
 const runDateVariantsPreviewEvidence = async (options: CliOptions, page: Page, startedAt: string): Promise<HelperReport> => {
   const warnings: string[] = [];
   const operations: string[] = [];
-  const labels = datePreviewLabelsFromParams(options.params);
-  if (labels.length === 0) {
+  const specs = datePreviewSpecsFromParams(options.params);
+  if (specs.length === 0) {
     throw new HelperBlockedError("DATE_VARIANTS_EMPTY");
   }
 
@@ -2816,10 +3528,13 @@ const runDateVariantsPreviewEvidence = async (options: CliOptions, page: Page, s
   if (displayOperation) operations.push(displayOperation);
 
   const variants: Array<Record<string, unknown>> = [];
-  for (const label of labels) {
+  for (const spec of specs) {
+    const label = spec.requestedLabel;
     const normalizedLabel = normalizeDatePresetLabel(label);
     const variantWarnings: string[] = [];
-    const setResult = await setDateRange(options, page, label);
+    const setResult = spec.mode === "structured"
+      ? await setStructuredDateRange(options, page, spec)
+      : await setDateRange(options, page, label);
     const { uiProfiles, ...setEvidence } = setResult;
     const dateUiEvidence = await readDateUiEvidence(page, label, options.params);
     const dateUiArtifact = writeDateUiEvidenceArtifact(options, dateUiEvidence);
@@ -2853,6 +3568,11 @@ const runDateVariantsPreviewEvidence = async (options: CliOptions, page: Page, s
       index: variants.length,
       requestedLabel: label,
       normalizedLabel,
+      dateSpec: {
+        mode: spec.mode,
+        start: spec.start ?? null,
+        end: spec.end ?? null
+      },
       status: setResult.ok && hasPreviewEvidence ? "ok" : "blocked",
       setDateResult: setEvidence,
       dateUiEvidence,
@@ -2879,7 +3599,13 @@ const runDateVariantsPreviewEvidence = async (options: CliOptions, page: Page, s
     generatedAt: new Date().toISOString(),
     caseId: options.caseId,
     fields,
-    requestedLabels: labels,
+    requestedLabels: specs.map((spec) => spec.requestedLabel),
+    requestedSpecs: specs.map((spec) => ({
+      requestedLabel: spec.requestedLabel,
+      mode: spec.mode,
+      start: spec.start ?? null,
+      end: spec.end ?? null
+    })),
     stateBefore,
     stateAfter: await readStateDelta(page, options.params).catch((error) => ({
       readError: error instanceof Error ? error.message : String(error)
@@ -3313,6 +4039,64 @@ const readSelectAllExpectedFields = (options: CliOptions): { fields: string[]; s
   return { fields, sourceReports: effectiveSources, metadataPath: resolved.path, warnings };
 };
 
+const selectAllMetricFieldsFromPickerDom = async (
+  options: CliOptions,
+  page: Page,
+  rawItems: Array<Record<string, unknown>>,
+  expectedFieldCount: number | null
+): Promise<{ handled: boolean; operations: string[] }> => {
+  const sourceReports = stringArrayParam(options.params, "sourceReports");
+  if (sourceReports.length === 0 || rawItems.length === 0) return { handled: false, operations: [] };
+
+  const targetGroups = new Set(sourceReports.flatMap(fieldPickerSourceGroupLabels).map(normalizeFieldPickerGroup));
+  const groupedItems = rawItems.filter((item) => typeof item.groupLabel === "string" && targetGroups.has(normalizeFieldPickerGroup(item.groupLabel)));
+  if (groupedItems.length === 0) return { handled: false, operations: [] };
+
+  const perGroupCounts = sourceReports.map((sourceReport) => {
+    const groupLabels = new Set(fieldPickerSourceGroupLabels(sourceReport).map(normalizeFieldPickerGroup));
+    return {
+      sourceReport,
+      count: rawItems.filter((item) => typeof item.groupLabel === "string" && groupLabels.has(normalizeFieldPickerGroup(item.groupLabel))).length
+    };
+  });
+  const operations = [
+    `field:selectAll:domPickerGroups:${groupedItems.length}`,
+    `field:selectAll:domPickerPerGroup:${JSON.stringify(perGroupCounts)}`
+  ];
+  const seen = new Set<string>();
+  const targets = groupedItems.flatMap((item) => {
+    const index = typeof item.index === "number" ? item.index : null;
+    if (index === null) return [];
+    const label = inferFieldLabel(String(item.text ?? ""), [], item.code);
+    const code = typeof item.code === "string" ? item.code : null;
+    const key = normalizeMetricFieldIdentity(code ?? label);
+    if (!label || !key || seen.has(key)) return [];
+    seen.add(key);
+    return [{ index, label, code }];
+  });
+  if (targets.length === 0) return { handled: false, operations: [...operations, "field:selectAll:domPickerNoTargets"] };
+
+  for (const target of targets) {
+    const selected = await readSelectedMetricFields(page).catch(() => []);
+    if (selected.some((item) => selectedMetricFieldMatches(item, target.label) || (target.code && normalizeMetricFieldIdentity(item.code) === normalizeMetricFieldIdentity(target.code)))) {
+      continue;
+    }
+    await clickVisibleBodyElementByIndex(page, target.index, 8000);
+    await page.waitForTimeout(220);
+    operations.push(`field:selectAll:domSet:${target.label}${target.code ? `:${target.code}` : ""}`);
+  }
+
+  const finalSelected = await readSelectedMetricFields(page).catch(() => []);
+  operations.push(`field:selectAll:finalSelected:${finalSelected.length}`);
+  if (expectedFieldCount !== null && finalSelected.length !== expectedFieldCount) {
+    const strictCount = strictSelectAllFieldCountRequired(options.params);
+    const message = `SELECT_ALL_FIELD_COUNT_MISMATCH:expected=${expectedFieldCount}; selected=${finalSelected.length}; domTargets=${targets.length}; perGroup=${JSON.stringify(perGroupCounts)}`;
+    if (strictCount) throw new HelperBlockedError(message);
+    operations.push(`field:selectAll:nonBlockingCountMismatch:${message}`);
+  }
+  return { handled: true, operations };
+};
+
 const selectAllMetricFieldsThroughUi = async (options: CliOptions, page: Page): Promise<string[]> => {
   const operations: string[] = [];
   const expectedFieldCount = numberParam(options.params, ["expectedFieldCount", "fieldCount", "expectedFieldsCount"]);
@@ -3320,14 +4104,26 @@ const selectAllMetricFieldsThroughUi = async (options: CliOptions, page: Page): 
   operations.push(`field:selectAll:requested:sources=${expected.sourceReports.join("|") || "all"};expectedFieldCount=${expectedFieldCount ?? "unknown"}`);
   operations.push(...expected.warnings.map((warning) => `field:selectAll:warning:${warning}`));
 
+  if (expected.sourceReports.length > 1) {
+    const readiness = await waitForMetricFieldControls(page);
+    const addOperation = await clickMetricAddFieldControl(page, "select-all-fields");
+    await page.waitForTimeout(700);
+    const rawItems = await extractFieldPickerDomItems(page);
+    operations.push(readiness, addOperation, `field:selectAll:domRawItems:${rawItems.length}`);
+    const domSelection = await selectAllMetricFieldsFromPickerDom(options, page, rawItems, expectedFieldCount);
+    operations.push(...domSelection.operations);
+    if (domSelection.handled) return operations;
+  }
+
   if (expected.fields.length > 0) {
     operations.push(`field:selectAll:metadataFields:${expected.fields.length}`);
     operations.push(...await reconcileMetricFieldsThroughUi(page, expected.fields));
     const selected = await readSelectedMetricFields(page).catch(() => []);
     if (expectedFieldCount !== null && selected.length !== expectedFieldCount) {
-      throw new HelperBlockedError(
-        `SELECT_ALL_FIELD_COUNT_MISMATCH:expected=${expectedFieldCount}; selected=${selected.length}; metadataFields=${expected.fields.length}; selectedSample=${JSON.stringify(selected.slice(0, 20))}`
-      );
+      const strictCount = strictSelectAllFieldCountRequired(options.params);
+      const message = `SELECT_ALL_FIELD_COUNT_MISMATCH:expected=${expectedFieldCount}; selected=${selected.length}; metadataFields=${expected.fields.length}; selectedSample=${JSON.stringify(selected.slice(0, 20))}`;
+      if (strictCount) throw new HelperBlockedError(message);
+      operations.push(`field:selectAll:nonBlockingCountMismatch:${message}`);
     }
     return operations;
   }
@@ -3369,9 +4165,10 @@ const selectAllMetricFieldsThroughUi = async (options: CliOptions, page: Page): 
   const finalSelected = await readSelectedMetricFields(page).catch(() => []);
   operations.push(`field:selectAll:finalSelected:${finalSelected.length}`);
   if (expectedFieldCount !== null && finalSelected.length !== expectedFieldCount) {
-    throw new HelperBlockedError(
-      `SELECT_ALL_FIELD_COUNT_MISMATCH:expected=${expectedFieldCount}; selected=${finalSelected.length}; candidateItems=${targets.length}; groupedItems=${groupedItems.length}; rawItems=${rawItems.length}`
-    );
+    const strictCount = strictSelectAllFieldCountRequired(options.params);
+    const message = `SELECT_ALL_FIELD_COUNT_MISMATCH:expected=${expectedFieldCount}; selected=${finalSelected.length}; candidateItems=${targets.length}; groupedItems=${groupedItems.length}; rawItems=${rawItems.length}`;
+    if (strictCount) throw new HelperBlockedError(message);
+    operations.push(`field:selectAll:nonBlockingCountMismatch:${message}`);
   }
   return operations;
 };
@@ -4687,6 +5484,9 @@ const run = async (): Promise<void> => {
       case "collage.openProject":
         report = await openProject(options, page, startedAt);
         break;
+      case "collage.createProject":
+        report = await createProject(options, page, startedAt);
+        break;
       case "collage.createReport":
         report = await createCollageReport(options, page, startedAt);
         break;
@@ -4698,6 +5498,9 @@ const run = async (): Promise<void> => {
         break;
       case "collage.runPreviewAndCollectEvidence":
         report = await runPreview(options, page, startedAt);
+        break;
+      case "collage.configureCalculatedMetricAndPreview":
+        report = await configureCalculatedMetricAndPreview(options, page, startedAt);
         break;
       case "collage.inspectAllZeroFields":
         report = await inspectAllZeroFields(options, page, startedAt);

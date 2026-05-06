@@ -127,7 +127,25 @@ const canRunDatePreviewEvidenceHelper = (params: Record<string, unknown>): boole
   const dateVariants = firstStringArrayParam(params, ["dateVariants", "uiLabels"]);
   const dateMode = String(params.dateMode ?? "").trim().toLowerCase();
   if (dateVariants.length > 0 && (!dateMode || dateMode === "preset")) return true;
+  if (
+    (dateMode === "relative" || dateMode === "hybrid") &&
+    (typeof params.startOffsetDays === "number" || typeof params.endOffsetDays === "number" || params.start || params.end)
+  ) {
+    return true;
+  }
   return dateMode === "static" || Boolean(dateObjectParam(params.dateRange));
+};
+
+const hasFormulaParams = (params: Record<string, unknown>): boolean =>
+  typeof params.formula === "string" && params.formula.trim().length > 0;
+
+const isCreateProjectFlow = (currentCase: CaseManifestCase | null, helperHints: HelperHints | null): boolean => {
+  const operationTemplate = helperHints?.operationTemplate ?? "";
+  const text = detectCaseFeatures(currentCase, helperHints).text;
+  const params = paramsObject(helperHints);
+  return operationTemplate === "collage_create_project" ||
+    Boolean(stringParam(params, ["projectNamePrefix", "projectNamePattern"])) ||
+    /新增專案|create\s+project/i.test(text);
 };
 
 const needsCollageNavigationPrelude = (currentCase: CaseManifestCase | null, helperHints: HelperHints | null): boolean => {
@@ -177,13 +195,26 @@ export const evaluateCapabilityGate = (
   const dateNeedsCodexVisibleUi = dateRequiresCodexVisibleUi(currentCase, helperHints);
   const navigationPreludeAllowed = needsCollageNavigationPrelude(currentCase, helperHints);
   const datePreviewEvidenceAllowed = mode === "collage" && !hasFilter && !hasGroup && canRunDatePreviewEvidenceHelper(params);
+  const formulaHelperAllowed = mode === "collage" && !hasFilter && !hasGroup && hasFormulaParams(params);
+  const createProjectAllowed = mode === "collage" && !hasFilter && !hasGroup && isCreateProjectFlow(currentCase, helperHints);
 
   if (mode === "record") unsupportedFeatures.push("record_mode_helper_not_supported");
   if (mode === "metric") unsupportedFeatures.push("metric_mode_helper_not_supported");
   if (hasFilter) unsupportedFeatures.push("filter_helper_not_implemented");
   if (hasGroup) unsupportedFeatures.push("group_helper_not_implemented");
 
-  if (mode === "collage" && !hasFilter && !hasGroup && isMetadataDropdown) {
+  if (createProjectAllowed) {
+    supportedHelperTemplates.push(
+      "collage.openProject",
+      "collage.createProject"
+    );
+  } else if (formulaHelperAllowed) {
+    supportedHelperTemplates.push(
+      "collage.openProject",
+      "collage.createReport",
+      "collage.configureCalculatedMetricAndPreview"
+    );
+  } else if (mode === "collage" && !hasFilter && !hasGroup && isMetadataDropdown) {
     supportedHelperTemplates.push(
       "collage.openProject",
       "collage.createReport",
@@ -214,7 +245,7 @@ export const evaluateCapabilityGate = (
     if (datePreviewEvidenceAllowed) supportedHelperTemplates.push("collage.runDateVariantsPreviewEvidence");
   }
 
-  if ((manualAiRequested || dateNeedsCodexVisibleUi) && !isDeleteReport) {
+  if ((manualAiRequested || dateNeedsCodexVisibleUi) && !isDeleteReport && !formulaHelperAllowed && !createProjectAllowed) {
     const degradedAllowed = new Set([
       "collage.openProject",
       "collage.createReport",
@@ -230,10 +261,14 @@ export const evaluateCapabilityGate = (
   let helperPreRunAllowed = false;
   let blockingReason: string | null = null;
 
-  if ((manualAiRequested || dateNeedsCodexVisibleUi) && !isDeleteReport) {
-    supportStatus = "degraded";
+  if (formulaHelperAllowed || createProjectAllowed) {
+    supportStatus = "supported";
+    executionMode = "helper_assisted";
+    helperPreRunAllowed = true;
+  } else if ((manualAiRequested || dateNeedsCodexVisibleUi) && !isDeleteReport) {
+    supportStatus = datePreviewEvidenceAllowed ? "degraded" : "degraded";
     executionMode = "codex_visible_ui";
-    helperPreRunAllowed = navigationPreludeAllowed;
+    helperPreRunAllowed = navigationPreludeAllowed || datePreviewEvidenceAllowed;
   } else if (unsupportedFeatures.length > 0 || (automationLevel === "blocked_if_no_helper" && supportedHelperTemplates.length === 0)) {
     supportStatus = "unsupported";
     executionMode = "blocked_unsupported";
