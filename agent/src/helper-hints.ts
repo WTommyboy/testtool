@@ -32,6 +32,7 @@ const ALLOWED_OPERATION_TEMPLATES = new Set([
   "chart_csv_consistency",
   "collage_all_zero_field_inspection",
   "collage_date_variants_preview",
+  "collage.configureCalculatedMetricAndPreview",
   "download_csv_verify",
   "save_load_flow",
   "manual_ai"
@@ -41,6 +42,7 @@ const ALLOWED_EVIDENCE = new Set([
   "dom.list",
   "date.uiState",
   "date.representedRange",
+  "formula.uiState",
   "network.requestBody",
   "network.responseBody",
   "chart.datasets",
@@ -54,6 +56,14 @@ const REQUIRED_FORBIDDEN_AUTOMATION = ["direct_bi_api", "internal_js_setter", "m
 
 const isAllowedEvidence = (value: string): boolean =>
   [...ALLOWED_EVIDENCE].some((base) => value === base || value.startsWith(`${base}.`));
+
+const normalizeEvidenceToken = (value: string): string => {
+  const trimmed = value.trim();
+  if (isAllowedEvidence(trimmed)) return trimmed;
+  const [beforeColon] = trimmed.split(/[:：]/, 1);
+  const candidate = beforeColon?.trim() ?? "";
+  return candidate && isAllowedEvidence(candidate) ? candidate : trimmed;
+};
 
 const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
@@ -166,7 +176,7 @@ const buildHelperHints = (
   const caseId = stringValue(raw.caseId);
   const automationLevel = stringValue(raw.automationLevel);
   const operationTemplate = stringValue(raw.operationTemplate);
-  const requiredEvidence = stringArray(raw.requiredEvidence);
+  const requiredEvidence = stringArray(raw.requiredEvidence).map(normalizeEvidenceToken);
   const forbiddenAutomation = stringArray(raw.forbiddenAutomation);
   const aiDecisionRequired = typeof raw.aiDecisionRequired === "boolean" ? raw.aiDecisionRequired : null;
 

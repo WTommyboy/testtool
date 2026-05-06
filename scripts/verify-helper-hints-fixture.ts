@@ -290,6 +290,54 @@ const main = async (): Promise<void> => {
     assert.ok(parsedBoldLabelHints, "bold **Helper hints** label should parse even without caseId fallback");
     assert.equal(parsedBoldLabelHints.operationTemplate, "metadata_dropdown_compare");
 
+    const formulaHintsMarkdown = [
+      "### OTTEST004-E-01 — formula modal helper",
+      "",
+      "Helper hints:",
+      "```json",
+      JSON.stringify({
+        caseId: "OTTEST004-E-01",
+        automationLevel: "helper",
+        operationTemplate: "collage.configureCalculatedMetricAndPreview",
+        params: {
+          mode: "拼貼",
+          baseFields: ["新增帳號數", "MAU(帳號)"],
+          calculatedFieldName: "E01_運算",
+          formula: "[新增帳號數]+[MAU(帳號)]/2",
+          formulaModal: {
+            openButtonText: "+ 新增運算欄位",
+            nameInputLabel: "欄位名稱",
+            formulaInputLabel: "公式",
+            submitButtonText: "確認"
+          },
+          dateRange: {
+            start: "2026-03-01",
+            end: "2026-03-31"
+          },
+          display: "每天"
+        },
+        requiredEvidence: [
+          "formula.uiState: DOM 可讀到 calculatedFieldName 與 formula",
+          "network.requestBody: request body 含運算欄位定義與 dateRange",
+          "chart.datasets: preview/圖表資料可讀取並可與公式抽樣驗算",
+          "screenshot"
+        ],
+        forbiddenAutomation: ["direct_bi_api", "internal_js_setter", "multi_case_batch"],
+        aiDecisionRequired: true
+      }, null, 2),
+      "```",
+      ""
+    ].join("\n");
+    const parsedFormulaHints = parseHelperHintsFromMarkdown(formulaHintsMarkdown, "OTTEST004-E-01", "fixture/formula.md").helperHints;
+    assert.ok(parsedFormulaHints, "formula helper hints should parse");
+    assert.equal(parsedFormulaHints.operationTemplate, "collage.configureCalculatedMetricAndPreview");
+    assert.deepEqual(
+      parsedFormulaHints.requiredEvidence,
+      ["formula.uiState", "network.requestBody", "chart.datasets", "screenshot"],
+      "formula helper evidence should normalize annotation prose to canonical tokens"
+    );
+    assert.deepEqual(parsedFormulaHints.warnings, [], "formula helper hints should not warn after evidence normalization");
+
     console.log(
       JSON.stringify(
         {
@@ -307,7 +355,8 @@ const main = async (): Promise<void> => {
             "bi-ui-helper-guidance Template Notes",
             "rule-index currentCaseRecommendations",
             "metadata helper top-level reference params merged into params",
-            "bold markdown Helper hints label parses without caseId fallback"
+            "bold markdown Helper hints label parses without caseId fallback",
+            "formula modal helper template and evidence normalization"
           ]
         },
         null,

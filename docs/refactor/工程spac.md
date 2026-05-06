@@ -1,7 +1,7 @@
 # UAT Tool 最新工程 Spec
 
 **版本**: v2026-05-07
-**狀態**: Mac Agent MVP / App 1.1.5 + Agent 0.2.22 / Indexed Guidance + Preflight Safeguards + groupId schema + final/partial aggregate result + complete archive MD export + OTTEST002 Collage helper P0 + metadata dropdown source-group scoping + metadata expected-source fallback + metadata source-scope count guard + list-page CSV row refresh + response-body fallback + preview table evidence + CSV header/date normalization + helper-plan auto continuation + existing-report field exact reconciliation + helper-evidence preflight replacement + support-file profile + result repair guard + degraded BLOCKED result guard + Tool Bridge run-event evidence gate + Tool Bridge lifecycle status panel + Tool Bridge result-gate false-positive guard + negative native-confirm prose guard + formula-modal blocked gate guard + source-result runtime skip ingestion + execute selected-field precondition guard + non-destructive validation alert allowlist + A-06 all-zero field inspection helper + editor-session CSV helper chain + temporary report create/delete helper + formula/calculated-field preview helper + stable formula modal selector helper + create-project helper + dynamic/hybrid date helper support + strict select-all field-count guard + PASS-vs-helper-false-check gate + PM skip classification + preview-only helper skip guards + case-type must-read rules + CSV/metadata/formula authoring contract + exact metadata source filename contract + background-safe browser lease + no-foreground helper policy + field-list loading wait + inline cleanup consistency parser guard / helper project auto-selection guard / manual_ai helper pre-run guard / manual_ai safe navigation prelude guard / date-variants preview evidence helper / multi-variant date visible-UI routing guard / date UI represented-range evidence / Monday-week date preset guard with weekStart override / select-all fields params guard / selected-field code-label reconciliation / Playwright browser_tabs availability guard / active-question-first session handoff contract
+**狀態**: Mac Agent MVP / App 1.1.5 + Agent 0.2.23 / Indexed Guidance + Preflight Safeguards + groupId schema + final/partial aggregate result + complete archive MD export + OTTEST002 Collage helper P0 + metadata dropdown source-group scoping + metadata expected-source fallback + metadata source-scope count guard + list-page CSV row refresh + response-body fallback + preview table evidence + CSV header/date normalization + helper-plan auto continuation + existing-report field exact reconciliation + helper-evidence preflight replacement + support-file profile + result repair guard + degraded BLOCKED result guard + Tool Bridge run-event evidence gate + Tool Bridge lifecycle status panel + Tool Bridge result-gate false-positive guard + negative native-confirm prose guard + formula-modal blocked gate guard + source-result runtime skip ingestion + execute selected-field precondition guard + non-destructive validation alert allowlist + A-06 all-zero field inspection helper + editor-session CSV helper chain + temporary report create/delete helper + formula/calculated-field preview helper + stable formula modal selector helper + create-project helper + dynamic/hybrid date helper support + strict select-all field-count guard + PASS-vs-helper-false-check gate + PM skip classification + preview-only helper skip guards + case-type must-read rules + CSV/metadata/formula authoring contract + formula helper-hints parser compatibility + exact metadata source filename contract + background-safe browser lease + no-foreground helper policy + field-list loading wait + inline cleanup consistency parser guard / helper project auto-selection guard / manual_ai helper pre-run guard / manual_ai safe navigation prelude guard / date-variants preview evidence helper / multi-variant date visible-UI routing guard / date UI represented-range evidence / Monday-week date preset guard with weekStart override / select-all fields params guard / selected-field code-label reconciliation / Playwright browser_tabs availability guard / active-question-first session handoff contract
 **適用分支**: `refactor/mac-agent-mvp` / `codex/uat-tool-mvp`  
 **說明**: 檔名沿用 Tommy 提供的 `工程spac.md`;本文內容為工程 spec。
 
@@ -150,7 +150,7 @@ package:
 ```text
 package name: uat-tool-agent
 binary: uat-agent
-version: 0.2.22
+version: 0.2.23
 ```
 
 The Agent WebSocket `X-Agent-Version` header and `agent.online.payload.agent_version` are read from `agent/package.json`; they must not be hard-coded in `agent/src/connection.ts`.
@@ -961,6 +961,11 @@ Implemented in App/API `1.1.5` and Agent `0.2.22`:
 
 - Result evidence gate uses a neutral mask for negative/missing native-dialog prose, so E-group BLOCKED wording such as `無法完成公式確認` no longer turns into a synthetic Tool Bridge claim.
 - `collage.configureCalculatedMetricAndPreview` now targets the BI formula modal by stable IDs: `#calculatedFieldNameInput` for the calculated field name, `#formulaInput` for the formula expression, and `button[onclick="saveFormula()"]` for submit. It validates both input values before clicking submit and records a blocked mismatch instead of swapping formula/name/search inputs.
+
+Implemented in Agent `0.2.23`:
+
+- Helper-hints parser now recognizes `operationTemplate=collage.configureCalculatedMetricAndPreview` as the canonical formula/calculated-field template.
+- `requiredEvidence` accepts annotated strings such as `formula.uiState: DOM 可讀到...` by normalizing the text before `:` / `：` to a canonical evidence token. This is a compatibility guard for incoming packages; authoring should still write pure token arrays and put prose in steps or notes.
 
 Authoring / BI domain contract update on `2026-05-07`:
 
