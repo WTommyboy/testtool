@@ -1718,6 +1718,12 @@ launchctl list | rg com.tommy.uat-agent
 curl -s https://testtool-production.up.railway.app/api/agents | jq
 ```
 
+Latest verified deployment on 2026-05-07 21:19 Asia/Taipei:
+
+- Runtime commit `621a470` pushed to `refactor/mac-agent-mvp` and `codex/uat-tool-mvp`.
+- Railway production `/version`: App/API `1.1.7`, deployment `f41fc153-b428-48bb-ba51-061b62864485`, branch `codex/uat-tool-mvp`; `/health` healthy.
+- Local LaunchAgent `com.tommy.uat-agent` restarted to pid `49357`; `/api/agents` shows Tommy Mac Agent `0.2.26`, `doctorOk=true`, status `idle`.
+
 ---
 
 ## 15. Known Risks
