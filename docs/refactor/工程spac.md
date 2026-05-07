@@ -1723,10 +1723,10 @@ launchctl list | rg com.tommy.uat-agent
 curl -s https://testtool-production.up.railway.app/api/agents | jq
 ```
 
-Latest verified deployment on 2026-05-08 01:07 Asia/Taipei:
+Latest verified production state on 2026-05-08 01:10 Asia/Taipei:
 
-- Runtime commit `49b484a` pushed to `refactor/mac-agent-mvp` and `codex/uat-tool-mvp`.
-- Railway production `/version`: App/API `1.1.8`, deployment `03352363-3d0f-494e-a72d-3a2d4900c9fc`, branch `codex/uat-tool-mvp`; `/health` healthy.
+- Runtime fix commit `49b484a` pushed to `refactor/mac-agent-mvp` and `codex/uat-tool-mvp`; later docs-only closeout commits may appear as the active Railway short SHA without changing the runtime fix.
+- Railway production `/version`: App/API `1.1.8`, branch `codex/uat-tool-mvp`; `/health` healthy. Use `/version` for the active deployment id at rerun time.
 - Local LaunchAgent `com.tommy.uat-agent` restarted to pid `69303`; `/api/agents` shows Tommy Mac Agent `0.2.27`, `doctorOk=true`, status `idle`.
 
 ---
