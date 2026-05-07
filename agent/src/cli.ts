@@ -139,105 +139,109 @@ const main = async (): Promise<void> => {
     const config = readConfig();
     ensureAgentDirectories(config);
     let stopping = false;
-    let currentConnection: AgentConnection | null = null;
+    let activeTask: { runId: string; cancel: (reason?: string) => void } | null = null;
+    const connection = new AgentConnection({
+      config,
+      onStatus: (status, detail) => {
+        printJson({ event: "status", status, detail: detail instanceof Error ? detail.message : detail });
+        if (status === "closed" && activeTask) {
+          printJson({
+            event: "task_continues_after_connection_closed",
+            runId: activeTask.runId,
+            reason: "agent_connection_closed"
+          });
+        }
+      },
+      onMessage: (message) => {
+        printJson({ event: "message", type: message.type, id: message.id });
+        if (message.type === "task.cancel") {
+          const runId = getPayloadRunId(message);
+          const reason = typeof message.payload.reason === "string" ? message.payload.reason : "cancelled_by_pm";
+          if (activeTask && (!runId || activeTask.runId === runId)) {
+            activeTask.cancel(reason);
+            printJson({ event: "task_cancelled", runId: activeTask.runId, reason });
+          } else {
+            void closeChromeDebugSession(config);
+            printJson({ event: "task_cancel_ignored", runId, reason, activeRunId: activeTask?.runId ?? null });
+          }
+          return;
+        }
+        if (message.type === "task.dispatch") {
+          const runId = getPayloadRunId(message);
+          if (activeTask) {
+            sendRejection(connection, "run.rejected", message, "agent_busy", {
+              current_run_id: activeTask.runId
+            });
+            return;
+          }
+          void handleTaskDispatch(connection, config, message, {
+            onCancelReady: (readyRunId, cancel) => {
+              activeTask = { runId: readyRunId, cancel };
+            },
+            onCancelClear: (doneRunId) => {
+              if (activeTask?.runId === doneRunId) activeTask = null;
+            }
+          }).catch((error) => {
+            if (runId && activeTask?.runId === runId) activeTask = null;
+            printJson({
+              event: "task_error",
+              type: message.type,
+              id: message.id,
+              error: error instanceof Error ? error.message : String(error)
+            });
+          });
+          return;
+        }
+        if (message.type === "tool_response") {
+          const runId = getPayloadRunId(message);
+          if (activeTask) {
+            sendRejection(connection, "run.rejected", message, "agent_busy", {
+              current_run_id: activeTask.runId
+            });
+            return;
+          }
+          void handleToolResponse(connection, config, message, {
+            onCancelReady: (readyRunId, cancel) => {
+              activeTask = { runId: readyRunId, cancel };
+            },
+            onCancelClear: (doneRunId) => {
+              if (activeTask?.runId === doneRunId) activeTask = null;
+            }
+          }).catch((error) => {
+            if (runId && activeTask?.runId === runId) activeTask = null;
+            printJson({
+              event: "tool_response_error",
+              type: message.type,
+              id: message.id,
+              error: error instanceof Error ? error.message : String(error)
+            });
+          });
+          return;
+        }
+        if (message.type !== "ack") {
+          sendRejection(connection, "task.rejected", message, "unknown_task_type");
+          printJson({
+            event: "task_rejected",
+            type: message.type,
+            id: message.id,
+            reason: "unknown_task_type"
+          });
+        }
+      }
+    });
     const stop = (): void => {
       stopping = true;
+      if (activeTask) {
+        activeTask.cancel("agent_stopping");
+        printJson({ event: "task_cancelled", runId: activeTask.runId, reason: "agent_stopping" });
+      }
       void closeChromeDebugSession(config);
-      currentConnection?.close();
+      connection.close();
     };
     process.once("SIGINT", stop);
     process.once("SIGTERM", stop);
 
     for (let attempt = 0; !stopping; attempt += 1) {
-      let activeTask: { runId: string; cancel: (reason?: string) => void } | null = null;
-      const connection = new AgentConnection({
-        config,
-        onStatus: (status, detail) => {
-          printJson({ event: "status", status, detail: detail instanceof Error ? detail.message : detail });
-          if (status === "closed" && activeTask) {
-            activeTask.cancel("agent_connection_closed");
-            printJson({ event: "task_cancelled", runId: activeTask.runId, reason: "agent_connection_closed" });
-          }
-        },
-        onMessage: (message) => {
-          printJson({ event: "message", type: message.type, id: message.id });
-          if (message.type === "task.cancel") {
-            const runId = getPayloadRunId(message);
-            const reason = typeof message.payload.reason === "string" ? message.payload.reason : "cancelled_by_pm";
-            if (activeTask && (!runId || activeTask.runId === runId)) {
-              activeTask.cancel(reason);
-              printJson({ event: "task_cancelled", runId: activeTask.runId, reason });
-            } else {
-              void closeChromeDebugSession(config);
-              printJson({ event: "task_cancel_ignored", runId, reason, activeRunId: activeTask?.runId ?? null });
-            }
-            return;
-          }
-          if (message.type === "task.dispatch") {
-            const runId = getPayloadRunId(message);
-            if (activeTask) {
-              sendRejection(connection, "run.rejected", message, "agent_busy", {
-                current_run_id: activeTask.runId
-              });
-              return;
-            }
-            void handleTaskDispatch(connection, config, message, {
-              onCancelReady: (readyRunId, cancel) => {
-                activeTask = { runId: readyRunId, cancel };
-              },
-              onCancelClear: (doneRunId) => {
-                if (activeTask?.runId === doneRunId) activeTask = null;
-              }
-            }).catch((error) => {
-              if (runId && activeTask?.runId === runId) activeTask = null;
-              printJson({
-                event: "task_error",
-                type: message.type,
-                id: message.id,
-                error: error instanceof Error ? error.message : String(error)
-              });
-            });
-            return;
-          }
-          if (message.type === "tool_response") {
-            const runId = getPayloadRunId(message);
-            if (activeTask) {
-              sendRejection(connection, "run.rejected", message, "agent_busy", {
-                current_run_id: activeTask.runId
-              });
-              return;
-            }
-            void handleToolResponse(connection, config, message, {
-              onCancelReady: (readyRunId, cancel) => {
-                activeTask = { runId: readyRunId, cancel };
-              },
-              onCancelClear: (doneRunId) => {
-                if (activeTask?.runId === doneRunId) activeTask = null;
-              }
-            }).catch((error) => {
-              if (runId && activeTask?.runId === runId) activeTask = null;
-              printJson({
-                event: "tool_response_error",
-                type: message.type,
-                id: message.id,
-                error: error instanceof Error ? error.message : String(error)
-              });
-            });
-            return;
-          }
-          if (message.type !== "ack") {
-            sendRejection(connection, "task.rejected", message, "unknown_task_type");
-            printJson({
-              event: "task_rejected",
-              type: message.type,
-              id: message.id,
-              reason: "unknown_task_type"
-            });
-          }
-        }
-      });
-      currentConnection = connection;
-
       try {
         await connection.connect();
         printJson({ event: "connected" });
@@ -245,8 +249,6 @@ const main = async (): Promise<void> => {
         await connection.waitUntilClosed();
       } catch (error) {
         printJson({ event: "connection_error", error: error instanceof Error ? error.message : String(error) });
-      } finally {
-        if (currentConnection === connection) currentConnection = null;
       }
 
       if (!stopping) {

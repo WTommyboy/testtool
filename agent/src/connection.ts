@@ -44,13 +44,51 @@ export class AgentConnection {
   private heartbeatTimer: NodeJS.Timeout | null = null;
   private status: "idle" | "busy" = "idle";
   private currentRunId: string | null = null;
-  private readonly closedPromise: Promise<void>;
+  private closedPromise: Promise<void>;
   private resolveClosed: (() => void) | null = null;
+  private readonly outboundQueue: AgentMessage[] = [];
 
   constructor(private readonly options: AgentConnectionOptions) {
     this.closedPromise = new Promise((resolve) => {
       this.resolveClosed = resolve;
     });
+  }
+
+  private resetClosedPromise(): void {
+    this.closedPromise = new Promise((resolve) => {
+      this.resolveClosed = resolve;
+    });
+  }
+
+  private queueMessage(message: AgentMessage): void {
+    const maxQueueSize = 500;
+    if (this.outboundQueue.length >= maxQueueSize) {
+      const disposableIndex = this.outboundQueue.findIndex((item) => !item.ack_required);
+      if (disposableIndex >= 0) {
+        this.outboundQueue.splice(disposableIndex, 1);
+      } else {
+        this.outboundQueue.shift();
+      }
+    }
+    this.outboundQueue.push(message);
+  }
+
+  private sendMessage(message: AgentMessage): boolean {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return false;
+    try {
+      this.ws.send(JSON.stringify(message));
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  private flushOutboundQueue(): void {
+    while (this.outboundQueue.length > 0) {
+      const message = this.outboundQueue[0];
+      if (!this.sendMessage(message)) return;
+      this.outboundQueue.shift();
+    }
   }
 
   private buildRunSnapshot(): RunSnapshot | null {
@@ -83,6 +121,7 @@ export class AgentConnection {
   }
 
   connect(): Promise<void> {
+    this.resetClosedPromise();
     return new Promise((resolve, reject) => {
       this.ws = new WebSocket(this.options.config.server, {
         headers: {
@@ -95,6 +134,9 @@ export class AgentConnection {
         this.options.onStatus?.("open");
         void (async () => {
           const capability = await buildAgentCapability(this.options.config);
+          if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+            throw new Error("AGENT_WS_CLOSED_DURING_ONLINE");
+          }
           this.send("agent.online", {
             device_name: this.options.config.device_name,
             agent_version: AGENT_VERSION,
@@ -103,6 +145,7 @@ export class AgentConnection {
             current_run_id: this.currentRunId,
             run_snapshot: this.buildRunSnapshot()
           }, true);
+          this.flushOutboundQueue();
           this.heartbeatTimer = setInterval(() => {
             this.send("agent.heartbeat", { status: this.status, current_run_id: this.currentRunId }, false);
           }, 30_000);
@@ -115,6 +158,7 @@ export class AgentConnection {
       this.ws.on("message", (data) => this.handleMessage(data.toString("utf8")));
       this.ws.on("close", (code, reason) => {
         if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
+        this.ws = null;
         this.options.onStatus?.("closed", {
           code,
           reason: reason.toString("utf8")
@@ -122,6 +166,7 @@ export class AgentConnection {
         this.resolveClosed?.();
       });
       this.ws.on("error", (error) => {
+        this.ws = null;
         this.options.onStatus?.("error", error);
         reject(error);
       });
@@ -131,6 +176,7 @@ export class AgentConnection {
   close(): void {
     if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
     this.ws?.close();
+    this.ws = null;
   }
 
   waitUntilClosed(): Promise<void> {
@@ -143,9 +189,6 @@ export class AgentConnection {
   }
 
   send(type: string, payload: Record<string, unknown>, ackRequired: boolean): AgentMessage {
-    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
-      throw new Error("AGENT_WS_NOT_OPEN");
-    }
     const message: AgentMessage = {
       id: `msg_${crypto.randomUUID()}`,
       seq: this.seq++,
@@ -154,7 +197,9 @@ export class AgentConnection {
       ack_required: ackRequired,
       payload
     };
-    this.ws.send(JSON.stringify(message));
+    if (!this.sendMessage(message)) {
+      this.queueMessage(message);
+    }
     return message;
   }
 
