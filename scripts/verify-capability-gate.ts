@@ -182,6 +182,30 @@ const selectAllFieldsHints: HelperHints = {
   warnings: []
 };
 
+const actualD02StructuredHints: HelperHints = {
+  caseId: "OTTEST004-D-02",
+  automationLevel: "manual_ai",
+  operationTemplate: "manual_ai",
+  params: {
+    mode: "拼貼",
+    expectedSources: ["每日報表", "各登入渠道狀況(原 beanfun! 導流)", "退費追蹤", "雙平台營收佔比"],
+    expectedTotalFieldCount: 72,
+    dateMode: "static",
+    start: { type: "static", date: "2026-03-01" },
+    end: { type: "static", date: "2026-03-31" },
+    doNotSave: true,
+    doNotReopen: true,
+    downloadCsv: true
+  },
+  requiredEvidence: ["dom.state", "dom.list", "network.requestBody", "chart.datasets", "csv.rows"],
+  forbiddenAutomation: ["direct_bi_api", "internal_js_setter", "multi_case_batch"],
+  aiDecisionRequired: true,
+  raw: {},
+  sourcePath: "fixture/helper-hints.md",
+  sourceRelativePath: "fixture/helper-hints.md",
+  warnings: []
+};
+
 const allZeroFieldInspectionHints: HelperHints = {
   caseId: "OTTEST004-A-06",
   automationLevel: "helper",
@@ -200,6 +224,30 @@ const allZeroFieldInspectionHints: HelperHints = {
   },
   requiredEvidence: ["dom.list", "network.requestBody", "network.responseBody", "chart.datasets", "screenshot"],
   forbiddenAutomation: ["direct_bi_api", "internal_js_setter", "multi_case_batch"],
+  aiDecisionRequired: true,
+  raw: {},
+  sourcePath: "fixture/helper-hints.md",
+  sourceRelativePath: "fixture/helper-hints.md",
+  warnings: []
+};
+
+const formulaHelperHints: HelperHints = {
+  caseId: "OTTEST004-E-01",
+  automationLevel: "helper",
+  operationTemplate: "collage.configureCalculatedMetricAndPreview",
+  params: {
+    mode: "拼貼",
+    baseFields: ["新增帳號數", "MAU(帳號)"],
+    calculatedFieldNamePrefix: "OTTEST004_E01_calc",
+    formula: "[新增帳號數]+[MAU(帳號)]/2",
+    dateRange: { start: "2026-03-01", end: "2026-03-31" },
+    display: "每天",
+    doNotSave: true,
+    doNotReopen: true,
+    doNotDownloadCsv: true
+  },
+  requiredEvidence: ["dom.state", "formula.uiState", "network.requestBody", "chart.datasets", "screenshot"],
+  forbiddenAutomation: ["direct_bi_api", "internal_js_setter", "multi_case_batch", "type_formula_directly_in_readonly_input"],
   aiDecisionRequired: true,
   raw: {},
   sourcePath: "fixture/helper-hints.md",
@@ -326,6 +374,107 @@ const main = (): void => {
     assert.ok(saveLoadPlan.actions.some((item) => item.template === "collage.saveReport"), "F-02 should save the fresh report");
     assert.ok(saveLoadPlan.actions.some((item) => item.template === "collage.reopenReport"), "F-02 should reopen the saved report");
 
+    const actualSaveLoadCase = {
+      ...saveLoadCase,
+      preconditions: "v1.8.7 同 case 建立後 reopen,不依賴既有報表;報表名稱含 timestamp 確保唯一",
+      stepsSummary: "同 case 建立 → 儲存 → 回專案頁 → 點報表名稱 reopen → 驗證設定還原"
+    };
+    const actualSaveLoadHints: HelperHints = {
+      ...saveLoadHints,
+      params: {
+        mode: "拼貼",
+        field: "新增帳號數",
+        sourceReport: "每日報表",
+        dateMode: "static",
+        start: { type: "static", date: "2026-03-01" },
+        end: { type: "static", date: "2026-03-31" },
+        display: "每天",
+        saveReportNamePrefix: "OTTEST004_F02_",
+        useTimestamp: true,
+        reopenViaClickReportName: true,
+        verifyRestoredFields: ["selectedFields", "dateRange", "display"],
+        expectedRestoredDateRange: "2026-03-01~2026-03-31",
+        scope: "同 case 建立 → 儲存 → 回專案頁 → 點報表名稱 reopen → 驗證設定還原"
+      }
+    };
+    const actualSaveLoadGate = evaluateCapabilityGate(actualSaveLoadCase, actualSaveLoadHints);
+    assert.ok(!actualSaveLoadGate.supportedHelperTemplates.includes("collage.openExistingReport"), "actual F-02 same-case flow must not advertise openExistingReport");
+    const actualSaveLoadPlan = buildHelperExecutionPlan({ runDir, currentCase: actualSaveLoadCase, helperHints: actualSaveLoadHints });
+    assert.deepEqual(
+      actualSaveLoadPlan.actions.map((item) => item.template),
+      ["collage.openProject", "collage.createReport", "collage.configureMetric", "collage.runPreviewAndCollectEvidence", "collage.saveReport", "collage.reopenReport"],
+      "actual F-02 same-case save/reopen should create, save, then reopen the current saved report"
+    );
+    assert.equal(
+      actualSaveLoadPlan.actions.find((item) => item.template === "collage.saveReport")?.params.reportNamePattern,
+      "OTTEST004_F02_<timestamp>",
+      "actual F-02 saveReportNamePrefix should become a timestamped reportNamePattern"
+    );
+
+    const saveOnlyCase = {
+      ...collageSaveReopenCase,
+      caseNo: "OTTEST004-F-01",
+      caseTitle: "儲存報表 — 儲存後出現在清單",
+      cleanupChecklist: "欄位=新增帳號數;篩選=0組;分組=不影響;時間=2026/03/01~2026/03/31;顯示=每天",
+      stepsSummary: "進入設定頁，加新增帳號數，執行 preview，儲存 OTTEST004_F01_<timestamp>，返回專案頁確認報表名稱出現在清單。本題只測儲存後出現在清單，不測 reopen 設定還原。"
+    };
+    const saveOnlyHints: HelperHints = {
+      ...saveLoadHints,
+      caseId: "OTTEST004-F-01",
+      params: {
+        mode: "拼貼",
+        field: "新增帳號數",
+        dateRange: { start: "2026-03-01", end: "2026-03-31" },
+        display: "每天",
+        saveOnly: true,
+        skipReopen: true,
+        reportNamePattern: "OTTEST004-F-01-<timestamp>"
+      }
+    };
+    const saveOnlyPlan = buildHelperExecutionPlan({ runDir, currentCase: saveOnlyCase, helperHints: saveOnlyHints });
+    assert.deepEqual(
+      saveOnlyPlan.actions.map((item) => item.template),
+      ["collage.openProject", "collage.createReport", "collage.configureMetric", "collage.runPreviewAndCollectEvidence", "collage.saveReport"],
+      "F-01 save-only flow should create/configure/preview/save a fresh report without openExisting/reopen/project-list reopen"
+    );
+    assert.equal(saveOnlyPlan.actions.find((item) => item.template === "collage.saveReport")?.params.openExistingReport, false, "F-01 save-only params must not request existing-report open");
+
+    const formulaCase = {
+      ...collageSaveReopenCase,
+      caseNo: "OTTEST004-E-01",
+      caseTitle: "基本四則運算 [A]+[B]/2(無括號,測運算優先順序)",
+      testType: "後端功能",
+      riskLevel: "🟢 觀察",
+      testTarget: "後端功能",
+      cleanupChecklist: "欄位=新增帳號數,MAU(帳號),運算欄位「OTTEST004_E01_calc_<timestamp>」=[新增帳號數]+[MAU(帳號)]/2;篩選=0組;分組=不影響;時間=2026/03/01~2026/03/31;顯示=每天",
+      stepsSummary: "透過 + 新增欄位加入基底欄位，點 + 新增運算欄位，使用可用欄位 token 與 keypad/operator 按鈕組公式 [新增帳號數]+[MAU(帳號)]/2，確認後執行 preview。",
+      expected: "helper 完成 modal UI 流程且 chart.datasets 中運算欄位逐日值符合公式。"
+    };
+    const formulaGate = evaluateCapabilityGate(formulaCase, formulaHelperHints);
+    assert.equal(formulaGate.supportStatus, "supported", `formula helper case should be supported, not filter-blocked; report=${JSON.stringify(formulaGate)}`);
+    assert.equal(formulaGate.detected.hasFilter, false, "formula operator wording must not be misclassified as a filter operator");
+    assert.ok(!formulaGate.unsupportedFeatures.includes("filter_helper_not_implemented"), "formula helper case must not emit filter_helper_not_implemented");
+    const formulaPlan = buildHelperExecutionPlan({ runDir, currentCase: formulaCase, helperHints: formulaHelperHints });
+    assert.deepEqual(
+      formulaPlan.actions.map((item) => item.template),
+      ["collage.openProject", "collage.createReport", "collage.configureCalculatedMetricAndPreview"],
+      "E-01 formula helper plan should open project, create report, then configure calculated metric preview"
+    );
+    const formulaE04Plan = buildHelperExecutionPlan({
+      runDir,
+      currentCase: { ...formulaCase, caseNo: "OTTEST004-E-04", caseTitle: "括號運算優先順序 ([A]+[B])/2" },
+      helperHints: {
+        ...formulaHelperHints,
+        caseId: "OTTEST004-E-04",
+        params: { ...(formulaHelperHints.params as Record<string, unknown>), calculatedFieldNamePrefix: "OTTEST004_E04_calc", formula: "([新增帳號數]+[MAU(帳號)])/2" }
+      }
+    });
+    assert.deepEqual(
+      formulaE04Plan.actions.map((item) => item.template),
+      ["collage.openProject", "collage.createReport", "collage.configureCalculatedMetricAndPreview"],
+      "E-04 formula helper plan should use the same calculated metric helper path"
+    );
+
     const createProjectAndReportCase = {
       ...collageSaveReopenCase,
       caseNo: "OTTEST004-G-02",
@@ -355,6 +504,40 @@ const main = (): void => {
       createProjectAndReportPlan.actions.map((item) => item.template),
       ["collage.openProject", "collage.createProject", "collage.createReport", "collage.configureMetric", "collage.runPreviewAndCollectEvidence", "collage.saveReport"],
       "G-02 should create a project, then create/configure/preview/save a report in that project"
+    );
+
+    const createProjectOnlyCase = {
+      ...collageSaveReopenCase,
+      caseNo: "OTTEST004-G-01",
+      caseTitle: "新增專案 — 建立拼貼專案",
+      cleanupChecklist: "欄位=不影響;篩選=不影響;分組=不影響;時間=不影響;顯示=不影響",
+      stepsSummary: "點 + 新增專案，選建構模式=拼貼，輸入專案名稱後建立；獨立 case，只測新增專案，不進入新建報表頁。"
+    };
+    const createProjectOnlyHints: HelperHints = {
+      ...manualAiDateHints,
+      caseId: "OTTEST004-G-01",
+      automationLevel: "helper",
+      operationTemplate: "collage.createProject",
+      params: {
+        mode: "拼貼",
+        projectNamePrefix: "OTTEST004_G01_",
+        useTimestamp: true,
+        expectModeSelector: true,
+        blockOnModeAlert: true,
+        scope: "獨立 case;只測新增專案,不進入新建報表頁"
+      }
+    };
+    const createProjectOnlyGate = evaluateCapabilityGate(createProjectOnlyCase, createProjectOnlyHints);
+    assert.deepEqual(
+      createProjectOnlyGate.supportedHelperTemplates,
+      ["collage.openProject", "collage.createProject"],
+      "G-01 dotted createProject template should advertise only project creation helpers"
+    );
+    const createProjectOnlyPlan = buildHelperExecutionPlan({ runDir, currentCase: createProjectOnlyCase, helperHints: createProjectOnlyHints });
+    assert.deepEqual(
+      createProjectOnlyPlan.actions.map((item) => item.template),
+      ["collage.openProject", "collage.createProject"],
+      "G-01 dotted createProject template should not fall through to report creation/preview"
     );
 
     const openReportCase = {
@@ -442,6 +625,79 @@ const main = (): void => {
     assert.ok(
       helperDateVariantsPlan.availableTemplates.some((item) => item.template === "collage.captureDateUiEvidence"),
       "multi-variant date cases should expose optional date UI evidence capture"
+    );
+
+    const boundaryB10Case = {
+      ...collageSaveReopenCase,
+      caseNo: "OTTEST004-B-10",
+      caseTitle: "90 天上限邊界 — 一題兩階段(2026-01-01~03-31 PASS / 2026-01-01~04-01 UI 阻擋)",
+      preconditions: "起始頁面: 拼貼模式新增報表設定頁\n導航路徑: 我的自訂 > 拼貼模式 > 任一專案 > +新增報表\n建構模式: 拼貼",
+      cleanupChecklist: "欄位=新增帳號數;篩選=0組;分組=不影響;時間=Step1 2026-01-01~03-31(90天) / Step2 2026-01-01~04-01(91天);顯示=每天",
+      stepsSummary: "進入設定頁，加欄位「新增帳號數」。Step 1 設 90 天應 PASS；Step 2 設 91 天應被 UI 阻擋，若 UI 沒擋再驗後端錯誤。"
+    };
+    const boundaryB10Hints: HelperHints = {
+      ...manualAiDateHints,
+      caseId: "OTTEST004-B-10",
+      params: {
+        mode: "拼貼",
+        field: "新增帳號數",
+        sourceReport: "每日報表",
+        stages: [
+          { step: 1, label: "90 天 PASS", start: "2026-01-01", end: "2026-03-31", expectedRowCount: 90, expectUiBlock: false },
+          { step: 2, label: "91 天 UI 阻擋", start: "2026-01-01", end: "2026-04-01", expectUiBlock: true }
+        ],
+        doNotSave: true,
+        doNotReopen: true,
+        doNotDownloadCsv: true
+      }
+    };
+    const boundaryB10Plan = buildHelperExecutionPlan({ runDir, currentCase: boundaryB10Case, helperHints: boundaryB10Hints });
+    assert.deepEqual(
+      boundaryB10Plan.actions.map((item) => item.template),
+      ["collage.openProject", "collage.createReport", "collage.runDateVariantsPreviewEvidence"],
+      "B-10 90/91 boundary should use structured staged date preview evidence instead of stopping at navigation"
+    );
+    assert.deepEqual(
+      boundaryB10Plan.actions.find((item) => item.template === "collage.runDateVariantsPreviewEvidence")?.params.stages,
+      (boundaryB10Hints.params as Record<string, unknown>).stages,
+      "B-10 staged 90/91 date params must be preserved for helper executor"
+    );
+
+    const mixedVariantB11Case = {
+      ...collageSaveReopenCase,
+      caseNo: "OTTEST004-B-11",
+      caseTitle: "筆數一致性 — 不同區間連續切換不殘留(寫死兩段)",
+      preconditions: "起始頁面: 拼貼模式新增報表設定頁\n導航路徑: 我的自訂 > 拼貼模式 > 任一專案 > +新增報表\n建構模式: 拼貼",
+      cleanupChecklist: "欄位=新增帳號數;篩選=0組;分組=不影響;時間=Step1 2026-03-01~03-31 / Step2 過去 7 天;顯示=每天",
+      stepsSummary: "進入設定頁，加欄位「新增帳號數」。Step 1 全靜態 2026-03-01~03-31，Step 2 點 preset「過去 7 天」。"
+    };
+    const mixedVariantB11Hints: HelperHints = {
+      ...helperDateVariantsHints,
+      caseId: "OTTEST004-B-11",
+      params: {
+        mode: "拼貼",
+        field: "新增帳號數",
+        sourceReport: "每日報表",
+        display: "每天",
+        dateVariants: [
+          { type: "static", start: "2026-03-01", end: "2026-03-31", expectedRowCount: 31, expectedDateRange: "2026-03-01~2026-03-31" },
+          { type: "preset", label: "過去 7 天", expectedRowCount: 7, expectedDateRange: "d-7~d-1" }
+        ],
+        doNotSave: true,
+        doNotReopen: true,
+        doNotDownloadCsv: true
+      }
+    };
+    const mixedVariantB11Plan = buildHelperExecutionPlan({ runDir, currentCase: mixedVariantB11Case, helperHints: mixedVariantB11Hints });
+    assert.deepEqual(
+      mixedVariantB11Plan.actions.map((item) => item.template),
+      ["collage.openProject", "collage.createReport", "collage.runDateVariantsPreviewEvidence"],
+      "B-11 static+preset object dateVariants should use date-variants preview helper"
+    );
+    assert.deepEqual(
+      mixedVariantB11Plan.actions.find((item) => item.template === "collage.runDateVariantsPreviewEvidence")?.params.dateVariants,
+      (mixedVariantB11Hints.params as Record<string, unknown>).dateVariants,
+      "B-11 object dateVariants must be preserved for helper executor"
     );
 
     const editorSessionCsvCase = {
@@ -574,6 +830,18 @@ const main = (): void => {
     assert.ok(selectAllPlan.actions.some((item) => item.template === "collage.downloadCsvAndComparePreview"), "select-all CSV case should still download CSV");
     assert.ok(!selectAllPlan.actions.some((item) => item.template === "collage.saveReport"), "select-all preview case should not save when skipSave is set");
 
+    const actualD02Plan = buildHelperExecutionPlan({ runDir, currentCase: selectAllCase, helperHints: actualD02StructuredHints });
+    assert.deepEqual(
+      actualD02Plan.actions.map((item) => item.template),
+      ["collage.openProject", "collage.createReport", "collage.runDateVariantsPreviewEvidence", "collage.downloadCsvAndComparePreview"],
+      "actual v1.8.9 D-02 manual_ai structured params should still run the select-all date preview and CSV helper path"
+    );
+    const actualD02DateAction = actualD02Plan.actions.find((item) => item.template === "collage.runDateVariantsPreviewEvidence");
+    assert.equal(actualD02DateAction?.params.selectAllFields, true, "actual D-02 should infer selectAllFields from expectedSources/72欄 text");
+    assert.deepEqual(actualD02DateAction?.params.sourceReports, (actualD02StructuredHints.params as Record<string, unknown>).expectedSources, "actual D-02 expectedSources must become sourceReports");
+    assert.equal(actualD02DateAction?.params.expectedFieldCount, 72, "actual D-02 expectedTotalFieldCount must become expectedFieldCount for selected-field guard");
+    assert.deepEqual(actualD02DateAction?.params.fields, [], "actual D-02 synthetic cleanup text must not become a clickable field");
+
     const allZeroCase = {
       ...collageSaveReopenCase,
       caseNo: "OTTEST004-A-06",
@@ -671,7 +939,11 @@ const main = (): void => {
           "collage CSV case includes download/compare helper action",
           "collage existing-report modification opens existing report and overwrites",
           "save-load flow creates and saves a fresh report before reopen",
+          "actual F-02 same-case save/reopen does not open an existing report and preserves generated report name prefix",
+          "save-only flow creates, configures, previews, and saves a fresh report without open-existing/reopen",
+          "formula helper cases are not misclassified as filter cases and use calculated metric helper plans",
           "createNewProject report flows create a project before report creation",
+          "G-01 dotted createProject helper stays on project creation path",
           "simple project-page report-name/back flows use dedicated helpers",
           "preview-only helper hints suppress save/reopen and neutral dateRange",
           "collage metadata compare is not misclassified as record/detail mode",
@@ -682,10 +954,13 @@ const main = (): void => {
           "manual_ai date cases expose optional read-only date UI evidence capture",
           "multi-variant date helper hints are degraded to Codex visible UI",
           "multi-variant date cases expose optional date UI evidence capture",
+          "B-10 staged 90/91 boundary uses date-variants preview evidence with structured stages",
+          "B-11 static plus preset object variants are preserved for date helper execution",
           "editor-session CSV cases chain date preview evidence into CSV download without save/reopen",
           "manual hybrid D0 CSV baseline cases chain date preview, save, and report-list download",
           "delete temporary report cases create a pending Tool Bridge helper action",
           "selectAllFields helper hints preserve sourceReports/expected count and avoid synthetic field text",
+          "actual D-02 expectedSources/expectedTotalFieldCount infer select-all 4-source/72-field helper params",
           "A-06 all-zero field inspection uses a dedicated select-all preview evidence helper",
           "metadata expected-field reader keeps source-specific scope separate from all-source scope",
           "active filter cases remain blocked until helper support exists"

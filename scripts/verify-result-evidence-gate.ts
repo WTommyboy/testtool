@@ -288,6 +288,28 @@ const main = async (): Promise<void> => {
       `formula modal blocked wording should not require Tool Bridge response; issues=${JSON.stringify(formulaModalBlockedReport.issues)}`
     );
 
+    const missingToolBridgeResponseProse = path.join(tempRoot, "missing-tool-bridge-response-prose-result.xlsx");
+    await writeWorkbook(missingToolBridgeResponseProse, [
+      {
+        caseNo: "FIX-H-01",
+        status: "BLOCKED",
+        detailJson: JSON.stringify({
+          測試目的: "驗證儲存流程若缺少授權回覆 evidence 應停在 BLOCKED。",
+          設定條件: "helper 已完成 preview；儲存 continuation 未執行。",
+          預期行為: "Tool Bridge response 到齊後才可進行儲存。",
+          實際行為: "本次 run 缺少 Tool Bridge response，helper 未取得儲存授權回覆，未執行 native confirm 或不可逆動作。",
+          blocked_reason: "TOOL_BRIDGE_RESPONSE_MISSING: 缺少 Tool Bridge response，目前只能判 BLOCKED。",
+          currentRunEvidence: goodDetail.currentRunEvidence
+        })
+      }
+    ]);
+    const missingToolBridgeResponseProseReport = await runGate(missingToolBridgeResponseProse);
+    assert.equal(
+      missingToolBridgeResponseProseReport.status,
+      "ok",
+      `missing Tool Bridge response prose should not be treated as a claim that a response exists; issues=${JSON.stringify(missingToolBridgeResponseProseReport.issues)}`
+    );
+
     const externalToolBridgeReport = await runGate(missingToolBridge, {
       externalToolBridgeEvidenceByCase: {
         "FIX-H-01": [{ requestId: "fixture-FIX-H-01-save", eventType: "tool_response.delivered" }]
@@ -325,6 +347,7 @@ const main = async (): Promise<void> => {
             "non-destructive selected-field validation alert does not require Tool Bridge response",
             "negative or insufficient native-confirm prose does not require Tool Bridge response",
             "formula modal blocked prose does not require Tool Bridge response",
+            "missing Tool Bridge response prose does not require a second Tool Bridge response",
             "Tool Bridge action claim can be satisfied by current-run server event evidence",
             "invalid detail_json is blocked"
           ]

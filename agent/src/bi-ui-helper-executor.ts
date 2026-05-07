@@ -340,6 +340,9 @@ type DatePreviewSpec = {
   mode: "preset_or_static_label" | "structured";
   start?: DateEndpointSpec;
   end?: DateEndpointSpec;
+  expectedRowCount?: number;
+  expectedDateRange?: string;
+  expectUiBlock?: boolean;
 };
 
 const formatOffsetLabel = (offsetDays: number): string => {
@@ -350,6 +353,9 @@ const formatOffsetLabel = (offsetDays: number): string => {
 const normalizeIsoDateString = (value: string): string => value.trim().replaceAll("/", "-");
 
 const dateEndpointSpecFromValue = (value: unknown): DateEndpointSpec | null => {
+  if (typeof value === "string" && value.trim()) {
+    return { type: "static", date: normalizeIsoDateString(value) };
+  }
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const record = value as Record<string, unknown>;
   const type = typeof record.type === "string" ? record.type.trim().toLowerCase() : "";
@@ -395,7 +401,53 @@ const structuredDatePreviewSpecFromParams = (params: Record<string, unknown>): D
   return null;
 };
 
+const recordArrayParam = (params: Record<string, unknown>, key: string): Record<string, unknown>[] => {
+  const value = params[key];
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === "object" && !Array.isArray(item));
+};
+
+const datePreviewSpecFromRecord = (record: Record<string, unknown>, fallbackIndex: number): DatePreviewSpec | null => {
+  const type = typeof record.type === "string" ? record.type.trim().toLowerCase() : "";
+  const label = firstStringParam(record, ["label", "uiLabel", "requestedLabel", "name"]) ?? "";
+  const expectedRowCount = numberParam(record, ["expectedRowCount", "rowCount"]);
+  const expectedDateRange = firstStringParam(record, ["expectedDateRange", "dateRange"]);
+  const expectUiBlock = booleanishParam(record, ["expectUiBlock", "uiBlock", "expectBlocked", "expectError"]);
+
+  if (type === "preset" || (!record.start && !record.end && label)) {
+    return {
+      requestedLabel: label,
+      mode: "preset_or_static_label",
+      expectedRowCount: expectedRowCount ?? undefined,
+      expectedDateRange: expectedDateRange ?? undefined,
+      expectUiBlock
+    };
+  }
+
+  const start = dateEndpointSpecFromValue(record.start);
+  const end = dateEndpointSpecFromValue(record.end);
+  if (!start || !end) return null;
+  return {
+    requestedLabel: label || `${labelForDateEndpointSpec(start)} ~ ${labelForDateEndpointSpec(end)}` || `variant-${fallbackIndex + 1}`,
+    mode: "structured",
+    start,
+    end,
+    expectedRowCount: expectedRowCount ?? undefined,
+    expectedDateRange: expectedDateRange ?? undefined,
+    expectUiBlock
+  };
+};
+
+const structuredDatePreviewSpecsFromArrayParam = (params: Record<string, unknown>, key: string): DatePreviewSpec[] =>
+  recordArrayParam(params, key)
+    .map((record, index) => datePreviewSpecFromRecord(record, index))
+    .filter((spec): spec is DatePreviewSpec => Boolean(spec));
+
 const datePreviewSpecsFromParams = (params: Record<string, unknown>): DatePreviewSpec[] => {
+  const structuredVariants = structuredDatePreviewSpecsFromArrayParam(params, "dateVariants");
+  if (structuredVariants.length > 0) return structuredVariants;
+  const stagedVariants = structuredDatePreviewSpecsFromArrayParam(params, "stages");
+  if (stagedVariants.length > 0) return stagedVariants;
   const variants = firstStringArrayParam(params, ["dateVariants", "uiLabels"]);
   if (variants.length > 0) return variants.map((requestedLabel) => ({ requestedLabel, mode: "preset_or_static_label" as const }));
   const structured = structuredDatePreviewSpecFromParams(params);
@@ -3348,6 +3400,12 @@ const formulaButtonLabelCandidates = (value: string): string[] => {
   return [value];
 };
 
+const formulaInputValueFromOnclick = (onclick: unknown): string | null => {
+  if (typeof onclick !== "string") return null;
+  const match = onclick.match(/inputFormula\((['"])(.*?)\1\)/);
+  return match?.[2] ?? null;
+};
+
 const clickFormulaModalButton = async (
   page: Page,
   value: string,
@@ -3401,12 +3459,23 @@ const enterReadonlyFormulaThroughModalButtons = async (
       ? await clickFormulaFieldToken(page, token.value)
       : await clickFormulaModalButton(page, token.value, "exact");
     const valueAfterClick = await formulaInputLocator.inputValue({ timeout: 5000 }).catch(() => null);
-    operations.push({ token, clicked, valueAfterClick });
+    const insertedValue = formulaInputValueFromOnclick((clicked as Record<string, unknown>).onclick) ??
+      (token.kind === "field" ? `[${token.value}]` : token.value);
+    operations.push({ token, clicked, insertedValue, valueAfterClick });
   }
+  const renderedFormula = operations
+    .map((operation) => typeof operation.insertedValue === "string" ? operation.insertedValue : "")
+    .join("");
   return {
     method: "modal_keypad_and_field_tokens",
     tokens,
-    operations
+    operations,
+    renderedFormula,
+    fieldTokenMappings: operations.flatMap((operation) => {
+      const token = operation.token as FormulaToken | undefined;
+      if (token?.kind !== "field" || typeof operation.insertedValue !== "string") return [];
+      return [{ displayLabel: token.value, insertedToken: operation.insertedValue }];
+    })
   };
 };
 
@@ -3450,9 +3519,19 @@ const fillCalculatedFieldModal = async (
   if (nameValue !== fieldName) {
     throw new HelperBlockedError(`FORMULA_NAME_INPUT_VALUE_MISMATCH: expected=${fieldName}; actual=${nameValue}; afterFill=${JSON.stringify(afterFill).slice(0, 1200)}`);
   }
-  if (normalizeFormulaExpression(formulaValue) !== normalizeFormulaExpression(formula)) {
+  const expectedFormulaValues = [
+    formula,
+    typeof formulaEntry.renderedFormula === "string" ? formulaEntry.renderedFormula : null
+  ].filter((item): item is string => Boolean(item));
+  const formulaValueMatches = expectedFormulaValues.some((expected) =>
+    normalizeFormulaExpression(formulaValue) === normalizeFormulaExpression(expected)
+  );
+  if (!formulaValueMatches) {
     throw new HelperBlockedError(`FORMULA_INPUT_VALUE_MISMATCH: expected=${formula}; actual=${formulaValue}; afterFill=${JSON.stringify(afterFill).slice(0, 1200)}`);
   }
+  const formulaMatchMode = normalizeFormulaExpression(formulaValue) === normalizeFormulaExpression(formula)
+    ? "display_formula"
+    : "ui_inserted_token_formula";
   const submitted = await clickFirstVisible([
     modalLocator.locator("button[onclick=\"saveFormula()\"]"),
     modalLocator.locator("button.btn-primary").filter({ hasText: /^(新增|加入|確認|確定|套用|儲存|保存)$/ }),
@@ -3480,7 +3559,9 @@ const fillCalculatedFieldModal = async (
       selector: "#formulaInput",
       value: formulaValue,
       readOnly: formulaInputMeta.readOnly,
-      entry: formulaEntry
+      entry: formulaEntry,
+      expectedFormulaValues,
+      matchMode: formulaMatchMode
     },
     before,
     afterFill,
@@ -3771,7 +3852,14 @@ const runDateVariantsPreviewEvidence = async (options: CliOptions, page: Page, s
     const dateUiEvidence = await readDateUiEvidence(page, label, options.params);
     const dateUiArtifact = writeDateUiEvidenceArtifact(options, dateUiEvidence);
     variantWarnings.push(...dateUiEvidence.warnings);
-    if (!setResult.ok) {
+    const expectedUiBlockObserved = Boolean(
+      spec.expectUiBlock &&
+      !setResult.ok &&
+      /CONFIRM_NOT_CLICKABLE|VERIFY_FAILED|超過|上限|disabled|disable|禁用|不可|錯誤|error/i.test(
+        `${setResult.warning ?? ""}\n${setResult.observedAfter ?? ""}\n${JSON.stringify(setResult.inputs ?? {})}`
+      )
+    );
+    if (!setResult.ok && !expectedUiBlockObserved) {
       variantWarnings.push(`DATE_VARIANT_UI_SETTING_NOT_COMPLETED:${setResult.warning ?? "unknown"}`);
     }
 
@@ -3790,7 +3878,7 @@ const runDateVariantsPreviewEvidence = async (options: CliOptions, page: Page, s
       table = await readPreviewTableSummary(page);
     }
     const hasPreviewEvidence = observed.requests.length > 0 || observed.responses.length > 0 || chart !== null || table !== null;
-    if (setResult.ok && !hasPreviewEvidence) {
+    if (setResult.ok && !hasPreviewEvidence && !spec.expectUiBlock) {
       variantWarnings.push("DATE_VARIANT_PREVIEW_ACTION_NOT_VERIFIED_NO_NETWORK_OR_CHART_EVIDENCE");
     }
     const shot = await screenshot(options, page, `date-variant-${label}`);
@@ -3803,9 +3891,15 @@ const runDateVariantsPreviewEvidence = async (options: CliOptions, page: Page, s
       dateSpec: {
         mode: spec.mode,
         start: spec.start ?? null,
-        end: spec.end ?? null
+        end: spec.end ?? null,
+        expectedRowCount: spec.expectedRowCount ?? null,
+        expectedDateRange: spec.expectedDateRange ?? null,
+        expectUiBlock: spec.expectUiBlock ?? false,
+        expectedUiBlockObserved
       },
-      status: setResult.ok && hasPreviewEvidence ? "ok" : "blocked",
+      status: spec.expectUiBlock
+        ? (setResult.ok || expectedUiBlockObserved ? "ok" : "blocked")
+        : (setResult.ok && hasPreviewEvidence ? "ok" : "blocked"),
       setDateResult: setEvidence,
       dateUiEvidence,
       executePrecondition,
@@ -3836,7 +3930,10 @@ const runDateVariantsPreviewEvidence = async (options: CliOptions, page: Page, s
       requestedLabel: spec.requestedLabel,
       mode: spec.mode,
       start: spec.start ?? null,
-      end: spec.end ?? null
+      end: spec.end ?? null,
+      expectedRowCount: spec.expectedRowCount ?? null,
+      expectedDateRange: spec.expectedDateRange ?? null,
+      expectUiBlock: spec.expectUiBlock ?? false
     })),
     stateBefore,
     stateAfter: await readStateDelta(page, options.params).catch((error) => ({

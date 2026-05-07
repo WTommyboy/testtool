@@ -71,11 +71,17 @@ const helperRequestsNoSave = (params: Record<string, unknown>): boolean =>
 const helperRequestsNoReopen = (params: Record<string, unknown>): boolean =>
   helperRequestsPreviewOnly(params) || booleanishParam(params, ["skipReopen", "doNotReopen", "noReopen", "previewOnly"]);
 
+const helperRequestsSaveOnly = (params: Record<string, unknown>): boolean =>
+  booleanishParam(params, ["saveOnly", "save_only"]) || /^save_only$/i.test(helperScope(params) ?? "");
+
 const helperRequestsDownload = (params: Record<string, unknown>): boolean =>
   booleanishParam(params, ["downloadCsv", "doDownloadCsv", "downloadCSV", "download", "csvDownload", "needCsv"]);
 
 const helperExplicitlyDisablesDownload = (params: Record<string, unknown>): boolean =>
   booleanishParam(params, ["skipDownload", "doNotDownload", "noDownload", "doNotDownloadCsv", "skipCsv", "noCsv"]);
+
+const textExplicitlyDisablesDownload = (text: string): boolean =>
+  /本題不測項目[^\n]*(?:CSV|下載)|(?:不測|不做|不驗).{0,12}(?:CSV|下載)|(?:CSV|下載).{0,8}[\(（]屬/i.test(text);
 
 const helperRequestsNoDownload = (params: Record<string, unknown>): boolean =>
   helperRequestsDownload(params)
@@ -96,6 +102,26 @@ const firstStringArrayParam = (params: Record<string, unknown>, keys: string[]):
   return [];
 };
 
+const rawArrayParam = (params: Record<string, unknown>, key: string): unknown[] | null =>
+  Array.isArray(params[key]) ? (params[key] as unknown[]) : null;
+
+const recordArrayParam = (params: Record<string, unknown>, key: string): Record<string, unknown>[] =>
+  (rawArrayParam(params, key) ?? []).filter((item): item is Record<string, unknown> =>
+    Boolean(item) && typeof item === "object" && !Array.isArray(item)
+  );
+
+const hasStructuredDateVariantSpecs = (params: Record<string, unknown>): boolean => {
+  const variants = recordArrayParam(params, "dateVariants");
+  const stages = recordArrayParam(params, "stages");
+  return [...variants, ...stages].some((item) =>
+    typeof item.label === "string" ||
+    typeof item.start === "string" ||
+    typeof item.end === "string" ||
+    (item.start && typeof item.start === "object" && !Array.isArray(item.start)) ||
+    (item.end && typeof item.end === "object" && !Array.isArray(item.end))
+  );
+};
+
 const dateObjectParam = (value: unknown): string | null => {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const record = value as Record<string, unknown>;
@@ -109,7 +135,7 @@ const dateRequiresCodexVisibleUi = (currentCase: CaseManifestCase | null, helper
   const params = paramsObject(helperHints);
   const cleanupTargets = detectCaseFeatures(currentCase, helperHints).cleanupTargets;
   const dateVariants = firstStringArrayParam(params, ["dateVariants", "uiLabels"]);
-  if (dateVariants.length > 1) return true;
+  if (dateVariants.length > 1 || recordArrayParam(params, "dateVariants").length > 1 || recordArrayParam(params, "stages").length > 0) return true;
   const dateText = [
     stringParam(params, ["dateRange", "timeRange"]),
     dateObjectParam(params.dateRange),
@@ -127,6 +153,7 @@ const canRunDatePreviewEvidenceHelper = (params: Record<string, unknown>): boole
   const dateVariants = firstStringArrayParam(params, ["dateVariants", "uiLabels"]);
   const dateMode = String(params.dateMode ?? "").trim().toLowerCase();
   if (dateVariants.length > 0 && (!dateMode || dateMode === "preset")) return true;
+  if (hasStructuredDateVariantSpecs(params)) return true;
   if (
     (dateMode === "relative" || dateMode === "hybrid") &&
     (typeof params.startOffsetDays === "number" || typeof params.endOffsetDays === "number" || params.start || params.end)
@@ -143,7 +170,7 @@ const isCreateProjectFlow = (currentCase: CaseManifestCase | null, helperHints: 
   const operationTemplate = helperHints?.operationTemplate ?? "";
   const text = detectCaseFeatures(currentCase, helperHints).text;
   const params = paramsObject(helperHints);
-  return operationTemplate === "collage_create_project" ||
+  return /^(?:collage[._-])?create[-_]?project$/i.test(operationTemplate) ||
     Boolean(stringParam(params, ["projectNamePrefix", "projectNamePattern"])) ||
     /新增專案|create\s+project/i.test(text);
 };
@@ -155,18 +182,35 @@ const isCreateProjectOnlyFlow = (currentCase: CaseManifestCase | null, helperHin
   const operationTemplate = helperHints?.operationTemplate ?? "";
   if (/collage_build_preview_save_reopen|download_csv_verify|save_load_flow/.test(operationTemplate)) return false;
   const text = detectCaseFeatures(currentCase, helperHints).text;
+  if (/^(?:collage[._-])?create[-_]?project$/i.test(operationTemplate) && /只測新增專案|不進入(?:新建)?報表|只測.*專案/i.test(text)) {
+    return true;
+  }
   return !/新增報表|報表設定|欄位|時間區間|preview|預覽|執行|儲存報表|儲存|下載|CSV|reopen|重開|返回/.test(text);
+};
+
+const isSameCaseSaveLoadFlow = (currentCase: CaseManifestCase | null, helperHints: HelperHints | null): boolean => {
+  const operationTemplate = helperHints?.operationTemplate ?? "";
+  const params = paramsObject(helperHints);
+  const text = `${detectCaseFeatures(currentCase, helperHints).text}\n${helperScope(params) ?? ""}`;
+  return /save_load_flow/i.test(operationTemplate) && (
+    booleanishParam(params, ["reopenViaClickReportName"]) ||
+    Boolean(stringParam(params, ["saveReportNamePrefix", "reportNamePrefix"])) ||
+    /同\s*case|同一\s*case|建立.{0,12}儲存.{0,24}(?:reopen|重開|點報表名稱)|不依賴既有報表|depend_on_existing_report/i.test(text)
+  );
 };
 
 const isOpenReportFromProjectListFlow = (currentCase: CaseManifestCase | null, helperHints: HelperHints | null): boolean => {
   const params = paramsObject(helperHints);
   const text = `${detectCaseFeatures(currentCase, helperHints).text}\n${stringParam(params, ["action", "verifyOnly"]) ?? ""}`;
-  return /報表名稱.{0,20}(?:進入|編輯|reopen)|點.*報表名稱|click\s+report\s+name|enter\s+editor/i.test(text);
+  if (helperRequestsSaveOnly(params)) return false;
+  if (isSameCaseSaveLoadFlow(currentCase, helperHints)) return false;
+  return /報表名稱.{0,24}(?:進入|編輯|reopen|重開|載入|設定頁|editor)|點(?:擊)?.{0,16}報表名稱.{0,24}(?:進入|編輯|reopen|重開|載入|設定頁|editor)|click\s+report\s+name(?:.{0,24}(?:open|enter|edit|editor|reopen))?|enter\s+editor/i.test(text);
 };
 
 const isBackToProjectListFlow = (currentCase: CaseManifestCase | null, helperHints: HelperHints | null): boolean => {
   const params = paramsObject(helperHints);
   const text = `${detectCaseFeatures(currentCase, helperHints).text}\n${stringParam(params, ["action", "verifyOnly"]) ?? ""}`;
+  if (helperRequestsSaveOnly(params)) return false;
   return /返回按鈕|點.*返回|click\s+back|return\s+to\s+project/i.test(text);
 };
 
@@ -209,9 +253,13 @@ export const evaluateCapabilityGate = (
   const supportedHelperTemplates: string[] = [];
   const params = paramsObject(helperHints);
   const noSave = helperRequestsNoSave(params);
-  const noDownload = helperRequestsNoDownload(params) && !(/下載|CSV/i.test(text) && !helperExplicitlyDisablesDownload(params));
+  const noDownload =
+    helperRequestsSaveOnly(params) ||
+    textExplicitlyDisablesDownload(text) ||
+    (helperRequestsNoDownload(params) && !(/下載|CSV/i.test(text) && !helperExplicitlyDisablesDownload(params)));
   const explicitlyNoReopen =
     helperRequestsNoReopen(params) ||
+    helperRequestsSaveOnly(params) ||
     /不(?:需|要|應)?重開|不要重開|無需重開|不用重開|不重開\s*editor|不應產生\s*reopen/i.test(text);
   const manualAiRequested = automationLevel === "manual_ai" || operationTemplate === "manual_ai";
   const dateNeedsCodexVisibleUi = dateRequiresCodexVisibleUi(currentCase, helperHints);
@@ -268,9 +316,13 @@ export const evaluateCapabilityGate = (
       "collage.configureMetric",
       "collage.runPreviewAndCollectEvidence"
     );
-    if (/修改既有|既有報表|已儲存報表|儲存覆寫|覆寫/.test(text)) supportedHelperTemplates.push("collage.openExistingReport");
+    if (!helperRequestsSaveOnly(params) && !isSameCaseSaveLoadFlow(currentCase, helperHints) && /修改既有|既有報表|已儲存報表|儲存覆寫|覆寫/.test(text)) {
+      supportedHelperTemplates.push("collage.openExistingReport");
+    }
     if (!noSave && /儲存|覆寫/.test(text)) supportedHelperTemplates.push("collage.saveReport");
-    if (!explicitlyNoReopen && /重開|重新檢視|還原|載入/.test(text)) supportedHelperTemplates.push("collage.reopenReport");
+    if (!explicitlyNoReopen && (booleanishParam(params, ["reopenViaClickReportName"]) || /重開|重新檢視|還原|載入|reopen|點報表名稱/i.test(text))) {
+      supportedHelperTemplates.push("collage.reopenReport");
+    }
     if (!noDownload && /下載|CSV/i.test(text)) supportedHelperTemplates.push("collage.downloadCsvAndComparePreview");
     if (datePreviewEvidenceAllowed) supportedHelperTemplates.push("collage.runDateVariantsPreviewEvidence");
   }

@@ -91,8 +91,8 @@ export const detectCaseFeatures = (
   const mode = detectMode(text, operationTemplate);
   const hasFilter =
     cleanupRequiresFeature(cleanupTargets["篩選"]) ||
-    /(?:新增|加入|設定|套用|切換|選擇|輸入|移除|清空).{0,30}(?:篩選|filter|運算子|operator)/i.test(behaviorText) ||
-    /(?:篩選|filter|運算子|operator).{0,30}(?:等於|不等於|包含|不包含|大於|小於|有值|無值|is_null|is_not_null)/i.test(behaviorText);
+    /(?:新增|加入|設定|套用|切換|選擇|輸入|移除|清空).{0,30}(?:篩選|filter)/i.test(behaviorText) ||
+    /(?:篩選|filter).{0,30}(?:運算子|operator|等於|不等於|包含|不包含|大於|小於|有值|無值|is_null|is_not_null)/i.test(behaviorText);
   const hasGroup =
     cleanupRequiresFeature(cleanupTargets["分組"]) ||
     /(?:新增|加入|設定|套用|切換|選擇|移除|清空).{0,30}(?:分組|分群|group|series)/i.test(behaviorText) ||

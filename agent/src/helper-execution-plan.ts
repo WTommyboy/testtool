@@ -122,11 +122,17 @@ const helperRequestsNoSave = (params: Record<string, unknown>): boolean =>
 const helperRequestsNoReopen = (params: Record<string, unknown>): boolean =>
   helperRequestsPreviewOnly(params) || booleanishParam(params, ["skipReopen", "doNotReopen", "noReopen", "previewOnly"]);
 
+const helperRequestsSaveOnly = (params: Record<string, unknown>): boolean =>
+  booleanishParam(params, ["saveOnly", "save_only"]) || /^save_only$/i.test(helperScope(params) ?? "");
+
 const helperRequestsDownload = (params: Record<string, unknown>): boolean =>
   booleanishParam(params, ["downloadCsv", "doDownloadCsv", "downloadCSV", "download", "csvDownload", "needCsv"]);
 
 const helperExplicitlyDisablesDownload = (params: Record<string, unknown>): boolean =>
   booleanishParam(params, ["skipDownload", "doNotDownload", "noDownload", "doNotDownloadCsv", "skipCsv", "noCsv"]);
+
+const textExplicitlyDisablesDownload = (text: string): boolean =>
+  /本題不測項目[^\n]*(?:CSV|下載)|(?:不測|不做|不驗).{0,12}(?:CSV|下載)|(?:CSV|下載).{0,8}[\(（]屬/i.test(text);
 
 const helperRequestsNoDownload = (params: Record<string, unknown>): boolean =>
   helperRequestsDownload(params)
@@ -179,7 +185,7 @@ const dateRequiresCodexVisibleUi = (currentCase: CaseManifestCase | null, helper
   const params = paramsObject(helperHints);
   const cleanup = parseCleanupTargets(currentCase?.cleanupChecklist);
   const dateVariants = firstStringArrayParam(params, ["dateVariants", "uiLabels"]);
-  if (dateVariants.length > 1) return true;
+  if (dateVariants.length > 1 || recordArrayParam(params, "dateVariants").length > 1 || recordArrayParam(params, "stages").length > 0) return true;
   const dateText = [
     stringParam(params, ["dateRange", "timeRange"]),
     dateObjectParam(params.dateRange),
@@ -237,6 +243,23 @@ const firstStringArrayParam = (params: Record<string, unknown>, keys: string[]):
 const rawArrayParam = (params: Record<string, unknown>, key: string): unknown[] | null =>
   Array.isArray(params[key]) ? (params[key] as unknown[]) : null;
 
+const recordArrayParam = (params: Record<string, unknown>, key: string): Record<string, unknown>[] =>
+  (rawArrayParam(params, key) ?? []).filter((item): item is Record<string, unknown> =>
+    Boolean(item) && typeof item === "object" && !Array.isArray(item)
+  );
+
+const hasStructuredDateVariantSpecs = (params: Record<string, unknown>): boolean => {
+  const variants = recordArrayParam(params, "dateVariants");
+  const stages = recordArrayParam(params, "stages");
+  return [...variants, ...stages].some((item) =>
+    typeof item.label === "string" ||
+    typeof item.start === "string" ||
+    typeof item.end === "string" ||
+    (item.start && typeof item.start === "object" && !Array.isArray(item.start)) ||
+    (item.end && typeof item.end === "object" && !Array.isArray(item.end))
+  );
+};
+
 const dateObjectParam = (value: unknown): string | null => {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const record = value as Record<string, unknown>;
@@ -274,8 +297,15 @@ const numberParam = (params: Record<string, unknown>, keys: string[]): number | 
 const inferReportNamePattern = (text: string, params: Record<string, unknown>): string | null =>
   cleanReportNamePattern(
     stringParam(params, ["reportName", "reportNamePattern"]) ??
+      reportNamePatternFromPrefixParam(params, ["saveReportNamePrefix", "reportNamePrefix"]) ??
       firstMatch(text, [/報表名[：:]\s*([^\n]+)/, /報表名稱[：:]\s*([^\n]+)/, /(OTTEST\d+_[A-Z]\d{2}_[A-Za-z0-9_-]+(?:_<timestamp>)?)/i, /(TOOL_[A-Z]\d{2}_<timestamp>)/i, /(TOOL_[A-Z]\d{2}_[A-Za-z0-9_-]+)/i])
   );
+
+const reportNamePatternFromPrefixParam = (params: Record<string, unknown>, keys: string[]): string | null => {
+  const prefix = stringParam(params, keys);
+  if (!prefix) return null;
+  return prefix.includes("<timestamp>") ? prefix : `${prefix}<timestamp>`;
+};
 
 const inferExistingReportNamePattern = (text: string, params: Record<string, unknown>, fallbackReportNamePattern: string | null): string | null =>
   cleanReportNamePattern(
@@ -289,11 +319,18 @@ const inferCollageParams = (currentCase: CaseManifestCase | null, helperHints: H
   const cleanup = parseCleanupTargets(currentCase?.cleanupChecklist);
   const params = paramsObject(helperHints);
   const allZeroFieldInspection = isAllZeroFieldInspectionCase(currentCase, helperHints);
+  const expectedSourcesParam = stringArrayParam(params, "expectedSources");
+  const expectedTotalFieldCountParam = numberParam(params, ["expectedTotalFieldCount", "totalFieldCount"]);
   const selectAllFields =
     allZeroFieldInspection ||
     booleanishParam(params, ["selectAllFields", "selectAll", "selectAllMetrics"]) ||
-    booleanishParam(params, ["selectAllFieldsInSourceReport", "selectAllSourceFields"]);
-  const dateVariants = firstStringArrayParam(params, ["dateVariants", "uiLabels"]);
+    booleanishParam(params, ["selectAllFieldsInSourceReport", "selectAllSourceFields"]) ||
+    (
+      /全選|所有欄位|72\s*欄/.test(text) &&
+      (expectedSourcesParam.length > 0 || expectedTotalFieldCountParam !== null || helperRequestsDownload(params))
+    );
+  const dateVariantLabels = firstStringArrayParam(params, ["dateVariants", "uiLabels"]);
+  const rawDateVariants = rawArrayParam(params, "dateVariants");
   const field = selectAllFields
     ? null
     : nonNeutral(stringParam(params, ["field", "metric", "metricField"])) ??
@@ -302,17 +339,21 @@ const inferCollageParams = (currentCase: CaseManifestCase | null, helperHints: H
   const fields = splitCompositeMetricFields(field);
   const reportNamePattern = inferReportNamePattern(text, params);
   const modifiesExistingReport =
-    booleanishParam(params, ["openExistingReport", "modifyExistingReport", "overwriteExisting"]) ||
-    /修改既有|既有報表.{0,20}(?:修改|覆寫|覆盖)|已儲存報表.{0,20}(?:修改|覆寫|覆盖)|儲存覆寫|覆寫|覆盖/.test(text);
+    !helperRequestsSaveOnly(params) &&
+    (
+      booleanishParam(params, ["openExistingReport", "modifyExistingReport", "overwriteExisting"]) ||
+      /修改既有|既有報表.{0,20}(?:修改|覆寫|覆盖)|已儲存報表.{0,20}(?:修改|覆寫|覆盖)|儲存覆寫|覆寫|覆盖/.test(text)
+    );
   const existingReportNamePattern = inferExistingReportNamePattern(text, params, reportNamePattern);
   const dateRangeText =
     nonNeutral(stringParam(params, ["dateRange", "timeRange"])) ??
     nonNeutral(dateObjectParam(params.dateRange)) ??
     nonNeutral(structuredStaticDateRangeParam(params)) ??
-    (dateVariants.length === 1 ? nonNeutral(dateVariants[0]) : null) ??
+    (dateVariantLabels.length === 1 ? nonNeutral(dateVariantLabels[0]) : null) ??
     nonNeutral(cleanup["時間"]) ??
     firstMatch(text, [/(\d{4}\/\d{2}\/\d{2}\s*[~～-]\s*\d{4}\/\d{2}\/\d{2})/]);
-  const sourceReportsParam = stringArrayParam(params, "sourceReports");
+  const explicitSourceReportsParam = stringArrayParam(params, "sourceReports");
+  const sourceReportsParam = explicitSourceReportsParam.length > 0 ? explicitSourceReportsParam : expectedSourcesParam;
   const explicitSource = stringParam(params, ["source", "sourceReport"]);
   const inferredSource = selectAllFields && sourceReportsParam.length > 0
     ? null
@@ -349,18 +390,21 @@ const inferCollageParams = (currentCase: CaseManifestCase | null, helperHints: H
     fields,
     sourceReports,
     sourceReport: stringParam(params, ["sourceReport"]) ?? stringParam(params, ["source"]) ?? effectiveSource,
-    expectedReportSources: stringArrayParam(params, "expectedReportSources"),
+    expectedReportSources: stringArrayParam(params, "expectedReportSources").length > 0
+      ? stringArrayParam(params, "expectedReportSources")
+      : expectedSourcesParam,
     expectedReportSourceCount: numberParam(params, ["expectedReportSourceCount"]),
-    expectedTotalFieldCount: numberParam(params, ["expectedTotalFieldCount", "totalFieldCount"]),
+    expectedTotalFieldCount: expectedTotalFieldCountParam,
     selectAllFields,
     selectAllFieldsInSourceReport: booleanishParam(params, ["selectAllFieldsInSourceReport", "selectAllSourceFields"]),
-    expectedFieldCount: numberParam(params, ["expectedFieldCount", "fieldCount", "expectedFieldsCount"]),
-    dateVariants,
+    expectedFieldCount: numberParam(params, ["expectedFieldCount", "fieldCount", "expectedFieldsCount"]) ??
+      (selectAllFields && sourceReports.length > 1 ? expectedTotalFieldCountParam : null),
+    dateVariants: rawDateVariants ?? dateVariantLabels,
     dateRange: dateRangeText,
     display: nonNeutral(stringParam(params, ["display", "displayMode"])) ?? nonNeutral(cleanup["顯示"]) ?? null,
     skipSave: helperRequestsNoSave(params),
-    skipReopen: helperRequestsNoReopen(params),
-    skipDownload: helperRequestsNoDownload(params),
+    skipReopen: helperRequestsNoReopen(params) || helperRequestsSaveOnly(params),
+    skipDownload: helperRequestsNoDownload(params) || helperRequestsSaveOnly(params) || textExplicitlyDisablesDownload(text),
     cleanupChecklist: currentCase?.cleanupChecklist ?? null,
     cleanupTargets: cleanup,
     reportNamePattern,
@@ -376,6 +420,7 @@ const canRunDatePreviewEvidenceHelper = (params: Record<string, unknown>, curren
   const dateMode = String(params.dateMode ?? "").trim().toLowerCase();
   const dateRange = typeof params.dateRange === "string" ? params.dateRange.trim() : "";
   if (dateVariants.length > 0 && (!dateMode || dateMode === "preset")) return true;
+  if (hasStructuredDateVariantSpecs(params)) return true;
   if (
     (dateMode === "relative" || dateMode === "hybrid") &&
     (typeof params.startOffsetDays === "number" || typeof params.endOffsetDays === "number" || params.start || params.end)
@@ -396,7 +441,7 @@ const isCreateProjectFlow = (currentCase: CaseManifestCase | null, helperHints: 
   const operationTemplate = helperHints?.operationTemplate ?? "";
   const text = textBlob(currentCase);
   const params = paramsObject(helperHints);
-  return operationTemplate === "collage_create_project" ||
+  return /^(?:collage[._-])?create[-_]?project$/i.test(operationTemplate) ||
     Boolean(stringParam(params, ["projectNamePrefix", "projectNamePattern"])) ||
     /新增專案|create\s+project/i.test(text);
 };
@@ -408,18 +453,35 @@ const isCreateProjectOnlyFlow = (currentCase: CaseManifestCase | null, helperHin
   const operationTemplate = helperHints?.operationTemplate ?? "";
   if (/collage_build_preview_save_reopen|download_csv_verify|save_load_flow/.test(operationTemplate)) return false;
   const text = textBlob(currentCase);
+  if (/^(?:collage[._-])?create[-_]?project$/i.test(operationTemplate) && /只測新增專案|不進入(?:新建)?報表|只測.*專案/i.test(text)) {
+    return true;
+  }
   return !/新增報表|報表設定|欄位|時間區間|preview|預覽|執行|儲存報表|儲存|下載|CSV|reopen|重開|返回/.test(text);
+};
+
+const isSameCaseSaveLoadFlow = (currentCase: CaseManifestCase | null, helperHints: HelperHints | null): boolean => {
+  const operationTemplate = helperHints?.operationTemplate ?? "";
+  const params = paramsObject(helperHints);
+  const text = `${textBlob(currentCase)}\n${helperScope(params) ?? ""}`;
+  return /save_load_flow/i.test(operationTemplate) && (
+    booleanishParam(params, ["reopenViaClickReportName"]) ||
+    Boolean(stringParam(params, ["saveReportNamePrefix", "reportNamePrefix"])) ||
+    /同\s*case|同一\s*case|建立.{0,12}儲存.{0,24}(?:reopen|重開|點報表名稱)|不依賴既有報表|depend_on_existing_report/i.test(text)
+  );
 };
 
 const isOpenReportFromProjectListFlow = (currentCase: CaseManifestCase | null, helperHints: HelperHints | null): boolean => {
   const params = paramsObject(helperHints);
   const text = `${textBlob(currentCase)}\n${stringParam(params, ["action", "verifyOnly"]) ?? ""}`;
-  return /報表名稱.{0,20}(?:進入|編輯|reopen)|點.*報表名稱|click\s+report\s+name|enter\s+editor/i.test(text);
+  if (helperRequestsSaveOnly(params)) return false;
+  if (isSameCaseSaveLoadFlow(currentCase, helperHints)) return false;
+  return /報表名稱.{0,24}(?:進入|編輯|reopen|重開|載入|設定頁|editor)|點(?:擊)?.{0,16}報表名稱.{0,24}(?:進入|編輯|reopen|重開|載入|設定頁|editor)|click\s+report\s+name(?:.{0,24}(?:open|enter|edit|editor|reopen))?|enter\s+editor/i.test(text);
 };
 
 const isBackToProjectListFlow = (currentCase: CaseManifestCase | null, helperHints: HelperHints | null): boolean => {
   const params = paramsObject(helperHints);
   const text = `${textBlob(currentCase)}\n${stringParam(params, ["action", "verifyOnly"]) ?? ""}`;
+  if (helperRequestsSaveOnly(params)) return false;
   return /返回按鈕|點.*返回|click\s+back|return\s+to\s+project/i.test(text);
 };
 
@@ -617,6 +679,8 @@ const buildActions = (currentCase: CaseManifestCase | null, helperHints: HelperH
     const manualDateCsvDownload =
       /下載|CSV/i.test(text) &&
       !helperExplicitlyDisablesDownload(helperParams) &&
+      !helperRequestsSaveOnly({ ...params, ...helperParams }) &&
+      !textExplicitlyDisablesDownload(text) &&
       editorPreludeNeeded &&
       canRunDatePreviewEvidenceHelper(params, currentCase);
     if (manualDateCsvDownload) {
@@ -678,15 +742,20 @@ const buildActions = (currentCase: CaseManifestCase | null, helperHints: HelperH
     ];
   }
   const isCollageFlow = /collage_build_preview_save_reopen/.test(operationTemplate) || /拼貼|新增報表|儲存報表|重開|重新檢視/.test(text);
-  const modifiesExistingReport = params.openExistingReport === true;
+  const modifiesExistingReport = params.openExistingReport === true && !helperRequestsSaveOnly({ ...params, ...helperParams });
   const noSave = helperRequestsNoSave({ ...params, ...helperParams });
   const noDownload =
-    helperRequestsNoDownload({ ...params, ...helperParams }) &&
-    !(/下載|CSV/i.test(text) && !helperExplicitlyDisablesDownload({ ...params, ...helperParams }));
+    helperRequestsSaveOnly({ ...params, ...helperParams }) ||
+    textExplicitlyDisablesDownload(text) ||
+    (helperRequestsNoDownload({ ...params, ...helperParams }) &&
+      !(/下載|CSV/i.test(text) && !helperExplicitlyDisablesDownload({ ...params, ...helperParams })));
   const explicitlyNoReopen =
     helperRequestsNoReopen({ ...params, ...helperParams }) ||
+    helperRequestsSaveOnly({ ...params, ...helperParams }) ||
     /不(?:需|要|應)?重開|不要重開|無需重開|不用重開|不重開\s*editor|不應產生\s*reopen/i.test(text);
-  const needsReopen = !explicitlyNoReopen && /重開|重新檢視|還原|載入/.test(text);
+  const needsReopen =
+    !explicitlyNoReopen &&
+    (booleanishParam(helperParams, ["reopenViaClickReportName"]) || /重開|重新檢視|還原|載入|reopen|點報表名稱/i.test(text));
   const createNewProjectRequested = booleanishParam(helperParams, ["createNewProject", "createProjectThenReport"]);
 
   if (isCollageFlow) {

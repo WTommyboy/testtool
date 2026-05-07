@@ -23,8 +23,8 @@ Production endpoints:
 
 Current semantic versions:
 
-- App/API: `1.1.5`
-- Mac Agent: `0.2.24`
+- App/API: `1.1.7`
+- Mac Agent: `0.2.26`
 
 Active branches:
 
@@ -43,11 +43,15 @@ The current line is the Mac Agent MVP. It supports:
 - Tool Bridge for native dialogs, irreversible actions, SSO/auth blockers, and ambiguity handling.
 - Web run detail now exposes Tool Bridge request lifecycle status (`pending_approval`, `response_sent`, `response_delivered`, `response_missing`) so missing App/Agent responses are distinguishable from Tommy not approving.
 - One-case-at-a-time execution discipline.
-- Single-case `output/result.xlsx` upload and evidence gate, with Tool Bridge claim detection scoped to explicit approval/native-dialog/irreversible-action claims rather than ordinary testcase prose; negative or insufficient evidence prose such as `無 native confirm` / `缺少 native dialog 驗證` / formula modal blocked wording does not require a Tool Bridge response.
+- Single-case `output/result.xlsx` upload and evidence gate, with Tool Bridge claim detection scoped to explicit approval/native-dialog/irreversible-action claims rather than ordinary testcase prose; negative or insufficient evidence prose such as `無 native confirm` / `缺少 native dialog 驗證` / formula modal blocked wording / `缺少 Tool Bridge response` does not require another Tool Bridge response.
 - If Codex accidentally writes a full 17-column testcase-style workbook as `output/result.xlsx`, Mac Agent normalizes only the expected current-case row into the result-contract workbook before self-check/upload; blank or future testcase rows are not sent to the parser.
 - Result self-check uses normalized date UI evidence for configureMetric date-range checks, so static dates such as `2026-03-01` vs `2026/03/01` do not false-block a PASS when `date-ui-evidence` proves the represented range; reopen date regressions still block PASS.
 - Helper preview/date-variant execution now checks that at least one metric field is selected before clicking BI `執行`; non-destructive BI validation alerts such as `請至少選擇一個欄位` are treated as execute-precondition BLOCKED evidence rather than missing PM authorization.
 - A-06 style all-zero-field inspection cases can use `collage.inspectAllZeroFields`: the helper selects all fields for the requested source report through visible UI, guards selected-field count before Execute, captures request/response/chart/table evidence, and writes `all-zero-field-inspection-evidence.json` with all-zero candidates for Codex to judge.
+- Formula/calculated-field cases use `openProject -> createReport -> configureCalculatedMetricAndPreview`; formula modal keypad/operator wording no longer gets misclassified as filter helper work.
+- Save-only Collage cases create/configure/preview/save a fresh report and suppress open-existing, reopen, and CSV download shortcuts.
+- D-02 style structured select-all params map `expectedSources` and `expectedTotalFieldCount` into source-report selection plus strict expected field count evidence.
+- Date-variant helpers preserve preset arrays, structured static/preset variant objects, and staged 90/91-day boundary specs including expected UI-block observations.
 - Source testcase rows with a prefilled terminal `結果` such as `BLOCKED` are imported as terminal normalized cases; their steps are marked `SKIPPED`, and Agent manifests advance to the next runnable case instead of executing them.
 - Server-side normalized result state.
 - Final aggregate result workbook download after all cases finish.
