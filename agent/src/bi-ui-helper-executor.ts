@@ -257,6 +257,7 @@ const allZeroFieldInspectionEvidencePath = (options: CliOptions): string => path
 const deleteTemporaryReportEvidencePath = (options: CliOptions): string => path.join(artifactRoot(options), "delete-temporary-report-evidence.json");
 const calculatedFieldEvidencePath = (options: CliOptions): string => path.join(artifactRoot(options), "calculated-field-evidence.json");
 const createProjectEvidencePath = (options: CliOptions): string => path.join(artifactRoot(options), "create-project-evidence.json");
+const createdProjectStatePath = (options: CliOptions): string => path.join(artifactRoot(options), "created-project.json");
 const dateUiEvidencePath = (options: CliOptions, suffix: string | null = null): string =>
   path.join(artifactRoot(options), suffix ? `date-ui-evidence-${sanitize(suffix)}.json` : "date-ui-evidence.json");
 
@@ -276,6 +277,25 @@ const readSavedReportName = (options: CliOptions): string | null => {
   try {
     const parsed = JSON.parse(fs.readFileSync(filePath, "utf8")) as { reportName?: unknown };
     return typeof parsed.reportName === "string" && parsed.reportName.trim() ? parsed.reportName.trim() : null;
+  } catch {
+    return null;
+  }
+};
+
+const writeCreatedProjectState = (options: CliOptions, projectName: string, extra: Record<string, unknown> = {}): void => {
+  ensureDir(artifactRoot(options));
+  fs.writeFileSync(
+    createdProjectStatePath(options),
+    `${JSON.stringify({ projectName, caseId: options.caseId, createdAt: new Date().toISOString(), ...extra }, null, 2)}\n`
+  );
+};
+
+const readCreatedProjectName = (options: CliOptions): string | null => {
+  const filePath = createdProjectStatePath(options);
+  if (!fs.existsSync(filePath)) return null;
+  try {
+    const parsed = JSON.parse(fs.readFileSync(filePath, "utf8")) as { projectName?: unknown };
+    return typeof parsed.projectName === "string" && parsed.projectName.trim() ? parsed.projectName.trim() : null;
   } catch {
     return null;
   }
@@ -2289,7 +2309,7 @@ const ensureCollageProjectSelected = async (
     return { projectName: stringParam(options.params, "projectName"), bodyText, selectedBy: "already_selected" };
   }
 
-  const explicitProjectName = stringParam(options.params, "projectName");
+  const explicitProjectName = stringParam(options.params, "projectName") ?? readCreatedProjectName(options);
   const projectName = inferVisibleCollageProjectName(bodyText, explicitProjectName);
   if (!projectName) {
     throw new HelperBlockedError(`COLLAGE_PROJECT_NOT_SELECTED: no projectName param and no visible collage project could be inferred; bodyText=${bodyText.slice(0, 500)}`);
@@ -2487,13 +2507,37 @@ const selectCreateProjectMode = async (page: Page, requestedMode: string): Promi
 };
 
 const fillCreateProjectName = async (page: Page, projectName: string): Promise<Record<string, unknown>> => {
+  const modalState = await readCreateProjectModalState(page);
+  const dialogs = Array.isArray(modalState.dialogs) ? modalState.dialogs as Array<Record<string, unknown>> : [];
+  const dialog = dialogs.find((item) => /新增專案|專案名稱|建構模式|類型|模式/.test(String(item.textExcerpt ?? ""))) ?? dialogs[0];
+  const modalInputs = Array.isArray(dialog?.inputs) ? dialog.inputs as Array<Record<string, unknown>> : [];
+  const modalCandidate =
+    modalInputs.find((item) => /專案|project/i.test(String(item.placeholder ?? ""))) ??
+    modalInputs.find((item) => /名稱|name/i.test(String(item.placeholder ?? "")) && !/報表|report/i.test(String(item.placeholder ?? ""))) ??
+    modalInputs.find((item) => String(item.type ?? "") === "text" && String(item.value ?? "").trim().length === 0) ??
+    modalInputs.at(-1);
+  if (dialog && modalCandidate && typeof dialog.dialogIndex === "number" && typeof modalCandidate.inputIndex === "number") {
+    const dialogLocator = page.locator("[role='dialog'], .modal, .ant-modal, .MuiDialog-root, .swal2-popup").nth(dialog.dialogIndex);
+    const inputLocator = dialogLocator.locator("input").nth(modalCandidate.inputIndex);
+    await inputLocator.fill(projectName, { timeout: 8000 });
+    const observedValue = await inputLocator.inputValue({ timeout: 3000 }).catch(() => null);
+    return {
+      projectName,
+      selectedInput: { ...modalCandidate, dialogIndex: dialog.dialogIndex, scope: "create-project-modal" },
+      observedValue,
+      verified: observedValue === projectName,
+      modalState,
+      visibleInputs: modalInputs
+    };
+  }
+
   const inputs = await visibleInputIndexes(page);
   const candidate =
     inputs.find((item) => /專案|project/i.test(item.placeholder)) ??
     inputs.find((item) => /名稱|name/i.test(item.placeholder) && !/報表|report/i.test(item.placeholder)) ??
     inputs.find((item) => item.type === "text" && item.value.trim().length === 0) ??
     inputs.at(-1);
-  if (!candidate) throw new HelperBlockedError(`CREATE_PROJECT_NAME_INPUT_NOT_FOUND: inputs=${JSON.stringify(inputs).slice(0, 1000)}`);
+  if (!candidate) throw new HelperBlockedError(`CREATE_PROJECT_NAME_INPUT_NOT_FOUND: modalState=${JSON.stringify(modalState).slice(0, 1000)}; inputs=${JSON.stringify(inputs).slice(0, 1000)}`);
   await page.locator("input").nth(candidate.index).fill(projectName, { timeout: 8000 });
   const observedValue = await page.locator("input").nth(candidate.index).inputValue({ timeout: 3000 }).catch(() => null);
   return {
@@ -2501,6 +2545,7 @@ const fillCreateProjectName = async (page: Page, projectName: string): Promise<R
     selectedInput: candidate,
     observedValue,
     verified: observedValue === projectName,
+    modalState,
     visibleInputs: inputs
   };
 };
@@ -2581,7 +2626,19 @@ const createProject = async (options: CliOptions, page: Page, startedAt: string)
     operations.push("project:create:submitClicked");
     await page.waitForTimeout(1800);
     const bodyText = await page.locator("body").innerText({ timeout: 5000 }).catch(() => "");
-    const projectVisible = bodyText.includes(projectName);
+    const normalizedProjectName = normalizeUiText(projectName);
+    const projectVisible = bodyText.includes(projectName) || normalizeUiText(bodyText).includes(normalizedProjectName);
+    const successDialogObserved = nativeDialogs.some((dialog) => /成功|已建立|新增完成|建立完成|created|success/i.test(String(dialog.message ?? "")));
+    const verifiedBySuccessDialog = successDialogObserved && !dialogBlocksFlow;
+    if (projectVisible || verifiedBySuccessDialog) {
+      writeCreatedProjectState(options, projectName, {
+        approvedToolRequestId: options.approvedToolRequestId,
+        projectMode,
+        projectVisible,
+        verifiedBySuccessDialog,
+        nativeDialogs
+      });
+    }
     const modalAfterSubmit = await readCreateProjectModalState(page).catch((error) => ({ readError: error instanceof Error ? error.message : String(error) }));
     const evidence = {
       generatedAt: new Date().toISOString(),
@@ -2596,6 +2653,7 @@ const createProject = async (options: CliOptions, page: Page, startedAt: string)
       nativeDialogs,
       dialogBlocksFlow,
       projectVisible,
+      verifiedBySuccessDialog,
       bodyTextExcerpt: bodyText.slice(0, 2400),
       modalAfterSubmit,
       warnings
@@ -2603,12 +2661,12 @@ const createProject = async (options: CliOptions, page: Page, startedAt: string)
     ensureDir(artifactRoot(options));
     fs.writeFileSync(createProjectEvidencePath(options), `${JSON.stringify(evidence, null, 2)}\n`);
     if (dialogBlocksFlow) warnings.push("CREATE_PROJECT_NATIVE_DIALOG_BLOCKED_FLOW");
-    if (!projectVisible) warnings.push("CREATE_PROJECT_NOT_VISIBLE_AFTER_SUBMIT");
+    if (!projectVisible) warnings.push(verifiedBySuccessDialog ? "CREATE_PROJECT_VISIBILITY_NOT_CONFIRMED_BUT_SUCCESS_DIALOG_ACCEPTED" : "CREATE_PROJECT_NOT_VISIBLE_AFTER_SUBMIT");
     const shot = await screenshot(options, page, "create-project");
     const uiProfileAfter = await captureUiDomProfile(options, page, "createProject.after");
     return createReport(
       options,
-      projectVisible && !dialogBlocksFlow ? "ok" : "blocked",
+      (projectVisible || verifiedBySuccessDialog) && !dialogBlocksFlow ? "ok" : "blocked",
       startedAt,
       {
         domState: await readDomState(page),
@@ -3155,13 +3213,15 @@ const readVisibleFormulaModalState = async (page: Page): Promise<Record<string, 
     const dialogs = Array.from(document.querySelectorAll<HTMLElement>(dialogSelectors)).flatMap((dialog, dialogIndex) => {
       if (!isVisible(dialog)) return [];
       const inputs = Array.from(dialog.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>("input, textarea")).flatMap((input, inputIndex) => {
-        if (!isVisible(input) || input.disabled || input.readOnly) return [];
+        if (!isVisible(input) || input.disabled) return [];
         return [{
           inputIndex,
           tagName: input.tagName.toLowerCase(),
           type: input instanceof HTMLInputElement ? input.type : "textarea",
           placeholder: normalize(input.placeholder),
-          value: input.value
+          value: input.value,
+          readOnly: input.readOnly,
+          id: input.id || null
         }];
       });
       const buttons = Array.from(dialog.querySelectorAll<HTMLButtonElement>("button")).flatMap((button, buttonIndex) => {
@@ -3205,6 +3265,151 @@ const clickCalculatedFieldControl = async (page: Page): Promise<string> => {
   throw new HelperBlockedError(`CALCULATED_FIELD_BUTTON_NOT_CLICKABLE: visibleButtons=${JSON.stringify(buttons.slice(0, 30)).slice(0, 1200)}`);
 };
 
+type FormulaToken =
+  | { kind: "field"; value: string }
+  | { kind: "button"; value: string };
+
+const normalizeFormulaExpression = (value: string): string =>
+  value
+    .replace(/[［\[]/g, "")
+    .replace(/[］\]]/g, "")
+    .replace(/\s+/g, "")
+    .replace(/＋/g, "+")
+    .replace(/－/g, "-")
+    .replace(/＊/g, "*")
+    .replace(/[×xX]/g, "*")
+    .replace(/[÷／]/g, "/")
+    .replace(/（/g, "(")
+    .replace(/）/g, ")");
+
+const tokenizeFormula = (formula: string): FormulaToken[] => {
+  const tokens: FormulaToken[] = [];
+  for (let index = 0; index < formula.length;) {
+    const char = formula[index] ?? "";
+    if (/\s/.test(char)) {
+      index += 1;
+      continue;
+    }
+    if (char === "[" || char === "［") {
+      const close = char === "[" ? "]" : "］";
+      const closeIndex = formula.indexOf(close, index + 1);
+      if (closeIndex === -1) throw new HelperBlockedError(`FORMULA_TOKENIZE_UNCLOSED_FIELD:${formula.slice(index)}`);
+      const value = formula.slice(index + 1, closeIndex).trim();
+      if (!value) throw new HelperBlockedError(`FORMULA_TOKENIZE_EMPTY_FIELD:${formula}`);
+      tokens.push({ kind: "field", value });
+      index = closeIndex + 1;
+      continue;
+    }
+    const numberMatch = formula.slice(index).match(/^\d+(?:\.\d+)?/);
+    if (numberMatch?.[0]) {
+      for (const digit of numberMatch[0]) tokens.push({ kind: "button", value: digit });
+      index += numberMatch[0].length;
+      continue;
+    }
+    const normalizedButton = ({ "＋": "+", "－": "-", "＊": "*", "×": "*", "／": "/", "÷": "/", "（": "(", "）": ")" } as Record<string, string>)[char] ?? char;
+    if (/^[+\-*/().]$/.test(normalizedButton)) {
+      tokens.push({ kind: "button", value: normalizedButton });
+      index += 1;
+      continue;
+    }
+    throw new HelperBlockedError(`FORMULA_TOKENIZE_UNSUPPORTED_CHAR:${char}; formula=${formula}`);
+  }
+  return tokens;
+};
+
+const readVisibleFormulaModalButtons = async (page: Page): Promise<Array<{ index: number; text: string; id: string | null; className: string | null; onclick: string | null }>> => {
+  return page.evaluate(() => {
+    const normalize = (value: string | null | undefined) => (value ?? "").trim().replace(/\s+/g, " ");
+    const isVisible = (element: Element): boolean => {
+      const rect = element.getBoundingClientRect();
+      const style = window.getComputedStyle(element);
+      return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden" && style.opacity !== "0";
+    };
+    const isModalVisible = (element: Element): boolean => {
+      const modal = element.closest("#formulaEditorModal, [role='dialog'], .modal, .ant-modal, .MuiDialog-root");
+      return Boolean(modal && isVisible(modal));
+    };
+    return Array.from(document.querySelectorAll<HTMLButtonElement>("button")).flatMap((button, index) => {
+      if (!isVisible(button) || button.disabled || !isModalVisible(button)) return [];
+      return [{
+        index,
+        text: normalize(button.innerText || button.textContent),
+        id: button.id || null,
+        className: typeof button.className === "string" ? button.className : null,
+        onclick: button.getAttribute("onclick")
+      }];
+    });
+  });
+};
+
+const formulaButtonLabelCandidates = (value: string): string[] => {
+  if (value === "*") return ["*", "×", "x", "X"];
+  if (value === "/") return ["/", "÷", "／"];
+  return [value];
+};
+
+const clickFormulaModalButton = async (
+  page: Page,
+  value: string,
+  mode: "exact" | "contains"
+): Promise<Record<string, unknown>> => {
+  const labels = formulaButtonLabelCandidates(value).map(normalizeUiText);
+  const buttons = await readVisibleFormulaModalButtons(page);
+  const target = buttons.find((button) => {
+    const text = normalizeUiText(button.text);
+    return mode === "exact"
+      ? labels.includes(text)
+      : labels.some((label) => text.includes(label));
+  });
+  if (!target) {
+    throw new HelperBlockedError(`FORMULA_MODAL_BUTTON_NOT_FOUND:${value}; mode=${mode}; buttons=${JSON.stringify(buttons.slice(0, 80)).slice(0, 2000)}`);
+  }
+  await clickVisibleButtonByIndex(page, target.index, 8000);
+  await page.waitForTimeout(120);
+  return target;
+};
+
+const clickFormulaFieldToken = async (page: Page, fieldLabel: string): Promise<Record<string, unknown>> => {
+  try {
+    return await clickFormulaModalButton(page, fieldLabel, "contains");
+  } catch (firstError) {
+    const modalLocator = page.locator("#formulaEditorModal, [role='dialog'], .modal, .ant-modal, .MuiDialog-root").filter({ hasText: /可用欄位|公式編輯器|運算欄位/ }).first();
+    const searchInput = modalLocator.locator("input[placeholder*='搜尋'], input[placeholder*='搜索'], input[placeholder*='欄位']").last();
+    if ((await searchInput.count()) > 0) {
+      await searchInput.fill(fieldLabel, { timeout: 5000 }).catch(() => undefined);
+      await page.waitForTimeout(300);
+      try {
+        return await clickFormulaModalButton(page, fieldLabel, "contains");
+      } catch {
+        // Fall through to the original, more informative error.
+      }
+    }
+    throw firstError;
+  }
+};
+
+const enterReadonlyFormulaThroughModalButtons = async (
+  page: Page,
+  formulaInputLocator: ReturnType<Page["locator"]>,
+  formula: string
+): Promise<Record<string, unknown>> => {
+  await formulaInputLocator.click({ timeout: 5000 }).catch(() => undefined);
+  const tokens = tokenizeFormula(formula);
+  const operations: Record<string, unknown>[] = [];
+  for (const token of tokens) {
+    const clicked = token.kind === "field"
+      ? await clickFormulaFieldToken(page, token.value)
+      : await clickFormulaModalButton(page, token.value, "exact");
+    const valueAfterClick = await formulaInputLocator.inputValue({ timeout: 5000 }).catch(() => null);
+    operations.push({ token, clicked, valueAfterClick });
+  }
+  return {
+    method: "modal_keypad_and_field_tokens",
+    tokens,
+    operations
+  };
+};
+
 const fillCalculatedFieldModal = async (
   page: Page,
   fieldName: string,
@@ -3231,14 +3436,21 @@ const fillCalculatedFieldModal = async (
   }
 
   await nameInputLocator.fill(fieldName, { timeout: 8000 });
-  await formulaInputLocator.fill(formula, { timeout: 10000 });
+  const formulaInputMeta = await formulaInputLocator.evaluate((input) => ({
+    readOnly: input instanceof HTMLInputElement || input instanceof HTMLTextAreaElement ? input.readOnly : false,
+    value: input instanceof HTMLInputElement || input instanceof HTMLTextAreaElement ? input.value : ""
+  })).catch(() => ({ readOnly: false, value: "" }));
+  const formulaEntry = formulaInputMeta.readOnly
+    ? await enterReadonlyFormulaThroughModalButtons(page, formulaInputLocator, formula)
+    : { method: "direct_fill", beforeValue: formulaInputMeta.value };
+  if (!formulaInputMeta.readOnly) await formulaInputLocator.fill(formula, { timeout: 10000 });
   const nameValue = await nameInputLocator.inputValue({ timeout: 8000 });
   const formulaValue = await formulaInputLocator.inputValue({ timeout: 8000 });
   const afterFill = await readVisibleFormulaModalState(page);
   if (nameValue !== fieldName) {
     throw new HelperBlockedError(`FORMULA_NAME_INPUT_VALUE_MISMATCH: expected=${fieldName}; actual=${nameValue}; afterFill=${JSON.stringify(afterFill).slice(0, 1200)}`);
   }
-  if (formulaValue !== formula) {
+  if (normalizeFormulaExpression(formulaValue) !== normalizeFormulaExpression(formula)) {
     throw new HelperBlockedError(`FORMULA_INPUT_VALUE_MISMATCH: expected=${formula}; actual=${formulaValue}; afterFill=${JSON.stringify(afterFill).slice(0, 1200)}`);
   }
   const submitted = await clickFirstVisible([
@@ -3266,7 +3478,9 @@ const fillCalculatedFieldModal = async (
     },
     selectedFormulaInput: {
       selector: "#formulaInput",
-      value: formulaValue
+      value: formulaValue,
+      readOnly: formulaInputMeta.readOnly,
+      entry: formulaEntry
     },
     before,
     afterFill,
@@ -4785,8 +4999,8 @@ const downloadCsvAndComparePreview = async (options: CliOptions, page: Page, sta
   if (wantsReportList && savedReportName) {
     listRecovery = await ensureSavedReportListRowVisible(options, page, savedReportName);
     reportListState = listRecovery.state;
-    if (!reportListState.found || reportListState.downloadControls.length === 0) {
-      const failedSubcondition = !reportListState.found ? "saved_report_row_missing" : "csv_button_missing_on_saved_report_row";
+    if (!reportListState.found) {
+      const failedSubcondition = "saved_report_row_missing";
       const shot = await screenshot(options, page, failedSubcondition);
       const uiProfileAfterPrecondition = await captureUiDomProfile(options, page, `downloadCsv.${failedSubcondition}`);
       return createReport(
@@ -4806,7 +5020,7 @@ const downloadCsvAndComparePreview = async (options: CliOptions, page: Page, sta
         shot ? { screenshot: shot } : {},
         [
           ...(shot ? [] : ["SCREENSHOT_UNAVAILABLE"]),
-          failedSubcondition === "saved_report_row_missing" ? "CSV_SAVED_REPORT_ROW_NOT_FOUND_AFTER_REFRESH" : "CSV_SAVED_REPORT_ROW_DOWNLOAD_CONTROL_NOT_FOUND"
+          "CSV_SAVED_REPORT_ROW_NOT_FOUND_AFTER_REFRESH"
         ]
       );
     }
@@ -5448,6 +5662,76 @@ const reopenReport = async (options: CliOptions, page: Page, startedAt: string):
   );
 };
 
+const openReportFromProjectList = async (options: CliOptions, page: Page, startedAt: string): Promise<HelperReport> => {
+  return openExistingReport(options, page, startedAt);
+};
+
+const clickBackToProjectList = async (options: CliOptions, page: Page, startedAt: string): Promise<HelperReport> => {
+  const uiProfileBefore = await captureUiDomProfile(options, page, "backToProjectList.before");
+  const dialogs: Record<string, unknown>[] = [];
+  const dialogHandler = async (dialog: Dialog) => {
+    const record: Record<string, unknown> = {
+      sequence: dialogs.length + 1,
+      type: dialog.type(),
+      message: dialog.message(),
+      defaultValue: dialog.defaultValue(),
+      handledAction: "dismiss",
+      handledReason: "back_to_project_list_should_not_trigger_native_confirm"
+    };
+    dialogs.push(record);
+    try {
+      await dialog.dismiss();
+      record.handledAt = new Date().toISOString();
+    } catch (error) {
+      record.handledError = error instanceof Error ? error.message : String(error);
+    }
+  };
+  page.on("dialog", dialogHandler);
+  let observed: { result: { clicked: boolean }; requests: Record<string, unknown>[]; responses: Record<string, unknown>[] } | null = null;
+  try {
+    observed = await observeDuring(page, async () => {
+      const clicked = await clickFirstVisible([
+        page.getByText("← 返回", { exact: false }),
+        page.getByText("返回", { exact: false }),
+        page.locator("button, a, [role=button]").filter({ hasText: /返回|Back/i })
+      ], 10000);
+      if (clicked) await page.waitForTimeout(1200);
+      return { clicked };
+    });
+  } finally {
+    page.off("dialog", dialogHandler);
+  }
+  if (!observed?.result.clicked) throw new HelperBlockedError("BACK_TO_PROJECT_LIST_BUTTON_NOT_CLICKABLE");
+  const bodyText = await page.locator("body").innerText({ timeout: 5000 }).catch(() => "");
+  const returnedToProjectList = hasCreateReportEntry(bodyText) && !/報表設定|儲存報表|執行/.test(bodyText);
+  const shot = await screenshot(options, page, returnedToProjectList ? "back-to-project-list" : "back-to-project-list-blocked");
+  const uiProfileAfter = await captureUiDomProfile(options, page, "backToProjectList.after");
+  const evidence = {
+    clicked: observed.result.clicked,
+    returnedToProjectList,
+    nativeDialogs: dialogs,
+    bodyTextExcerpt: bodyText.slice(0, 2400),
+    network: { requests: observed.requests, responses: observed.responses }
+  };
+  const warnings = [
+    ...(dialogs.length === 0 ? [] : ["BACK_TO_PROJECT_LIST_NATIVE_DIALOG_OBSERVED"]),
+    ...(returnedToProjectList ? [] : ["BACK_TO_PROJECT_LIST_NOT_VERIFIED"]),
+    ...(shot ? [] : ["SCREENSHOT_UNAVAILABLE"])
+  ];
+  return createReport(
+    options,
+    returnedToProjectList && dialogs.length === 0 ? "ok" : "blocked",
+    startedAt,
+    {
+      domState: await readDomState(page),
+      uiProfiles: { before: uiProfileBefore, after: uiProfileAfter },
+      backToProjectListEvidence: evidence
+    },
+    shot ? { screenshot: shot } : {},
+    warnings
+  );
+};
+
 const notImplemented = async (options: CliOptions, page: Page, reason: string, startedAt: string): Promise<HelperReport> => {
   const shot = await screenshot(options, page, sanitize(options.action));
   const uiProfile = await captureUiDomProfile(options, page, `${sanitize(options.action)}.notImplemented`);
@@ -5511,6 +5795,9 @@ const run = async (): Promise<void> => {
       case "collage.openExistingReport":
         report = await openExistingReport(options, page, startedAt);
         break;
+      case "collage.openReportFromProjectList":
+        report = await openReportFromProjectList(options, page, startedAt);
+        break;
       case "collage.configureMetric":
         report = await configureMetric(options, page, startedAt);
         break;
@@ -5537,6 +5824,9 @@ const run = async (): Promise<void> => {
         break;
       case "collage.reopenReport":
         report = await reopenReport(options, page, startedAt);
+        break;
+      case "collage.clickBackToProjectList":
+        report = await clickBackToProjectList(options, page, startedAt);
         break;
       case "collage.downloadCsvAndComparePreview":
         report = await downloadCsvAndComparePreview(options, page, startedAt);

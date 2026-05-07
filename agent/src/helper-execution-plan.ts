@@ -274,13 +274,13 @@ const numberParam = (params: Record<string, unknown>, keys: string[]): number | 
 const inferReportNamePattern = (text: string, params: Record<string, unknown>): string | null =>
   cleanReportNamePattern(
     stringParam(params, ["reportName", "reportNamePattern"]) ??
-      firstMatch(text, [/報表名[：:]\s*([^\n]+)/, /報表名稱[：:]\s*([^\n]+)/, /(TOOL_[A-Z]\d{2}_<timestamp>)/i, /(TOOL_[A-Z]\d{2}_[A-Za-z0-9_-]+)/i])
+      firstMatch(text, [/報表名[：:]\s*([^\n]+)/, /報表名稱[：:]\s*([^\n]+)/, /(OTTEST\d+_[A-Z]\d{2}_[A-Za-z0-9_-]+(?:_<timestamp>)?)/i, /(TOOL_[A-Z]\d{2}_<timestamp>)/i, /(TOOL_[A-Z]\d{2}_[A-Za-z0-9_-]+)/i])
   );
 
 const inferExistingReportNamePattern = (text: string, params: Record<string, unknown>, fallbackReportNamePattern: string | null): string | null =>
   cleanReportNamePattern(
     stringParam(params, ["existingReportName", "existingReportNamePattern", "savedReportName"]) ??
-      firstMatch(text, [/(TOOL_A01_<timestamp>)/i, /(TOOL_A01_[A-Za-z0-9_-]+)/i, /(TOOL_[A-Z]\d{2}_<timestamp>)/i]) ??
+      firstMatch(text, [/(OTTEST\d+_[A-Z]\d{2}_[A-Za-z0-9_-]+(?:_<timestamp>)?)/i, /(TOOL_A01_<timestamp>)/i, /(TOOL_A01_[A-Za-z0-9_-]+)/i, /(TOOL_[A-Z]\d{2}_<timestamp>)/i]) ??
       fallbackReportNamePattern
   );
 
@@ -301,7 +301,9 @@ const inferCollageParams = (currentCase: CaseManifestCase | null, helperHints: H
       nonNeutral(firstMatch(text, [/欄位[「=：: ]+([^」\n,，;；]+)/]));
   const fields = splitCompositeMetricFields(field);
   const reportNamePattern = inferReportNamePattern(text, params);
-  const modifiesExistingReport = /修改既有|既有報表|已儲存報表|儲存覆寫|覆寫/.test(text);
+  const modifiesExistingReport =
+    booleanishParam(params, ["openExistingReport", "modifyExistingReport", "overwriteExisting"]) ||
+    /修改既有|既有報表.{0,20}(?:修改|覆寫|覆盖)|已儲存報表.{0,20}(?:修改|覆寫|覆盖)|儲存覆寫|覆寫|覆盖/.test(text);
   const existingReportNamePattern = inferExistingReportNamePattern(text, params, reportNamePattern);
   const dateRangeText =
     nonNeutral(stringParam(params, ["dateRange", "timeRange"])) ??
@@ -399,6 +401,28 @@ const isCreateProjectFlow = (currentCase: CaseManifestCase | null, helperHints: 
     /新增專案|create\s+project/i.test(text);
 };
 
+const isCreateProjectOnlyFlow = (currentCase: CaseManifestCase | null, helperHints: HelperHints | null): boolean => {
+  if (!isCreateProjectFlow(currentCase, helperHints)) return false;
+  const params = paramsObject(helperHints);
+  if (booleanishParam(params, ["createNewProject", "createProjectThenReport"])) return false;
+  const operationTemplate = helperHints?.operationTemplate ?? "";
+  if (/collage_build_preview_save_reopen|download_csv_verify|save_load_flow/.test(operationTemplate)) return false;
+  const text = textBlob(currentCase);
+  return !/新增報表|報表設定|欄位|時間區間|preview|預覽|執行|儲存報表|儲存|下載|CSV|reopen|重開|返回/.test(text);
+};
+
+const isOpenReportFromProjectListFlow = (currentCase: CaseManifestCase | null, helperHints: HelperHints | null): boolean => {
+  const params = paramsObject(helperHints);
+  const text = `${textBlob(currentCase)}\n${stringParam(params, ["action", "verifyOnly"]) ?? ""}`;
+  return /報表名稱.{0,20}(?:進入|編輯|reopen)|點.*報表名稱|click\s+report\s+name|enter\s+editor/i.test(text);
+};
+
+const isBackToProjectListFlow = (currentCase: CaseManifestCase | null, helperHints: HelperHints | null): boolean => {
+  const params = paramsObject(helperHints);
+  const text = `${textBlob(currentCase)}\n${stringParam(params, ["action", "verifyOnly"]) ?? ""}`;
+  return /返回按鈕|點.*返回|click\s+back|return\s+to\s+project/i.test(text);
+};
+
 const action = (
   id: string,
   template: string,
@@ -435,7 +459,7 @@ const buildActions = (currentCase: CaseManifestCase | null, helperHints: HelperH
     features.hasGroup;
   const metadataOnly = features.isMetadataDropdown;
   if (unsupportedHelperTarget) return [];
-  const createProjectFlow = isCreateProjectFlow(currentCase, helperHints);
+  const createProjectFlow = isCreateProjectOnlyFlow(currentCase, helperHints);
   if (createProjectFlow) {
     const projectParams = {
       ...params,
@@ -487,6 +511,36 @@ const buildActions = (currentCase: CaseManifestCase | null, helperHints: HelperH
           "helper 必須先建立臨時報表，再點該報表列刪除控制，處理已知刪除 confirm，最後驗證該 row 不再可見。",
           "helper 不可刪除非臨時報表；找不到臨時 row 或遇到未知 native dialog 必須 blocked。"
         ]
+      })
+    ];
+  }
+  if (isBackToProjectListFlow(currentCase, helperHints)) {
+    return [
+      action("H1", "collage.openProject", "開啟指定拼貼專案", params, {
+        requiredEvidence: ["dom.url", "dom.pageTitle", "dom.state", "screenshot"],
+        notes: ["先定位拼貼專案頁，準備點既有報表進入設定頁。"]
+      }),
+      action("H2", "collage.openReportFromProjectList", "點報表名稱進入設定頁", params, {
+        requiredEvidence: ["dom.state", "screenshot"],
+        notes: ["只點報表名稱進 editor，不點下載/刪除控制。"]
+      }),
+      action("H3", "collage.clickBackToProjectList", "點返回並驗證回專案頁", params, {
+        requiredEvidence: ["dom.state", "screenshot"],
+        screenshotPolicy: "required_if_possible",
+        notes: ["不修改設定；若出現 native confirm，helper 會 blocked 並留下 dialog evidence。"]
+      })
+    ];
+  }
+  if (isOpenReportFromProjectListFlow(currentCase, helperHints)) {
+    return [
+      action("H1", "collage.openProject", "開啟指定拼貼專案", params, {
+        requiredEvidence: ["dom.url", "dom.pageTitle", "dom.state", "screenshot"],
+        notes: ["先定位拼貼專案頁，不進新增報表頁。"]
+      }),
+      action("H2", "collage.openReportFromProjectList", "點報表名稱進入設定頁", params, {
+        requiredEvidence: ["dom.state", "screenshot"],
+        screenshotPolicy: "required_if_possible",
+        notes: ["只點報表名稱進 editor，不點下載/刪除控制。"]
       })
     ];
   }
@@ -542,6 +596,24 @@ const buildActions = (currentCase: CaseManifestCase | null, helperHints: HelperH
         })
       );
     }
+    const manualDateSave =
+      /儲存/.test(text) &&
+      !helperRequestsNoSave({ ...params, ...helperParams }) &&
+      editorPreludeNeeded &&
+      canRunDatePreviewEvidenceHelper(params, currentCase);
+    if (manualDateSave) {
+      prelude.push(
+        action(`H${prelude.length + 1}`, "collage.saveReport", "儲存日期 preview baseline 報表", params, {
+          requiresToolBridge: true,
+          requiredEvidence: ["toolBridge.response", "dom.state", "screenshot"],
+          screenshotPolicy: "required_if_possible",
+          notes: [
+            "適用 F-06/F-07 類 D0 baseline：先由 date preview helper 透過 visible UI 設定日期並按執行，再儲存當前報表。",
+            "helper 只保存 evidence，不判 PASS/FAIL；Codex 必須確認 dateRange、preview 與後續 CSV baseline。"
+          ]
+        })
+      );
+    }
     const manualDateCsvDownload =
       /下載|CSV/i.test(text) &&
       !helperExplicitlyDisablesDownload(helperParams) &&
@@ -549,12 +621,14 @@ const buildActions = (currentCase: CaseManifestCase | null, helperHints: HelperH
       canRunDatePreviewEvidenceHelper(params, currentCase);
     if (manualDateCsvDownload) {
       prelude.push(
-        action("H4", "collage.downloadCsvAndComparePreview", "在 editor session 下載 CSV 並與 preview evidence 比對", params, {
+        action(`H${prelude.length + 1}`, "collage.downloadCsvAndComparePreview", manualDateSave ? "從專案頁 row 下載 CSV 並與 preview evidence 比對" : "在 editor session 下載 CSV 並與 preview evidence 比對", params, {
           requiredEvidence: ["downloaded.csv", "csv.rows", "preview.table_or_chart", "screenshot"],
           screenshotPolicy: "required_if_possible",
           notes: [
-            "僅在同一 editor session 已由 date preview helper 產生 preview evidence 後執行。",
-            "不得 save、reopen 或回專案頁；CSV 必須由 UI 下載控制觸發並與目前 preview 比對。"
+            manualDateSave
+              ? "儲存後回專案頁清單，鎖定本 case saved-report row 下載；不 reopen editor。"
+              : "僅在同一 editor session 已由 date preview helper 產生 preview evidence 後執行。",
+            "CSV 必須由 UI 下載控制觸發並與目前 preview 比對。"
           ]
         })
       );
@@ -613,22 +687,38 @@ const buildActions = (currentCase: CaseManifestCase | null, helperHints: HelperH
     helperRequestsNoReopen({ ...params, ...helperParams }) ||
     /不(?:需|要|應)?重開|不要重開|無需重開|不用重開|不重開\s*editor|不應產生\s*reopen/i.test(text);
   const needsReopen = !explicitlyNoReopen && /重開|重新檢視|還原|載入/.test(text);
+  const createNewProjectRequested = booleanishParam(helperParams, ["createNewProject", "createProjectThenReport"]);
 
   if (isCollageFlow) {
     actions.push(
-      action("H1", "collage.openProject", "開啟指定拼貼專案", params, {
+      action(`H${actions.length + 1}`, "collage.openProject", "開啟指定拼貼專案", params, {
         requiredEvidence: ["dom.url", "dom.pageTitle", "dom.state", "screenshot"],
         notes: ["只開啟/切換專案，不判斷 testcase 結果。"]
-      }),
+      })
+    );
+    if (createNewProjectRequested) {
+      actions.push(
+        action(`H${actions.length + 1}`, "collage.createProject", "新增本 case 拼貼專案並接續報表建立", params, {
+          requiresToolBridge: true,
+          requiredEvidence: ["toolBridge.response", "dom.state", "nativeDialog", "screenshot"],
+          screenshotPolicy: "required_if_possible",
+          notes: [
+            "單一授權只允許本 current case 建立名稱符合 helper params 的測試專案。",
+            "helper 會寫入 created-project.json，後續 createReport 會選取同一個新專案。"
+          ]
+        })
+      );
+    }
+    actions.push(
       modifiesExistingReport
-        ? action("H2", "collage.openExistingReport", "開啟既有報表進入編輯", params, {
+        ? action(`H${actions.length + 1}`, "collage.openExistingReport", "開啟既有報表進入編輯", params, {
             requiredEvidence: ["dom.state", "screenshot"],
-            notes: ["若找不到 TOOL-A-01 建立的報表，helper 必須 blocked 並標記前置失敗，不可改建新報表替代。"]
+            notes: ["若找不到既有報表，helper 必須 blocked 並標記前置失敗，不可改建新報表替代。"]
           })
-        : action("H2", "collage.createReport", "進入新增報表頁", params, {
+        : action(`H${actions.length + 1}`, "collage.createReport", "進入新增報表頁", params, {
             requiredEvidence: ["dom.url", "dom.pageTitle", "dom.state", "screenshot"]
           }),
-      action("H3", "collage.configureMetric", "設定來源、欄位、日期與顯示", params, {
+      action(`H${actions.length + 2}`, "collage.configureMetric", "設定來源、欄位、日期與顯示", params, {
         requiredEvidence: ["dom.state", "state.delta", "date.uiState", "date.representedRange", "screenshot"],
         notes: [
           "所有設定都必須透過 visible UI；不可使用內部 JS setter。",
@@ -638,7 +728,7 @@ const buildActions = (currentCase: CaseManifestCase | null, helperHints: HelperH
           "若 `+ 新增欄位` 文字 locator 失敗，helper 可嘗試其他 visible button/role/class fallback 並留下 locator drift evidence；不可用 force click 或內部 JS setter。"
         ]
       }),
-      action("H4", "collage.runPreviewAndCollectEvidence", "執行 preview 並收集 evidence", params, {
+      action(`H${actions.length + 3}`, "collage.runPreviewAndCollectEvidence", "執行 preview 並收集 evidence", params, {
         requiredEvidence: ["network.requestBody", "network.responseBody", "chart.datasets", "dom.previewState", "screenshot"],
         screenshotPolicy: "required_if_possible",
         notes: ["preview request 必須由 UI 按執行觸發；network 只作觀察，不可直接呼叫 API。"]
@@ -647,7 +737,7 @@ const buildActions = (currentCase: CaseManifestCase | null, helperHints: HelperH
 
     if (!noSave && /儲存|覆寫/.test(text)) {
       actions.push(
-        action("H5", "collage.saveReport", modifiesExistingReport ? "覆寫既有報表" : "儲存本輪臨時報表", params, {
+        action(`H${actions.length + 1}`, "collage.saveReport", modifiesExistingReport ? "覆寫既有報表" : "儲存本輪臨時報表", params, {
           requiresToolBridge: true,
           requiredEvidence: ["toolBridge.response", "dom.state", "screenshot"],
           screenshotPolicy: "required_if_possible",
@@ -658,7 +748,7 @@ const buildActions = (currentCase: CaseManifestCase | null, helperHints: HelperH
 
     if (needsReopen) {
       actions.push(
-        action("H6", "collage.reopenReport", "從清單重開報表並驗證設定", params, {
+        action(`H${actions.length + 1}`, "collage.reopenReport", "從清單重開報表並驗證設定", params, {
           requiredEvidence: ["dom.state", "network.requestBody", "screenshot"],
           screenshotPolicy: "required_if_possible"
         })
@@ -667,7 +757,7 @@ const buildActions = (currentCase: CaseManifestCase | null, helperHints: HelperH
 
     if (!noDownload && /下載|CSV/i.test(text)) {
       actions.push(
-        action("H7", "collage.downloadCsvAndComparePreview", "下載 CSV 並與 preview evidence 比對", params, {
+        action(`H${actions.length + 1}`, "collage.downloadCsvAndComparePreview", "下載 CSV 並與 preview evidence 比對", params, {
           requiredEvidence: ["downloaded.csv", "csv.rows", "preview.table_or_chart", "screenshot"],
           screenshotPolicy: "required_if_possible",
           notes: [

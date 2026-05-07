@@ -33,6 +33,9 @@ const ALLOWED_OPERATION_TEMPLATES = new Set([
   "collage_all_zero_field_inspection",
   "collage_date_variants_preview",
   "collage.configureCalculatedMetricAndPreview",
+  "collage.createProject",
+  "collage.openReportFromProjectList",
+  "collage.clickBackToProjectList",
   "download_csv_verify",
   "save_load_flow",
   "manual_ai"

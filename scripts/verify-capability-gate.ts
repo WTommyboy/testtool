@@ -298,6 +298,93 @@ const main = (): void => {
     assert.ok(!existingPlan.actions.some((item) => item.template === "collage.createReport"), "A-05 should not create a new report");
     assert.equal(existingPlan.actions.find((item) => item.template === "collage.saveReport")?.params.overwriteExisting, true, "A-05 save should be overwriteExisting");
 
+    const saveLoadCase = {
+      ...collageSaveReopenCase,
+      caseNo: "OTTEST004-F-02",
+      caseTitle: "載入已儲存報表 — 設定還原(欄位/時間/顯示)",
+      cleanupChecklist: "欄位=新增帳號數;篩選=0組;分組=不影響;時間=2026/03/01~2026/03/31;顯示=每天",
+      stepsSummary: "先建一張新報表並儲存，再 reopen 驗設定還原；若時間變過去 7 天則 FAIL"
+    };
+    const saveLoadHints: HelperHints = {
+      ...manualAiDateHints,
+      caseId: "OTTEST004-F-02",
+      automationLevel: "helper",
+      operationTemplate: "save_load_flow",
+      params: {
+        mode: "拼貼",
+        field: "新增帳號數",
+        dateRange: { start: "2026-03-01", end: "2026-03-31" },
+        display: "每天",
+        save: true,
+        reopen: true,
+        reportNamePattern: "OTTEST004-F-02-<timestamp>"
+      }
+    };
+    const saveLoadPlan = buildHelperExecutionPlan({ runDir, currentCase: saveLoadCase, helperHints: saveLoadHints });
+    assert.ok(saveLoadPlan.actions.some((item) => item.template === "collage.createReport"), "F-02 should create a fresh report before save/reopen");
+    assert.ok(!saveLoadPlan.actions.some((item) => item.template === "collage.openExistingReport"), "F-02 should not be misclassified as existing-report modification");
+    assert.ok(saveLoadPlan.actions.some((item) => item.template === "collage.saveReport"), "F-02 should save the fresh report");
+    assert.ok(saveLoadPlan.actions.some((item) => item.template === "collage.reopenReport"), "F-02 should reopen the saved report");
+
+    const createProjectAndReportCase = {
+      ...collageSaveReopenCase,
+      caseNo: "OTTEST004-G-02",
+      caseTitle: "新增專案後建立報表",
+      cleanupChecklist: "欄位=新增帳號數;篩選=0組;分組=不影響;時間=2026/03/01~2026/03/31;顯示=每天",
+      stepsSummary: "新增專案 OTTEST004_G02_<timestamp>，在該專案建立報表 OTTEST004_G02_report 並儲存"
+    };
+    const createProjectAndReportHints: HelperHints = {
+      ...manualAiDateHints,
+      caseId: "OTTEST004-G-02",
+      automationLevel: "helper",
+      operationTemplate: "collage_build_preview_save_reopen",
+      params: {
+        mode: "拼貼",
+        createNewProject: true,
+        projectNamePattern: "OTTEST004_G02_<timestamp>",
+        field: "新增帳號數",
+        dateRange: { start: "2026-03-01", end: "2026-03-31" },
+        display: "每天",
+        save: true,
+        reportName: "OTTEST004_G02_report",
+        skipReopen: true
+      }
+    };
+    const createProjectAndReportPlan = buildHelperExecutionPlan({ runDir, currentCase: createProjectAndReportCase, helperHints: createProjectAndReportHints });
+    assert.deepEqual(
+      createProjectAndReportPlan.actions.map((item) => item.template),
+      ["collage.openProject", "collage.createProject", "collage.createReport", "collage.configureMetric", "collage.runPreviewAndCollectEvidence", "collage.saveReport"],
+      "G-02 should create a project, then create/configure/preview/save a report in that project"
+    );
+
+    const openReportCase = {
+      ...collageSaveReopenCase,
+      caseNo: "OTTEST004-G-04",
+      caseTitle: "報表名稱進入編輯(reopen)",
+      cleanupChecklist: "欄位=不影響;篩選=不影響;分組=不影響;時間=不影響;顯示=不影響",
+      stepsSummary: "在專案頁點報表名稱 OTTEST004_G02_report 進入設定頁"
+    };
+    const openReportPlan = buildHelperExecutionPlan({ runDir, currentCase: openReportCase, helperHints: { ...manualAiDateHints, caseId: "OTTEST004-G-04", params: { action: "click report name -> enter editor" } } });
+    assert.deepEqual(
+      openReportPlan.actions.map((item) => item.template),
+      ["collage.openProject", "collage.openReportFromProjectList"],
+      "G-04 should use a dedicated report-name navigation helper"
+    );
+
+    const backCase = {
+      ...collageSaveReopenCase,
+      caseNo: "OTTEST004-G-05",
+      caseTitle: "返回按鈕 — 從設定頁回專案頁",
+      cleanupChecklist: "欄位=不影響;篩選=不影響;分組=不影響;時間=不影響;顯示=不影響",
+      stepsSummary: "先點報表名稱 OTTEST004_G02_report 進設定頁，再點返回按鈕回專案頁"
+    };
+    const backPlan = buildHelperExecutionPlan({ runDir, currentCase: backCase, helperHints: { ...manualAiDateHints, caseId: "OTTEST004-G-05", params: { action: "click back button -> return to project page" } } });
+    assert.deepEqual(
+      backPlan.actions.map((item) => item.template),
+      ["collage.openProject", "collage.openReportFromProjectList", "collage.clickBackToProjectList"],
+      "G-05 should open a report, then verify the back button returns to the project page"
+    );
+
     const previewOnlyCase = {
       ...collageSaveReopenCase,
       caseNo: "TOOL-D-01",
@@ -388,6 +475,43 @@ const main = (): void => {
       editorSessionCsvPlan.actions.find((item) => item.template === "collage.downloadCsvAndComparePreview")?.params.downloadScope,
       "editor_session",
       "F-03 CSV helper should stay in editor session"
+    );
+
+    const hybridD0CsvCase = {
+      ...collageSaveReopenCase,
+      caseNo: "OTTEST004-F-07",
+      caseTitle: "隔日下載 — 半動態(D0 baseline,D+1 另輪驗證)",
+      cleanupChecklist: "欄位=新增帳號數;篩選=0組;分組=不影響;時間=2026-03-25 ~ 1 天前;顯示=每天",
+      stepsSummary: "D0: 設半動態 2026-03-25 ~ 1 天前，執行 preview，儲存，從專案頁清單下載 CSV baseline"
+    };
+    const hybridD0CsvHints: HelperHints = {
+      ...manualAiDateHints,
+      caseId: "OTTEST004-F-07",
+      automationLevel: "manual_ai",
+      operationTemplate: "manual_ai",
+      params: {
+        mode: "拼貼",
+        field: "新增帳號數",
+        sourceReport: "每日報表",
+        dateMode: "hybrid",
+        start: { type: "static", date: "2026-03-25" },
+        end: { type: "relative", offsetDays: -1 },
+        display: "每天",
+        save: true,
+        reportNamePattern: "OTTEST004_F07_<timestamp>",
+        downloadCsv: true
+      }
+    };
+    const hybridD0CsvPlan = buildHelperExecutionPlan({ runDir, currentCase: hybridD0CsvCase, helperHints: hybridD0CsvHints });
+    assert.deepEqual(
+      hybridD0CsvPlan.actions.map((item) => item.template),
+      ["collage.openProject", "collage.createReport", "collage.runDateVariantsPreviewEvidence", "collage.saveReport", "collage.downloadCsvAndComparePreview"],
+      "F-07 manual hybrid D0 CSV baseline should use date preview evidence, then save and row-download without generic date text clicking"
+    );
+    assert.equal(
+      hybridD0CsvPlan.actions.find((item) => item.template === "collage.downloadCsvAndComparePreview")?.params.downloadScope,
+      "report_list",
+      "F-07 row download should target report-list scope after save"
     );
 
     const deleteReportCase = {
@@ -546,6 +670,9 @@ const main = (): void => {
           "collage multi-field helper params split composite metric strings",
           "collage CSV case includes download/compare helper action",
           "collage existing-report modification opens existing report and overwrites",
+          "save-load flow creates and saves a fresh report before reopen",
+          "createNewProject report flows create a project before report creation",
+          "simple project-page report-name/back flows use dedicated helpers",
           "preview-only helper hints suppress save/reopen and neutral dateRange",
           "collage metadata compare is not misclassified as record/detail mode",
           "collage metadata compare is helper-assisted by dedicated dropdown extraction",
@@ -556,6 +683,7 @@ const main = (): void => {
           "multi-variant date helper hints are degraded to Codex visible UI",
           "multi-variant date cases expose optional date UI evidence capture",
           "editor-session CSV cases chain date preview evidence into CSV download without save/reopen",
+          "manual hybrid D0 CSV baseline cases chain date preview, save, and report-list download",
           "delete temporary report cases create a pending Tool Bridge helper action",
           "selectAllFields helper hints preserve sourceReports/expected count and avoid synthetic field text",
           "A-06 all-zero field inspection uses a dedicated select-all preview evidence helper",

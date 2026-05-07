@@ -148,6 +148,28 @@ const isCreateProjectFlow = (currentCase: CaseManifestCase | null, helperHints: 
     /新增專案|create\s+project/i.test(text);
 };
 
+const isCreateProjectOnlyFlow = (currentCase: CaseManifestCase | null, helperHints: HelperHints | null): boolean => {
+  if (!isCreateProjectFlow(currentCase, helperHints)) return false;
+  const params = paramsObject(helperHints);
+  if (booleanishParam(params, ["createNewProject", "createProjectThenReport"])) return false;
+  const operationTemplate = helperHints?.operationTemplate ?? "";
+  if (/collage_build_preview_save_reopen|download_csv_verify|save_load_flow/.test(operationTemplate)) return false;
+  const text = detectCaseFeatures(currentCase, helperHints).text;
+  return !/新增報表|報表設定|欄位|時間區間|preview|預覽|執行|儲存報表|儲存|下載|CSV|reopen|重開|返回/.test(text);
+};
+
+const isOpenReportFromProjectListFlow = (currentCase: CaseManifestCase | null, helperHints: HelperHints | null): boolean => {
+  const params = paramsObject(helperHints);
+  const text = `${detectCaseFeatures(currentCase, helperHints).text}\n${stringParam(params, ["action", "verifyOnly"]) ?? ""}`;
+  return /報表名稱.{0,20}(?:進入|編輯|reopen)|點.*報表名稱|click\s+report\s+name|enter\s+editor/i.test(text);
+};
+
+const isBackToProjectListFlow = (currentCase: CaseManifestCase | null, helperHints: HelperHints | null): boolean => {
+  const params = paramsObject(helperHints);
+  const text = `${detectCaseFeatures(currentCase, helperHints).text}\n${stringParam(params, ["action", "verifyOnly"]) ?? ""}`;
+  return /返回按鈕|點.*返回|click\s+back|return\s+to\s+project/i.test(text);
+};
+
 const needsCollageNavigationPrelude = (currentCase: CaseManifestCase | null, helperHints: HelperHints | null): boolean => {
   const features = detectCaseFeatures(currentCase, helperHints);
   if (features.mode !== "collage" || features.hasFilter || features.hasGroup) return false;
@@ -196,7 +218,8 @@ export const evaluateCapabilityGate = (
   const navigationPreludeAllowed = needsCollageNavigationPrelude(currentCase, helperHints);
   const datePreviewEvidenceAllowed = mode === "collage" && !hasFilter && !hasGroup && canRunDatePreviewEvidenceHelper(params);
   const formulaHelperAllowed = mode === "collage" && !hasFilter && !hasGroup && hasFormulaParams(params);
-  const createProjectAllowed = mode === "collage" && !hasFilter && !hasGroup && isCreateProjectFlow(currentCase, helperHints);
+  const createProjectAllowed = mode === "collage" && !hasFilter && !hasGroup && isCreateProjectOnlyFlow(currentCase, helperHints);
+  const simpleProjectFlowAllowed = mode === "collage" && !hasFilter && !hasGroup && (isOpenReportFromProjectListFlow(currentCase, helperHints) || isBackToProjectListFlow(currentCase, helperHints));
 
   if (mode === "record") unsupportedFeatures.push("record_mode_helper_not_supported");
   if (mode === "metric") unsupportedFeatures.push("metric_mode_helper_not_supported");
@@ -207,6 +230,12 @@ export const evaluateCapabilityGate = (
     supportedHelperTemplates.push(
       "collage.openProject",
       "collage.createProject"
+    );
+  } else if (simpleProjectFlowAllowed) {
+    supportedHelperTemplates.push(
+      "collage.openProject",
+      "collage.openReportFromProjectList",
+      ...(isBackToProjectListFlow(currentCase, helperHints) ? ["collage.clickBackToProjectList"] : [])
     );
   } else if (formulaHelperAllowed) {
     supportedHelperTemplates.push(
@@ -234,6 +263,7 @@ export const evaluateCapabilityGate = (
   } else if (mode === "collage" && !hasFilter && !hasGroup) {
     supportedHelperTemplates.push(
       "collage.openProject",
+      ...(booleanishParam(params, ["createNewProject", "createProjectThenReport"]) ? ["collage.createProject"] : []),
       "collage.createReport",
       "collage.configureMetric",
       "collage.runPreviewAndCollectEvidence"
@@ -245,11 +275,12 @@ export const evaluateCapabilityGate = (
     if (datePreviewEvidenceAllowed) supportedHelperTemplates.push("collage.runDateVariantsPreviewEvidence");
   }
 
-  if ((manualAiRequested || dateNeedsCodexVisibleUi) && !isDeleteReport && !formulaHelperAllowed && !createProjectAllowed) {
+  if ((manualAiRequested || dateNeedsCodexVisibleUi) && !isDeleteReport && !formulaHelperAllowed && !createProjectAllowed && !simpleProjectFlowAllowed) {
     const degradedAllowed = new Set([
       "collage.openProject",
       "collage.createReport",
       ...(datePreviewEvidenceAllowed ? ["collage.runDateVariantsPreviewEvidence"] : []),
+      ...(!noSave && /儲存/.test(text) && datePreviewEvidenceAllowed ? ["collage.saveReport"] : []),
       ...(!noDownload && /下載|CSV/i.test(text) && datePreviewEvidenceAllowed ? ["collage.downloadCsvAndComparePreview"] : [])
     ]);
     const filtered = supportedHelperTemplates.filter((template) => degradedAllowed.has(template));
@@ -261,7 +292,7 @@ export const evaluateCapabilityGate = (
   let helperPreRunAllowed = false;
   let blockingReason: string | null = null;
 
-  if (formulaHelperAllowed || createProjectAllowed) {
+  if (formulaHelperAllowed || createProjectAllowed || simpleProjectFlowAllowed) {
     supportStatus = "supported";
     executionMode = "helper_assisted";
     helperPreRunAllowed = true;

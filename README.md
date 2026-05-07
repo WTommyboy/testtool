@@ -24,7 +24,7 @@ Production endpoints:
 Current semantic versions:
 
 - App/API: `1.1.5`
-- Mac Agent: `0.2.23`
+- Mac Agent: `0.2.24`
 
 Active branches:
 
@@ -64,10 +64,11 @@ The current line is the Mac Agent MVP. It supports:
 - Multi-variant preset date cases and static date regression cases can use `collage.runDateVariantsPreviewEvidence`, which sets each date through visible UI and captures per-variant date UI, request body, chart/table, and screenshot evidence; Codex still judges PASS/FAIL/BLOCKED.
 - Static editor-session CSV cases can chain `collage.runDateVariantsPreviewEvidence` directly into `collage.downloadCsvAndComparePreview`, keeping the flow inside the same report editor session without save/reopen/report-list navigation.
 - Dynamic custom date and half-dynamic date cases can use structured `dateMode=relative|hybrid` with `collage.runDateVariantsPreviewEvidence`, which fills the visible dynamic/static date controls and captures UI/network/chart/table evidence.
-- Formula/calculated-field cases can use `collage.configureCalculatedMetricAndPreview`, which adds base fields, opens the formula modal, fills `#calculatedFieldNameInput` and `#formulaInput` through stable modal selectors, submits `saveFormula()`, sets date/display, and captures preview evidence without judging PASS/FAIL.
+- Formula/calculated-field cases can use `collage.configureCalculatedMetricAndPreview`, which adds base fields, opens the formula modal, fills `#calculatedFieldNameInput`, and handles readonly `#formulaInput` by clicking modal field tokens plus keypad/operator buttons before submitting `saveFormula()`; it then sets date/display and captures preview evidence without judging PASS/FAIL.
 - Formula/calculated-field testcase packages should use modal-aware helper hints with explicit `baseFields`, `calculatedFieldName`, `formula`, formula modal UI labels, date/display, and `formula.uiState` / request / chart evidence; testcase prose should not rely on a single generic "新增運算欄位" sentence.
 - Helper-hints parser accepts the formula helper template and normalizes evidence strings such as `formula.uiState: ...` to canonical evidence tokens for package compatibility; authoring should still prefer pure tokens in `requiredEvidence`.
-- Create-project cases can use `collage.createProject` after Tool Bridge approval; the helper selects project mode = `拼貼`, fills a current-case test project name, blocks on `請選擇模式` alerts, and verifies the project appears in the sidebar.
+- Create-project cases can use `collage.createProject` after Tool Bridge approval; the helper selects project mode = `拼貼`, fills a current-case test project name in the modal-scoped input, blocks on `請選擇模式` alerts, accepts known success dialogs, and writes `created-project.json` so same-case create-project-then-report flows continue in the new project.
+- Project-page navigation cases can use `collage.openReportFromProjectList` and `collage.clickBackToProjectList` for G-04/G-05-style report-name reopen and return-button smoke checks without falling back to generic `manual_ai` prelude only.
 - Temporary report deletion cases can use `collage.createAndDeleteTemporaryReport`: the helper creates a current-case temp report, requires Tool Bridge approval before delete, accepts only known BI delete confirmation, rejects protected/main report names, and verifies the temp row is gone.
 - Date UI evidence is first-class: `collage.configureMetric` writes `date-ui-evidence.json`, and manual/Codex-visible date cases can use `collage.captureDateUiEvidence` to record the requested UI label plus the visible or baseDate-computed represented date range.
 - Optional support files are indexed with lightweight profiles in `input/supporting-docs-manifest.json` so Codex can inspect CSV headers/row counts or markdown headings before choosing a full file to read.
@@ -240,7 +241,7 @@ Important current decisions:
 - When a helper plan reaches a pending save/overwrite action and Mac Agent auto-approval is enabled, Agent records a Tool Bridge auto-approval from the helper plan, runs the approved helper continuation, and exposes `helper-continuation-summary.json` before Codex writes the case result.
 - Existing-report collage edits reconcile selected fields exactly before save: the Agent reads visible selected-field remove controls, removes extra/duplicated fields through UI clicks, adds missing target fields through the normal picker, and requires exact field evidence instead of mere text containment.
 - Result self-check blocks any `PASS` result that contradicts current-run helper state checks, such as `collage.reopenReport` reporting `dateRange=false`; configureMetric dateRange checks are allowed only when normalized `date-ui-evidence` proves the requested represented range.
-- If a visible row download click produces a CSV/attachment response but no browser `download` event, the Agent may save that UI-triggered response body as CSV evidence and label `downloadedCsv.source`.
+- If a visible row download click produces a CSV/attachment response but no browser `download` event, the Agent may save that UI-triggered response body as CSV evidence and label `downloadedCsv.source`. Report-list CSV helpers now attempt row-nearby download controls even when the first row-state scan does not find a descendant download button, reducing false `csv_button_missing_on_saved_report_row` blockers.
 - Google Sheets is only a manual exploratory fallback, not a formal evidence path.
 - If save/list-row/download preconditions fail before CSV comparison, write `csv_comparison_status="not_reached"` and judge the failed necessary subcondition directly.
 
