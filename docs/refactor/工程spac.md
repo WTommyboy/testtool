@@ -1731,12 +1731,12 @@ launchctl list | rg com.tommy.uat-agent
 curl -s https://testtool-production.up.railway.app/api/agents | jq
 ```
 
-Latest verified production state on 2026-05-08 01:10 Asia/Taipei:
+Latest verified production state on 2026-05-08 22:35 Asia/Taipei:
 
-- Runtime fix commit `49b484a` pushed to `refactor/mac-agent-mvp` and `codex/uat-tool-mvp`; later docs-only closeout commits may appear as the active Railway short SHA without changing the runtime fix.
-- Railway production `/version`: App/API `1.1.8`, branch `codex/uat-tool-mvp`; `/health` healthy. Use `/version` for the active deployment id at rerun time.
-- Local LaunchAgent `com.tommy.uat-agent` restarted to pid `69303`; `/api/agents` shows Tommy Mac Agent `0.2.27`, `doctorOk=true`, status `idle`.
-- Agent `0.2.28` F-flow planner fix is locally verified with real helper/UI smoke for F-03 editor-session CSV and F-05 project-row CSV. Production remains on the latest verified `0.2.27` Agent until deployment and local Agent restart happen.
+- Runtime/helper fix commit `1dcb21d` pushed to `refactor/mac-agent-mvp` and `codex/uat-tool-mvp`.
+- Railway production `/version` was verified on runtime commit `1dcb21d` with App/API `1.1.8`, branch `codex/uat-tool-mvp`, deployment `f8f79a1b-c19b-4309-bdb0-9f7bf1f211de`; `/health` healthy. Later docs-only closeout commits may become the active `/version` short SHA without changing the runtime fix.
+- Local LaunchAgent `com.tommy.uat-agent` restarted to pid `55488`; `/api/agents` shows Tommy Mac Agent `0.2.28`, `doctorOk=true`, status `idle`.
+- Agent `0.2.28` F-flow and OTTEST004_027 blocked-reduction fixes are locally verified with real helper/UI smoke before deployment.
 
 ---
 
