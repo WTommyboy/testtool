@@ -1,5 +1,9 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { parseToolRequests } from "../src/agent-protocol/tool-bridge";
+import { scanToolBridgePolicyViolationsForTest } from "../agent/src/task-runner";
 
 type Fixture = {
   name: string;
@@ -254,6 +258,74 @@ for (const fixture of fixtures) {
       assert.ok(warningCodes.includes(code), `${fixture.name}: missing warning ${code}`);
     }
   }
+}
+
+const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "uat-tool-bridge-policy-"));
+try {
+  const runDir = path.join(tempRoot, "run");
+  const sessionDir = path.join(runDir, "mcp-output", "browser");
+  fs.mkdirSync(path.join(runDir, "input"), { recursive: true });
+  fs.mkdirSync(path.join(runDir, "output"), { recursive: true });
+  fs.mkdirSync(sessionDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(sessionDir, "session.md"),
+    [
+      "# fixture",
+      "browser_handle_dialog accepted native save dialog after Tool Bridge approval",
+      "browser_click button text=儲存"
+    ].join("\n")
+  );
+
+  const missingResponseViolations = scanToolBridgePolicyViolationsForTest(runDir, "已取得授權並處理儲存 dialog。");
+  assert.ok(
+    missingResponseViolations.some((item) => item.code === "CLAIMED_PM_APPROVAL_WITHOUT_TOOL_BRIDGE_RESPONSE"),
+    "policy scan should still block approval claims when no Tool Bridge response evidence exists"
+  );
+  assert.ok(
+    missingResponseViolations.some((item) => item.code === "NATIVE_DIALOG_WITHOUT_TOOL_BRIDGE_RESPONSE"),
+    "policy scan should still block native dialog handling when no Tool Bridge response evidence exists"
+  );
+
+  fs.writeFileSync(path.join(runDir, "output", "tool-responses-auto-helper-plan.json"), "{not-json");
+  const malformedAutoViolations = scanToolBridgePolicyViolationsForTest(runDir, "已取得授權並處理儲存 dialog。");
+  assert.ok(
+    malformedAutoViolations.some((item) => item.code === "NATIVE_DIALOG_WITHOUT_TOOL_BRIDGE_RESPONSE"),
+    "malformed auto-response diagnostics must not satisfy policy evidence"
+  );
+
+  fs.writeFileSync(
+    path.join(runDir, "output", "tool-responses-auto.json"),
+    `${JSON.stringify(
+      {
+        policy: "mac_agent_auto_non_sso_tool_requests_v1",
+        generatedAt: new Date().toISOString(),
+        responses: [
+          {
+            requestId: "OTTEST004-F-04-collage.saveReport",
+            request: {
+              type: "irreversible_operation",
+              request_id: "OTTEST004-F-04-collage.saveReport",
+              case: "OTTEST004-F-04",
+              action: "Authorize helper saveReport for current case only.",
+              reason: "Save report requires known BI native dialog handling."
+            },
+            raw: "[TOOL_REQUEST]...",
+            note: "Auto-approved by Mac Agent policy."
+          }
+        ]
+      },
+      null,
+      2
+    )}\n`
+  );
+  const autoResponseViolations = scanToolBridgePolicyViolationsForTest(runDir, "已取得授權並處理儲存 dialog。");
+  assert.deepEqual(
+    autoResponseViolations,
+    [],
+    "auto-approved Tool Bridge response diagnostics should satisfy task-runner policy scan"
+  );
+} finally {
+  fs.rmSync(tempRoot, { recursive: true, force: true });
 }
 
 console.log(`Tool Bridge parser fixtures passed: ${fixtures.length}/${fixtures.length}`);

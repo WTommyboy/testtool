@@ -2131,8 +2131,22 @@ const findFiles = (dir: string, predicate: (filePath: string) => boolean): strin
 
 const hasToolBridgeResponse = (runDir: string): boolean => {
   const inputDir = path.join(runDir, "input");
-  if (!fs.existsSync(inputDir)) return false;
-  return fs.readdirSync(inputDir).some((name) => /^tool-response-.+\.json$/.test(name));
+  if (fs.existsSync(inputDir) && fs.readdirSync(inputDir).some((name) => /^tool-response-.+\.json$/.test(name))) {
+    return true;
+  }
+
+  const outputDir = path.join(runDir, "output");
+  if (!fs.existsSync(outputDir)) return false;
+  for (const name of fs.readdirSync(outputDir)) {
+    if (!/^tool-responses-auto.*\.json$/.test(name)) continue;
+    try {
+      const parsed = JSON.parse(fs.readFileSync(path.join(outputDir, name), "utf8")) as { responses?: unknown };
+      if (Array.isArray(parsed.responses) && parsed.responses.length > 0) return true;
+    } catch {
+      // Ignore malformed diagnostic files; the policy scanner will still require a real response elsewhere.
+    }
+  }
+  return false;
 };
 
 type ToolBridgePolicyViolation = {
@@ -2194,6 +2208,9 @@ const scanToolBridgePolicyViolations = (runDir: string, assistantText = ""): Too
 
   return violations;
 };
+
+export const hasToolBridgeResponseForTest = hasToolBridgeResponse;
+export const scanToolBridgePolicyViolationsForTest = scanToolBridgePolicyViolations;
 
 const enforceBatchCasePolicy = (
   connection: AgentConnection,

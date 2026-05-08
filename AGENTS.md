@@ -22,6 +22,27 @@ operation, update the matching tracked docs in the same commit:
 If a code change does not require a docs change, say that explicitly in the
 final response and explain why.
 
+## Pre-Commit / Pre-Deploy Verification
+
+Before claiming a `uat-tool` change is ready for commit, push, deployment, or
+Mac Agent restart, follow
+`docs/planning/deployment-verification-policy.md`.
+
+In particular:
+
+- Planner/gate/parser changes require targeted fixtures plus actual package
+  planner smoke.
+- Changes that affect BI UI helper execution, save, download, reopen, row
+  download, Tool Bridge, native dialogs, date setting, formula modals, field
+  selection, or result upload require a matching real helper/UI smoke or an
+  explicitly appropriate lifecycle/replay smoke.
+- Planner smoke and fixture verification are not substitutes for real helper/UI
+  smoke when the changed behavior operates the BI UI.
+- Real helper/UI smoke reports must include concrete run ids or artifact paths.
+- If real smoke is blocked by SSO, Playwright, Agent state, BI UI state,
+  network, or data conditions, report the blocker clearly and do not claim the
+  change is deploy-ready.
+
 ## Session History Hygiene
 
 Do not read raw old session JSONL files unless Tommy explicitly asks. Prefer

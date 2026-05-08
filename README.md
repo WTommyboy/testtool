@@ -24,7 +24,7 @@ Production endpoints:
 Current semantic versions:
 
 - App/API: `1.1.8`
-- Mac Agent: `0.2.27`
+- Mac Agent: `0.2.28`
 
 Active branches:
 
@@ -67,6 +67,8 @@ The current line is the Mac Agent MVP. It supports:
 - Select-all field helpers reconcile selected fields by stable field code and nearby visible label, so code-style buttons such as `MAX_CCU` are not mistaken for missing fields or merged with unrelated labels.
 - Multi-variant preset date cases and static date regression cases can use `collage.runDateVariantsPreviewEvidence`, which sets each date through visible UI and captures per-variant date UI, request body, chart/table, and screenshot evidence; Codex still judges PASS/FAIL/BLOCKED.
 - Static editor-session CSV cases can chain `collage.runDateVariantsPreviewEvidence` directly into `collage.downloadCsvAndComparePreview`, keeping the flow inside the same report editor session without save/reopen/report-list navigation.
+- Same-case project-row CSV cases can create a unique report, collect preview/date evidence, save, and then set `downloadScope=report_list` from structured params such as `downloadEntry=project_page_row_download_button`; F-04/F-05 and F-06/F-07/F-08 D0 baseline flows avoid open-existing-report and editor reopen shortcuts.
+- OTTEST004 F-flow `0.2.28` was verified with real helper/UI smoke before push: F-03 editor-session CSV run `smoke-ottest004-f03-20260508055838` and F-05 project-row CSV run `smoke-ottest004-f05-20260508060019` both produced current-run preview evidence, CSV download evidence, and preview-vs-CSV 31-row matches.
 - Dynamic custom date and half-dynamic date cases can use structured `dateMode=relative|hybrid` with `collage.runDateVariantsPreviewEvidence`, which fills the visible dynamic/static date controls and captures UI/network/chart/table evidence.
 - Formula/calculated-field cases can use `collage.configureCalculatedMetricAndPreview`, which adds base fields, opens the formula modal, fills `#calculatedFieldNameInput`, and handles readonly `#formulaInput` by clicking modal field tokens plus keypad/operator buttons before submitting `saveFormula()`; it then sets date/display and captures preview evidence without judging PASS/FAIL.
 - Formula/calculated-field testcase packages should use modal-aware helper hints with explicit `baseFields`, `calculatedFieldName`, `formula`, formula modal UI labels, date/display, and `formula.uiState` / request / chart evidence; testcase prose should not rely on a single generic "新增運算欄位" sentence.

@@ -732,6 +732,120 @@ const main = (): void => {
       "editor_session",
       "F-03 CSV helper should stay in editor session"
     );
+    assert.ok(!editorSessionCsvPlan.actions.some((item) => item.template === "collage.saveReport"), "F-03 editor-session CSV must not save");
+    assert.ok(!editorSessionCsvPlan.actions.some((item) => item.template === "collage.reopenReport"), "F-03 editor-session CSV must not reopen");
+    assert.ok(!editorSessionCsvPlan.actions.some((item) => item.template === "collage.openExistingReport"), "F-03 editor-session CSV must not open an existing report");
+
+    const rowCsvCase = {
+      ...collageSaveReopenCase,
+      caseNo: "OTTEST004-F-04",
+      caseTitle: "下載 CSV — 專案頁 project-row 下載與 preview 一致(同 case 建立)",
+      cleanupChecklist: "欄位=MAU(帳號);篩選=0組;分組=不影響;時間=2026/03/01~2026/03/31;顯示=每天",
+      stepsSummary: "同 case 新增報表 OTTEST004_F04_<timestamp>，設定欄位與日期，按執行取得 preview，save 後回專案頁 project-row CSV 下載並比對；不走 open existing report，不 reopen editor。"
+    };
+    const rowCsvHints: HelperHints = {
+      ...manualAiDateHints,
+      caseId: "OTTEST004-F-04",
+      automationLevel: "helper",
+      operationTemplate: "download_csv_verify",
+      params: {
+        mode: "拼貼",
+        field: "MAU(帳號)",
+        sourceReport: "每日報表",
+        dateRange: { start: "2026-03-01", end: "2026-03-31" },
+        display: "每天",
+        save: true,
+        saveReportNamePrefix: "OTTEST004_F04_",
+        useTimestamp: true,
+        downloadCsv: true,
+        downloadEntry: "project_page_row_download_button",
+        doNotUseEditorGlobalDownload: true,
+        skipReopen: true
+      }
+    };
+    const rowCsvPlan = buildHelperExecutionPlan({ runDir, currentCase: rowCsvCase, helperHints: rowCsvHints });
+    assert.deepEqual(
+      rowCsvPlan.actions.map((item) => item.template),
+      ["collage.openProject", "collage.createReport", "collage.runDateVariantsPreviewEvidence", "collage.saveReport", "collage.downloadCsvAndComparePreview"],
+      "F-04 same-case project-row CSV should create, preview, save, then row-download without open-existing/reopen"
+    );
+    assert.equal(
+      rowCsvPlan.actions.find((item) => item.template === "collage.downloadCsvAndComparePreview")?.params.downloadScope,
+      "report_list",
+      "F-04 CSV helper should target the saved report row"
+    );
+    assert.equal(
+      rowCsvPlan.actions.find((item) => item.template === "collage.saveReport")?.params.reportNamePattern,
+      "OTTEST004_F04_<timestamp>",
+      "F-04 saveReportNamePrefix should become the saved row reportNamePattern"
+    );
+    assert.ok(!rowCsvPlan.actions.some((item) => item.template === "collage.openExistingReport"), "F-04 must not open an existing report");
+    assert.ok(!rowCsvPlan.actions.some((item) => item.template === "collage.reopenReport"), "F-04 must not reopen the editor");
+
+    const rowCsvF05Plan = buildHelperExecutionPlan({
+      runDir,
+      currentCase: {
+        ...rowCsvCase,
+        caseNo: "OTTEST004-F-05",
+        caseTitle: "下載 CSV — project-row 下載可讀且 row count 與 preview 一致",
+        stepsSummary: "同 case 建立新報表 OTTEST004_F05_<timestamp> → preview → 儲存 → 專案頁報表 row 下載 CSV；不是點報表名稱進入既有報表，也不 reopen editor。"
+      },
+      helperHints: {
+        ...rowCsvHints,
+        caseId: "OTTEST004-F-05",
+        params: {
+          ...(rowCsvHints.params as Record<string, unknown>),
+          saveReportNamePrefix: "OTTEST004_F05_",
+          reportNamePattern: "OTTEST004_F05_<timestamp>"
+        }
+      }
+    });
+    assert.deepEqual(
+      rowCsvF05Plan.actions.map((item) => item.template),
+      ["collage.openProject", "collage.createReport", "collage.runDateVariantsPreviewEvidence", "collage.saveReport", "collage.downloadCsvAndComparePreview"],
+      "F-05 same-case project-row CSV should not be misrouted to open existing report"
+    );
+    assert.equal(rowCsvF05Plan.actions.find((item) => item.template === "collage.downloadCsvAndComparePreview")?.params.downloadScope, "report_list");
+    assert.ok(!rowCsvF05Plan.actions.some((item) => item.template === "collage.openExistingReport"), "F-05 must not open an existing report");
+    assert.ok(!rowCsvF05Plan.actions.some((item) => item.template === "collage.reopenReport"), "F-05 must not reopen the editor");
+
+    const staticD0CsvCase = {
+      ...collageSaveReopenCase,
+      caseNo: "OTTEST004-F-06",
+      caseTitle: "隔日下載 — 全靜態 D0 baseline(project-row CSV,D+1 另輪)",
+      cleanupChecklist: "欄位=新增帳號數;篩選=0組;分組=不影響;時間=2026/03/01~2026/03/31;顯示=每天",
+      stepsSummary: "D0 baseline: create unique report OTTEST004_F06_<timestamp>，設定全靜態日期，preview，save，回 project-row CSV 下載 baseline；D+1 comparison deferred。"
+    };
+    const staticD0CsvHints: HelperHints = {
+      ...manualAiDateHints,
+      caseId: "OTTEST004-F-06",
+      automationLevel: "manual_ai",
+      operationTemplate: "manual_ai",
+      params: {
+        mode: "拼貼",
+        field: "新增帳號數",
+        sourceReport: "每日報表",
+        dateMode: "static",
+        start: { type: "static", date: "2026-03-01" },
+        end: { type: "static", date: "2026-03-31" },
+        display: "每天",
+        save: true,
+        saveReportNamePrefix: "OTTEST004_F06_",
+        useTimestamp: true,
+        downloadCsv: true,
+        downloadEntry: "project_page_row_download_button",
+        doNotUseEditorGlobalDownload: true,
+        d1ComparisonDeferred: true
+      }
+    };
+    const staticD0CsvPlan = buildHelperExecutionPlan({ runDir, currentCase: staticD0CsvCase, helperHints: staticD0CsvHints });
+    assert.deepEqual(
+      staticD0CsvPlan.actions.map((item) => item.template),
+      ["collage.openProject", "collage.createReport", "collage.runDateVariantsPreviewEvidence", "collage.saveReport", "collage.downloadCsvAndComparePreview"],
+      "F-06 D0 baseline should create unique report, preview, save, then project-row CSV without D+1 comparison"
+    );
+    assert.equal(staticD0CsvPlan.actions.find((item) => item.template === "collage.downloadCsvAndComparePreview")?.params.downloadScope, "report_list");
+    assert.equal(staticD0CsvPlan.actions.find((item) => item.template === "collage.saveReport")?.params.reportNamePattern, "OTTEST004_F06_<timestamp>");
 
     const hybridD0CsvCase = {
       ...collageSaveReopenCase,
@@ -769,6 +883,44 @@ const main = (): void => {
       "report_list",
       "F-07 row download should target report-list scope after save"
     );
+
+    const relativeD0CsvCase = {
+      ...collageSaveReopenCase,
+      caseNo: "OTTEST004-F-08",
+      caseTitle: "隔日下載 — 全動態 D0 baseline(project-row CSV,D+1 另輪)",
+      cleanupChecklist: "欄位=新增帳號數;篩選=0組;分組=不影響;時間=30 天前 ~ 1 天前;顯示=每天",
+      stepsSummary: "D0 baseline: create unique report OTTEST004_F08_<timestamp>，設定全動態 30 天前 ~ 1 天前，preview，save，回 project-row CSV 下載 baseline；D+1 comparison deferred。"
+    };
+    const relativeD0CsvHints: HelperHints = {
+      ...manualAiDateHints,
+      caseId: "OTTEST004-F-08",
+      automationLevel: "manual_ai",
+      operationTemplate: "manual_ai",
+      params: {
+        mode: "拼貼",
+        field: "新增帳號數",
+        sourceReport: "每日報表",
+        dateMode: "relative",
+        startOffsetDays: -30,
+        endOffsetDays: -1,
+        display: "每天",
+        save: true,
+        saveReportNamePrefix: "OTTEST004_F08_",
+        useTimestamp: true,
+        downloadCsv: true,
+        downloadEntry: "project_page_row_download_button",
+        doNotUseEditorGlobalDownload: true,
+        d1ComparisonDeferred: true
+      }
+    };
+    const relativeD0CsvPlan = buildHelperExecutionPlan({ runDir, currentCase: relativeD0CsvCase, helperHints: relativeD0CsvHints });
+    assert.deepEqual(
+      relativeD0CsvPlan.actions.map((item) => item.template),
+      ["collage.openProject", "collage.createReport", "collage.runDateVariantsPreviewEvidence", "collage.saveReport", "collage.downloadCsvAndComparePreview"],
+      "F-08 D0 baseline should create unique report, preview, save, then project-row CSV without D+1 comparison"
+    );
+    assert.equal(relativeD0CsvPlan.actions.find((item) => item.template === "collage.downloadCsvAndComparePreview")?.params.downloadScope, "report_list");
+    assert.equal(relativeD0CsvPlan.actions.find((item) => item.template === "collage.saveReport")?.params.reportNamePattern, "OTTEST004_F08_<timestamp>");
 
     const deleteReportCase = {
       ...collageSaveReopenCase,
@@ -957,7 +1109,10 @@ const main = (): void => {
           "B-10 staged 90/91 boundary uses date-variants preview evidence with structured stages",
           "B-11 static plus preset object variants are preserved for date helper execution",
           "editor-session CSV cases chain date preview evidence into CSV download without save/reopen",
+          "same-case project-row CSV cases create, preview, save, and row-download without open-existing/reopen",
+          "static D0 CSV baseline cases create unique reports and defer D+1 comparison",
           "manual hybrid D0 CSV baseline cases chain date preview, save, and report-list download",
+          "relative D0 CSV baseline cases create unique reports and defer D+1 comparison",
           "delete temporary report cases create a pending Tool Bridge helper action",
           "selectAllFields helper hints preserve sourceReports/expected count and avoid synthetic field text",
           "actual D-02 expectedSources/expectedTotalFieldCount infer select-all 4-source/72-field helper params",

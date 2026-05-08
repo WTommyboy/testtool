@@ -131,13 +131,55 @@ const helperRequestsDownload = (params: Record<string, unknown>): boolean =>
 const helperExplicitlyDisablesDownload = (params: Record<string, unknown>): boolean =>
   booleanishParam(params, ["skipDownload", "doNotDownload", "noDownload", "doNotDownloadCsv", "skipCsv", "noCsv"]);
 
-const textExplicitlyDisablesDownload = (text: string): boolean =>
-  /本題不測項目[^\n]*(?:CSV|下載)|(?:不測|不做|不驗).{0,12}(?:CSV|下載)|(?:CSV|下載).{0,8}[\(（]屬/i.test(text);
+const textExplicitlyRequiresDownload = (text: string): boolean =>
+  /(?:下載報表|下載按鈕|下載入口|下載成功|下載\s*CSV|CSV\s*下載|CSV\s*落盤|browser\s+download|download\s+event|downloaded\s+CSV|downloaded_csv|downloadedCsv|csv\.rows)/i.test(text);
+
+const textOnlyExcludesOtherDownloadScope = (text: string): boolean =>
+  /(?:不是|非|不從|不走|不點|不觸發|本題不測項目).{0,28}(?:專案頁|清單|列表|row|editor|global).{0,28}(?:下載|download)|(?:專案頁|清單|列表|row|editor|global).{0,28}(?:下載|download).{0,16}(?:屬|不是|非|不測)/i.test(text);
+
+const textExplicitlyDisablesDownload = (text: string): boolean => {
+  const disablesDownload =
+    /(?:本題不(?:下載|匯出)|不(?:需|用|要|應)?(?:下載|匯出)\s*(?:CSV|報表)?|禁止.{0,12}(?:下載|匯出)|skip\s*(?:download|csv)|doNotDownload|noDownload)/i.test(text) ||
+    /(?:不測|不做|不驗).{0,12}(?:CSV|下載|download)/i.test(text);
+  if (!disablesDownload) return false;
+  return !(textExplicitlyRequiresDownload(text) && textOnlyExcludesOtherDownloadScope(text));
+};
 
 const helperRequestsNoDownload = (params: Record<string, unknown>): boolean =>
   helperRequestsDownload(params)
     ? false
     : helperRequestsPreviewOnly(params) || helperExplicitlyDisablesDownload(params);
+
+const textExplicitlyDisablesSave = (text: string): boolean =>
+  /(?:本題禁止|禁止|絕不|不要|不用|不需|不應|不點|不離開.*不點).{0,16}(?:save|儲存)|(?:不|勿)\s*(?:save|儲存)|不儲存/i.test(text);
+
+const textExplicitlyDisablesReopen = (text: string): boolean =>
+  /(?:本題禁止|禁止|絕不|不要|不用|不需|不應|不點).{0,20}(?:reopen|重開|報表名稱)|(?:不|勿)\s*(?:reopen|重開)|不點報表名稱|不進入\s*editor\s*reopen/i.test(text);
+
+const textRequestsEditorSessionDownload = (text: string): boolean =>
+  /同\s*(?:一個\s*)?editor\s*session|editor[-_ ]session|不離開\s*editor|直接點\s*editor\s*內.{0,16}(?:下載|download)|editor\s*內的?「?下載報表/i.test(text);
+
+const textRequestsReportListDownload = (text: string): boolean =>
+  /(?:專案頁|清單|列表|該報表\s*row|報表\s*row|row|報表列|project[-_ ]row).{0,32}(?:下載|download|CSV)|(?:下載|download|CSV).{0,32}(?:專案頁|清單|列表|該報表\s*row|報表\s*row|row|報表列|project[-_ ]row)|project_page_row_download_button/i.test(text);
+
+const textRequestsSameCaseSaveAndRowDownload = (text: string): boolean =>
+  /同\s*case|同一\s*case/.test(text) && /(?:建立|新增報表).{0,60}(?:儲存|save)|(?:儲存|save).{0,60}(?:專案頁|清單|row|下載)/i.test(text) && textRequestsReportListDownload(text);
+
+const textRequestsSave = (text: string, params: Record<string, unknown>): boolean =>
+  booleanishParam(params, ["save", "saveReport", "doSave"]) || /(?:儲存|保存|save)/i.test(text);
+
+const paramsRequestEditorSessionDownload = (params: Record<string, unknown>): boolean => {
+  const entry = stringParam(params, ["downloadEntry", "downloadTarget", "downloadSource", "csvEntry"]) ?? "";
+  return booleanishParam(params, ["downloadFromEditor", "downloadFromEditorSession", "editorSessionDownload"]) ||
+    /editor[-_ ]session|editor[-_ ]global|global[-_ ]download/i.test(entry);
+};
+
+const paramsRequestReportListDownload = (params: Record<string, unknown>): boolean => {
+  const entry = stringParam(params, ["downloadEntry", "downloadTarget", "downloadSource", "csvEntry"]) ?? "";
+  return booleanishParam(params, ["downloadFromProjectRow", "downloadFromReportRow", "projectRowDownload", "reportListDownload"]) ||
+    booleanishParam(params, ["doNotUseEditorGlobalDownload"]) ||
+    /project[_-]?page[_-]?row|project[-_ ]row|report[_-]?row|row[_-]?download|report[_-]?list|project[_-]?list/i.test(entry);
+};
 
 const helperHintsRequestManualAi = (helperHints: HelperHints | null): boolean =>
   helperHints?.automationLevel === "manual_ai" || helperHints?.operationTemplate === "manual_ai";
@@ -196,7 +238,7 @@ const dateRequiresCodexVisibleUi = (currentCase: CaseManifestCase | null, helper
   ]
     .filter(Boolean)
     .join("\n");
-  return /半動態|自訂動態|動態區間|天前|天後|快捷起點|快捷訖點|快捷終點|跨\s*9[01]\s*天|90\s*天|91\s*天|連續切換|不同區間/.test(dateText);
+  return /全動態|半動態|自訂動態|動態區間|天前|天後|快捷起點|快捷訖點|快捷終點|跨\s*9[01]\s*天|90\s*天|91\s*天|連續切換|不同區間/.test(dateText);
 };
 
 const cleanReportNamePattern = (value: string | null): string | null => {
@@ -298,7 +340,7 @@ const inferReportNamePattern = (text: string, params: Record<string, unknown>): 
   cleanReportNamePattern(
     stringParam(params, ["reportName", "reportNamePattern"]) ??
       reportNamePatternFromPrefixParam(params, ["saveReportNamePrefix", "reportNamePrefix"]) ??
-      firstMatch(text, [/報表名[：:]\s*([^\n]+)/, /報表名稱[：:]\s*([^\n]+)/, /(OTTEST\d+_[A-Z]\d{2}_[A-Za-z0-9_-]+(?:_<timestamp>)?)/i, /(TOOL_[A-Z]\d{2}_<timestamp>)/i, /(TOOL_[A-Z]\d{2}_[A-Za-z0-9_-]+)/i])
+      firstMatch(text, [/報表名[：:]\s*([^\n]+)/, /報表名稱[：:]\s*([^\n]+)/, /(OTTEST\d+_[A-Z]\d{2}_<timestamp>)/i, /(OTTEST\d+_[A-Z]\d{2}_[A-Za-z0-9_-]+(?:_<timestamp>)?)/i, /(TOOL_[A-Z]\d{2}_<timestamp>)/i, /(TOOL_[A-Z]\d{2}_[A-Za-z0-9_-]+)/i])
   );
 
 const reportNamePatternFromPrefixParam = (params: Record<string, unknown>, keys: string[]): string | null => {
@@ -310,9 +352,19 @@ const reportNamePatternFromPrefixParam = (params: Record<string, unknown>, keys:
 const inferExistingReportNamePattern = (text: string, params: Record<string, unknown>, fallbackReportNamePattern: string | null): string | null =>
   cleanReportNamePattern(
     stringParam(params, ["existingReportName", "existingReportNamePattern", "savedReportName"]) ??
-      firstMatch(text, [/(OTTEST\d+_[A-Z]\d{2}_[A-Za-z0-9_-]+(?:_<timestamp>)?)/i, /(TOOL_A01_<timestamp>)/i, /(TOOL_A01_[A-Za-z0-9_-]+)/i, /(TOOL_[A-Z]\d{2}_<timestamp>)/i]) ??
+      firstMatch(text, [/(OTTEST\d+_[A-Z]\d{2}_<timestamp>)/i, /(OTTEST\d+_[A-Z]\d{2}_[A-Za-z0-9_-]+(?:_<timestamp>)?)/i, /(TOOL_A01_<timestamp>)/i, /(TOOL_A01_[A-Za-z0-9_-]+)/i, /(TOOL_[A-Z]\d{2}_<timestamp>)/i]) ??
       fallbackReportNamePattern
   );
+
+const cleanDateRangeText = (value: string | null): string | null => {
+  const trimmed = nonNeutral(value);
+  if (!trimmed) return null;
+  const cleaned = trimmed
+    .replace(/^[\s　]*(?:全動態|全靜態|全静態|半動態|半动态|自訂動態|自订动态)[\s　]*/i, "")
+    .replace(/[\s　]*[\(（](?:全動態|全靜態|全静態|半動態|半动态|自訂動態|自订动态|動態|动态|靜態|静态|快捷|快捷起點|快捷訖點|快捷終點)[\)）][\s　]*/gi, "")
+    .trim();
+  return nonNeutral(cleaned);
+};
 
 const inferCollageParams = (currentCase: CaseManifestCase | null, helperHints: HelperHints | null): Record<string, unknown> => {
   const text = textBlob(currentCase);
@@ -346,15 +398,17 @@ const inferCollageParams = (currentCase: CaseManifestCase | null, helperHints: H
     );
   const existingReportNamePattern = inferExistingReportNamePattern(text, params, reportNamePattern);
   const dateRangeText =
-    nonNeutral(stringParam(params, ["dateRange", "timeRange"])) ??
-    nonNeutral(dateObjectParam(params.dateRange)) ??
-    nonNeutral(structuredStaticDateRangeParam(params)) ??
-    (dateVariantLabels.length === 1 ? nonNeutral(dateVariantLabels[0]) : null) ??
-    nonNeutral(cleanup["時間"]) ??
+    cleanDateRangeText(stringParam(params, ["dateRange", "timeRange"])) ??
+    cleanDateRangeText(dateObjectParam(params.dateRange)) ??
+    cleanDateRangeText(structuredStaticDateRangeParam(params)) ??
+    (dateVariantLabels.length === 1 ? cleanDateRangeText(dateVariantLabels[0]) : null) ??
+    cleanDateRangeText(cleanup["時間"]) ??
     firstMatch(text, [/(\d{4}\/\d{2}\/\d{2}\s*[~～-]\s*\d{4}\/\d{2}\/\d{2})/]);
   const explicitSourceReportsParam = stringArrayParam(params, "sourceReports");
   const sourceReportsParam = explicitSourceReportsParam.length > 0 ? explicitSourceReportsParam : expectedSourcesParam;
   const explicitSource = stringParam(params, ["source", "sourceReport"]);
+  const paramReportListDownload = paramsRequestReportListDownload(params);
+  const paramEditorSessionDownload = paramsRequestEditorSessionDownload(params);
   const inferredSource = selectAllFields && sourceReportsParam.length > 0
     ? null
     : firstMatch(text, [/來源報表[=：: ]*「?([^」\n,， ]+)/]);
@@ -378,9 +432,17 @@ const inferCollageParams = (currentCase: CaseManifestCase | null, helperHints: H
     compareFields: rawArrayParam(params, "compareFields") ?? ["欄位名稱", "資料類型"],
     comparisonScope: stringParam(params, ["comparisonScope"]) ?? null,
     downloadScope: stringParam(params, ["downloadScope"]) ??
-      (helperRequestsDownload(params) && helperRequestsNoSave(params)
+      (paramReportListDownload && !paramEditorSessionDownload
+        ? "report_list"
+        : paramEditorSessionDownload
         ? "editor_session"
-        : /同\s*editor|editor\s*session|設定頁|絕不\s*(?:save|儲存|reopen|重開|回專案頁)|不\s*(?:save|儲存|reopen|重開)/i.test(text)
+        : textRequestsReportListDownload(text) && !textRequestsEditorSessionDownload(text)
+        ? "report_list"
+        : textRequestsEditorSessionDownload(text)
+        ? "editor_session"
+        : helperRequestsDownload(params) && helperRequestsNoSave(params)
+        ? "editor_session"
+        : /同\s*editor|editor\s*session|絕不\s*(?:save|儲存|reopen|重開|回專案頁)|不\s*(?:save|儲存|reopen|重開)/i.test(text)
         ? "editor_session"
         : /清單|列表|專案頁|報表列|report list/i.test(text)
           ? "report_list"
@@ -402,8 +464,8 @@ const inferCollageParams = (currentCase: CaseManifestCase | null, helperHints: H
     dateVariants: rawDateVariants ?? dateVariantLabels,
     dateRange: dateRangeText,
     display: nonNeutral(stringParam(params, ["display", "displayMode"])) ?? nonNeutral(cleanup["顯示"]) ?? null,
-    skipSave: helperRequestsNoSave(params),
-    skipReopen: helperRequestsNoReopen(params) || helperRequestsSaveOnly(params),
+    skipSave: helperRequestsNoSave(params) || textExplicitlyDisablesSave(text),
+    skipReopen: helperRequestsNoReopen(params) || helperRequestsSaveOnly(params) || textExplicitlyDisablesReopen(text),
     skipDownload: helperRequestsNoDownload(params) || helperRequestsSaveOnly(params) || textExplicitlyDisablesDownload(text),
     cleanupChecklist: currentCase?.cleanupChecklist ?? null,
     cleanupTargets: cleanup,
@@ -428,6 +490,7 @@ const canRunDatePreviewEvidenceHelper = (params: Record<string, unknown>, curren
     return true;
   }
   if (dateMode === "static" && dateRange) return true;
+  if (/^(?:昨日|今日|上週|本週|上月|本月|過去\s*\d+\s*天|最近\s*\d+\s*天)$/.test(dateRange)) return true;
   if ((dateRange.match(/\d{4}[/-]\d{1,2}[/-]\d{1,2}/g) ?? []).length >= 2) return true;
   if (dateObjectParam(params.dateRange)) return true;
   if (structuredStaticDateRangeParam(params)) return true;
@@ -475,6 +538,8 @@ const isOpenReportFromProjectListFlow = (currentCase: CaseManifestCase | null, h
   const text = `${textBlob(currentCase)}\n${stringParam(params, ["action", "verifyOnly"]) ?? ""}`;
   if (helperRequestsSaveOnly(params)) return false;
   if (isSameCaseSaveLoadFlow(currentCase, helperHints)) return false;
+  if (textRequestsSameCaseSaveAndRowDownload(text)) return false;
+  if (textExplicitlyDisablesReopen(text) && textRequestsReportListDownload(text)) return false;
   return /報表名稱.{0,24}(?:進入|編輯|reopen|重開|載入|設定頁|editor)|點(?:擊)?.{0,16}報表名稱.{0,24}(?:進入|編輯|reopen|重開|載入|設定頁|editor)|click\s+report\s+name(?:.{0,24}(?:open|enter|edit|editor|reopen))?|enter\s+editor/i.test(text);
 };
 
@@ -627,7 +692,16 @@ const buildActions = (currentCase: CaseManifestCase | null, helperHints: HelperH
       })
     ];
   }
-  const helperMustLeaveCoreToCodex = helperHintsRequestManualAi(helperHints) || dateRequiresCodexVisibleUi(currentCase, helperHints);
+  const datePreviewTemplateRequested = operationTemplate === "collage_date_variants_preview";
+  const datePreviewCsvFlowRequested =
+    /下載|CSV/i.test(text) &&
+    canRunDatePreviewEvidenceHelper(params, currentCase) &&
+    (paramsRequestEditorSessionDownload(params) || paramsRequestReportListDownload(params) || textRequestsEditorSessionDownload(text) || textRequestsReportListDownload(text) || datePreviewTemplateRequested);
+  const helperMustLeaveCoreToCodex =
+    helperHintsRequestManualAi(helperHints) ||
+    datePreviewTemplateRequested ||
+    datePreviewCsvFlowRequested ||
+    dateRequiresCodexVisibleUi(currentCase, helperHints);
   if (helperMustLeaveCoreToCodex) {
     if (!needsCollageNavigationPrelude(currentCase, helperHints)) return [];
     const editorPreludeNeeded = needsReportEditorPrelude(currentCase);
@@ -659,8 +733,9 @@ const buildActions = (currentCase: CaseManifestCase | null, helperHints: HelperH
       );
     }
     const manualDateSave =
-      /儲存/.test(text) &&
+      textRequestsSave(text, { ...params, ...helperParams }) &&
       !helperRequestsNoSave({ ...params, ...helperParams }) &&
+      !textExplicitlyDisablesSave(text) &&
       editorPreludeNeeded &&
       canRunDatePreviewEvidenceHelper(params, currentCase);
     if (manualDateSave) {
@@ -804,7 +879,7 @@ const buildActions = (currentCase: CaseManifestCase | null, helperHints: HelperH
       })
     );
 
-    if (!noSave && /儲存|覆寫/.test(text)) {
+    if (!noSave && (textRequestsSave(text, { ...params, ...helperParams }) || /覆寫/.test(text))) {
       actions.push(
         action(`H${actions.length + 1}`, "collage.saveReport", modifiesExistingReport ? "覆寫既有報表" : "儲存本輪臨時報表", params, {
           requiresToolBridge: true,
