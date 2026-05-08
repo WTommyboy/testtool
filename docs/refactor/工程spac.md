@@ -1912,7 +1912,27 @@ codex/uat-tool-mvp
 
 ---
 
-## 17. Recommended Next Engineering Tasks
+## 17. OTTEST004_027 Blocked-Reduction Helper Follow-Up
+
+### 17.1 Runtime Changes
+
+- `collage.runDateVariantsPreviewEvidence` field reconciliation now uses strict metric identity matching. A selected field matches a requested field only by exact code, exact label, or an explicit alias set. This prevents cumulative fields such as `累計bf!創帳數` from satisfying delta fields such as `bf!創帳數`.
+- Field picker clicks prefer exact DOM picker targets with known BI field codes (`CUMULATIVE_NEW_ACCOUNTS_BEANFUN`, `NEW_ACCOUNTS_BEANFUN`, `TOTAL_REVENUE`) before falling back to text search.
+- `collage.openProject` records project-selection attempts, retries click/poll, and reloads once before returning; it no longer treats `+ 新增報表` alone as sufficient when an explicit or created project must be selected.
+- `collage.createProject` verifies the modal input value, retries click/select/type when `.fill()` is truncated or ignored, caps generated project names to the BI modal's 20-character limit, and only returns `ok` when the project is visible and its report list is ready.
+- `collage.clickBackToProjectList` now waits for URL/body/report-list readiness after clicking back. If `locator("body").innerText()` times out while the page is otherwise readable, it uses read-only DOM evaluate as fallback evidence and records the readiness attempts.
+- Manual date save/load planning now separates operational text from stale expected-result prose, so F-02-style same-case save/reopen keeps `reopenReport`, while F-06/F-07/F-08 D0 report-list CSV flows do not inherit reopen from unrelated text.
+- Markdown report rendering displays PM-prefilled terminal skips through `classifiedCaseStatus`, so source rows marked for this round not to execute show consistently as `PM_SKIPPED` instead of raw `BLOCKED`.
+
+### 17.2 Real Helper/UI Smoke
+
+- H-03 field reconcile: run `smoke-ottest004-h03-field-reconcile-20260508220946`, artifact root `/Users/tommy/.uat-agent/runs/smoke-ottest004-h03-field-reconcile-20260508220946/output/helper-artifacts/OTTEST004-H-03`; actions `openProject/createReport/runDateVariantsPreviewEvidence` were `ok`, request body included both `CUMULATIVE_NEW_ACCOUNTS_BEANFUN` and `NEW_ACCOUNTS_BEANFUN`.
+- A-01 inferred project open: run `smoke-ottest004-a01-openproject-20260508221252`; `openProject` started from the select-project prompt, inferred `拼貼test_001`, and reached the report list.
+- F-02 save/reopen: run `smoke-ottest004-f02-save-reopen-20260508221122`; actions through `saveReport` and `reopenReport` were `ok`, saved report `SMOKE_F02_REOPEN_202605081411`, and reopen evidence was produced. The reopened BI editor still displayed `過去7天` instead of the saved static range, so formal case judgment should use this as product behavior evidence rather than helper-blocked evidence.
+- G-05 back button: failed once with body `innerText()` timeout, then passed after read-only DOM fallback in run `smoke-ottest004-g05-back-rerun2-20260508221632`; `returnedToProjectList=true`, `reportListSignals=true`, and URL was no longer editor.
+- G-01 create project: run `smoke-ottest004-g01-createproject-rerun3-20260508222359`; Tool Bridge-approved helper created `OTTEST004_G01_081424`, verified modal input, project visibility, and empty report-list readiness.
+
+## 18. Recommended Next Engineering Tasks
 
 ### P0
 
@@ -1942,7 +1962,7 @@ codex/uat-tool-mvp
 
 ---
 
-## 18. Acceptance Criteria For Current MVP
+## 19. Acceptance Criteria For Current MVP
 
 The current MVP is acceptable if:
 
@@ -1963,7 +1983,7 @@ The current MVP is acceptable if:
 
 ---
 
-## 19. Current Engineering Judgment
+## 20. Current Engineering Judgment
 
 The current system should optimize context loading and UI recipes, not relax correctness rules.
 

@@ -410,6 +410,37 @@ const main = (): void => {
       "OTTEST004_F02_<timestamp>",
       "actual F-02 saveReportNamePrefix should become a timestamped reportNamePattern"
     );
+    const manualDateSaveLoadHints: HelperHints = {
+      ...manualAiDateHints,
+      caseId: "OTTEST004-F-02",
+      automationLevel: "manual_ai",
+      operationTemplate: "manual_ai",
+      params: {
+        mode: "拼貼",
+        field: "新增帳號數",
+        sourceReport: "每日報表",
+        dateMode: "static",
+        start: { type: "static", date: "2026-03-01" },
+        end: { type: "static", date: "2026-03-31" },
+        display: "每天",
+        saveReportNamePrefix: "OTTEST004_F02_",
+        reopenViaClickReportName: true,
+        verifyRestoredFields: ["selectedFields", "dateRange", "display"],
+        expectedRestoredDateRange: "2026-03-01~2026-03-31",
+        scope: "同 case 建立 → 儲存 → 回專案頁 → 點報表名稱 reopen → 驗證設定還原"
+      }
+    };
+    const manualDateSaveLoadGate = evaluateCapabilityGate(actualSaveLoadCase, manualDateSaveLoadHints);
+    assert.ok(
+      manualDateSaveLoadGate.supportedHelperTemplates.includes("collage.reopenReport"),
+      "manual_ai F-02 date-preview save/reopen gate should advertise reopenReport"
+    );
+    const manualDateSaveLoadPlan = buildHelperExecutionPlan({ runDir, currentCase: actualSaveLoadCase, helperHints: manualDateSaveLoadHints });
+    assert.deepEqual(
+      manualDateSaveLoadPlan.actions.map((item) => item.template),
+      ["collage.openProject", "collage.createReport", "collage.runDateVariantsPreviewEvidence", "collage.saveReport", "collage.reopenReport"],
+      "manual_ai F-02 date-preview save/reopen should save, then reopen the current saved report"
+    );
 
     const saveOnlyCase = {
       ...collageSaveReopenCase,

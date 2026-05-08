@@ -1095,12 +1095,43 @@ const normalizeMetricFieldIdentity = (value: string | null | undefined): string 
     .replace(/[_-]/g, "")
     .toUpperCase();
 
+const metricFieldAliasIdentities = (value: string | null | undefined): string[] => {
+  const key = normalizeMetricFieldIdentity(value);
+  const aliases: Record<string, string[]> = {
+    [normalizeMetricFieldIdentity("總營收")]: ["總營收(TWD)", "平台總營收"],
+    [normalizeMetricFieldIdentity("總營收(TWD)")]: ["總營收", "平台總營收"],
+    [normalizeMetricFieldIdentity("平台總營收")]: ["總營收(TWD)", "總營收"],
+    [normalizeMetricFieldIdentity("iOS平台總營收")]: ["iOS總營收"],
+    [normalizeMetricFieldIdentity("iOS總營收")]: ["iOS平台總營收"],
+    [normalizeMetricFieldIdentity("Android平台總營收")]: ["Android總營收"],
+    [normalizeMetricFieldIdentity("Android總營收")]: ["Android平台總營收"],
+    [normalizeMetricFieldIdentity("線下商城平台總營收")]: ["線下商城總營收"],
+    [normalizeMetricFieldIdentity("線下商城總營收")]: ["線下商城平台總營收"],
+    [normalizeMetricFieldIdentity("線下商城Coda總營收")]: ["線下商城CODAPAY總營收"],
+    [normalizeMetricFieldIdentity("線下商城CODAPAY總營收")]: ["線下商城Coda總營收"],
+    [normalizeMetricFieldIdentity("線下商城Coda付費帳號數")]: ["線下商城CODAPAY付費帳號數"],
+    [normalizeMetricFieldIdentity("線下商城CODAPAY付費帳號數")]: ["線下商城Coda付費帳號數"],
+    [normalizeMetricFieldIdentity("線下商城Coda付費次數")]: ["線下商城CODAPAY付費次數"],
+    [normalizeMetricFieldIdentity("線下商城CODAPAY付費次數")]: ["線下商城Coda付費次數"]
+  };
+  return aliases[key]?.map(normalizeMetricFieldIdentity) ?? [];
+};
+
+const metricFieldIdentitySet = (value: string | null | undefined): Set<string> => {
+  const base = normalizeMetricFieldIdentity(value);
+  return new Set([base, ...metricFieldAliasIdentities(value)].filter(Boolean));
+};
+
 const knownMetricFieldCode = (field: string): string | null => {
   const key = normalizeMetricFieldIdentity(field);
   const known: Record<string, string> = {
     [normalizeMetricFieldIdentity("新增帳號數")]: "NEW_ACCOUNTS",
     [normalizeMetricFieldIdentity("MAU(帳號)")]: "MAU",
-    [normalizeMetricFieldIdentity("總營收(TWD)")]: "TOTAL_REVENUE"
+    [normalizeMetricFieldIdentity("總營收")]: "TOTAL_REVENUE",
+    [normalizeMetricFieldIdentity("總營收(TWD)")]: "TOTAL_REVENUE",
+    [normalizeMetricFieldIdentity("平台總營收")]: "TOTAL_REVENUE",
+    [normalizeMetricFieldIdentity("累計bf!創帳數")]: "CUMULATIVE_NEW_ACCOUNTS_BEANFUN",
+    [normalizeMetricFieldIdentity("bf!創帳數")]: "NEW_ACCOUNTS_BEANFUN"
   };
   return known[key] ?? null;
 };
@@ -2334,6 +2365,14 @@ const clickByText = async (page: Page, text: string, timeout = 12000): Promise<v
 
 const hasCreateReportEntry = (bodyText: string): boolean => /(?:[+＋➕]\s*)?新增報表/.test(bodyText);
 
+type CollageProjectSelectionAttempt = {
+  label: string;
+  url: string;
+  hasCreateReportEntry: boolean;
+  hasSelectProjectPrompt: boolean;
+  bodyTextExcerpt: string;
+};
+
 export const inferVisibleCollageProjectName = (bodyText: string, explicitProjectName: string | null = null): string | null => {
   if (explicitProjectName?.trim()) return explicitProjectName.trim();
   const lines = bodyText.split(/\r?\n/)
@@ -2355,22 +2394,82 @@ export const inferVisibleCollageProjectName = (bodyText: string, explicitProject
 const ensureCollageProjectSelected = async (
   options: CliOptions,
   page: Page
-): Promise<{ projectName: string | null; bodyText: string; selectedBy: "already_selected" | "param" | "inferred" }> => {
-  let bodyText = await page.locator("body").innerText({ timeout: 5000 }).catch(() => "");
-  if (hasCreateReportEntry(bodyText)) {
-    return { projectName: stringParam(options.params, "projectName"), bodyText, selectedBy: "already_selected" };
+): Promise<{
+  projectName: string | null;
+  bodyText: string;
+  selectedBy: "already_selected" | "param" | "inferred";
+  attempts: CollageProjectSelectionAttempt[];
+}> => {
+  const attempts: CollageProjectSelectionAttempt[] = [];
+  const capture = async (label: string): Promise<string> => {
+    const bodyText = await page.locator("body").innerText({ timeout: 5000 }).catch(() => "");
+    attempts.push({
+      label,
+      url: page.url(),
+      hasCreateReportEntry: hasCreateReportEntry(bodyText),
+      hasSelectProjectPrompt: /請從左側選擇專案查看報表/.test(bodyText),
+      bodyTextExcerpt: bodyText.slice(0, 800)
+    });
+    return bodyText;
+  };
+
+  let bodyText = await capture("initial");
+  const explicitProjectName = stringParam(options.params, "projectName") ?? readCreatedProjectName(options);
+  const selectedBy = explicitProjectName ? "param" : "inferred";
+  const decodedUrl = (() => {
+    try {
+      return decodeURIComponent(page.url());
+    } catch {
+      return page.url();
+    }
+  })();
+  if (hasCreateReportEntry(bodyText) && !explicitProjectName) {
+    return { projectName: null, bodyText, selectedBy: "already_selected", attempts };
+  }
+  if (hasCreateReportEntry(bodyText) && explicitProjectName && decodedUrl.includes(explicitProjectName)) {
+    return { projectName: explicitProjectName, bodyText, selectedBy: "already_selected", attempts };
   }
 
-  const explicitProjectName = stringParam(options.params, "projectName") ?? readCreatedProjectName(options);
   const projectName = inferVisibleCollageProjectName(bodyText, explicitProjectName);
   if (!projectName) {
     throw new HelperBlockedError(`COLLAGE_PROJECT_NOT_SELECTED: no projectName param and no visible collage project could be inferred; bodyText=${bodyText.slice(0, 500)}`);
   }
 
-  await clickByText(page, projectName, 12000);
-  await page.waitForTimeout(1200);
-  bodyText = await page.locator("body").innerText({ timeout: 5000 }).catch(() => "");
-  return { projectName, bodyText, selectedBy: explicitProjectName ? "param" : "inferred" };
+  let lastError = "";
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      await clickByText(page, projectName, attempt === 0 ? 12000 : 8000);
+      await page.waitForTimeout(900);
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : String(error);
+    }
+    const startedAt = Date.now();
+    while (Date.now() - startedAt < 5000) {
+      bodyText = await capture(`after_click_${attempt + 1}`);
+      if (hasCreateReportEntry(bodyText) && !/請從左側選擇專案查看報表/.test(bodyText)) {
+        return { projectName, bodyText, selectedBy, attempts };
+      }
+      await page.waitForTimeout(500);
+    }
+    if (attempt === 1) {
+      await page.reload({ waitUntil: "domcontentloaded", timeout: 15000 }).catch((error) => {
+        lastError = error instanceof Error ? error.message : String(error);
+      });
+      await page.waitForTimeout(1200);
+      bodyText = await capture("after_reload");
+    }
+  }
+  bodyText = await capture("not_ready");
+  if (lastError) {
+    attempts.push({
+      label: `last_click_error:${lastError.slice(0, 200)}`,
+      url: page.url(),
+      hasCreateReportEntry: hasCreateReportEntry(bodyText),
+      hasSelectProjectPrompt: /請從左側選擇專案查看報表/.test(bodyText),
+      bodyTextExcerpt: bodyText.slice(0, 800)
+    });
+  }
+  return { projectName, bodyText, selectedBy, attempts };
 };
 
 const clickCreateReportButton = async (page: Page): Promise<void> => {
@@ -2430,12 +2529,27 @@ const createCollageReport = async (options: CliOptions, page: Page, startedAt: s
 };
 
 const createProjectNameFromParams = (options: CliOptions): string => {
+  const fitProjectName = (value: string): string => {
+    const maxLength = 20;
+    const trimmed = value.trim();
+    if (trimmed.length <= maxLength) return trimmed;
+    const stamp = timestampId();
+    const preferredPrefixes = ["OTTEST004_G01_", "OTTEST004-G01-", "OTTEST004_"];
+    const preferredPrefix = preferredPrefixes.find((prefix) => trimmed.startsWith(prefix) && prefix.length < maxLength);
+    if (preferredPrefix) {
+      return `${preferredPrefix}${stamp.slice(-(maxLength - preferredPrefix.length))}`;
+    }
+    const suffixLength = Math.min(stamp.length, Math.max(6, Math.floor(maxLength / 2)));
+    const suffix = stamp.slice(-suffixLength);
+    const prefixLength = Math.max(0, maxLength - suffix.length);
+    return `${trimmed.slice(0, prefixLength)}${suffix}`;
+  };
   const explicit = firstStringParam(options.params, ["newProjectName", "projectName", "name"]);
-  if (explicit) return explicit.replace("<timestamp>", timestampId());
+  if (explicit) return fitProjectName(explicit.replace("<timestamp>", timestampId()));
   const pattern = firstStringParam(options.params, ["projectNamePattern"]);
-  if (pattern) return pattern.replace("<timestamp>", timestampId());
+  if (pattern) return fitProjectName(pattern.replace("<timestamp>", timestampId()));
   const prefix = firstStringParam(options.params, ["projectNamePrefix"]) ?? "OTTEST004_G01_";
-  return `${prefix}${timestampId()}`;
+  return fitProjectName(`${prefix}${timestampId()}`);
 };
 
 const readCreateProjectModalState = async (page: Page): Promise<Record<string, unknown>> => {
@@ -2571,15 +2685,25 @@ const fillCreateProjectName = async (page: Page, projectName: string): Promise<R
   if (dialog && modalCandidate && typeof dialog.dialogIndex === "number" && typeof modalCandidate.inputIndex === "number") {
     const dialogLocator = page.locator("[role='dialog'], .modal, .ant-modal, .MuiDialog-root, .swal2-popup").nth(dialog.dialogIndex);
     const inputLocator = dialogLocator.locator("input").nth(modalCandidate.inputIndex);
+    const attempts: Array<Record<string, unknown>> = [];
     await inputLocator.fill(projectName, { timeout: 8000 });
-    const observedValue = await inputLocator.inputValue({ timeout: 3000 }).catch(() => null);
+    let observedValue = await inputLocator.inputValue({ timeout: 3000 }).catch(() => null);
+    attempts.push({ method: "fill", observedValue });
+    if (observedValue !== projectName) {
+      await inputLocator.click({ timeout: 3000 }).catch(() => undefined);
+      await inputLocator.press(process.platform === "darwin" ? "Meta+A" : "Control+A", { timeout: 3000 }).catch(() => undefined);
+      await inputLocator.type(projectName, { timeout: 8000 }).catch(() => undefined);
+      observedValue = await inputLocator.inputValue({ timeout: 3000 }).catch(() => null);
+      attempts.push({ method: "click-select-type", observedValue });
+    }
     return {
       projectName,
       selectedInput: { ...modalCandidate, dialogIndex: dialog.dialogIndex, scope: "create-project-modal" },
       observedValue,
       verified: observedValue === projectName,
       modalState,
-      visibleInputs: modalInputs
+      visibleInputs: modalInputs,
+      attempts
     };
   }
 
@@ -2590,15 +2714,26 @@ const fillCreateProjectName = async (page: Page, projectName: string): Promise<R
     inputs.find((item) => item.type === "text" && item.value.trim().length === 0) ??
     inputs.at(-1);
   if (!candidate) throw new HelperBlockedError(`CREATE_PROJECT_NAME_INPUT_NOT_FOUND: modalState=${JSON.stringify(modalState).slice(0, 1000)}; inputs=${JSON.stringify(inputs).slice(0, 1000)}`);
+  const attempts: Array<Record<string, unknown>> = [];
   await page.locator("input").nth(candidate.index).fill(projectName, { timeout: 8000 });
-  const observedValue = await page.locator("input").nth(candidate.index).inputValue({ timeout: 3000 }).catch(() => null);
+  let observedValue = await page.locator("input").nth(candidate.index).inputValue({ timeout: 3000 }).catch(() => null);
+  attempts.push({ method: "fill", observedValue });
+  if (observedValue !== projectName) {
+    const inputLocator = page.locator("input").nth(candidate.index);
+    await inputLocator.click({ timeout: 3000 }).catch(() => undefined);
+    await inputLocator.press(process.platform === "darwin" ? "Meta+A" : "Control+A", { timeout: 3000 }).catch(() => undefined);
+    await inputLocator.type(projectName, { timeout: 8000 }).catch(() => undefined);
+    observedValue = await inputLocator.inputValue({ timeout: 3000 }).catch(() => null);
+    attempts.push({ method: "click-select-type", observedValue });
+  }
   return {
     projectName,
     selectedInput: candidate,
     observedValue,
     verified: observedValue === projectName,
     modalState,
-    visibleInputs: inputs
+    visibleInputs: inputs,
+    attempts
   };
 };
 
@@ -2624,6 +2759,55 @@ const decideCreateProjectDialogHandling = (dialog: Dialog): { action: "accept" |
     return { action: "accept", reason: "known_bi_create_project_success_dialog", blocksFlow: false };
   }
   return { action: "dismiss", reason: "unknown_native_dialog_dismissed_for_recovery", blocksFlow: true };
+};
+
+const verifyCreatedProjectVisible = async (
+  page: Page,
+  projectName: string
+): Promise<Record<string, unknown>> => {
+  const attempts: Array<Record<string, unknown>> = [];
+  const capture = async (label: string): Promise<string> => {
+    const bodyText = await page.locator("body").innerText({ timeout: 5000 }).catch(() => "");
+    const normalizedBody = normalizeUiText(bodyText);
+    attempts.push({
+      label,
+      url: page.url(),
+      projectVisible: normalizedBody.includes(normalizeUiText(projectName)),
+      reportListReady: hasCreateReportEntry(bodyText) && !/請從左側選擇專案查看報表/.test(bodyText),
+      bodyTextExcerpt: bodyText.slice(0, 1200)
+    });
+    return bodyText;
+  };
+
+  let bodyText = await capture("after_submit");
+  if (!normalizeUiText(bodyText).includes(normalizeUiText(projectName))) {
+    await page.reload({ waitUntil: "domcontentloaded", timeout: 15000 }).catch(() => undefined);
+    await page.waitForTimeout(1200);
+    bodyText = await capture("after_reload");
+  }
+
+  const projectVisible = normalizeUiText(bodyText).includes(normalizeUiText(projectName));
+  let projectListReady = hasCreateReportEntry(bodyText) && !/請從左側選擇專案查看報表/.test(bodyText);
+  if (projectVisible) {
+    await clickByText(page, projectName, 12000).catch((error) => {
+      attempts.push({
+        label: "click_created_project_failed",
+        url: page.url(),
+        error: error instanceof Error ? error.message : String(error),
+        bodyTextExcerpt: bodyText.slice(0, 1200)
+      });
+    });
+    await page.waitForTimeout(1200);
+    const selectedText = await capture("after_click_created_project");
+    projectListReady = hasCreateReportEntry(selectedText) && !/請從左側選擇專案查看報表/.test(selectedText);
+  }
+
+  return {
+    projectName,
+    projectVisible,
+    projectListReady,
+    attempts
+  };
 };
 
 const createProject = async (options: CliOptions, page: Page, startedAt: string): Promise<HelperReport> => {
@@ -2678,16 +2862,19 @@ const createProject = async (options: CliOptions, page: Page, startedAt: string)
     operations.push("project:create:submitClicked");
     await page.waitForTimeout(1800);
     const bodyText = await page.locator("body").innerText({ timeout: 5000 }).catch(() => "");
-    const normalizedProjectName = normalizeUiText(projectName);
-    const projectVisible = bodyText.includes(projectName) || normalizeUiText(bodyText).includes(normalizedProjectName);
+    const visibilityEvidence = await verifyCreatedProjectVisible(page, projectName);
+    const projectVisible = visibilityEvidence.projectVisible === true;
+    const projectListReady = visibilityEvidence.projectListReady === true;
     const successDialogObserved = nativeDialogs.some((dialog) => /成功|已建立|新增完成|建立完成|created|success/i.test(String(dialog.message ?? "")));
     const verifiedBySuccessDialog = successDialogObserved && !dialogBlocksFlow;
-    if (projectVisible || verifiedBySuccessDialog) {
+    if (projectVisible && projectListReady) {
       writeCreatedProjectState(options, projectName, {
         approvedToolRequestId: options.approvedToolRequestId,
         projectMode,
         projectVisible,
+        projectListReady,
         verifiedBySuccessDialog,
+        visibilityEvidence,
         nativeDialogs
       });
     }
@@ -2705,7 +2892,9 @@ const createProject = async (options: CliOptions, page: Page, startedAt: string)
       nativeDialogs,
       dialogBlocksFlow,
       projectVisible,
+      projectListReady,
       verifiedBySuccessDialog,
+      visibilityEvidence,
       bodyTextExcerpt: bodyText.slice(0, 2400),
       modalAfterSubmit,
       warnings
@@ -2714,11 +2903,12 @@ const createProject = async (options: CliOptions, page: Page, startedAt: string)
     fs.writeFileSync(createProjectEvidencePath(options), `${JSON.stringify(evidence, null, 2)}\n`);
     if (dialogBlocksFlow) warnings.push("CREATE_PROJECT_NATIVE_DIALOG_BLOCKED_FLOW");
     if (!projectVisible) warnings.push(verifiedBySuccessDialog ? "CREATE_PROJECT_VISIBILITY_NOT_CONFIRMED_BUT_SUCCESS_DIALOG_ACCEPTED" : "CREATE_PROJECT_NOT_VISIBLE_AFTER_SUBMIT");
+    if (projectVisible && !projectListReady) warnings.push("CREATE_PROJECT_REPORT_LIST_NOT_READY_AFTER_SELECTION");
     const shot = await screenshot(options, page, "create-project");
     const uiProfileAfter = await captureUiDomProfile(options, page, "createProject.after");
     return createReport(
       options,
-      (projectVisible || verifiedBySuccessDialog) && !dialogBlocksFlow ? "ok" : "blocked",
+      projectVisible && projectListReady && !dialogBlocksFlow ? "ok" : "blocked",
       startedAt,
       {
         domState: await readDomState(page),
@@ -3013,36 +3203,40 @@ const clickMetricAddFieldControl = async (page: Page, field: string): Promise<st
 };
 
 const selectMetricFieldThroughUi = async (page: Page, field: string): Promise<string> => {
-  const currentText = await selectedFieldText(page);
-  if (normalizeUiText(currentText).includes(normalizeUiText(field))) return `field:already_visible:${field}`;
+  const selectedBefore = await readSelectedMetricFields(page).catch(() => []);
+  if (selectedBefore.some((item) => selectedMetricFieldMatches(item, field))) return `field:already:${field}`;
 
   const readiness = await waitForMetricFieldControls(page);
   const addOperation = await clickMetricAddFieldControl(page, field);
   await page.waitForTimeout(500);
 
-  await clickByText(page, field, 12000);
+  const pickerClickOperation = await clickMetricFieldPickerDomTarget(page, {
+    label: field,
+    code: knownMetricFieldCode(field)
+  }, 12000).catch(async (error) => {
+    const rawItems = await extractFieldPickerDomItems(page).catch(() => []);
+    if (rawItems.length > 0) throw error;
+    await clickByText(page, field, 12000);
+    return `fieldPicker:fallbackText:${field}`;
+  });
   await page.waitForTimeout(800);
 
-  const afterText = `${await selectedFieldText(page)}\n${await page.locator("body").innerText({ timeout: 3000 }).catch(() => "")}`;
-  if (!normalizeUiText(afterText).includes(normalizeUiText(field))) {
-    throw new HelperBlockedError(`FIELD_VERIFY_FAILED_AFTER_CLICK:${field}`);
+  const selectedAfter = await readSelectedMetricFields(page).catch(() => []);
+  if (!selectedAfter.some((item) => selectedMetricFieldMatches(item, field))) {
+    throw new HelperBlockedError(`FIELD_VERIFY_FAILED_AFTER_CLICK:${field}; selected=${JSON.stringify(selectedAfter).slice(0, 1200)}`);
   }
-  return `${readiness};${addOperation};field:set:${field}`;
+  return `${readiness};${addOperation};${pickerClickOperation};field:set:${field}`;
 };
 
 const selectedMetricFieldMatches = (selected: SelectedMetricField, targetField: string): boolean => {
-  const targetKey = normalizeMetricFieldIdentity(targetField);
+  const targetKeys = metricFieldIdentitySet(targetField);
   const selectedLabelKey = normalizeMetricFieldIdentity(selected.label);
   const selectedCodeKey = normalizeMetricFieldIdentity(selected.code);
   const targetCodeKey = normalizeMetricFieldIdentity(knownMetricFieldCode(targetField));
   if (targetCodeKey.length > 0 && selectedCodeKey.length > 0) return selectedCodeKey === targetCodeKey;
-  return (
-    (selectedCodeKey.length > 0 && targetKey.length > 0 && selectedCodeKey === targetKey) ||
-    selectedLabelKey === targetKey ||
-    (selectedLabelKey.length > 0 && selectedLabelKey.includes(targetKey)) ||
-    (selectedLabelKey.length > 0 && targetKey.length > 0 && targetKey.includes(selectedLabelKey)) ||
-    (targetCodeKey.length > 0 && selectedCodeKey === targetCodeKey)
-  );
+  if (selectedCodeKey.length > 0 && targetKeys.has(selectedCodeKey)) return true;
+  if (selectedLabelKey.length > 0 && targetKeys.has(selectedLabelKey)) return true;
+  return targetCodeKey.length > 0 && selectedLabelKey === targetCodeKey;
 };
 
 const fieldListExactlyMatches = (selected: SelectedMetricField[], targetFields: string[]): boolean => {
@@ -4328,6 +4522,83 @@ const extractFieldPickerDomItems = async (page: Page): Promise<Array<Record<stri
   });
 };
 
+type FieldPickerDomTarget = {
+  label: string;
+  code: string | null;
+  groupLabel: string | null;
+  index: number;
+};
+
+const fieldPickerDomTargets = (items: Array<Record<string, unknown>>): FieldPickerDomTarget[] => {
+  return items.flatMap((item) => {
+    const index = typeof item.index === "number" ? item.index : null;
+    if (index === null) return [];
+    const label = inferFieldLabel(String(item.text ?? ""), [], item.code);
+    const code = typeof item.code === "string" && item.code.trim() ? item.code.trim() : null;
+    if (!label && !code) return [];
+    return [{
+      label,
+      code,
+      groupLabel: typeof item.groupLabel === "string" ? item.groupLabel : null,
+      index
+    }];
+  });
+};
+
+const fieldPickerTargetMatches = (
+  item: Pick<FieldPickerDomTarget, "label" | "code" | "groupLabel">,
+  target: Pick<FieldPickerDomTarget, "label" | "code"> & { groupLabels?: Set<string> }
+): boolean => {
+  if (target.groupLabels && item.groupLabel && !target.groupLabels.has(normalizeFieldPickerGroup(item.groupLabel))) return false;
+  const itemCode = normalizeMetricFieldIdentity(item.code);
+  const targetCode = normalizeMetricFieldIdentity(target.code);
+  if (itemCode && targetCode && itemCode === targetCode) return true;
+  const targetIdentities = metricFieldIdentitySet(target.label);
+  if (targetCode) targetIdentities.add(targetCode);
+  if (itemCode && targetIdentities.has(itemCode)) return true;
+  return targetIdentities.has(normalizeMetricFieldIdentity(item.label));
+};
+
+const clickMetricFieldPickerDomTarget = async (
+  page: Page,
+  target: Pick<FieldPickerDomTarget, "label" | "code"> & { groupLabels?: Set<string> },
+  timeout = 8000
+): Promise<string> => {
+  const items = await extractFieldPickerDomItems(page);
+  const candidates = fieldPickerDomTargets(items)
+    .filter((item) => fieldPickerTargetMatches(item, target))
+    .sort((a, b) => {
+      const codeScoreA = target.code && normalizeMetricFieldIdentity(a.code) === normalizeMetricFieldIdentity(target.code) ? 0 : 1;
+      const codeScoreB = target.code && normalizeMetricFieldIdentity(b.code) === normalizeMetricFieldIdentity(target.code) ? 0 : 1;
+      return codeScoreA - codeScoreB || normalizeMetricFieldIdentity(a.label).length - normalizeMetricFieldIdentity(b.label).length;
+    });
+  const selected = candidates[0];
+  if (!selected) {
+    throw new HelperBlockedError(
+      `FIELD_PICKER_TARGET_NOT_FOUND_EXACT:target=${JSON.stringify({ label: target.label, code: target.code, groupLabels: target.groupLabels ? [...target.groupLabels] : [] })}; rawItems=${JSON.stringify(items.slice(0, 60)).slice(0, 2000)}`
+    );
+  }
+
+  const locator = page.locator("body *").nth(selected.index);
+  try {
+    await locator.scrollIntoViewIfNeeded({ timeout: Math.min(timeout, 5000) });
+    await locator.click({ timeout });
+  } catch (error) {
+    await page.keyboard.press("Escape").catch(() => undefined);
+    await page.waitForTimeout(250);
+    try {
+      await locator.click({ timeout: Math.min(timeout, 5000) });
+    } catch (retryError) {
+      const firstMessage = error instanceof Error ? error.message : String(error);
+      const retryMessage = retryError instanceof Error ? retryError.message : String(retryError);
+      throw new HelperBlockedError(
+        `FIELD_PICKER_TARGET_CLICK_BLOCKED:target=${selected.label}${selected.code ? `:${selected.code}` : ""}; first=${firstMessage.slice(0, 500)}; retry=${retryMessage.slice(0, 500)}`
+      );
+    }
+  }
+  return `fieldPicker:domClick:${selected.label}${selected.code ? `:${selected.code}` : ""}`;
+};
+
 const readSelectAllExpectedFields = (options: CliOptions): { fields: string[]; sourceReports: string[]; metadataPath: string | null; warnings: string[] } => {
   const resolved = resolveMetadataCsvPath(options);
   const warnings: string[] = [];
@@ -4393,15 +4664,11 @@ const selectAllMetricFieldsFromPickerDom = async (
     `field:selectAll:domPickerPerGroup:${JSON.stringify(perGroupCounts)}`
   ];
   const seen = new Set<string>();
-  const targets = groupedItems.flatMap((item) => {
-    const index = typeof item.index === "number" ? item.index : null;
-    if (index === null) return [];
-    const label = inferFieldLabel(String(item.text ?? ""), [], item.code);
-    const code = typeof item.code === "string" ? item.code : null;
-    const key = normalizeMetricFieldIdentity(code ?? label);
-    if (!label || !key || seen.has(key)) return [];
+  const targets = fieldPickerDomTargets(groupedItems).flatMap((item) => {
+    const key = normalizeMetricFieldIdentity(item.code ?? item.label);
+    if (!item.label || !key || seen.has(key)) return [];
     seen.add(key);
-    return [{ index, label, code }];
+    return [item];
   });
   if (targets.length === 0) return { handled: false, operations: [...operations, "field:selectAll:domPickerNoTargets"] };
 
@@ -4410,7 +4677,44 @@ const selectAllMetricFieldsFromPickerDom = async (
     if (selected.some((item) => selectedMetricFieldMatches(item, target.label) || (target.code && normalizeMetricFieldIdentity(item.code) === normalizeMetricFieldIdentity(target.code)))) {
       continue;
     }
-    await clickVisibleBodyElementByIndex(page, target.index, 8000);
+    const groupLabels = target.groupLabel ? new Set([normalizeFieldPickerGroup(target.groupLabel)]) : undefined;
+    let clicked = false;
+    let lastError = "";
+    for (let attempt = 0; attempt < 3 && !clicked; attempt += 1) {
+      try {
+        operations.push(await clickMetricFieldPickerDomTarget(page, {
+          label: target.label,
+          code: target.code,
+          groupLabels
+        }, 10000));
+        clicked = true;
+      } catch (error) {
+        lastError = error instanceof Error ? error.message : String(error);
+        if (/FIELD_PICKER_TARGET_NOT_FOUND_EXACT/.test(lastError)) {
+          const addOperation = await clickMetricAddFieldControl(page, `select-all:${target.label}`).catch((addError) => {
+            lastError = `${lastError}; reopen=${addError instanceof Error ? addError.message : String(addError)}`;
+            return null;
+          });
+          if (addOperation) operations.push(`field:selectAll:reopenPicker:${addOperation}`);
+          await page.waitForTimeout(500);
+          continue;
+        }
+        await page.keyboard.press("Escape").catch(() => undefined);
+        await page.waitForTimeout(300);
+        const addOperation = await clickMetricAddFieldControl(page, `select-all:${target.label}`).catch((addError) => {
+          lastError = `${lastError}; reopen=${addError instanceof Error ? addError.message : String(addError)}`;
+          return null;
+        });
+        if (addOperation) operations.push(`field:selectAll:retryReopenPicker:${addOperation}`);
+        await page.waitForTimeout(500);
+      }
+    }
+    if (!clicked) {
+      const finalSelected = await readSelectedMetricFields(page).catch(() => []);
+      throw new HelperBlockedError(
+        `SELECT_ALL_FIELD_CLICK_FAILED:target=${target.label}${target.code ? `:${target.code}` : ""}; selected=${JSON.stringify(finalSelected).slice(0, 1200)}; lastError=${lastError.slice(0, 1200)}`
+      );
+    }
     await page.waitForTimeout(220);
     operations.push(`field:selectAll:domSet:${target.label}${target.code ? `:${target.code}` : ""}`);
   }
@@ -4433,7 +4737,7 @@ const selectAllMetricFieldsThroughUi = async (options: CliOptions, page: Page): 
   operations.push(`field:selectAll:requested:sources=${expected.sourceReports.join("|") || "all"};expectedFieldCount=${expectedFieldCount ?? "unknown"}`);
   operations.push(...expected.warnings.map((warning) => `field:selectAll:warning:${warning}`));
 
-  if (expected.sourceReports.length > 1) {
+  if (expected.sourceReports.length > 0) {
     const readiness = await waitForMetricFieldControls(page);
     const addOperation = await clickMetricAddFieldControl(page, "select-all-fields");
     await page.waitForTimeout(700);
@@ -5763,6 +6067,98 @@ const openReportFromProjectList = async (options: CliOptions, page: Page, starte
   return openExistingReport(options, page, startedAt);
 };
 
+type BackToProjectListReadiness = {
+  url: string;
+  bodyText: string;
+  reportListSignals: boolean;
+  editorUrl: boolean;
+  attempts: Array<{
+    label: string;
+    url: string;
+    bodyTextLength: number;
+    hasCreateReportEntry: boolean;
+    hasSelectProjectPrompt: boolean;
+    reportListSignals: boolean;
+    editorUrl: boolean;
+    error?: string;
+  }>;
+};
+
+const reportListSignalsFromBodyText = (bodyText: string): boolean =>
+  hasCreateReportEntry(bodyText) && /報表名稱|資料區間日期|下載|刪除|⬇|🗑/.test(bodyText);
+
+const waitForBackToProjectListReadiness = async (
+  options: CliOptions,
+  page: Page
+): Promise<BackToProjectListReadiness> => {
+  const attempts: BackToProjectListReadiness["attempts"] = [];
+  let lastBodyText = "";
+  let lastUrl = page.url();
+  let reselectedProject = false;
+  const deadline = Date.now() + 9000;
+
+  for (let attempt = 0; Date.now() < deadline; attempt += 1) {
+    lastUrl = page.url();
+    let bodyText = "";
+    let error: string | undefined;
+    try {
+      bodyText = await page.locator("body").innerText({ timeout: 2500 });
+    } catch (readError) {
+      error = readError instanceof Error ? readError.message : String(readError);
+      bodyText = await page.evaluate(() => document.body?.innerText ?? "").catch((evaluateError) => {
+        const evaluateMessage = evaluateError instanceof Error ? evaluateError.message : String(evaluateError);
+        error = `${error}; evaluate=${evaluateMessage}`;
+        return "";
+      });
+    }
+    if (bodyText.trim()) lastBodyText = bodyText;
+    const effectiveBodyText = bodyText.trim() ? bodyText : lastBodyText;
+    const editorUrl = /\/testview\/edit\b/i.test(lastUrl);
+    const reportListSignals = reportListSignalsFromBodyText(effectiveBodyText);
+    const hasSelectProjectPrompt = /請從左側選擇專案查看報表/.test(effectiveBodyText);
+    attempts.push({
+      label: `poll_${attempt + 1}`,
+      url: lastUrl,
+      bodyTextLength: effectiveBodyText.length,
+      hasCreateReportEntry: hasCreateReportEntry(effectiveBodyText),
+      hasSelectProjectPrompt,
+      reportListSignals,
+      editorUrl,
+      ...(error ? { error: error.slice(0, 300) } : {})
+    });
+    if (!editorUrl && reportListSignals) {
+      return { url: lastUrl, bodyText: effectiveBodyText, reportListSignals, editorUrl, attempts };
+    }
+    if (!editorUrl && hasSelectProjectPrompt && !reselectedProject) {
+      reselectedProject = true;
+      await ensureCollageProjectSelected(options, page).catch((selectError) => {
+        attempts.push({
+          label: "reselect_project_failed",
+          url: page.url(),
+          bodyTextLength: effectiveBodyText.length,
+          hasCreateReportEntry: hasCreateReportEntry(effectiveBodyText),
+          hasSelectProjectPrompt,
+          reportListSignals,
+          editorUrl,
+          error: selectError instanceof Error ? selectError.message.slice(0, 300) : String(selectError).slice(0, 300)
+        });
+      });
+    }
+    await page.waitForTimeout(500);
+  }
+
+  const finalUrl = page.url();
+  const finalEditorUrl = /\/testview\/edit\b/i.test(finalUrl);
+  const finalReportListSignals = reportListSignalsFromBodyText(lastBodyText);
+  return {
+    url: finalUrl,
+    bodyText: lastBodyText,
+    reportListSignals: finalReportListSignals,
+    editorUrl: finalEditorUrl,
+    attempts
+  };
+};
+
 const clickBackToProjectList = async (options: CliOptions, page: Page, startedAt: string): Promise<HelperReport> => {
   const uiProfileBefore = await captureUiDomProfile(options, page, "backToProjectList.before");
   const dialogs: Record<string, unknown>[] = [];
@@ -5799,13 +6195,18 @@ const clickBackToProjectList = async (options: CliOptions, page: Page, startedAt
     page.off("dialog", dialogHandler);
   }
   if (!observed?.result.clicked) throw new HelperBlockedError("BACK_TO_PROJECT_LIST_BUTTON_NOT_CLICKABLE");
-  const bodyText = await page.locator("body").innerText({ timeout: 5000 }).catch(() => "");
-  const returnedToProjectList = hasCreateReportEntry(bodyText) && !/報表設定|儲存報表|執行/.test(bodyText);
+  const readiness = await waitForBackToProjectListReadiness(options, page);
+  const { bodyText, url, reportListSignals, editorUrl } = readiness;
+  const returnedToProjectList = !editorUrl && hasCreateReportEntry(bodyText) && reportListSignals;
   const shot = await screenshot(options, page, returnedToProjectList ? "back-to-project-list" : "back-to-project-list-blocked");
   const uiProfileAfter = await captureUiDomProfile(options, page, "backToProjectList.after");
   const evidence = {
     clicked: observed.result.clicked,
     returnedToProjectList,
+    url,
+    reportListSignals,
+    editorUrl,
+    readinessAttempts: readiness.attempts,
     nativeDialogs: dialogs,
     bodyTextExcerpt: bodyText.slice(0, 2400),
     network: { requests: observed.requests, responses: observed.responses }

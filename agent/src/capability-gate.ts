@@ -83,6 +83,19 @@ const helperExplicitlyDisablesDownload = (params: Record<string, unknown>): bool
 const textExplicitlyDisablesDownload = (text: string): boolean =>
   /本題不測項目[^\n]*(?:CSV|下載)|(?:不測|不做|不驗).{0,12}(?:CSV|下載)|(?:CSV|下載).{0,8}[\(（]屬/i.test(text);
 
+const textExplicitlyDisablesReopen = (text: string): boolean =>
+  /(?:本題禁止|禁止|絕不|不要|不用|不需|不應|不點).{0,20}(?:reopen|重開|報表名稱)|(?:不|勿)\s*(?:reopen|重開)|不點報表名稱|不進入\s*editor\s*reopen/i.test(text);
+
+const paramsRequestReportListDownload = (params: Record<string, unknown>): boolean => {
+  const entry = stringParam(params, ["downloadEntry", "downloadTarget", "downloadSource", "csvEntry"]) ?? "";
+  return booleanishParam(params, ["downloadFromProjectRow", "downloadFromReportRow", "projectRowDownload", "reportListDownload"]) ||
+    booleanishParam(params, ["doNotUseEditorGlobalDownload"]) ||
+    /project[_-]?page[_-]?row|project[-_ ]row|report[_-]?row|row[_-]?download|report[_-]?list|project[_-]?list/i.test(entry);
+};
+
+const textRequestsReportListDownload = (text: string): boolean =>
+  /(?:專案頁|清單|列表|該報表\s*row|報表\s*row|row|報表列|project[-_ ]row).{0,32}(?:下載|download|CSV)|(?:下載|download|CSV).{0,32}(?:專案頁|清單|列表|該報表\s*row|報表\s*row|row|報表列|project[-_ ]row)|project_page_row_download_button/i.test(text);
+
 const helperRequestsNoDownload = (params: Record<string, unknown>): boolean =>
   helperRequestsDownload(params)
     ? false
@@ -204,6 +217,12 @@ const isOpenReportFromProjectListFlow = (currentCase: CaseManifestCase | null, h
   const text = `${detectCaseFeatures(currentCase, helperHints).text}\n${stringParam(params, ["action", "verifyOnly"]) ?? ""}`;
   if (helperRequestsSaveOnly(params)) return false;
   if (isSameCaseSaveLoadFlow(currentCase, helperHints)) return false;
+  if (
+    (booleanishParam(params, ["reopenViaClickReportName", "reopenReport", "doReopen"]) || Boolean(stringParam(params, ["saveReportNamePrefix", "reportNamePrefix", "reportNamePattern"]))) &&
+    /同\s*case|同一\s*case|建立.{0,20}儲存|儲存.{0,24}(?:reopen|重開|點報表名稱)|設定還原|不依賴既有報表|depend_on_existing_report/i.test(text)
+  ) {
+    return false;
+  }
   return /報表名稱.{0,24}(?:進入|編輯|reopen|重開|載入|設定頁|editor)|點(?:擊)?.{0,16}報表名稱.{0,24}(?:進入|編輯|reopen|重開|載入|設定頁|editor)|click\s+report\s+name(?:.{0,24}(?:open|enter|edit|editor|reopen))?|enter\s+editor/i.test(text);
 };
 
@@ -265,6 +284,24 @@ export const evaluateCapabilityGate = (
   const dateNeedsCodexVisibleUi = dateRequiresCodexVisibleUi(currentCase, helperHints);
   const navigationPreludeAllowed = needsCollageNavigationPrelude(currentCase, helperHints);
   const datePreviewEvidenceAllowed = mode === "collage" && !hasFilter && !hasGroup && canRunDatePreviewEvidenceHelper(params);
+  const manualDateSaveAllowed =
+    !noSave &&
+    datePreviewEvidenceAllowed &&
+    (
+      booleanishParam(params, ["save", "saveReport", "doSave"]) ||
+      Boolean(stringParam(params, ["saveReportNamePrefix", "reportNamePrefix", "reportNamePattern", "reportName", "name"])) ||
+      /儲存|保存|save/i.test(text)
+    );
+  const explicitManualDateReopen = booleanishParam(params, ["reopenViaClickReportName", "reopenReport", "doReopen"]);
+  const manualDateReportListDownload = paramsRequestReportListDownload(params) || textRequestsReportListDownload(text);
+  const manualDateReopenAllowed =
+    manualDateSaveAllowed &&
+    !explicitlyNoReopen &&
+    !textExplicitlyDisablesReopen(text) &&
+    (
+      explicitManualDateReopen ||
+      (!manualDateReportListDownload && /載入已儲存|設定還原|還原|重開|重新檢視|reopen|點報表名稱/i.test(text))
+    );
   const formulaHelperAllowed = mode === "collage" && !hasFilter && !hasGroup && hasFormulaParams(params);
   const createProjectAllowed = mode === "collage" && !hasFilter && !hasGroup && isCreateProjectOnlyFlow(currentCase, helperHints);
   const simpleProjectFlowAllowed = mode === "collage" && !hasFilter && !hasGroup && (isOpenReportFromProjectListFlow(currentCase, helperHints) || isBackToProjectListFlow(currentCase, helperHints));
@@ -328,14 +365,20 @@ export const evaluateCapabilityGate = (
   }
 
   if ((manualAiRequested || dateNeedsCodexVisibleUi) && !isDeleteReport && !formulaHelperAllowed && !createProjectAllowed && !simpleProjectFlowAllowed) {
-    const degradedAllowed = new Set([
+    const degradedAllowed = [
       "collage.openProject",
       "collage.createReport",
       ...(datePreviewEvidenceAllowed ? ["collage.runDateVariantsPreviewEvidence"] : []),
-      ...(!noSave && /儲存/.test(text) && datePreviewEvidenceAllowed ? ["collage.saveReport"] : []),
+      ...(manualDateSaveAllowed ? ["collage.saveReport"] : []),
+      ...(manualDateReopenAllowed ? ["collage.reopenReport"] : []),
       ...(!noDownload && /下載|CSV/i.test(text) && datePreviewEvidenceAllowed ? ["collage.downloadCsvAndComparePreview"] : [])
-    ]);
-    const filtered = supportedHelperTemplates.filter((template) => degradedAllowed.has(template));
+    ];
+    const filtered = supportedHelperTemplates.filter((template) => degradedAllowed.includes(template));
+    if (navigationPreludeAllowed || datePreviewEvidenceAllowed) {
+      for (const template of degradedAllowed) {
+        if (!filtered.includes(template)) filtered.push(template);
+      }
+    }
     supportedHelperTemplates.splice(0, supportedHelperTemplates.length, ...filtered);
   }
 

@@ -538,6 +538,12 @@ const isOpenReportFromProjectListFlow = (currentCase: CaseManifestCase | null, h
   const text = `${textBlob(currentCase)}\n${stringParam(params, ["action", "verifyOnly"]) ?? ""}`;
   if (helperRequestsSaveOnly(params)) return false;
   if (isSameCaseSaveLoadFlow(currentCase, helperHints)) return false;
+  if (
+    (booleanishParam(params, ["reopenViaClickReportName", "reopenReport", "doReopen"]) || Boolean(stringParam(params, ["saveReportNamePrefix", "reportNamePrefix", "reportNamePattern"]))) &&
+    /同\s*case|同一\s*case|建立.{0,20}儲存|儲存.{0,24}(?:reopen|重開|點報表名稱)|設定還原|不依賴既有報表|depend_on_existing_report/i.test(text)
+  ) {
+    return false;
+  }
   if (textRequestsSameCaseSaveAndRowDownload(text)) return false;
   if (textExplicitlyDisablesReopen(text) && textRequestsReportListDownload(text)) return false;
   return /報表名稱.{0,24}(?:進入|編輯|reopen|重開|載入|設定頁|editor)|點(?:擊)?.{0,16}報表名稱.{0,24}(?:進入|編輯|reopen|重開|載入|設定頁|editor)|click\s+report\s+name(?:.{0,24}(?:open|enter|edit|editor|reopen))?|enter\s+editor/i.test(text);
@@ -704,7 +710,21 @@ const buildActions = (currentCase: CaseManifestCase | null, helperHints: HelperH
     dateRequiresCodexVisibleUi(currentCase, helperHints);
   if (helperMustLeaveCoreToCodex) {
     if (!needsCollageNavigationPrelude(currentCase, helperHints)) return [];
-    const editorPreludeNeeded = needsReportEditorPrelude(currentCase);
+    const operationalText = [
+      currentCase.caseTitle,
+      currentCase.preconditions,
+      currentCase.stepsSummary,
+      helperScope(helperParams)
+    ].filter(Boolean).join("\n");
+    const editorPreludeNeeded =
+      needsReportEditorPrelude(currentCase) ||
+      (
+        canRunDatePreviewEvidenceHelper(params, currentCase) &&
+        (
+          textRequestsSave(operationalText, { ...params, ...helperParams }) ||
+          /載入已儲存|設定還原|建立.{0,20}儲存|儲存.{0,24}(?:reopen|重開|點報表名稱)|reopen/i.test(operationalText)
+        )
+      );
     const prelude: HelperPlanAction[] = [
       action("H1", "collage.openProject", "開啟指定拼貼專案（manual_ai 前置導航）", params, {
         requiredEvidence: ["dom.url", "dom.pageTitle", "dom.state", "screenshot"],
@@ -733,9 +753,9 @@ const buildActions = (currentCase: CaseManifestCase | null, helperHints: HelperH
       );
     }
     const manualDateSave =
-      textRequestsSave(text, { ...params, ...helperParams }) &&
+      textRequestsSave(operationalText, { ...params, ...helperParams }) &&
       !helperRequestsNoSave({ ...params, ...helperParams }) &&
-      !textExplicitlyDisablesSave(text) &&
+      !textExplicitlyDisablesSave(operationalText) &&
       editorPreludeNeeded &&
       canRunDatePreviewEvidenceHelper(params, currentCase);
     if (manualDateSave) {
@@ -751,11 +771,36 @@ const buildActions = (currentCase: CaseManifestCase | null, helperHints: HelperH
         })
       );
     }
+    const explicitManualDateReopen =
+      booleanishParam(helperParams, ["reopenViaClickReportName", "reopenReport", "doReopen"]);
+    const manualDateReportListDownload =
+      paramsRequestReportListDownload({ ...params, ...helperParams }) ||
+      textRequestsReportListDownload(operationalText);
+    const manualDateNeedsReopen =
+      manualDateSave &&
+      !helperRequestsNoReopen({ ...params, ...helperParams }) &&
+      !textExplicitlyDisablesReopen(text) &&
+      (
+        explicitManualDateReopen ||
+        (!manualDateReportListDownload && /載入已儲存|設定還原|還原|重開|重新檢視|reopen|點報表名稱/i.test(operationalText))
+      );
+    if (manualDateNeedsReopen) {
+      prelude.push(
+        action(`H${prelude.length + 1}`, "collage.reopenReport", "儲存後從清單重開報表並收集還原 evidence", params, {
+          requiredEvidence: ["dom.state", "network.requestBody", "screenshot"],
+          screenshotPolicy: "required_if_possible",
+          notes: [
+            "適用 F-02 類同 case 建立後載入已儲存報表：必須在 saveReport 後用本 case saved report row/name 重開。",
+            "helper 只產生 reopen-report-evidence；Codex 必須比對日期/欄位/顯示狀態是否還原。"
+          ]
+        })
+      );
+    }
     const manualDateCsvDownload =
-      /下載|CSV/i.test(text) &&
+      /下載|CSV/i.test(operationalText) &&
       !helperExplicitlyDisablesDownload(helperParams) &&
       !helperRequestsSaveOnly({ ...params, ...helperParams }) &&
-      !textExplicitlyDisablesDownload(text) &&
+      !textExplicitlyDisablesDownload(operationalText) &&
       editorPreludeNeeded &&
       canRunDatePreviewEvidenceHelper(params, currentCase);
     if (manualDateCsvDownload) {

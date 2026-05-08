@@ -458,7 +458,7 @@ const generateMd = (
   md += "| 編號 | 測試項目 | 結果 | 備註 |\n";
   md += "|------|---------|------|------|\n";
   for (const c of cases) {
-    md += `| ${mdEscape(c.case_no)} | ${mdEscape(c.case_title)} | **${mdEscape(c.result_status ?? "—")}** | ${mdEscape(extractSummary(c))} |\n`;
+    md += `| ${mdEscape(c.case_no)} | ${mdEscape(c.case_title)} | **${mdEscape(classifiedCaseStatus(c))}** | ${mdEscape(extractSummary(c))} |\n`;
   }
   md += "\n---\n\n";
 
@@ -488,7 +488,7 @@ const generateMd = (
     md += "|------|------|\n";
     md += `| **測試日** | ${mdEscape(c.updated_at ?? c.created_at ?? "—")} |\n`;
     md += `| **執行方式** | ${mdEscape(c.execution_type ?? "—")} |\n`;
-    md += `| **結果** | **${mdEscape(c.result_status ?? "—")}** |\n`;
+    md += `| **結果** | **${mdEscape(classifiedCaseStatus(c))}** |\n`;
     if (c.fail_category) {
       md += `| **失敗分類** | ${mdEscape(c.fail_category)} |\n`;
     }
