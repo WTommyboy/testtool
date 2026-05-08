@@ -1101,6 +1101,8 @@ const metricFieldAliasIdentities = (value: string | null | undefined): string[] 
     [normalizeMetricFieldIdentity("總營收")]: ["總營收(TWD)", "平台總營收"],
     [normalizeMetricFieldIdentity("總營收(TWD)")]: ["總營收", "平台總營收"],
     [normalizeMetricFieldIdentity("平台總營收")]: ["總營收(TWD)", "總營收"],
+    [normalizeMetricFieldIdentity("退費總金額")]: ["總退費金額"],
+    [normalizeMetricFieldIdentity("總退費金額")]: ["退費總金額"],
     [normalizeMetricFieldIdentity("iOS平台總營收")]: ["iOS總營收"],
     [normalizeMetricFieldIdentity("iOS總營收")]: ["iOS平台總營收"],
     [normalizeMetricFieldIdentity("Android平台總營收")]: ["Android總營收"],
@@ -1130,6 +1132,8 @@ const knownMetricFieldCode = (field: string): string | null => {
     [normalizeMetricFieldIdentity("總營收")]: "TOTAL_REVENUE",
     [normalizeMetricFieldIdentity("總營收(TWD)")]: "TOTAL_REVENUE",
     [normalizeMetricFieldIdentity("平台總營收")]: "TOTAL_REVENUE",
+    [normalizeMetricFieldIdentity("退費總金額")]: "TOTAL_REFUND",
+    [normalizeMetricFieldIdentity("總退費金額")]: "TOTAL_REFUND",
     [normalizeMetricFieldIdentity("累計bf!創帳數")]: "CUMULATIVE_NEW_ACCOUNTS_BEANFUN",
     [normalizeMetricFieldIdentity("bf!創帳數")]: "NEW_ACCOUNTS_BEANFUN"
   };
@@ -3600,6 +3604,12 @@ const formulaInputValueFromOnclick = (onclick: unknown): string | null => {
   return match?.[2] ?? null;
 };
 
+const formulaFieldCodeFromOnclick = (onclick: unknown): string | null => {
+  const value = formulaInputValueFromOnclick(onclick);
+  const match = value?.match(/^\[([^\]]+)\]$/);
+  return match?.[1] ?? null;
+};
+
 const clickFormulaModalButton = async (
   page: Page,
   value: string,
@@ -3621,9 +3631,41 @@ const clickFormulaModalButton = async (
   return target;
 };
 
+type FormulaModalButton = Awaited<ReturnType<typeof readVisibleFormulaModalButtons>>[number];
+
+const formulaFieldTokenMatches = (button: FormulaModalButton, fieldLabel: string): boolean => {
+  if (!/inputFormula/i.test(button.onclick ?? "")) return false;
+  const code = formulaFieldCodeFromOnclick(button.onclick);
+  if (!code) return false;
+  return fieldPickerTargetMatches(
+    { label: button.text, code, groupLabel: null },
+    { label: fieldLabel, code: knownMetricFieldCode(fieldLabel) }
+  );
+};
+
 const clickFormulaFieldToken = async (page: Page, fieldLabel: string): Promise<Record<string, unknown>> => {
+  const clickExactFormulaFieldToken = async (): Promise<Record<string, unknown>> => {
+    const buttons = await readVisibleFormulaModalButtons(page);
+    const targetCode = normalizeMetricFieldIdentity(knownMetricFieldCode(fieldLabel));
+    const target = buttons
+      .filter((button) => formulaFieldTokenMatches(button, fieldLabel))
+      .sort((a, b) => {
+        const codeA = normalizeMetricFieldIdentity(formulaFieldCodeFromOnclick(a.onclick));
+        const codeB = normalizeMetricFieldIdentity(formulaFieldCodeFromOnclick(b.onclick));
+        const codeScoreA = targetCode && codeA === targetCode ? 0 : 1;
+        const codeScoreB = targetCode && codeB === targetCode ? 0 : 1;
+        return codeScoreA - codeScoreB || normalizeMetricFieldIdentity(a.text).length - normalizeMetricFieldIdentity(b.text).length;
+      })[0];
+    if (!target) {
+      throw new HelperBlockedError(`FORMULA_FIELD_TOKEN_NOT_FOUND_EXACT:${fieldLabel}; buttons=${JSON.stringify(buttons.slice(0, 80)).slice(0, 2000)}`);
+    }
+    await clickVisibleButtonByIndex(page, target.index, 8000);
+    await page.waitForTimeout(120);
+    return target;
+  };
+
   try {
-    return await clickFormulaModalButton(page, fieldLabel, "contains");
+    return await clickExactFormulaFieldToken();
   } catch (firstError) {
     const modalLocator = page.locator("#formulaEditorModal, [role='dialog'], .modal, .ant-modal, .MuiDialog-root").filter({ hasText: /可用欄位|公式編輯器|運算欄位/ }).first();
     const searchInput = modalLocator.locator("input[placeholder*='搜尋'], input[placeholder*='搜索'], input[placeholder*='欄位']").last();
@@ -3631,7 +3673,7 @@ const clickFormulaFieldToken = async (page: Page, fieldLabel: string): Promise<R
       await searchInput.fill(fieldLabel, { timeout: 5000 }).catch(() => undefined);
       await page.waitForTimeout(300);
       try {
-        return await clickFormulaModalButton(page, fieldLabel, "contains");
+        return await clickExactFormulaFieldToken();
       } catch {
         // Fall through to the original, more informative error.
       }
@@ -4557,6 +4599,15 @@ const fieldPickerTargetMatches = (
   if (targetCode) targetIdentities.add(targetCode);
   if (itemCode && targetIdentities.has(itemCode)) return true;
   return targetIdentities.has(normalizeMetricFieldIdentity(item.label));
+};
+
+export const __metricFieldIdentityTestHooks = {
+  normalizeMetricFieldIdentity,
+  metricFieldAliasIdentities,
+  metricFieldIdentitySet: (value: string | null | undefined): string[] => [...metricFieldIdentitySet(value)],
+  knownMetricFieldCode,
+  fieldPickerTargetMatches,
+  formulaFieldTokenMatches
 };
 
 const clickMetricFieldPickerDomTarget = async (

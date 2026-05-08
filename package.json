@@ -12,6 +12,7 @@
     "check:result-evidence": "tsx scripts/check-result-evidence-gate.ts",
     "verify:agent-roundtrip": "npm run build && tsx scripts/verify-agent-roundtrip.ts",
     "verify:helper-hints": "tsx scripts/verify-helper-hints-fixture.ts",
+    "verify:helper-field-aliases": "tsx scripts/verify-helper-field-aliases.ts",
     "verify:date-ui-evidence": "tsx scripts/verify-date-ui-evidence.ts",
     "verify:date-ui-dom-smoke": "tsx scripts/verify-date-ui-dom-smoke.ts",
     "verify:capability-gate": "tsx scripts/verify-capability-gate.ts",

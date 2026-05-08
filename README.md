@@ -24,7 +24,7 @@ Production endpoints:
 Current semantic versions:
 
 - App/API: `1.1.8`
-- Mac Agent: `0.2.28`
+- Mac Agent: `0.2.29`
 
 Active branches:
 
@@ -78,6 +78,7 @@ The current line is the Mac Agent MVP. It supports:
 - OTTEST004_027 blocked-reduction helper fixes add strict metric field identity matching by field code/explicit alias, so `累計bf!創帳數` no longer satisfies `bf!創帳數`; create-project names are capped to the BI modal's 20-character limit before submission; project open/back helpers poll real report-list readiness and use read-only DOM fallback evidence when `locator.innerText()` is unstable.
 - The 2026-05-08 blocked-reduction patch was verified with real helper/UI smoke runs: H-03 field reconcile `smoke-ottest004-h03-field-reconcile-20260508220946`, A-01 inferred project open `smoke-ottest004-a01-openproject-20260508221252`, F-02 save/reopen `smoke-ottest004-f02-save-reopen-20260508221122`, G-05 back button `smoke-ottest004-g05-back-rerun2-20260508221632`, and G-01 create project `smoke-ottest004-g01-createproject-rerun3-20260508222359`.
 - The blocked-reduction runtime patch is deployed through `codex/uat-tool-mvp` as commit `1dcb21d`; Railway production `/health` is healthy and the local `com.tommy.uat-agent` LaunchAgent was restarted to serve Agent `0.2.28`.
+- OTTEST004_029 refund alias helper fixes map legacy testcase label `退費總金額` exactly to current UI label/code `總退費金額` / `TOTAL_REFUND`, including the formula modal token picker. The alias is code-guarded so `TOTAL_REFUND_IOS`, `TOTAL_REFUND_AOS`, and `TOTAL_REFUND_WEBSHOP` do not satisfy the total-refund target. Real helper/UI smoke passed for D-01 (`smoke-ottest004-d01-refund-alias-202605090001`) and E-03 (`smoke-ottest004-e03-refund-alias-rerun2-202605090001`).
 - Temporary report deletion cases can use `collage.createAndDeleteTemporaryReport`: the helper creates a current-case temp report, requires Tool Bridge approval before delete, accepts only known BI delete confirmation, rejects protected/main report names, and verifies the temp row is gone.
 - Date UI evidence is first-class: `collage.configureMetric` writes `date-ui-evidence.json`, and manual/Codex-visible date cases can use `collage.captureDateUiEvidence` to record the requested UI label plus the visible or baseDate-computed represented date range.
 - Optional support files are indexed with lightweight profiles in `input/supporting-docs-manifest.json` so Codex can inspect CSV headers/row counts or markdown headings before choosing a full file to read.
