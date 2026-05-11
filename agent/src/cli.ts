@@ -1,13 +1,33 @@
 #!/usr/bin/env node
 import fs from "node:fs";
 import { AgentConnection } from "./connection";
-import { defaultAgentConfig, defaultConfigPath, ensureAgentDirectories, readConfig, writeConfig } from "./config";
+import { defaultAgentConfig, ensureAgentDirectories, readConfig, resolveConfigPath, writeConfig } from "./config";
 import { runDoctor } from "./doctor";
 import { installLaunchd, uninstallLaunchd } from "./launchd";
 import { handleTaskDispatch, handleToolResponse } from "./task-runner";
 import { closeChromeDebugSession } from "./browser-session";
 
-const args = process.argv.slice(2);
+const rawArgs = process.argv.slice(2);
+
+const removeFlagWithValue = (argv: string[], name: string): { args: string[]; value?: string } => {
+  const next: string[] = [];
+  let value: string | undefined;
+  for (let index = 0; index < argv.length; index += 1) {
+    if (argv[index] === name) {
+      value = argv[index + 1];
+      index += 1;
+      continue;
+    }
+    next.push(argv[index]);
+  }
+  return { args: next, value };
+};
+
+const parsedGlobalConfig = removeFlagWithValue(rawArgs, "--config");
+const parsedLaunchdLabel = removeFlagWithValue(parsedGlobalConfig.args, "--launchd-label");
+const args = parsedLaunchdLabel.args;
+const configPath = resolveConfigPath(parsedGlobalConfig.value);
+const launchdLabel = parsedLaunchdLabel.value;
 
 const getFlag = (name: string): string | undefined => {
   const index = args.indexOf(name);
@@ -52,6 +72,8 @@ const sendRejection = (
 
 const usage = (): void => {
   process.stdout.write(`uat-agent commands:
+  --config <path> may be passed before or after the command.
+  --launchd-label <label> may be used with install-launchd/uninstall-launchd.
   login --server <wss-url> --token <agent-token> [--device-name <name>]
         [--workspace-root <codex-galaxy-root>]
   doctor
@@ -77,20 +99,21 @@ const main = async (): Promise<void> => {
     if (!server || !token) {
       throw new Error("LOGIN_REQUIRES_SERVER_AND_TOKEN");
     }
+    const baseConfig = defaultAgentConfig({}, configPath);
     const config = defaultAgentConfig({
       server,
       token,
-      device_name: deviceName ?? defaultAgentConfig().device_name,
-      codex_workspace_root: workspaceRoot ? fs.realpathSync(workspaceRoot) : defaultAgentConfig().codex_workspace_root
-    });
+      device_name: deviceName ?? baseConfig.device_name,
+      codex_workspace_root: workspaceRoot ? fs.realpathSync(workspaceRoot) : baseConfig.codex_workspace_root
+    }, configPath);
     ensureAgentDirectories(config);
-    writeConfig(config);
-    printJson({ ok: true, configPath: defaultConfigPath, device_name: config.device_name });
+    writeConfig(config, configPath);
+    printJson({ ok: true, configPath, device_name: config.device_name });
     return;
   }
 
   if (command === "doctor") {
-    const config = readConfig();
+    const config = readConfig(configPath);
     ensureAgentDirectories(config);
     const checks = await runDoctor(config);
     const required = checks.filter((check) => check.verdict !== "SKIPPED");
@@ -102,21 +125,21 @@ const main = async (): Promise<void> => {
   }
 
   if (command === "status") {
-    if (!fs.existsSync(defaultConfigPath)) {
+    if (!fs.existsSync(configPath)) {
       printJson({
         ok: false,
         configured: false,
-        configPath: defaultConfigPath,
+        configPath,
         message: "Run `uat-agent login --server <url> --token <token>` first."
       });
       return;
     }
 
-    const config = readConfig();
+    const config = readConfig(configPath);
     printJson({
       ok: true,
       configured: true,
-      configPath: defaultConfigPath,
+      configPath,
       server: config.server,
       device_name: config.device_name,
       token: maskToken(config.token),
@@ -136,7 +159,7 @@ const main = async (): Promise<void> => {
   }
 
   if (command === "start") {
-    const config = readConfig();
+    const config = readConfig(configPath);
     ensureAgentDirectories(config);
     let stopping = false;
     let activeTask: { runId: string; cancel: (reason?: string) => void } | null = null;
@@ -262,14 +285,14 @@ const main = async (): Promise<void> => {
   }
 
   if (command === "install-launchd") {
-    const config = readConfig();
+    const config = readConfig(configPath);
     ensureAgentDirectories(config);
-    printJson(installLaunchd(config, !args.includes("--no-load")));
+    printJson(installLaunchd(config, !args.includes("--no-load"), { configPath, label: launchdLabel }));
     return;
   }
 
   if (command === "uninstall-launchd") {
-    printJson(uninstallLaunchd());
+    printJson(uninstallLaunchd({ label: launchdLabel }));
     return;
   }
 
