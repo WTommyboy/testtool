@@ -608,6 +608,10 @@ multi-variant 日期 case 優先拆成多題，例如 `B-03a 昨日快捷`、`B-
 
 不要在 testcase 寫 CSS selector 或 helper 實作細節;只寫 UI label、case 參數與 evidence requirement。公式、基底欄位、運算欄位名稱必須逐題提供,不可只靠自然語言讓 helper 猜。
 
+公式/數據邏輯 case 必須先分清楚「工具功能可用性」與「資料辨識力」。若命題目標是驗證運算欄位功能實際可用,預期結果應優先寫明 UI 可建立公式、request 帶入公式、preview 成功、結果符合目前資料下的系統行為;資料特性(例如分母全 0、空值多、樣本不足以區分兩種演算法)應記錄為資料限制,不得自動導向 BLOCKED。若命題目標是證明演算法差異(例如「逐日計算」必須能和 `sum/sum` 區分),testcase 必須明確要求可辨識樣本,例如分母存在非 0 且每日值不同;若本輪資料池無法提供該樣本,應在 case 設計階段改寫為 PM-skip/BLOCKED 或調整測試資料,不要讓 Codex 在執行時猜測。
+
+除法/比例類公式尤其要避免把「功能可用」與「演算法差異」混在同一句預期。若接受 BI 對除以 0 回傳 0 作為合理行為,case 應明寫「當分母全為 0 時,以公式成功帶入、preview 成功、運算欄位依系統 divide-by-zero=0 行為回 0 作為 PASS evidence;本題不要求證明非 sum/sum」。若必須驗證非 sum/sum,則預期結果應明寫「需要至少 N 筆非 0 分母資料,且逐日計算結果與 sum/sum 不同」。
+
 `狀態清理` 不要在前置條件重複成另一套 checklist，避免和 xlsx 獨立欄位衝突。若需補充背景，放在 `備註`。
 
 ### 2.6 步驟寫法
@@ -1182,6 +1186,8 @@ A-06 類「只列全 0 欄位清單、不判斷根因」case 應使用專用 hel
 ```
 
 公式 case 若缺少 `baseFields`、`calculatedFieldName` 或 `formula`,不得標 `automationLevel=helper`。若本題要測的是 modal UI 異常、公式編輯器文案、或需要 Codex 做延伸判讀,可標 `manual_ai`,但仍須在步驟中完整描述 modal 操作與 evidence。
+
+Helper hints 不應要求 helper 補足資料辨識力。若公式 case 需要非 0 分母、不同日期分布或特定對照樣本,這是 testcase/測試資料設計需求,必須寫在 `預期結果`、`驗證方法` 或 PM-skip 條件中;helper 只負責依 UI 操作收集當前資料 evidence。若 case 只測公式功能可用,helper evidence 中出現全 0 分母時,Codex 應記錄資料限制與 divide-by-zero 行為,不應要求 testcase 額外寫「helper 必須找非 0 樣本」。
 
 `download_csv_verify` 或同時含 `save_load_flow` 的 CSV case，`expected` 與 `requiredEvidence` 要分清楚「重開還原」「preview 存在」「CSV 下載」「CSV 比對」四層，不要把全部混成一句「下載資料一致」。若 helper plan 已產生 save/reopen/download actions，Codex 不可在只完成 preview 後直接判 `BLOCKED/EVIDENCE_INSUFFICIENT`；必須先要求 Tool Bridge/continuation 執行剩餘必要步驟，或明確記錄哪個前置必要子條件失敗。
 

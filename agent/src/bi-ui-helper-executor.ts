@@ -2368,6 +2368,9 @@ const clickByText = async (page: Page, text: string, timeout = 12000): Promise<v
 };
 
 const hasCreateReportEntry = (bodyText: string): boolean => /(?:[+＋➕]\s*)?新增報表/.test(bodyText);
+const hasSelectProjectPrompt = (bodyText: string): boolean => /請從左側選擇專案查看報表/.test(bodyText);
+const isCollageReportListReady = (bodyText: string): boolean =>
+  hasCreateReportEntry(bodyText) && !hasSelectProjectPrompt(bodyText);
 
 type CollageProjectSelectionAttempt = {
   label: string;
@@ -2375,6 +2378,102 @@ type CollageProjectSelectionAttempt = {
   hasCreateReportEntry: boolean;
   hasSelectProjectPrompt: boolean;
   bodyTextExcerpt: string;
+  error?: string;
+  clickMethod?: string;
+  clickedText?: string;
+  candidateCount?: number;
+};
+
+type CollageProjectClickCandidate = {
+  bodyIndex: number;
+  text: string;
+  tagName: string;
+  role: string | null;
+  className: string;
+  rect: { x: number; y: number; width: number; height: number };
+};
+
+const scoreCollageProjectClickCandidate = (candidate: Omit<CollageProjectClickCandidate, "bodyIndex">, projectName: string): number => {
+  const target = normalizeUiText(projectName);
+  const text = normalizeUiText(candidate.text);
+  if (!target || !text.includes(target)) return Number.POSITIVE_INFINITY;
+  const className = candidate.className.toLowerCase();
+  const role = (candidate.role ?? "").toLowerCase();
+  const tagName = candidate.tagName.toLowerCase();
+  const exact = text === target;
+  const shortText = text.length <= target.length + 10;
+  const clickableish =
+    /button|a|li/.test(tagName) ||
+    /button|treeitem|menuitem|option|tab/.test(role) ||
+    /tree|menu|project|nav|item|node|title|label/.test(className);
+  let score = 0;
+  if (!exact) score += 20;
+  if (!shortText) score += Math.min(80, text.length - target.length);
+  if (!clickableish) score += 12;
+  if (candidate.rect.x > 520) score += 15;
+  if (/新增報表|報表名稱|資料區間日期|請從左側選擇/.test(candidate.text)) score += 80;
+  if (/🗑|刪除|delete|trash/i.test(candidate.text)) score += 10;
+  return score + Math.max(0, candidate.rect.y / 10000);
+};
+
+const visibleCollageProjectClickCandidates = async (page: Page, projectName: string): Promise<CollageProjectClickCandidate[]> => {
+  const candidates = await page.evaluate((targetProjectName) => {
+    const normalize = (value: string | null | undefined) => (value ?? "").trim().replace(/\s+/g, "");
+    const target = normalize(targetProjectName);
+    const isVisible = (element: Element): boolean => {
+      const rect = element.getBoundingClientRect();
+      const style = window.getComputedStyle(element);
+      return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden" && style.opacity !== "0";
+    };
+    const all = Array.from(document.querySelectorAll<HTMLElement>("body *"));
+    return all.flatMap((element, bodyIndex) => {
+      if (!isVisible(element)) return [];
+      const text = (element.innerText || element.textContent || "").trim().replace(/\s+/g, " ");
+      if (!text || !normalize(text).includes(target)) return [];
+      const rect = element.getBoundingClientRect();
+      return [{
+        bodyIndex,
+        text,
+        tagName: element.tagName.toLowerCase(),
+        role: element.getAttribute("role"),
+        className: typeof element.className === "string" ? element.className : "",
+        rect: {
+          x: Math.round(rect.x),
+          y: Math.round(rect.y),
+          width: Math.round(rect.width),
+          height: Math.round(rect.height)
+        }
+      }];
+    });
+  }, projectName);
+  return candidates
+    .filter((candidate) => Number.isFinite(scoreCollageProjectClickCandidate(candidate, projectName)))
+    .sort((a, b) =>
+      scoreCollageProjectClickCandidate(a, projectName) - scoreCollageProjectClickCandidate(b, projectName) ||
+      a.rect.y - b.rect.y ||
+      a.rect.x - b.rect.x
+    )
+    .slice(0, 8);
+};
+
+const clickCollageProjectCandidate = async (page: Page, projectName: string, timeout = 8000): Promise<{ method: string; clickedText: string; candidateCount: number }> => {
+  const candidates = await visibleCollageProjectClickCandidates(page, projectName);
+  const errors: string[] = [];
+  for (const candidate of candidates.slice(0, 4)) {
+    try {
+      await clickVisibleBodyElementByIndex(page, candidate.bodyIndex, timeout);
+      return { method: "visible_project_candidate", clickedText: candidate.text, candidateCount: candidates.length };
+    } catch (error) {
+      errors.push(error instanceof Error ? error.message.slice(0, 240) : String(error).slice(0, 240));
+    }
+  }
+  try {
+    await clickByText(page, projectName, timeout);
+    return { method: "text_locator_fallback", clickedText: projectName, candidateCount: candidates.length };
+  } catch (error) {
+    errors.push(error instanceof Error ? error.message.slice(0, 240) : String(error).slice(0, 240));
+    throw new HelperBlockedError(`COLLAGE_PROJECT_CLICK_FAILED:${projectName}; candidates=${candidates.length}; errors=${errors.join(" | ")}`);
+  }
 };
 
 export const inferVisibleCollageProjectName = (bodyText: string, explicitProjectName: string | null = null): string | null => {
@@ -2395,6 +2494,14 @@ export const inferVisibleCollageProjectName = (bodyText: string, explicitProject
   return lines.find((line) => /拼貼test[_\d]*|.+專案/.test(line) && !/新增專案/.test(line)) ?? null;
 };
 
+export const __openProjectRetryTestHooks = {
+  hasCreateReportEntry,
+  hasSelectProjectPrompt,
+  isCollageReportListReady,
+  inferVisibleCollageProjectName,
+  scoreCollageProjectClickCandidate
+};
+
 const ensureCollageProjectSelected = async (
   options: CliOptions,
   page: Page
@@ -2411,7 +2518,7 @@ const ensureCollageProjectSelected = async (
       label,
       url: page.url(),
       hasCreateReportEntry: hasCreateReportEntry(bodyText),
-      hasSelectProjectPrompt: /請從左側選擇專案查看報表/.test(bodyText),
+      hasSelectProjectPrompt: hasSelectProjectPrompt(bodyText),
       bodyTextExcerpt: bodyText.slice(0, 800)
     });
     return bodyText;
@@ -2427,10 +2534,10 @@ const ensureCollageProjectSelected = async (
       return page.url();
     }
   })();
-  if (hasCreateReportEntry(bodyText) && !explicitProjectName) {
+  if (isCollageReportListReady(bodyText) && !explicitProjectName) {
     return { projectName: null, bodyText, selectedBy: "already_selected", attempts };
   }
-  if (hasCreateReportEntry(bodyText) && explicitProjectName && decodedUrl.includes(explicitProjectName)) {
+  if (isCollageReportListReady(bodyText) && explicitProjectName && decodedUrl.includes(explicitProjectName)) {
     return { projectName: explicitProjectName, bodyText, selectedBy: "already_selected", attempts };
   }
 
@@ -2441,16 +2548,31 @@ const ensureCollageProjectSelected = async (
 
   let lastError = "";
   for (let attempt = 0; attempt < 3; attempt += 1) {
+    let clickEvidence: { method: string; clickedText: string; candidateCount: number } | null = null;
     try {
-      await clickByText(page, projectName, attempt === 0 ? 12000 : 8000);
+      clickEvidence = await clickCollageProjectCandidate(page, projectName, attempt === 0 ? 12000 : 8000);
       await page.waitForTimeout(900);
     } catch (error) {
       lastError = error instanceof Error ? error.message : String(error);
+      attempts.push({
+        label: `click_project_failed_${attempt + 1}`,
+        url: page.url(),
+        hasCreateReportEntry: hasCreateReportEntry(bodyText),
+        hasSelectProjectPrompt: hasSelectProjectPrompt(bodyText),
+        bodyTextExcerpt: bodyText.slice(0, 800),
+        error: lastError.slice(0, 300)
+      });
     }
     const startedAt = Date.now();
     while (Date.now() - startedAt < 5000) {
       bodyText = await capture(`after_click_${attempt + 1}`);
-      if (hasCreateReportEntry(bodyText) && !/請從左側選擇專案查看報表/.test(bodyText)) {
+      const lastAttempt = attempts.at(-1);
+      if (lastAttempt && clickEvidence) {
+        lastAttempt.clickMethod = clickEvidence.method;
+        lastAttempt.clickedText = clickEvidence.clickedText.slice(0, 200);
+        lastAttempt.candidateCount = clickEvidence.candidateCount;
+      }
+      if (isCollageReportListReady(bodyText)) {
         return { projectName, bodyText, selectedBy, attempts };
       }
       await page.waitForTimeout(500);
@@ -2462,6 +2584,10 @@ const ensureCollageProjectSelected = async (
       await page.waitForTimeout(1200);
       bodyText = await capture("after_reload");
     }
+    if (hasSelectProjectPrompt(bodyText)) {
+      await page.keyboard.press("Escape").catch(() => undefined);
+      await page.waitForTimeout(250);
+    }
   }
   bodyText = await capture("not_ready");
   if (lastError) {
@@ -2469,7 +2595,7 @@ const ensureCollageProjectSelected = async (
       label: `last_click_error:${lastError.slice(0, 200)}`,
       url: page.url(),
       hasCreateReportEntry: hasCreateReportEntry(bodyText),
-      hasSelectProjectPrompt: /請從左側選擇專案查看報表/.test(bodyText),
+      hasSelectProjectPrompt: hasSelectProjectPrompt(bodyText),
       bodyTextExcerpt: bodyText.slice(0, 800)
     });
   }
@@ -2501,9 +2627,9 @@ const openProject = async (options: CliOptions, page: Page, startedAt: string): 
   }
   await page.waitForTimeout(800);
   const projectSelection = await ensureCollageProjectSelected(options, page);
-  if (!hasCreateReportEntry(projectSelection.bodyText)) {
+  if (!isCollageReportListReady(projectSelection.bodyText)) {
     throw new HelperBlockedError(
-      `COLLAGE_PROJECT_OPEN_DID_NOT_REACH_REPORT_LIST:${projectSelection.projectName ?? "unknown"}; selectedBy=${projectSelection.selectedBy}; bodyText=${projectSelection.bodyText.slice(0, 500)}`
+      `COLLAGE_PROJECT_OPEN_DID_NOT_REACH_REPORT_LIST:${projectSelection.projectName ?? "unknown"}; selectedBy=${projectSelection.selectedBy}; attempts=${JSON.stringify(projectSelection.attempts.slice(-6)).slice(0, 1200)}; bodyText=${projectSelection.bodyText.slice(0, 500)}`
     );
   }
   const shot = await screenshot(options, page, "open-project");
@@ -2520,9 +2646,9 @@ const openProject = async (options: CliOptions, page: Page, startedAt: string): 
 
 const createCollageReport = async (options: CliOptions, page: Page, startedAt: string): Promise<HelperReport> => {
   const projectSelection = await ensureCollageProjectSelected(options, page);
-  if (!hasCreateReportEntry(projectSelection.bodyText)) {
+  if (!isCollageReportListReady(projectSelection.bodyText)) {
     throw new HelperBlockedError(
-      `CREATE_REPORT_PRECONDITION_NOT_READY:${projectSelection.projectName ?? "unknown"}; selectedBy=${projectSelection.selectedBy}; bodyText=${projectSelection.bodyText.slice(0, 500)}`
+      `CREATE_REPORT_PRECONDITION_NOT_READY:${projectSelection.projectName ?? "unknown"}; selectedBy=${projectSelection.selectedBy}; attempts=${JSON.stringify(projectSelection.attempts.slice(-6)).slice(0, 1200)}; bodyText=${projectSelection.bodyText.slice(0, 500)}`
     );
   }
   await clickCreateReportButton(page);

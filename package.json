@@ -24,6 +24,7 @@
     "verify:agent-result-contract": "tsx scripts/verify-agent-result-contract.ts",
     "verify:fail-bug-fallback": "tsx scripts/verify-fail-bug-fallback.ts",
     "verify:save-calculation-judgment": "tsx scripts/verify-save-calculation-judgment.ts",
+    "verify:open-project-retry": "tsx scripts/verify-open-project-retry.ts",
     "verify:final-aggregate-result": "tsx scripts/verify-final-aggregate-result.ts",
     "verify:helper-report-gate": "tsx scripts/verify-helper-report-gate.ts",
     "verify:source-prefilled-results": "tsx scripts/verify-source-prefilled-results.ts",
