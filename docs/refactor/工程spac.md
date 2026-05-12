@@ -1,7 +1,7 @@
 # UAT Tool 最新工程 Spec
 
-**版本**: v2026-05-07
-**狀態**: Mac Agent MVP / App 1.1.8 + Agent 0.2.29 source / Indexed Guidance + Preflight Safeguards + groupId schema + final/partial aggregate result + complete archive MD export + OTTEST002 Collage helper P0 + metadata dropdown source-group scoping + metadata expected-source fallback + metadata source-scope count guard + list-page CSV row refresh + response-body fallback + preview table evidence + CSV header/date normalization + helper-plan auto continuation + existing-report field exact reconciliation + helper-evidence preflight replacement + support-file profile + result repair guard + degraded BLOCKED result guard + Tool Bridge run-event evidence gate + Tool Bridge lifecycle status panel + Tool Bridge result-gate false-positive guard + missing Tool Bridge response wording guard + negative native-confirm prose guard + formula-modal blocked gate guard + source-result runtime skip ingestion + execute selected-field precondition guard + non-destructive validation alert allowlist + A-06 all-zero field inspection helper + editor-session CSV helper chain + same-case project-row CSV planner guard + D0 baseline row-CSV planner guard + temporary report create/delete helper + formula/calculated-field preview helper + stable formula modal selector helper + create-project helper + dotted create-project template routing + dynamic/hybrid date helper support + strict select-all field-count guard + D-02 structured select-all source/count guard + PASS-vs-helper-false-check gate + PM skip classification + preview-only helper skip guards + case-type must-read rules + CSV/metadata/formula authoring contract + formula helper-hints parser compatibility + readonly formula keypad/token input + formula display/code token matching + total-refund exact alias/token matching + report-list row-nearby CSV fallback + create-project state carryover + project-page navigation helpers + save-load create-before-reopen guard + same-case save/reopen report-name-prefix guard + save-only no-open-existing/no-reopen/no-download guard + structured date variants/staged boundary helper support + exact metadata source filename contract + background-safe browser lease + no-foreground helper policy + field-list loading wait + inline cleanup consistency parser guard / helper project auto-selection guard / manual_ai helper pre-run guard / manual_ai safe navigation prelude guard / date-variants preview evidence helper / multi-variant date visible-UI routing guard / date UI represented-range evidence / Monday-week date preset guard with weekStart override / select-all fields params guard / selected-field code-label reconciliation / Playwright browser_tabs availability guard / active-question-first session handoff contract / Agent WebSocket reconnect resilience
+**版本**: v2026-05-13
+**狀態**: Mac Agent MVP / App 1.1.8 + Agent 0.2.30 source / Indexed Guidance + Preflight Safeguards + groupId schema + final/partial aggregate result + complete archive MD export + OTTEST002 Collage helper P0 + metadata dropdown source-group scoping + metadata expected-source fallback + metadata source-scope count guard + list-page CSV row refresh + response-body fallback + preview table evidence + CSV header/date normalization + helper-plan auto continuation + existing-report field exact reconciliation + helper-evidence preflight replacement + support-file profile + result repair guard + FAIL-to-Bug linked row contract + server fallback bug candidate + duplicate fallback guard + PASS/ordinary BLOCKED no-auto-bug guard + degraded BLOCKED result guard + Tool Bridge run-event evidence gate + Tool Bridge lifecycle status panel + Tool Bridge result-gate false-positive guard + missing Tool Bridge response wording guard + negative native-confirm prose guard + formula-modal blocked gate guard + source-result runtime skip ingestion + execute selected-field precondition guard + non-destructive validation alert allowlist + A-06 all-zero field inspection helper + editor-session CSV helper chain + same-case project-row CSV planner guard + D0 baseline row-CSV planner guard + temporary report create/delete helper + formula/calculated-field preview helper + stable formula modal selector helper + create-project helper + dotted create-project template routing + dynamic/hybrid date helper support + strict select-all field-count guard + D-02 structured select-all source/count guard + PASS-vs-helper-false-check gate + PM skip classification + preview-only helper skip guards + case-type must-read rules + CSV/metadata/formula authoring contract + formula helper-hints parser compatibility + readonly formula keypad/token input + formula display/code token matching + divide-by-zero=0 calculation judgment + save reportListEvidence + hardened openProject prompt retry + total-refund exact alias/token matching + report-list row-nearby CSV fallback + create-project state carryover + project-page navigation helpers + save-load create-before-reopen guard + same-case save/reopen report-name-prefix guard + save-only no-open-existing/no-reopen/no-download guard + structured date variants/staged boundary helper support + exact metadata source filename contract + background-safe browser lease + no-foreground helper policy + field-list loading wait + inline cleanup consistency parser guard / helper project auto-selection guard / manual_ai helper pre-run guard / manual_ai safe navigation prelude guard / date-variants preview evidence helper / multi-variant date visible-UI routing guard / date UI represented-range evidence / Monday-week date preset guard with weekStart override / select-all fields params guard / selected-field code-label reconciliation / Playwright browser_tabs availability guard / active-question-first session handoff contract / Agent WebSocket reconnect resilience
 **適用分支**: `refactor/mac-agent-mvp` / `codex/uat-tool-mvp`  
 **說明**: 檔名沿用 Tommy 提供的 `工程spac.md`;本文內容為工程 spec。
 
@@ -150,7 +150,7 @@ package:
 ```text
 package name: uat-tool-agent
 binary: uat-agent
-version: 0.2.29
+version: 0.2.30
 ```
 
 The Agent WebSocket `X-Agent-Version` header and `agent.online.payload.agent_version` are read from `agent/package.json`; they must not be hard-coded in `agent/src/connection.ts`.
@@ -2071,3 +2071,109 @@ Production promote must not merge dev-only config paths. Runtime environment sel
 - production config/workdir: `/Users/tommy/.uat-agent`
 - dev LaunchAgent: `com.tommy.uat-agent-dev`
 - dev config/workdir: `/Users/tommy/.uat-agent-dev`
+
+## 22. Result Bug Linkage, Save Evidence, and openProject Retry
+
+Date: 2026-05-13 Asia/Taipei
+
+This section records the production-promoted contract for FAIL-to-Bug linkage and the OTTEST004 save/openProject judgment fixes.
+
+### 22.1 FAIL-to-Bug Contract
+
+Every trusted `FAIL` case must be represented in the Bug sheet or normalized bug state.
+
+Agent-side result writing:
+
+- `agent/src/result-writer.ts` creates a linked Bug row for a `FAIL` result when Codex did not explicitly provide one.
+- The generated description includes `auto_generated_from_fail=true`, `source=agent_result_writer`, `case_no`, `case_title`, status `OPEN`, and RD-facing detail copied from `detail_json` where available.
+- `agent/src/result-contract.ts` / self-check rejects a `FAIL` result that cannot be linked to a Bug row.
+
+Server ingest fallback:
+
+- `src/result-parser/fail-bug-fallback.ts` scans parsed case rows and bug rows during ingest / aggregate generation.
+- If a `FAIL` case has no linked Bug row, server creates a clearly marked fallback candidate with `auto_generated_from_fail=true` and source metadata.
+- If Codex/Agent already wrote a Bug row for the case, server does not duplicate it.
+- Ordinary `PASS` and ordinary `BLOCKED` do not create Bug candidates.
+- A `BLOCKED` row can create an auto candidate only when its detail clearly asks for defect tracking, using a separate `auto_generated_from_blocked_defect=true` marker.
+
+Verification:
+
+```bash
+npm run verify:fail-bug-fallback
+npm run verify:agent-result-contract
+npm run verify:final-aggregate-result
+```
+
+### 22.2 Save/List Evidence Contract
+
+`collage.saveReport` must return enough current-run evidence for Codex to judge save/list cases without relying on stale screenshots or prose.
+
+Required save evidence:
+
+- save POST request and 200 response
+- handled known success / return-to-list dialogs
+- `reportListEvidence.found=true`
+- report row text containing the saved report name and date range
+- recovery attempts, when needed, such as `reload_report_list` and `click_project_after_reload`
+- download/delete controls when present on the saved row
+
+Judgment rule:
+
+- A save case should not become `BLOCKED` merely because an older helper did not provide an exact `reportListEvidence` field, if equivalent current-run DOM/network evidence proves the saved report is visible in the list.
+- When `reportListEvidence.found=true` exists, it is first-class evidence for F-01/G-02-style cases.
+
+Verification:
+
+```bash
+npm run verify:save-calculation-judgment
+```
+
+### 22.3 Calculation / Divide-by-Zero Judgment Contract
+
+Formula testcase design must distinguish tool usability from data discriminating power.
+
+Runtime judgment:
+
+- If the case objective is formula/calculated-field usability, evidence should prioritize formula modal submission, request body formula, preview success, and output matching current BI behavior.
+- When denominator values are all zero and BI returns calculated output `0`, this can be accepted as the system's divide-by-zero behavior for functionality cases.
+- If the case objective is to prove per-day calculation differs from `sum/sum`, the testcase must require a discriminating dataset: at least one non-zero denominator and values that make the two algorithms distinguishable.
+
+Authoring rule:
+
+- `docs/authoring/UAT_三文件撰寫規則.md` documents that helpers should not be asked to manufacture data discriminating power. Claude/testcase authoring must state whether zero-denominator data is acceptable PASS evidence or a PM-skip/BLOCKED precondition.
+
+### 22.4 Hardened openProject Retry Contract
+
+`collage.openProject` and dependent actions must not treat a prompt-only page as ready.
+
+Readiness rule:
+
+- A page containing `請從左側選擇專案查看報表` is not report-list ready.
+- `+ 新增報表` is accepted only when the select-project prompt is absent.
+- Without explicit project name, helper may infer a visible Collage project candidate, but it must record attempts and click evidence.
+- After clicking a project, helper must verify prompt disappearance and report-list readiness before returning `ok`.
+
+Verification:
+
+```bash
+npm run verify:open-project-retry
+```
+
+### 22.5 Dev Smoke and Production Promote
+
+Dev validation run:
+
+- Run ID: `530daae6-4b4e-4bcb-9b85-151b9a110dd8`
+- Summary: PASS 5 / FAIL 2 / BLOCKED 1
+- Relevant confirmations:
+  - F-01 and G-02 passed with save/list evidence.
+  - E-01 passed, proving the openProject/formula path was no longer blocked by the select-project prompt.
+  - A-01 and E-02 were FAIL and both appeared in the Bug summary.
+  - A-06 remained ordinary BLOCKED and did not create a Bug row.
+
+Production state after promote:
+
+- Remote branches `dev/uat-agent-config-isolation`, `refactor/mac-agent-mvp`, and `codex/uat-tool-mvp` fast-forwarded to `1d3f90c`.
+- Railway production `/version` reports branch `codex/uat-tool-mvp` and commit `1d3f90c`.
+- Production `/health` is healthy.
+- Local production Agent dist was rebuilt and `com.tommy.uat-agent` restarted from `/Users/tommy/Downloads/codex_galaxy/uat-tool`.

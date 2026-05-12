@@ -1333,3 +1333,35 @@ Tommy 曾討論是否改成腳本。最後決策是採「半腳本化 / helper �
 - Real Agent smoke：Railway dev run `5e420973-8462-4077-8fd7-e33e19a5fe08` 通過，`MCP-01` 結果為 `PASS`。子 Codex 成功呼叫 Playwright MCP `browser_tabs(action=list)`，回傳 tab `報表管理系統`，接著用 `browser_run_code` 只讀 DOM，取得 URL `https://galaxy.games.gamania.com/biapi-dev/testview/home?gameID=541`、title `報表管理系統`、非空 body，未偵測 login / 401 / 403 / blank / 載入失敗，classification=`reachable_galaxy_bi`。
 - Evidence：result workbook 位於 `/Users/tommy/.uat-agent-dev/runs/5e420973-8462-4077-8fd7-e33e19a5fe08/output/result.xlsx`，detail_json 包含 `currentRunEvidence.browserTabs`、lease `windowName`、observed URL/title 與 classification。Railway dev summary 顯示 `SUCCEEDED`、`caseStats.PASS=1`、`resultXlsxAvailable=true`、`logAvailable=true`、`timingSummaryAvailable=true`。
 - 結論：Dev Agent MCP runtime fix 已證明有效，可以 promote 到 production branch。Production promote 仍需維持 prod/dev service 分離：production `com.tommy.uat-agent` 繼續使用 `/Users/tommy/.uat-agent` 與 production Railway，dev `com.tommy.uat-agent-dev` 繼續使用 `/Users/tommy/.uat-agent-dev` 與 Railway dev。
+
+### 2026-05-12 20:42 - FAIL-to-Bug result contract 與 server fallback 修正
+
+- 背景：Tommy 指出 `FAIL` case 沒有寫到 Bug 區，要求修正 Codex/result workbook path 與 server ingest fallback，同時避免 duplicate，且 ordinary `BLOCKED` 不應預設自動產 bug。
+- Agent result contract：`agent/src/result-writer.ts` 會在 `FAIL` result 缺少 Bug row 時補 linked Bug row，描述內含 `auto_generated_from_fail=true`、`source=agent_result_writer`、`case_no`、`case_title`、status `OPEN` 與 detail_json 摘要。`agent/src/result-contract.ts` / normalizer / self-check 會阻擋無 linked Bug row 的 FAIL result。
+- Server fallback：新增 `src/result-parser/fail-bug-fallback.ts`，server ingest / final aggregate 會為沒有 Bug row 的 FAIL 產生 clearly marked fallback bug candidate；若 Codex/Agent 已寫 Bug row，不再 duplicate。PASS 與 ordinary BLOCKED 不自動產 bug；只有 detail 明確要求 defect tracking 的 BLOCKED 才以 `auto_generated_from_blocked_defect=true` 產 candidate。
+- 文件與 prompt：更新 Layer 1 result 規則與 BI startup prompt，明確 FAIL 必須連到 Bug sheet；新增 `scripts/verify-fail-bug-fallback.ts` 與 npm script `verify:fail-bug-fallback`。
+- 驗證：已跑 `npm run typecheck`、`npm run build`、`npm run verify:agent-result-contract`、`npm run verify:result-evidence-gate`、`npm run verify:final-aggregate-result`、`npm run verify:fail-bug-fallback`、`git diff --check` 通過。dev commit `9ec1d66` 已推 `dev/uat-agent-config-isolation`，等待 dev UAT smoke。
+
+### 2026-05-12 21:35 - Save/List evidence 與 E-02 全 0 計算判定修正
+
+- 背景：Dev run 初步證明 Bug 區塊出現，但 Tommy 指出 `BLOCKED` 變多，需要釐清 F-01 save/list evidence 與 E-02 全 0 除法判定。結論是 F-01 不應要求舊 helper 額外補 `reportListEvidence` 才能判斷；E-02 應由 testcase/資料設計決定是否需要非 0 分母，不應由 helper 自動找資料或把 BI divide-by-zero=0 視為工具錯。
+- Save/list：`collage.saveReport` 與判定 guidance 接受 current-run save API 200、成功 dialog、回清單 row text、`reportListFound=true` / `reportListEvidence.found=true` 作為 F-01 類 PASS evidence；不再因舊 helper 缺精確欄位而誤 BLOCKED。
+- Calculation judgment：公式/數據邏輯 case 分成「工具功能可用」與「資料辨識力」。若命題只測運算欄位功能，分母全 0 且結果依 BI divide-by-zero=0 回 0 可視為合理；若命題要證明逐日計算不同於 `sum/sum`，testcase 必須要求可辨識樣本。
+- Authoring：後續應請 Claude 調整 E-02 testcase 寫法，而不是由 helper 改資料或換欄位。此原則後續寫入 `docs/authoring/UAT_三文件撰寫規則.md`。
+- 驗證：新增 `scripts/verify-save-calculation-judgment.ts` / `verify:save-calculation-judgment`，並跑 typecheck/build、result contract/evidence/final aggregate、fail-bug fallback 與 `git diff --check` 通過。dev commit `fca4a6c` 已推 `dev/uat-agent-config-isolation`。
+
+### 2026-05-12 22:31 - Harden openProject retry 與 authoring rule 更新
+
+- 背景：Tommy 比對 dev run `da77b99a-f05f-46ac-b1ef-55d15043cd46` 與 prod run `b1d14a3c-83f4-4a92-96c7-2f0d16caa4e2` 後，確認 E-02 後續交由 Claude/testcase 調整；Codex 工具側需修的是 `openProject` retry。另 Tommy 要求 `UAT_三文件撰寫規則.md` 補上公式/數據 case 的命題大方向。
+- openProject：`agent/src/bi-ui-helper-executor.ts` 新增 prompt/readiness 判斷。含 `請從左側選擇專案查看報表` 的頁面不是 ready state；`+ 新增報表` 必須在 prompt 消失後才算 report list ready。helper 會記錄 attempts、點 visible project candidate、reload/reselect 後再確認 readiness。`createReport` 也沿用此 readiness 判斷，避免 prompt-only 頁面被誤當可新增報表。
+- Authoring：`docs/authoring/UAT_三文件撰寫規則.md` 新增公式/數據邏輯 case 必須區分工具功能可用性與資料辨識力，並明寫 divide-by-zero=0 是否是可接受 PASS evidence；若需證明非 `sum/sum`，testcase 必須要求非 0 分母與可辨識資料。
+- 驗證：新增 `scripts/verify-open-project-retry.ts` / `verify:open-project-retry`。已跑 `npm run typecheck`、`npm run build`、`npm run build --prefix agent`、`npm run verify:open-project-retry`、`npm run verify:agent-result-contract`、`npm run verify:result-evidence-gate`、`npm run verify:fail-bug-fallback`、`npm run verify:final-aggregate-result`、`npm run verify:save-calculation-judgment`、`git diff --check` 通過。
+- Push：dev commit `8c476f3` 已推 `dev/uat-agent-config-isolation`。同一 authoring 文件變更後續隨 production promote 同步到 prod branch；未在未授權前 push/deploy/restart prod。
+
+### 2026-05-13 07:18 - Dev run 530 驗證與 production promote
+
+- Dev validation：Tommy 於 dev 跑 run `530daae6-4b4e-4bcb-9b85-151b9a110dd8`。報告為 PASS 5 / FAIL 2 / BLOCKED 1；工具修復點均成立：F-01 與 G-02 save/list evidence PASS，E-01 formula/openProject path PASS，A-06 ordinary BLOCKED 沒有自動產 bug，A-01/E-02 兩個 FAIL 都出現在 Bug 摘要。
+- 結論：A-01 是有效 source-list drift FAIL；A-06 是 testcase/metadata expected count mismatch；E-02 是 testcase 命題需由 Claude 調整，不是工具側再改。此 run 證明 FAIL-to-Bug、duplicate guard、save/list evidence 與 openProject retry 可 promote。
+- README：Tommy 提供 `/Users/tommy/Downloads/README.md` 新版精簡說明，套入 repo `README.md`。
+- Production promote：commit `1d3f90c` 推到 `dev/uat-agent-config-isolation`、`refactor/mac-agent-mvp`、`codex/uat-tool-mvp`。Railway production `/version` 顯示 branch `codex/uat-tool-mvp`、commit `1d3f90c`，`/health` healthy。
+- 本機 prod Agent：`/Users/tommy/Downloads/codex_galaxy/uat-tool` fast-forward 到 `origin/refactor/mac-agent-mvp`；原本 untracked demo/artifacts 保留不動。已跑 prod repo `typecheck`、root/agent `build`、`verify:open-project-retry`、`verify:fail-bug-fallback`、`verify:save-calculation-judgment`、`verify:agent-result-contract`、`git diff --check`。重建 `agent/dist` 後重啟 `com.tommy.uat-agent`，新 pid `18653`，log 顯示重新 connected。
