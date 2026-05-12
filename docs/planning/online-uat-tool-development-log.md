@@ -1,6 +1,6 @@
 # 線上 UAT Tool 開發與規劃日誌
 
-最後更新：2026-05-06
+最後更新：2026-05-12
 
 本文件記錄「UAT Tool 線上派工 + Mac Agent」這條路徑的歷史決策、設計理由、目前架構與後續待辦。它的用途是跨聊天室、跨 session 交接，不取代 `AGENTS.md`、Layer rules、authoring spec 或實作 spec。
 
@@ -1310,6 +1310,13 @@ Tommy 曾討論是否改成腳本。最後決策是採「半腳本化 / helper �
 - Real helper/UI smoke：D-01 run `smoke-ottest004-d01-refund-alias-202605090001` 透過 visible UI 選到 `總退費金額`，preview request fields 包含 `TOTAL_REFUND` 並回 200；E-03 rerun `smoke-ottest004-e03-refund-alias-rerun2-202605090001` 透過公式 modal 點到 `inputFormula('[TOTAL_REFUND]')`，request body 送 `formula:"[NEW_ACCOUNTS]/[TOTAL_REFUND]"`，response 200、31 筆，表頭含 `總退費金額` 與 `E03_運算`。
 - 版本與文件：Mac Agent source 升到 `0.2.29`，App/API 維持 `1.1.8`；README、`docs/refactor/工程spac.md`、`docs/refactor/規劃說明.md` 同步補 total-refund alias 狀態。未動既有 dirty `docs/authoring/UAT_三文件撰寫規則.md` 與 unrelated artifacts。
 - 驗證：已跑 `npm run typecheck --prefix agent`、`npm run typecheck`、`npm run build --prefix agent`、`npm run build`、`npm run verify:capability-gate`、`npm run verify:helper-hints`、`npm run verify:result-evidence-gate`、`npm run verify:helper-report-gate`、`npm run verify:helper-field-aliases`、`git diff --check` 通過。Tommy 已於 2026-05-09 授權 push/deploy；後續需推 `refactor/mac-agent-mvp` 與 `codex/uat-tool-mvp`，等 Railway `/version` 進到新 commit 後重啟本機 Mac Agent。
+
+### 2026-05-09 11:05 - OTTEST004_030 後續優化分級：暫不開發
+
+- 背景：Tommy 檢視 OTTEST004_030 後認為目前版本已很不錯，要求先把可優化項目寫入規劃，但不要進行開發。OTTEST004_030 已從前一輪 `PASS 28 / BLOCKED 6` 收斂到 `PASS 29 / BLOCKED 5`，D-01/E-03 refund alias 已 PASS；剩餘 A/B/D metadata/source list 差異、B-10 91 天仍送 request、F-02 save/reopen restore、E-02 分母全 0 證據不足，分別屬於產品/metadata、真產品 bug 或 testcase/data 設計問題，不應再用 helper 放寬處理。
+- 規劃：`docs/refactor/規劃說明.md` 新增 OTTEST004_030 後續優化停看聽，將候選項目分成三類：report-only 低風險（`PM_SKIPPED` 顯示一致、report 執行時間、artifact archive path）、evidence-only 低到中風險（F-02 多記 save/reopen response、E-02 分母全 0 提示）、以及暫不建議預設啟用的高風險項（A-06 count mismatch 後繼續診斷、D-02/B-02 metadata 大差異後繼續 preview/CSV、放寬 fuzzy matching、E-02 自動換分母、壓掉 B-10 warning）。
+- 當時決策：本批先只記錄 planning，不碰 runtime code、不調 helper、不改判定、不部署、不重啟 Mac Agent。2026-05-12 文件整理時補入 Git，不代表新增 runtime 變更；後續若 Tommy 明確要求做報告品質，優先只做 report-only 三項，並用既有 run 重新產報告確認 case 統計完全不變。
+- 驗證：文件變更後只需跑 `git diff --check`。因無 runtime、schema、result parser、helper 或 Agent 行為變更，不需 typecheck/build/smoke。
 
 ### 2026-05-12 07:56 - Dev Agent 子 Codex Playwright MCP 注入與 dev launchd 分離
 

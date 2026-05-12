@@ -969,23 +969,23 @@ Helper hints:
 | `manual_ai` | 需要 Codex 判斷、延伸驗證或處理 UI 異常，不應固定腳本化 |
 | `blocked_if_no_helper` | 若缺少對應 helper，應先回報，不要臨時硬寫腳本 |
 
-以下 case 應標 `manual_ai`，不得標 `helper` 讓 helper pre-run：
+以下 case 預設應標 `manual_ai`。只有當本文件下方列出明確支援的 helper template,且 params 足以 deterministic 執行單一 case 時,才可標 `helper`：
 
-- 動態日期、半動態日期。
-- 90/91 天邊界。
-- 多日期變體連續切換。
+- 動態日期、半動態日期、multi-variant 日期。
+- 90/91 天邊界仍應標 `manual_ai`。
 - 需要 Codex 判斷 UI 異常或延伸驗證的前端呈現 case。
 
 若 `operationTemplate=manual_ai`，`automationLevel` 也必須是 `manual_ai`。
 
 #### 常用 `operationTemplate`
 
-`operationTemplate` 不是程式碼，只是讓工具知道可套哪類 helper。建議先使用以下 canonical 值：
+`operationTemplate` 不是程式碼，只是讓工具知道可套哪類 helper。它是 **UAT Tool / Mac Agent 支援能力的封閉清單**,不可依 case 名稱臨時創造自由文字 template。Claude 產三文件時必須先使用以下 canonical 值；若找不到合適 template,使用 `manual_ai`,不要自創新名稱。
 
 | Template | 用途 |
 |---|---|
 | `metadata_dropdown_compare` | 展開下拉清單並與 metadata 對照 |
 | `collage_build_preview_save_reopen` | 拼貼建立、preview、儲存、重開驗證 |
+| `collage_date_variants_preview` | 拼貼日期區間 visible UI 設定、preview evidence；可搭配 save/download params 做 D0 baseline |
 | `record_static_fields_date_payload` | 明細靜態欄位與 dateRange payload 檢查 |
 | `metric_date_display_preview` | 指標趨勢時間區間 / 顯示方式 preview |
 | `metric_filter_operator` | 指標趨勢篩選欄位 + operator + value |
@@ -993,10 +993,37 @@ Helper hints:
 | `chart_csv_consistency` | Chart.js 與 downloaded CSV 數值一致性 |
 | `collage_all_zero_field_inspection` | 拼貼欄位全選 preview 後列出全 0 欄位清單 |
 | `collage.configureCalculatedMetricAndPreview` | 拼貼新增運算欄位公式 modal、設定日期/顯示並產生 preview evidence |
+| `collage.createProject` | 新增拼貼專案並驗證專案可見 |
+| `collage.openReportFromProjectList` | 從專案頁點既有報表名稱進入 editor |
+| `collage.clickBackToProjectList` | 從 editor 點返回並驗證回專案頁 |
 | `download_csv_verify` | 下載檔名、表頭、row count 驗證 |
 | `save_load_flow` | 儲存、清單出現、重開還原驗證 |
+| `manual_ai` | 無合適 helper 或需要 Codex 判斷時使用 |
 
-若找不到合適 template，使用 `manual_ai`，不要臨時創自由文字 template。
+禁止把複合流程自創成新 template。以下名稱**不可使用**：
+
+- `collage.createSaveReopenAndVerifyRestore`
+- `collage.createSaveAndDownloadFromProjectRow`
+- `collage.createSaveDownloadAndOutputD0Baseline`
+- `collage.createProjectOnly`
+- `collage.createProjectAndReportFull`
+- `collage.createTempReportAndDeleteWithConfirm`
+- `collage.createTempReportAndReopenViaName`
+- `collage.enterEditorAndClickBack`
+
+複合流程應使用既有 template + structured params + xlsx 步驟表達：
+
+| 測試意圖 | 寫法 |
+|---|---|
+| 儲存後重開還原 | `operationTemplate=save_load_flow` |
+| editor 內 CSV 下載或 project row CSV 下載 | `operationTemplate=download_csv_verify`,並在 params/步驟明寫 `downloadFromProjectListRow`、`skipReopenEditor` 或 `downloadFromEditor` |
+| 拼貼日期 preview / D0 baseline | `operationTemplate=collage_date_variants_preview`,並用 `dateMode` / `uiLabel` / `start` / `end` / `save` / `downloadFromProjectListRow` 表達 |
+| 新增運算欄位公式 modal | `operationTemplate=collage.configureCalculatedMetricAndPreview` |
+| 只新增專案 | `operationTemplate=collage.createProject` |
+| 新增專案後接續新增報表、preview、儲存 | `operationTemplate=collage_build_preview_save_reopen` + params: `createNewProject=true` 或 `createProjectThenReport=true`;若不重開,加 `skipReopen=true` |
+| 點既有報表名稱進 editor | `operationTemplate=collage.openReportFromProjectList` |
+| editor 返回專案頁 | `operationTemplate=collage.clickBackToProjectList` |
+| 刪除臨時報表 | `operationTemplate=manual_ai`;case 文字仍須明確寫「刪除報表 / 臨時報表 / Tool Bridge / confirm」讓 Agent 辨識 delete flow |
 
 `metadata_dropdown_compare` 目前有 Mac Agent helper 支援。Helper 只會透過 visible UI 展開欄位 picker,再用 read-only DOM extraction 產生 `metadata-dropdown-evidence.json`;它不判 PASS/FAIL,不打 BI API,也不寫 result.xlsx。Helper hints 建議帶：
 
@@ -1057,7 +1084,7 @@ Helper hints:
 
 日期 case 若要求判斷「UI label 代表哪段日期」,必須帶 `date.uiState` 與 `date.representedRange` evidence。若 UI 只顯示 `昨日` 這類 preset label、沒有直接顯示起訖日期,detail_json 應註明代表日期是依 `baseDate/testDate` 計算,不是畫面直接顯示。
 
-動態、半動態、90/91 天邊界或 multi-variant 日期 case 必須標 `manual_ai`，並用結構化 params 表示日期：
+動態、半動態、90/91 天邊界或 multi-variant 日期 case 的預設安全寫法是 `manual_ai`,並用結構化 params 表示日期。例外：若該模式已有明確 helper 支援,例如拼貼模式可用 `collage_date_variants_preview`,可標 `helper`,但 params 必須完整、且 xlsx 步驟仍要寫清楚每段 UI 設定與驗證。90/91 天邊界仍建議 `manual_ai`,避免 helper 過早替 testcase 做判斷。
 
 ```json
 {
@@ -1070,6 +1097,30 @@ Helper hints:
   "uiAction": "custom_date_range"
 }
 ```
+
+拼貼模式日期 preview / D0 baseline 可用:
+
+```json
+{
+  "automationLevel": "helper",
+  "operationTemplate": "collage_date_variants_preview",
+  "params": {
+    "mode": "拼貼",
+    "field": "新增帳號數",
+    "dateMode": "hybrid",
+    "start": {"type": "static", "date": "2026-03-25"},
+    "end": {"type": "relative", "offsetDays": -1},
+    "display": "每天",
+    "save": true,
+    "downloadFromProjectListRow": true,
+    "skipReopenEditor": true,
+    "captureBaseline": ["csv.rows", "chart.datasets", "savedReportName"]
+  },
+  "requiredEvidence": ["date.uiState", "network.requestBody", "chart.datasets", "csv.rows", "toolBridge.response", "screenshot"]
+}
+```
+
+D0 baseline case 不應要求 Agent 輸出未實作的專用 artifact 名稱；請在 `detail_json` 記錄實際 helper artifacts 與 evidence,例如 preview evidence、downloaded CSV、`csv.rows`、`chart.datasets`、saved report name。
 
 欄位全選 case 不要把 `4 來源報表全選 72 欄` 寫成可點擊文字；Helper hints 必須帶：
 
@@ -1183,10 +1234,11 @@ Claude 產出 testcase package 後，建議先用以下規則自檢；未來若�
 5. `selectAllFields=true` 必須有 `sourceReports`，且必須有 `expectedFieldCount` 或 `expectedTotalFieldCount`。
 6. `collage_all_zero_field_inspection` 必須有 `sourceReport` 或 `sourceReports`、`selectAllFields` / `selectAllFieldsInSourceReport`、`expectedFieldCount`、靜態 `dateRange`、`display`。
 7. `collage.configureCalculatedMetricAndPreview` 必須有 `baseFields`、`calculatedFieldName`、`formula`、`dateRange`、`display`,且 `requiredEvidence` 至少包含 `formula.uiState`、`network.requestBody`、`chart.datasets`。
-8. multi-variant date case 不得標 `automationLevel=helper`；應標 `automationLevel=manual_ai`。
+8. 日期 / multi-variant case 若標 `automationLevel=helper`,必須使用已支援的日期 helper template(例如拼貼 `collage_date_variants_preview`)且 params 足以描述所有 variant / 起訖；否則應標 `automationLevel=manual_ai`。
 9. `operationTemplate=manual_ai` 時，`automationLevel` 必須是 `manual_ai`。
 10. `automationLevel=helper` 時，params 必須足以形成 deterministic helper plan，不可只靠自然語言讓 helper 猜。
 11. PM-skip / 預先 BLOCKED case 不得有 Helper hints block；不得使用 `automationLevel=blocked_preassigned`、`operationTemplate=n/a` 或 `doNotExecute`。
+12. `operationTemplate` 必須是本文件 canonical 封閉清單之一；不得出現 `collage.createSaveReopenAndVerifyRestore`、`collage.createSaveAndDownloadFromProjectRow`、`collage.createSaveDownloadAndOutputD0Baseline`、`collage.createProjectOnly`、`collage.createProjectAndReportFull`、`collage.createTempReportAndDeleteWithConfirm`、`collage.createTempReportAndReopenViaName`、`collage.enterEditorAndClickBack` 等自創 template。
 
 ---
 
@@ -1251,7 +1303,7 @@ Claude 產出三文件後，必須逐項檢查：
 - 採半腳本化 / helper 化原則：可腳本化 xlsx 解析、ACTIVE prompt、寫回、dump、CSV 計算、Chart.js 抽取、metadata 比對；可 helper 化單一 case 內的 UI 動作；不可把整份 testcase 或整群 case 寫成固定 Playwright 腳本。
 - 若某題適合 helper 化，請在 `測試執行說明_*.md` 該題加入 `Helper hints` JSON 區塊，使用 canonical `automationLevel`、`operationTemplate`、`requiredEvidence`。不要在 xlsx 寫 selector 或程式碼。
 - Helper hints 只能描述單一 case，不可包含多題 queue，不可要求 helper 判 PASS / FAIL，不可要求 helper 一次寫多題結果。
-- multi-variant / dynamic / half-dynamic 日期 case 請標 `automationLevel=manual_ai` 與 `operationTemplate=manual_ai`，不要讓 helper pre-run。
+- multi-variant / dynamic / half-dynamic 日期 case 預設標 `automationLevel=manual_ai` 與 `operationTemplate=manual_ai`；若使用已支援 helper(例如拼貼 `collage_date_variants_preview`),必須提供完整 structured params 與 requiredEvidence。
 
 產出後請附一份「三文件一致性檢查表」，逐項確認是否通過。
 ```
