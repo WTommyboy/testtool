@@ -24,12 +24,19 @@ Production endpoints:
 Current semantic versions:
 
 - App/API: `1.1.8`
-- Mac Agent: `0.2.29`
+- Mac Agent: `0.2.30`
 
 Active branches:
 
 - `refactor/mac-agent-mvp`: working branch for implementation and docs.
 - `codex/uat-tool-mvp`: GitHub default branch and Railway deployment branch.
+
+Dev sandbox endpoints:
+
+- Web preview: `testtool-git-dev-uat-agent-config-isolation-*` Vercel preview deployments.
+- API: `https://testtool-dev.up.railway.app`
+- Agent launchd: `com.tommy.uat-agent-dev`
+- Agent config/workdir: `/Users/tommy/.uat-agent-dev`
 
 ## Current Status
 
@@ -84,6 +91,9 @@ The current line is the Mac Agent MVP. It supports:
 - Optional support files are indexed with lightweight profiles in `input/supporting-docs-manifest.json` so Codex can inspect CSV headers/row counts or markdown headings before choosing a full file to read.
 - Successful same-run helper browser evidence can satisfy preflight for helper-assisted cases; Codex should not mark `TOOL_EXECUTION_UNAVAILABLE` solely because Codex-side browser tools are absent.
 - Codex-side visible-UI cases must first attempt Playwright MCP `browser_tabs`; a successful tab listing proves browser tooling is available and prevents false `TOOL_EXECUTION_UNAVAILABLE`.
+- Mac Agent `0.2.30` explicitly injects the Playwright MCP command, Chrome CDP args, and browser tool approval settings into child Codex. This fixes the dev split blocker where child Codex received only `mcp_servers.playwright.args` and therefore could not reliably see `browser_tabs`.
+- Dev MCP preflight smoke passed before production promote: Railway dev run `5e420973-8462-4077-8fd7-e33e19a5fe08`, case `MCP-01=PASS`, child Codex called `browser_tabs(action=list)`, read DEV BI URL/title/body through `browser_run_code`, and classified the page as `reachable_galaxy_bi`.
+- The web header environment badge is environment-aware: dev/local/preview displays `DEV`, production displays `PROD`, with separate color tones.
 - Degraded-case trusted `BLOCKED` result handling when browser/manual UI tools are unavailable.
 - Mandatory BI rule loading for each BI case.
 - Metadata reference, CSV download, and formula/calculated-field modal authoring contracts.

@@ -2034,3 +2034,40 @@ When the Agent starts child Codex with a prepared Chrome CDP endpoint, the runne
 - browser tool approval settings, including `browser_tabs`
 
 This keeps child Codex able to perform the required read-only preflight (`browser_tabs`, navigation, DOM read) before any BI testcase action. If this injection regresses, interactive runs will fail before SSO/page reachability and should be treated as Agent runtime configuration failure, not BI UI smoke evidence.
+
+### 21.1 Dev Smoke Result
+
+The dev runtime fix was validated before production promote:
+
+- Run: `5e420973-8462-4077-8fd7-e33e19a5fe08`
+- Case: `MCP-01`
+- Result: `PASS`
+- Environment: Railway dev + `com.tommy.uat-agent-dev`
+- Agent version: `0.2.30`
+
+Evidence chain:
+
+1. Child Codex called Playwright MCP `browser_tabs(action=list)` successfully.
+2. The active tab was `報表管理系統` at `https://galaxy.games.gamania.com/biapi-dev/testview/home?gameID=541`.
+3. Child Codex used read-only `browser_run_code` to read URL, title, `window.name`, body snippet and auth/blocker signals.
+4. Classification was `reachable_galaxy_bi`; no SSO/login/401/403/blank/loading-failure blocker was observed.
+5. `output/result.xlsx` was written through `agent/dist/result-cli.js` with `currentRunEvidence` containing `browserTabs`, lease `windowName`, observed URL/title and classification.
+
+This smoke proves the fix needed for Codex-owned browser preflight: the child Codex runtime receives the Playwright MCP command, CDP args and browser tool approvals. It does not by itself replace A-01/F-01 feature smoke, but it removes the prior `TOOL_EXECUTION_UNAVAILABLE` runtime blocker.
+
+### 21.2 Production Promote Scope
+
+Production promote may include the following runtime-safe changes:
+
+- `agent/src/codex-runner.ts`: complete Playwright MCP injection for child Codex.
+- `scripts/verify-agent-resume.ts`: regression assertion for MCP command/args/tool approval argv.
+- `agent/package.json`: Agent `0.2.30`.
+- Web header badge environment detection: production displays `PROD`; dev/local/preview displays `DEV`.
+- Documentation and README updates recording the split, smoke evidence and promote boundary.
+
+Production promote must not merge dev-only config paths. Runtime environment selection remains outside the repo:
+
+- production LaunchAgent: `com.tommy.uat-agent`
+- production config/workdir: `/Users/tommy/.uat-agent`
+- dev LaunchAgent: `com.tommy.uat-agent-dev`
+- dev config/workdir: `/Users/tommy/.uat-agent-dev`

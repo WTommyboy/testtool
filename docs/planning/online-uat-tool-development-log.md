@@ -1318,3 +1318,11 @@ Tommy 曾討論是否改成腳本。最後決策是採「半腳本化 / helper �
 - Fixture：`scripts/verify-agent-resume.ts` 新增 fake Codex argv assertion，確認 child Codex 啟動參數同時包含 Playwright MCP command、CDP args 與 `browser_tabs` approval config，避免只注入 args 的回歸。
 - Dev launchd：本輪目標是建立獨立 dev Agent 常駐服務 `com.tommy.uat-agent-dev`，使用 `/Users/tommy/.uat-agent-dev/config.json`、`/Users/tommy/.uat-agent-dev/runs` 與 dev Chrome profile，不與 production `com.tommy.uat-agent` 混用。此步只建立/驗證服務，不跑 Galaxy BI smoke。
 - 版本：Mac Agent source 升到 `0.2.30`；App/API 仍維持 `1.1.8`。本批不碰 production branch、production Railway、production Agent config。
+
+### 2026-05-12 11:22 - Dev MCP preflight smoke 通過，允許 promote production
+
+- 背景：Tommy 授權先在 dev 驗證 Mac Agent MCP 修正，再決定是否一次 promote production。第一次使用 `dispatch-smoke` 的 no-package run `dev_mcp_preflight_smoke_20260512T031457Z` 被 package gate 擋住，原因是缺 xlsx/md package，這不是 MCP 失敗。
+- Smoke package：建立 dev-only 最小 package `/Users/tommy/.uat-agent-dev/smoke-packages/dev_mcp_preflight_20260512T031807Z`，只含 `MCP-01` 觀察 case，禁止登入、欄位設定、執行、baseline、儲存或刪除。
+- Real Agent smoke：Railway dev run `5e420973-8462-4077-8fd7-e33e19a5fe08` 通過，`MCP-01` 結果為 `PASS`。子 Codex 成功呼叫 Playwright MCP `browser_tabs(action=list)`，回傳 tab `報表管理系統`，接著用 `browser_run_code` 只讀 DOM，取得 URL `https://galaxy.games.gamania.com/biapi-dev/testview/home?gameID=541`、title `報表管理系統`、非空 body，未偵測 login / 401 / 403 / blank / 載入失敗，classification=`reachable_galaxy_bi`。
+- Evidence：result workbook 位於 `/Users/tommy/.uat-agent-dev/runs/5e420973-8462-4077-8fd7-e33e19a5fe08/output/result.xlsx`，detail_json 包含 `currentRunEvidence.browserTabs`、lease `windowName`、observed URL/title 與 classification。Railway dev summary 顯示 `SUCCEEDED`、`caseStats.PASS=1`、`resultXlsxAvailable=true`、`logAvailable=true`、`timingSummaryAvailable=true`。
+- 結論：Dev Agent MCP runtime fix 已證明有效，可以 promote 到 production branch。Production promote 仍需維持 prod/dev service 分離：production `com.tommy.uat-agent` 繼續使用 `/Users/tommy/.uat-agent` 與 production Railway，dev `com.tommy.uat-agent-dev` 繼續使用 `/Users/tommy/.uat-agent-dev` 與 Railway dev。
