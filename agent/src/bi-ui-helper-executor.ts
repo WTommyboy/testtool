@@ -5749,6 +5749,35 @@ const saveReport = async (options: CliOptions, page: Page, startedAt: string): P
       ["NATIVE_DIALOG_CHAIN_BLOCKED", "UNKNOWN_NATIVE_DIALOG_NO_RECOVERY_HANDLER"]
     );
   }
+  let reportListEvidence: Record<string, unknown> | null = null;
+  try {
+    const readiness = await waitForBackToProjectListReadiness(options, page);
+    const rowVisibility = await ensureSavedReportListRowVisible(options, page, reportName);
+    reportListEvidence = {
+      reportName,
+      found: rowVisibility.state.found,
+      rowState: rowVisibility.state,
+      attempts: rowVisibility.attempts,
+      recoveryActions: rowVisibility.recoveryActions,
+      readiness
+    };
+    writeSavedReportState(options, reportName, {
+      approvedToolRequestId: options.approvedToolRequestId,
+      dialogs,
+      reportListEvidence
+    });
+  } catch (error) {
+    reportListEvidence = {
+      reportName,
+      found: false,
+      error: error instanceof Error ? error.message : String(error)
+    };
+    writeSavedReportState(options, reportName, {
+      approvedToolRequestId: options.approvedToolRequestId,
+      dialogs,
+      reportListEvidence
+    });
+  }
   const shot = await screenshot(options, page, "save-report");
   const uiProfileAfter = await captureUiDomProfile(options, page, "saveReport.after");
   return createReport(
@@ -5766,6 +5795,7 @@ const saveReport = async (options: CliOptions, page: Page, startedAt: string): P
       dialogs,
       approvedToolRequestId: options.approvedToolRequestId,
       reportName,
+      reportListEvidence,
       network: { requests: observed.requests, responses: observed.responses },
       nameInput: observed.result.nameInputEvidence
     },

@@ -26,6 +26,7 @@
 - Helper 在 `collage.configureMetric` 選欄位前必須等待 `載入欄位中...` 進入可操作狀態；loading timeout 回 `FIELD_LIST_LOAD_TIMEOUT`,載入完成後仍無控制項才回 `ADD_FIELD_BUTTON_NOT_CLICKABLE`。
 - Helper 若支援 metadata dropdown 對照,只能透過 visible UI 展開欄位 picker,再以 read-only DOM extraction 擷取欄位清單；expected list 只能讀 run packet 的 `rules/BI_DATA/metadata.csv` 或 `input/reference-index.json` 指定檔,不可打 BI API 或掃描所有 CSV 猜測來源。
 - Helper 若支援 CSV 下載,只能透過 visible UI 觸發下載,再讀本機下載檔作 evidence；不可直接打 BI API 取得 CSV,也不可把 Google Sheet 開檔流程當成正式 UAT evidence。若 browser download event 未觸發,但同一次 visible UI click 產生 CSV/attachment response,可保存該 UI-triggered response body 作 evidence 並標示 source。若 testcase 指定從專案/報表清單下載,helper 應定位本輪 saved report row/list control；若 save 後清單 stale,先刷新/重定位；並與儲存前 preview table/chart evidence 比對,不需重開 editor。若前置設定、清單或 preview 已失敗,helper 應標 `failedSubcondition` 與 `csv_comparison_status=not_reached`,讓 Codex 判斷前置流程失敗與 CSV not reached。
+- Helper 若支援 `collage.saveReport`,儲存後應預設 best-effort 收集 `reportListEvidence`: 返回清單 readiness、saved report row 是否找到、row text、attempts 與 recovery actions。這是 helper contract,不需要 testcase 另外要求。若舊 helper report 缺少此 key, Codex 可引用 save API 200、reportName、已知成功/返回 dialogs 與 current-run DOM/list signals 判斷；不可只因 key 缺失就 BLOCK。
 - 對同時包含 save/download 或 save/reopen/download 的 CSV case,helper plan 若已產生後續 download actions,只完成 preview 不代表 case 已可判定。Codex 應先要求 Tool Bridge/continuation 執行剩餘必要步驟,或在 helper report 中明確記錄哪個前置必要子條件失敗。
 
 ## Artifacts

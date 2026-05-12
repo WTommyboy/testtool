@@ -693,6 +693,7 @@ const buildActions = (currentCase: CaseManifestCase | null, helperHints: HelperH
         notes: [
           "helper 會透過 visible UI 加入 fieldA/fieldB、開啟「+ 新增運算欄位」modal、輸入名稱與公式、按確認後設定日期/顯示並按執行。",
           "helper 不驗算公式正確性、不判 PASS/FAIL；Codex 必須用 chart/network evidence 做逐日驗算。",
+          "若 case 是驗證運算欄位公式 wiring/calculation，分母欄位在本資料池全為 0 不等於 evidence 不足；只要 UI/request formula 存在且 preview 運算結果符合 BI divide-by-zero=0 行為，可依 testcase 判 PASS。",
           "若公式 modal 無可見可輸入欄位、關不掉或攔截後續點擊，helper 必須 blocked 並留下 modal DOM profile。"
         ]
       })
@@ -928,9 +929,12 @@ const buildActions = (currentCase: CaseManifestCase | null, helperHints: HelperH
       actions.push(
         action(`H${actions.length + 1}`, "collage.saveReport", modifiesExistingReport ? "覆寫既有報表" : "儲存本輪臨時報表", params, {
           requiresToolBridge: true,
-          requiredEvidence: ["toolBridge.response", "dom.state", "screenshot"],
+          requiredEvidence: ["toolBridge.response", "dom.state", "reportListEvidence", "screenshot"],
           screenshotPolicy: "required_if_possible",
-          notes: ["Agent 模式需先取得 Tool Bridge response；非 SSO/login request 由 Mac Agent 自動回覆；helper 只可處理已知 BI save/overwrite dialog；未知 native dialog 若沒有實際 recovery handler 必須 blocked 並留下 evidence。"]
+          notes: [
+            "Agent 模式需先取得 Tool Bridge response；非 SSO/login request 由 Mac Agent 自動回覆；helper 只可處理已知 BI save/overwrite dialog；未知 native dialog 若沒有實際 recovery handler 必須 blocked 並留下 evidence。",
+            "helper 儲存後必須 best-effort 返回/定位報表清單並輸出 `reportListEvidence`：saved report row found 狀態、row text、readiness attempts 與 recovery actions。"
+          ]
         })
       );
     }

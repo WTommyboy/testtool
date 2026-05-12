@@ -18,7 +18,8 @@ const templateGuidance: Record<string, string[]> = {
   collage_build_preview_save_reopen: [
     "建立拼貼報表時，每次新增欄位/條件後立刻用 DOM 或 snapshot 驗證狀態。",
     "preview 後以 network/chart/table evidence 證明本次 UI action 有生效。",
-    "儲存、重開、刪除臨時報表若涉及 irreversible/native dialog，Agent 模式必須先走 Tool Bridge；核准後 helper 只可處理已知 BI save dialog。"
+    "儲存、重開、刪除臨時報表若涉及 irreversible/native dialog，Agent 模式必須先走 Tool Bridge；核准後 helper 只可處理已知 BI save dialog。",
+    "`collage.saveReport` 應在儲存後預設補 `reportListEvidence`，包含返回清單 readiness、saved report row 是否找到、row text 與 recovery attempts；testcase 不需要額外要求 helper 才做。"
   ],
   record_static_fields_date_payload: [
     "用 UI 進入明細模式並設定指定靜態欄位與日期。",
@@ -61,6 +62,7 @@ const templateGuidance: Record<string, string[]> = {
   save_load_flow: [
     "儲存前確認是本輪臨時資源名稱，不覆蓋既有主資源。",
     "Agent 模式遇到 native alert/confirm 或不可逆操作需 Tool Bridge response；非 SSO/login request 會由 Mac Agent 依 policy 自動回覆。",
+    "save/load 類 case 優先引用 `reportListEvidence.found=true` 作清單 row evidence；若舊 helper 僅提供 save API 200、reportName、已知成功/返回 dialogs 與 current-run DOM/list signals，不可只因缺少該 key 就 BLOCK。",
     "重開後用 DOM/network/chart evidence 驗證設定真的還原；若 testcase 同時含 CSV 下載，設定還原失敗是主要功能流程結果，不可因後續 CSV 未達而改成 BLOCKED。"
   ],
   manual_ai: [

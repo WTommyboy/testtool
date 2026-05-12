@@ -111,6 +111,10 @@ Agent/Codex must copy PM-skip rows unchanged into `output/result.xlsx`. Do not r
 
 CSV/download case 若已透過 UI 成功下載檔案，Agent/Codex 可以讀本機下載的 CSV 作 structured evidence，包含檔名、表頭、row count、數值摘要與 preview-vs-CSV comparison。正式 UAT evidence 不需要也不應依賴 Google Sheet；Google Sheet 只可作人工探索 fallback。若 browser download event 未觸發，但同一次可見 UI 點擊產生 CSV/attachment network response，可把該 UI-triggered response body 落地成 CSV evidence，並在 `downloadedCsv.source` 明確標示 `ui_triggered_network_response_body`。若 testcase 指定從專案/報表清單下載,CSV evidence 必須鎖定本輪 saved report row/list control,必要時刷新/重定位清單列,並與儲存前 preview table/chart evidence 比對,不可重開 editor 造成 date-range restore regression 混入。若儲存、清單列、重開、設定還原或 current/pre-save preview 已先失敗，CSV 比對應在 `detail_json` 標 `csv_comparison_status = not_reached` 並記 failed subcondition；不可因後續沒有 CSV 檔就把已知功能流程 regression 改判 `BLOCKED`。
 
+Save/list case 應優先引用 helper 的 `reportListEvidence`。目前 helper contract 要求 `collage.saveReport` 在儲存後 best-effort 補 saved report row evidence,但舊 helper report 可能只含 save API 200、reportName、已知成功/返回 dialogs 與 current-run DOM/list signals。這種舊 evidence 仍可用來正常判斷；不可只因缺少 exact `reportListEvidence.found=true` key 就把 case 改判 `BLOCKED`。
+
+Calculated-field division case 若測試目的為運算欄位 wiring/formula/calculation,不可只因其中一個來源欄位在資料池全為 0 就判 evidence 不足。當 UI/request formula 明確包含指定來源欄位,preview 已產出運算欄位,且逐列結果符合 BI divide-by-zero=0 行為時,`detail_json` 可記 `division_by_zero_behavior=0`,並可依 testcase 判 `PASS`。只有 testcase 明確要求非 0 分母樣本或資料多樣性驗證時,才因全 0 樣本不足而 BLOCK。
+
 Metadata/dropdown case 的 reference 應以 run packet 的 `rules/BI_DATA/metadata.csv` 為 canonical CSV，並以 `input/reference-index.json` 的 `bi_metadata_csv` 或 testcase 指定 source filename（例如 `metadata＿1.2.5 - 工作表1.csv`）確認來源。若同輪有多份 reference/baseline CSV，不可 bulk-read 全部檔案猜測哪份是 metadata。若 helper 產生 `metadata-dropdown-evidence.json`,Codex 應讀取其中 actualVisibleItems / expectedFields / missingFields / extraFields 後自行判定。`detail_json` 應寫 `reference_csv`、`reference_source_name`、`reference_index_key`、`source_report`、`match_key`、`compare_fields` 與命名正規化後的差異，避免只寫「metadata v1.2.5」。
 
 ## Result Workbook Contract
