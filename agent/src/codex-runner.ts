@@ -1,4 +1,7 @@
 import { spawn, type ChildProcess } from "node:child_process";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 
 export type CodexJsonEvent = Record<string, unknown>;
 
@@ -22,11 +25,38 @@ export type CodexRunnerOptions = {
   cwd: string;
   timeoutMs?: number;
   reasoningEffort?: string | null;
+  playwrightMcpCommand?: string | null;
   playwrightCdpEndpoint?: string | null;
   playwrightOutputDir?: string | null;
   onStdoutLine?: (line: string) => void;
   onStderrLine?: (line: string) => void;
   onJsonEvent?: (event: CodexJsonEvent, line: string) => void;
+};
+
+const browserToolApprovalModes = [
+  "browser_evaluate",
+  "browser_run_code",
+  "browser_handle_dialog",
+  "browser_tabs",
+  "browser_click",
+  "browser_navigate",
+  "browser_select_option",
+  "browser_type",
+  "browser_fill_form",
+  "browser_press_key",
+  "browser_resize",
+  "browser_close"
+] as const;
+
+const resolvePlaywrightMcpCommand = (override?: string | null): string => {
+  if (override?.trim()) return override.trim();
+  const envCommand = process.env.UAT_AGENT_PLAYWRIGHT_MCP_COMMAND?.trim();
+  if (envCommand) return envCommand;
+
+  const localUserInstall = path.join(os.homedir(), ".local", "node_modules", ".bin", "playwright-mcp");
+  if (fs.existsSync(localUserInstall)) return localUserInstall;
+
+  return "playwright-mcp";
 };
 
 const parseJsonl = (stdout: string): { events: CodexJsonEvent[]; parseErrors: string[] } => {
@@ -188,7 +218,11 @@ export class CodexRunner {
         "--output-dir",
         this.options.playwrightOutputDir ?? "/tmp/playwright-mcp"
       ];
+      args.push("-c", `mcp_servers.playwright.command=${JSON.stringify(resolvePlaywrightMcpCommand(this.options.playwrightMcpCommand))}`);
       args.push("-c", `mcp_servers.playwright.args=${JSON.stringify(playwrightArgs)}`);
+      for (const toolName of browserToolApprovalModes) {
+        args.push("-c", `mcp_servers.playwright.tools.${toolName}.approval_mode="approve"`);
+      }
     }
     return args;
   }

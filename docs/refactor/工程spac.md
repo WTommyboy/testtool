@@ -2012,3 +2012,25 @@ Optimize:
 - per-case progress
 
 This is the safest path to reduce token/time cost without recreating the old class of false results caused by batching or insufficient evidence.
+
+---
+
+## 21. Dev Agent Playwright MCP Runtime Isolation
+
+Date: 2026-05-12 Asia/Taipei
+
+Dev Agent uses a separate config and launchd label from production:
+
+- Config: `/Users/tommy/.uat-agent-dev/config.json`
+- Workdir: `/Users/tommy/.uat-agent-dev/runs`
+- Chrome profile: `/Users/tommy/.uat-agent-dev/chrome-profile`
+- Launchd label: `com.tommy.uat-agent-dev`
+- Backend: `wss://testtool-dev.up.railway.app/agent-ws`
+
+When the Agent starts child Codex with a prepared Chrome CDP endpoint, the runner must inject a complete Playwright MCP server definition, not only runtime args:
+
+- `mcp_servers.playwright.command`
+- `mcp_servers.playwright.args`
+- browser tool approval settings, including `browser_tabs`
+
+This keeps child Codex able to perform the required read-only preflight (`browser_tabs`, navigation, DOM read) before any BI testcase action. If this injection regresses, interactive runs will fail before SSO/page reachability and should be treated as Agent runtime configuration failure, not BI UI smoke evidence.

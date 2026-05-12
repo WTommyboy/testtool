@@ -23,6 +23,7 @@ const main = async (): Promise<void> => {
   fs.chmodSync(fakeCodexPath, 0o755);
 
   const previousArgvPath = process.env.UAT_FAKE_CODEX_ARGV_PATH;
+  const previousPlaywrightMcpCommand = process.env.UAT_AGENT_PLAYWRIGHT_MCP_COMMAND;
   process.env.UAT_FAKE_CODEX_ARGV_PATH = argvPath;
   try {
     const runner = new CodexRunner({
@@ -51,11 +52,51 @@ const main = async (): Promise<void> => {
       "thread-123",
       "approved"
     ]);
+
+    process.env.UAT_AGENT_PLAYWRIGHT_MCP_COMMAND = "/tmp/fake-playwright-mcp";
+    const browserRunner = new CodexRunner({
+      codexBin: fakeCodexPath,
+      model: "gpt-5.3-codex",
+      cwd: tempDir,
+      reasoningEffort: "low",
+      playwrightCdpEndpoint: "http://127.0.0.1:9222",
+      playwrightOutputDir: path.join(tempDir, "mcp-output")
+    });
+    const browserResult = await browserRunner.start("browser argv smoke");
+    assert.equal(browserResult.exitCode, 0);
+
+    const browserArgs = JSON.parse(fs.readFileSync(argvPath, "utf8")) as string[];
+    assert.ok(
+      browserArgs.includes('-c') && browserArgs.includes('mcp_servers.playwright.command="/tmp/fake-playwright-mcp"'),
+      "CodexRunner should inject the Playwright MCP command, not only args"
+    );
+    assert.ok(
+      browserArgs.includes(
+        `mcp_servers.playwright.args=${JSON.stringify([
+          "--cdp-endpoint",
+          "http://127.0.0.1:9222",
+          "--shared-browser-context",
+          "--save-session",
+          "--output-dir",
+          path.join(tempDir, "mcp-output")
+        ])}`
+      ),
+      "CodexRunner should inject the CDP-backed Playwright MCP args"
+    );
+    assert.ok(
+      browserArgs.includes('mcp_servers.playwright.tools.browser_tabs.approval_mode="approve"'),
+      "CodexRunner should preserve browser_tabs tool approval config for child Codex"
+    );
   } finally {
     if (previousArgvPath === undefined) {
       delete process.env.UAT_FAKE_CODEX_ARGV_PATH;
     } else {
       process.env.UAT_FAKE_CODEX_ARGV_PATH = previousArgvPath;
+    }
+    if (previousPlaywrightMcpCommand === undefined) {
+      delete process.env.UAT_AGENT_PLAYWRIGHT_MCP_COMMAND;
+    } else {
+      process.env.UAT_AGENT_PLAYWRIGHT_MCP_COMMAND = previousPlaywrightMcpCommand;
     }
     fs.rmSync(tempDir, { recursive: true, force: true });
   }

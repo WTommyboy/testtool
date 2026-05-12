@@ -250,6 +250,25 @@ const defaultRunName = "Round 1";
 const defaultRunDevUrl = "https://galaxy.games.gamania.com/biapi-dev/testview/home?gameID=541";
 const runActivityPageSize = 500;
 
+type AppEnvironment = {
+  label: "DEV" | "PROD";
+  tone: "dev" | "prod";
+};
+
+const resolveAppEnvironment = (): AppEnvironment => {
+  const explicit = String(import.meta.env.VITE_APP_ENV ?? import.meta.env.VITE_ENV ?? "").trim().toLowerCase();
+  if (["prod", "production"].includes(explicit)) return { label: "PROD", tone: "prod" };
+  if (["dev", "development", "preview", "staging"].includes(explicit)) return { label: "DEV", tone: "dev" };
+
+  const apiBase = String(import.meta.env.VITE_API_BASE_URL ?? "").toLowerCase();
+  const hostname = typeof window === "undefined" ? "" : window.location.hostname.toLowerCase();
+  const devMarkers = ["localhost", "127.0.0.1", "testtool-dev", "git-dev", "dev-uat-agent"];
+  const isDev = Boolean(import.meta.env.DEV || devMarkers.some((marker) => apiBase.includes(marker) || hostname.includes(marker)));
+  return isDev ? { label: "DEV", tone: "dev" } : { label: "PROD", tone: "prod" };
+};
+
+const appEnvironment = resolveAppEnvironment();
+
 const isTerminalRunStatus = (status?: string | null): boolean => {
   return Boolean(status && terminalRunStatuses.has(status));
 };
@@ -1863,7 +1882,7 @@ function App() {
           <h1>
             🔬 <span>Galaxy</span> UAT Test Tool
           </h1>
-          <span className="env-pill">DEV</span>
+          <span className={`env-pill ${appEnvironment.tone}`}>{appEnvironment.label}</span>
         </div>
         <div className="tabs">
           <button className={`tab-btn ${tab === "conversations" ? "active" : ""}`} onClick={() => setTab("conversations")}>
