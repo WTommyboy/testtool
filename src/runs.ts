@@ -24,6 +24,7 @@ import {
   type ExternalToolBridgeEvidence,
   type ResultEvidenceGateReport
 } from "./result-parser/result-evidence-gate";
+import { buildMissingBugCandidates } from "./result-parser/fail-bug-fallback";
 import { readOptionalDomainPackFile } from "./domain-loader";
 import { writeFinalAggregateResultXlsx, type AggregateBug, type AggregateCase, type AggregateRun } from "./result-aggregate-writer";
 
@@ -1694,7 +1695,7 @@ const writeResultEvidenceGateReport = (filePath: string, report: ResultEvidenceG
   return reportPath;
 };
 
-const ingestResultXlsx = async (
+export const ingestResultXlsx = async (
   runId: string,
   filePath: string,
   options: ResultIngestOptions = {}
@@ -1777,6 +1778,7 @@ const ingestResultXlsx = async (
 
   const run = getRun(runId);
   if (!run) throw new Error("RUN_NOT_FOUND");
+  let generatedBugCount = 0;
 
   const tx = db.transaction(() => {
     for (const item of parsed.cases) {
@@ -1813,6 +1815,12 @@ const ingestResultXlsx = async (
 
     deleteBugsForParsedResult(runId, parsed);
     const defaultBugRelatedCaseNo = parsed.cases.length === 1 ? parsed.cases[0]?.caseNo ?? "-" : "-";
+    const generatedBugCandidates = buildMissingBugCandidates({
+      cases: parsed.cases,
+      bugs: parsed.bugs,
+      defaultBugRelatedCaseNo
+    });
+    generatedBugCount = generatedBugCandidates.length;
     for (const bug of parsed.bugs) {
       insertBugStmt.run({
         id: randomUUID(),
@@ -1826,6 +1834,19 @@ const ingestResultXlsx = async (
         updated_at: now
       });
     }
+    for (const bug of generatedBugCandidates) {
+      insertBugStmt.run({
+        id: randomUUID(),
+        run_id: runId,
+        round_id: String(run.round_id ?? ""),
+        severity: bug.severity || "INFO",
+        related_case_no: bug.relatedCaseNo ?? defaultBugRelatedCaseNo,
+        description: bug.description ?? bug.title,
+        suggestion: bug.suggestion,
+        created_at: now,
+        updated_at: now
+      });
+    }
 
     db.prepare(
       `
@@ -1834,6 +1855,13 @@ const ingestResultXlsx = async (
         WHERE id = ?
       `
     ).run(filePath, now, parsed.parserVersion, now, runId);
+    if (generatedBugCandidates.length > 0) {
+      insertRunEvent(runId, "result.fail_bug_fallback_generated", {
+        count: generatedBugCandidates.length,
+        cases: generatedBugCandidates.map((item) => item.relatedCaseNo),
+        source: "result_xlsx_ingest"
+      });
+    }
   });
   tx();
 
@@ -1845,7 +1873,7 @@ const ingestResultXlsx = async (
 
   return {
     cases: parsed.cases.length,
-    bugs: parsed.bugs.length,
+    bugs: parsed.bugs.length + generatedBugCount,
     parserVersion: parsed.parserVersion,
     runStatus,
     resultEvidenceGate: {

@@ -9,7 +9,18 @@ type ResultWriterInput = {
   status: "PASS" | "FAIL" | "BLOCKED" | "PARTIAL";
   failCategory?: string | null;
   detailJson: Record<string, unknown>;
+  bugs?: AgentResultBug[];
   fileName?: string;
+};
+
+export type AgentResultBug = {
+  severity?: string | null;
+  bugId?: string | null;
+  relatedCaseNo?: string | null;
+  title?: string | null;
+  description?: string | null;
+  suggestion?: string | null;
+  status?: string | null;
 };
 
 export type AgentResultSourceCase = {
@@ -49,6 +60,71 @@ const normalizeCaseNo = (value: string): string =>
   value.trim().replace(/\s+/g, "").replace(/^DEMO-/i, "").toUpperCase();
 
 const sameCaseNo = (a: string, b: string): boolean => normalizeCaseNo(a) === normalizeCaseNo(b);
+
+const safeIdPart = (value: string): string => value.replace(/[^a-zA-Z0-9._-]+/g, "-").replace(/^-+|-+$/g, "") || "UNKNOWN";
+
+const stringifyDetailValue = (value: unknown): string | null => {
+  if (value === null || value === undefined) return null;
+  if (typeof value === "string") return value.trim() || null;
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+};
+
+const firstDetailValue = (detail: Record<string, unknown>, keys: string[]): string | null => {
+  for (const key of keys) {
+    const value = stringifyDetailValue(detail[key]);
+    if (value) return value;
+  }
+  return null;
+};
+
+const truncate = (value: string, maxLength: number): string => {
+  if (value.length <= maxLength) return value;
+  return `${value.slice(0, Math.max(0, maxLength - 3))}...`;
+};
+
+const bugMatchesCase = (bug: AgentResultBug, caseNo: string): boolean => {
+  const relatedCaseNo = bug.relatedCaseNo?.trim();
+  return Boolean(relatedCaseNo && sameCaseNo(relatedCaseNo, caseNo));
+};
+
+const generatedFailBug = (input: ResultWriterInput, caseNo: string, caseTitle: string): AgentResultBug => {
+  const reason = firstDetailValue(input.detailJson, ["錯誤原因", "實際行為", "問題", "結論"]) ?? input.failCategory ?? caseTitle;
+  const title = `[AUTO] ${caseNo} ${truncate(reason, 90)}`;
+  const rdDispatch = firstDetailValue(input.detailJson, ["RD 分派", "RD分派", "rd_dispatch", "rdDispatch"]);
+  const description = [
+    title,
+    "auto_generated_from_fail=true",
+    "source=agent_result_writer",
+    `case_no=${caseNo}`,
+    `case_title=${caseTitle}`,
+    input.failCategory ? `fail_category=${input.failCategory}` : null,
+    firstDetailValue(input.detailJson, ["測試目的"]) ? `測試目的: ${firstDetailValue(input.detailJson, ["測試目的"])}` : null,
+    firstDetailValue(input.detailJson, ["設定條件"]) ? `設定條件: ${firstDetailValue(input.detailJson, ["設定條件"])}` : null,
+    firstDetailValue(input.detailJson, ["預期行為"]) ? `預期行為: ${firstDetailValue(input.detailJson, ["預期行為"])}` : null,
+    firstDetailValue(input.detailJson, ["實際行為"]) ? `實際行為: ${firstDetailValue(input.detailJson, ["實際行為"])}` : null,
+    firstDetailValue(input.detailJson, ["錯誤原因"]) ? `錯誤原因: ${firstDetailValue(input.detailJson, ["錯誤原因"])}` : null,
+    firstDetailValue(input.detailJson, ["根因層級"]) ? `根因層級: ${firstDetailValue(input.detailJson, ["根因層級"])}` : null,
+    firstDetailValue(input.detailJson, ["驗證方法"]) ? `驗證方法: ${firstDetailValue(input.detailJson, ["驗證方法"])}` : null,
+    rdDispatch ? `RD 分派: ${rdDispatch}` : null
+  ].filter((line): line is string => Boolean(line));
+  return {
+    severity: "P2",
+    bugId: `AUTO-${safeIdPart(caseNo)}`,
+    relatedCaseNo: caseNo,
+    title,
+    description: description.join("\n"),
+    suggestion: [
+      "Agent generated this Bug row because a FAIL result must be linked from the Bug sheet.",
+      rdDispatch ? `Suggested RD dispatch: ${rdDispatch}.` : null
+    ].filter((line): line is string => Boolean(line)).join(" "),
+    status: "OPEN"
+  };
+};
 
 export const readFirstInputCase = async (
   xlsxPath: string | undefined,
@@ -144,7 +220,26 @@ export const writeAgentResultXlsx = async (input: ResultWriterInput): Promise<st
     { header: "建議", key: "suggestion", width: 56 },
     { header: "狀態", key: "status", width: 14 }
   ];
+  const caseNo = input.sourceCase?.caseNo ?? "AGENT-RESULT";
+  const caseTitle = input.sourceCase?.caseTitle ?? "Mac Agent Codex execution result";
+  const bugRows = [...(input.bugs ?? [])];
+  if (input.status === "FAIL" && !bugRows.some((bug) => bugMatchesCase(bug, caseNo))) {
+    bugRows.push(generatedFailBug(input, caseNo, caseTitle));
+  }
+  for (const bug of bugRows) {
+    bugs.addRow({
+      severity: bug.severity ?? "P2",
+      bugId: bug.bugId ?? `BUG-${safeIdPart(caseNo)}`,
+      relatedCaseNo: bug.relatedCaseNo ?? caseNo,
+      title: bug.title ?? bug.description?.split(/\r?\n/).find((line) => line.trim())?.trim() ?? "Bug",
+      description: bug.description ?? bug.title ?? "Bug",
+      suggestion: bug.suggestion ?? "",
+      status: bug.status ?? "OPEN"
+    });
+  }
   bugs.getRow(1).font = { bold: true };
+  bugs.getColumn("description").alignment = { wrapText: true, vertical: "top" };
+  bugs.getColumn("suggestion").alignment = { wrapText: true, vertical: "top" };
 
   const filePath = path.join(input.outputDir, input.fileName ?? "agent-fallback-result.xlsx");
   await workbook.xlsx.writeFile(filePath);

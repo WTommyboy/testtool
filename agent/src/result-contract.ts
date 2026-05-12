@@ -113,6 +113,9 @@ const text = (value: unknown): string => {
 
 const normalize = (value: unknown): string => text(value).toLowerCase().replace(/\s+/g, "");
 
+const normalizeCaseNo = (value: string | null | undefined): string =>
+  (value ?? "").trim().replace(/\s+/g, "").replace(/^DEMO-/i, "").toUpperCase();
+
 const headerValues = (row: ExcelJS.Row): string[] => {
   const values: string[] = [];
   row.eachCell((cell) => values.push(text(cell.value)));
@@ -251,12 +254,14 @@ export const validateResultWorkbookContract = async (
     const caseNoIdx = findHeaderIndex(headers, "編號");
     const statusIdx = findHeaderIndex(headers, "結果");
     const detailIdx = findHeaderIndex(headers, "詳細紀錄JSON");
+    const failCaseNos: Array<{ rowNo: number; caseNo: string }> = [];
     if (caseNoIdx !== -1 && statusIdx !== -1 && detailIdx !== -1) {
       for (let rowNo = 2; rowNo <= caseSheet.rowCount; rowNo += 1) {
         const row = caseSheet.getRow(rowNo);
         const caseNo = text(row.getCell(caseNoIdx + 1).value);
         if (!caseNo) continue;
         const status = text(row.getCell(statusIdx + 1).value).toUpperCase();
+        if (status === "FAIL") failCaseNos.push({ rowNo, caseNo });
         const detail = parseDetail(text(row.getCell(detailIdx + 1).value));
         const required = adapter.detailJsonRequiredFields[status] ?? [];
         if (!detail) {
@@ -294,6 +299,34 @@ export const validateResultWorkbookContract = async (
             });
           }
         }
+      }
+    }
+    if (failCaseNos.length > 0 && bugSheet) {
+      const bugHeaders = headerValues(bugSheet.getRow(1));
+      const relatedCaseNoIdx = findHeaderIndex(bugHeaders, "關聯編號");
+      const bugIdIdx = findHeaderIndex(bugHeaders, "Bug ID");
+      const titleIdx = findHeaderIndex(bugHeaders, "標題");
+      const descriptionIdx = findHeaderIndex(bugHeaders, "描述");
+      const bugCaseKeys = new Set<string>();
+      if (relatedCaseNoIdx !== -1) {
+        for (let rowNo = 2; rowNo <= bugSheet.rowCount; rowNo += 1) {
+          const row = bugSheet.getRow(rowNo);
+          const relatedCaseNo = text(row.getCell(relatedCaseNoIdx + 1).value);
+          const hasBugContent = [bugIdIdx, titleIdx, descriptionIdx]
+            .filter((idx) => idx !== -1)
+            .some((idx) => Boolean(text(row.getCell(idx + 1).value)));
+          const key = normalizeCaseNo(relatedCaseNo);
+          if (key && hasBugContent) bugCaseKeys.add(key);
+        }
+      }
+      for (const item of failCaseNos) {
+        if (bugCaseKeys.has(normalizeCaseNo(item.caseNo))) continue;
+        issues.push({
+          severity: "error",
+          code: "RESULT_FAIL_BUG_ROW_MISSING",
+          message: `${item.caseNo} is FAIL but Bug sheet has no row linked by 關聯編號.`,
+          context: { rowNo: item.rowNo, caseNo: item.caseNo, expectedBugRelatedCaseNo: item.caseNo }
+        });
       }
     }
   }

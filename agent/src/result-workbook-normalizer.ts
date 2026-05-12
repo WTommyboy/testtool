@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import ExcelJS from "exceljs";
-import type { AgentResultSourceCase } from "./result-writer";
+import type { AgentResultBug, AgentResultSourceCase } from "./result-writer";
 import { writeAgentResultXlsx } from "./result-writer";
 import { loadResultParserAdapter } from "./result-contract";
 
@@ -113,6 +113,16 @@ const columnsFor = (headers: string[]): ColumnMap => ({
   detailJson: findHeader(headers, ["詳細紀錄JSON", "詳細紀錄json", "detail_json", "detailjson"])
 });
 
+const bugColumnsFor = (headers: string[]): ColumnMap => ({
+  severity: findHeader(headers, ["嚴重度", "severity"]),
+  bugId: findHeader(headers, ["Bug ID", "bugid", "bug_id", "bug id"]),
+  relatedCaseNo: findHeader(headers, ["關聯編號", "related_case_no", "relatedCaseNo", "來源 Case", "來源Case", "source case"]),
+  title: findHeader(headers, ["標題", "title"]),
+  description: findHeader(headers, ["描述", "description"]),
+  suggestion: findHeader(headers, ["建議", "suggestion", "建議確認方式"]),
+  status: findHeader(headers, ["狀態", "status", "是否已修正"])
+});
+
 const requiredColumn = (columns: ColumnMap, key: string): number => {
   const value = columns[key];
   if (!value) throw new Error(`missing column ${key}`);
@@ -143,6 +153,39 @@ const buildBackupPath = (filePath: string): string => {
   const ext = path.extname(filePath) || ".xlsx";
   const base = path.basename(filePath, ext);
   return path.join(dir, `${base}.testcase-style-original${ext}`);
+};
+
+const firstLine = (value: string): string | null => value.split(/\r?\n/).find((line) => line.trim())?.trim() ?? null;
+
+const readBugRowsForCase = (
+  workbook: ExcelJS.Workbook,
+  sheetName: string,
+  caseNo: string
+): AgentResultBug[] => {
+  const sheet = workbook.getWorksheet(sheetName);
+  if (!sheet) return [];
+  const headers = headerValues(sheet.getRow(1));
+  const columns = bugColumnsFor(headers);
+  if (!columns.relatedCaseNo || !columns.description) return [];
+  const results: AgentResultBug[] = [];
+  for (let rowNo = 2; rowNo <= sheet.rowCount; rowNo += 1) {
+    const row = sheet.getRow(rowNo);
+    const relatedCaseNo = cellText(row.getCell(columns.relatedCaseNo).value);
+    if (!relatedCaseNo || !sameCaseNo(relatedCaseNo, caseNo)) continue;
+    const description = cellText(row.getCell(columns.description).value);
+    const title = columns.title ? cellText(row.getCell(columns.title).value) : "";
+    if (!description && !title) continue;
+    results.push({
+      severity: columns.severity ? cellText(row.getCell(columns.severity).value) || "P2" : "P2",
+      bugId: columns.bugId ? cellText(row.getCell(columns.bugId).value) || `BUG-${caseNo}-${results.length + 1}` : `BUG-${caseNo}-${results.length + 1}`,
+      relatedCaseNo: caseNo,
+      title: title || firstLine(description) || "Bug",
+      description: description || title,
+      suggestion: columns.suggestion ? cellText(row.getCell(columns.suggestion).value) : "",
+      status: columns.status ? cellText(row.getCell(columns.status).value) || "OPEN" : "OPEN"
+    });
+  }
+  return results;
 };
 
 export const normalizeCodexResultWorkbook = async (input: NormalizeInput): Promise<ResultWorkbookNormalizationReport> => {
@@ -224,6 +267,7 @@ export const normalizeCodexResultWorkbook = async (input: NormalizeInput): Promi
     ? cellText(targetRow.getCell(columns.failCategory).value) || fallbackFailCategory(status, detail)
     : fallbackFailCategory(status, detail);
   const sourceCase = readSourceCaseFromRow(targetRow, columns, input.currentCase, report.selectedCaseNo ?? expectedCaseNo);
+  const bugs = status === "PASS" ? [] : readBugRowsForCase(workbook, adapter.sheets.bugs, sourceCase.caseNo);
   const tempOutputDir = fs.mkdtempSync(path.join(path.dirname(input.filePath), ".normalizing-"));
   try {
     const normalizedPath = await writeAgentResultXlsx({
@@ -234,6 +278,7 @@ export const normalizeCodexResultWorkbook = async (input: NormalizeInput): Promi
       status,
       failCategory,
       detailJson: JSON.parse(detailString(detail)) as Record<string, unknown>,
+      bugs,
       fileName: path.basename(input.filePath)
     });
     const backupPath = buildBackupPath(input.filePath);

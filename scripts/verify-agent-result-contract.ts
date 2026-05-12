@@ -132,6 +132,7 @@ const writeLegacySingleCaseWithoutGroupId = async (filePath: string): Promise<vo
 
   const bugs = workbook.addWorksheet("Bug");
   bugs.addRow(["嚴重度", "Bug ID", "關聯編號", "標題", "描述", "建議", "狀態"]);
+  bugs.addRow(["P2", "BUG-TOOL-A-01", "TOOL-A-01", "日期區間還原失敗", "date range was reset after reopen", "route to frontend", "OPEN"]);
   await workbook.xlsx.writeFile(filePath);
 };
 

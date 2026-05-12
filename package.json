@@ -22,6 +22,7 @@
     "verify:agent-resume": "tsx scripts/verify-agent-resume.ts",
     "verify:agent-connection-resilience": "tsx scripts/verify-agent-connection-resilience.ts",
     "verify:agent-result-contract": "tsx scripts/verify-agent-result-contract.ts",
+    "verify:fail-bug-fallback": "tsx scripts/verify-fail-bug-fallback.ts",
     "verify:final-aggregate-result": "tsx scripts/verify-final-aggregate-result.ts",
     "verify:helper-report-gate": "tsx scripts/verify-helper-report-gate.ts",
     "verify:source-prefilled-results": "tsx scripts/verify-source-prefilled-results.ts",

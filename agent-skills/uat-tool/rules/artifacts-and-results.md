@@ -145,6 +145,8 @@ Metadata/dropdown case 的 reference 應以 run packet 的 `rules/BI_DATA/metada
 
 可額外加入 `Evidence` 欄，但不可用 `Evidence` 取代 `狀態`。
 
+當 `測試案例.結果 = FAIL` 時，Codex 必須同步在 `Bug` sheet 寫入一筆 `關聯編號` 等於該 case 編號的 Bug row。Bug row 應摘要 `錯誤原因`、`根因層級`、`驗證方法`、`RD 分派`、expected vs actual，以及可用 evidence path。`BLOCKED` 不預設寫 Bug row；只有 `detail_json` 明確標示需追蹤產品/工具缺陷時才寫。
+
 `詳細紀錄JSON` 會被 server evidence gate 檢查：
 
 - `PASS` 必填：`測試目的`、`設定條件`、`預期行為`、`實際行為`
