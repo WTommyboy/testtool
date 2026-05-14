@@ -7,6 +7,7 @@ import { z } from "zod";
 import { db } from "./db";
 import { askClaude } from "./claude";
 import { config } from "./config";
+import { getDomainPack } from "./domain-loader";
 
 const router = Router();
 
@@ -25,6 +26,7 @@ const createConversationSchema = z.object({
 });
 
 const pushToRunSchema = z.object({
+  domain: z.string().min(1).optional(),
   roundId: z.string().min(1),
   location: z.string().min(1),
   featureMain: z.string().min(1),
@@ -207,18 +209,23 @@ router.post("/:id/push-to-run", (req, res) => {
   }
 
   const now = nowIso();
+  const domain = parsed.data.domain ?? "BI";
+  if (!getDomainPack(domain)) {
+    return res.status(400).json({ error: "DOMAIN_NOT_FOUND", domain });
+  }
   const runId = randomUUID();
   db.prepare(
     `
       INSERT INTO runs (
-        id, round_id, location, feature_main, feature_sub, run_name, dev_url, status, created_at, updated_at
+        id, round_id, domain, location, feature_main, feature_sub, run_name, dev_url, status, created_at, updated_at
       ) VALUES (
-        @id, @round_id, @location, @feature_main, @feature_sub, @run_name, @dev_url, @status, @created_at, @updated_at
+        @id, @round_id, @domain, @location, @feature_main, @feature_sub, @run_name, @dev_url, @status, @created_at, @updated_at
       )
     `
   ).run({
     id: runId,
     round_id: parsed.data.roundId,
+    domain,
     location: parsed.data.location,
     feature_main: parsed.data.featureMain,
     feature_sub: parsed.data.featureSub,

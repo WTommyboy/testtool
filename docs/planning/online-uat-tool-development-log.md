@@ -1374,3 +1374,10 @@ Tommy 曾討論是否改成腳本。最後決策是採「半腳本化 / helper �
 - Tooling：新增 `npm run create:domain-pack` 與 `npm run verify:domain-pack`,可建立新 domain pack 骨架並檢查 required files、JSON、startup prompt、AGENTS scope / irreversible policy 等最低條件。`BI_OFFICIAL_UI_COLLAGE` verifier 為 PASS。
 - 常駐規則：`AGENTS.md` 與 `uat-tool/AGENTS.md` 新增 domain pack generation trigger。未來 Tommy 提到新功能 domain pack、新 UI/工具導入 UAT Tool、或請 Claude 產新 domain 三文件時,Codex 必須先讀 domain pack 生成流程與 templates,不可依賴 chat 記憶。
 - 驗證與部署：已跑 `npm run verify:domain-pack -- --name BI_OFFICIAL_UI_COLLAGE`、`npm run typecheck`、`npm run build`、scaffold 暫存目錄 smoke、`git diff --check` 通過。dev commits `c73f507`、`f659856` 已推 `dev/uat-agent-config-isolation`；本批常駐規則補強後續仍只推 dev,不碰 production branch。
+
+### 2026-05-15 03:55 - Web UI domain pack 選擇接線
+
+- 背景：Tommy 詢問「線上工具是否透過提供多個 domain pack 讓 PM 選要測的功能」以及正式 UI domain pack 還缺什麼。檢查後發現 backend / Agent 已支援 run.domain 與 `/api/domains`,但 Web UI 建立 run 表單尚未載入 domain list,送出也未帶 `domain`,因此新 run 會落回預設 `BI`。
+- 修正：Web UI 建立 run 表單新增 `Domain Pack` select,從 `/api/domains` 載入 valid packs；送出 `POST /api/runs` 時帶 `domain`。選 `BI_OFFICIAL_UI_COLLAGE` 時,若 Dev URL 仍是已知預設值或空值,自動切成 `https://galaxy.games.gamania.com/bi-dev/zh-TW/home`。Run history 與 summary 顯示 domain。
+- Backend guard：`POST /api/runs` 與 conversation push-to-run 會驗證 domain pack 存在,不存在回 `DOMAIN_NOT_FOUND`,避免建立出 dispatch 後才缺 domain files 的 run。
+- 驗證：已跑 `npm run typecheck`、`npm run build`、`npm run build --prefix web`、`git diff --check`。本機啟動 API + Web smoke,建立 run 表單看到 `Galaxy BI` / `Galaxy BI Official UI Collage`,選正式 UI pack 後 Dev URL 自動變為 `https://galaxy.games.gamania.com/bi-dev/zh-TW/home`,截圖 `artifacts/domain-pack-selector-smoke.png`。本批待推 dev,不碰 prod。

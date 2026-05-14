@@ -81,11 +81,12 @@ curl -fsS https://<your-api-host>/health
 A typical run:
 
 1. Open the Web UI at `https://<your-web-ui-host>/` and create a run.
-2. Upload the test package: `testcase.xlsx` + Codex assignment markdown + execution-instruction markdown. Authoring rules live in `docs/authoring/UAT_三文件撰寫規則.md`.
-3. Start the run. Railway dispatches to the connected local Mac Agent.
-4. The Agent launches Codex per case in manifest order; Codex drives the Galaxy BI UI through Playwright MCP.
-5. Each case ends with an automatic single-case `result.xlsx` upload, gated by the evidence gate before advancing.
-6. When all cases finish, download the aggregate `result.xlsx`, the concise Markdown report, and the full-archive Markdown report.
+2. Choose the domain pack, for example `BI` or `BI_OFFICIAL_UI_COLLAGE`.
+3. Upload the test package: `testcase.xlsx` + Codex assignment markdown + execution-instruction markdown. Authoring rules live in `docs/authoring/UAT_三文件撰寫規則.md`.
+4. Start the run. Railway dispatches to the connected local Mac Agent.
+5. The Agent launches Codex per case in manifest order; Codex drives the Galaxy BI UI through Playwright MCP.
+6. Each case ends with an automatic single-case `result.xlsx` upload, gated by the evidence gate before advancing.
+7. When all cases finish, download the aggregate `result.xlsx`, the concise Markdown report, and the full-archive Markdown report.
 
 Human approval points (native dialogs, overwrite, delete, SSO blockers) surface in the Tool Bridge panel in the Web UI. Testcase prose is not authorization.
 

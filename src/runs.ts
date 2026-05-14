@@ -25,7 +25,7 @@ import {
   type ResultEvidenceGateReport
 } from "./result-parser/result-evidence-gate";
 import { buildMissingBugCandidates } from "./result-parser/fail-bug-fallback";
-import { readOptionalDomainPackFile } from "./domain-loader";
+import { getDomainPack, readOptionalDomainPackFile } from "./domain-loader";
 import { writeFinalAggregateResultXlsx, type AggregateBug, type AggregateCase, type AggregateRun } from "./result-aggregate-writer";
 
 const router = Router();
@@ -1983,7 +1983,11 @@ router.post(
 
 	    const now = nowIso();
 	    const runId = randomUUID();
-	    const payload = parsed.data;
+    const payload = parsed.data;
+    const domain = payload.domain ?? "BI";
+    if (!getDomainPack(domain)) {
+      return res.status(400).json({ error: "DOMAIN_NOT_FOUND", domain });
+    }
 	    const diagnosticConfig = buildDiagnosticConfig(req.body as Record<string, unknown>);
 
 	    db.prepare(
@@ -1997,7 +2001,7 @@ router.post(
 	    ).run({
       id: runId,
       round_id: payload.roundId,
-      domain: payload.domain ?? "BI",
+      domain,
       location: payload.location,
       feature_main: payload.featureMain,
 	      feature_sub: payload.featureSub,
@@ -2012,7 +2016,7 @@ router.post(
 
     insertRunLog(runId, "INFO", "Run created", payload);
     insertRunEvent(runId, "run.created", {
-      domain: payload.domain ?? "BI",
+      domain,
       roundId: payload.roundId,
       location: payload.location,
 	      featureMain: payload.featureMain,
@@ -3279,6 +3283,7 @@ router.get("/:id/summary", (req, res) => {
   return res.json({
     runId: req.params.id,
     runStatus: run.status,
+    domain: run.domain ?? "BI",
     date: run.date ?? null,
     tester: run.tester ?? null,
     location: run.location ?? null,

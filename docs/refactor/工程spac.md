@@ -100,6 +100,10 @@ GET  /api/agents
 POST /api/agents/tokens
 GET  /api/domains
 GET  /api/domains/:name/rules
+GET  /api/domains/:name/schema
+GET  /api/domains/:name/result-adapter
+GET  /api/domains/:name/startup-template
+GET  /api/domains/:name/locator-registry
 POST /api/runs
 GET  /api/runs/history
 GET  /api/runs/:id/summary
@@ -217,6 +221,14 @@ Backend actions:
 3. Create run row.
 4. Create run logs.
 5. Return selected run summary.
+
+Web UI domain handling:
+
+- Create Run loads valid packs from `GET /api/domains`.
+- The selected domain is submitted as `domain` in `POST /api/runs`.
+- Choosing `BI_OFFICIAL_UI_COLLAGE` defaults `devUrl` to `https://galaxy.games.gamania.com/bi-dev/zh-TW/home` unless the user has typed a custom URL.
+- Run history and summary display the selected domain.
+- Backend rejects unknown domain values with `DOMAIN_NOT_FOUND` before creating a run.
 
 ### 3.2 Run Dispatch
 

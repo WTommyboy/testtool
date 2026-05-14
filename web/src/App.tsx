@@ -20,6 +20,7 @@ type ConversationMessage = {
 type RunItem = {
   id: string;
   round_id: string;
+  domain?: string | null;
   execution_mode?: "offline" | "interactive" | string;
   location: string;
   feature_main: string;
@@ -32,6 +33,7 @@ type RunItem = {
 type Summary = {
   runId: string;
   runStatus: string;
+  domain?: string | null;
   date?: string | null;
   tester?: string | null;
   location?: string | null;
@@ -242,12 +244,26 @@ type AuthMeResponse = {
   loginUrl?: string;
 };
 
+type DomainPack = {
+  name: string;
+  displayName: string;
+  valid: boolean;
+  schemaVersion: string | null;
+  missingFiles?: string[];
+};
+
 const terminalRunStatuses = new Set(["SUCCEEDED", "FAILED", "CANCELLED", "CANCELED"]);
 const cancellableRunStatuses = new Set(["READY", "RUNNING", "WAITING_APPROVAL", "VALIDATING"]);
 const defaultRunLocation = "數據中心";
 const defaultRunFeatureMain = "BI工具";
 const defaultRunName = "Round 1";
+const defaultRunDomain = "BI";
 const defaultRunDevUrl = "https://galaxy.games.gamania.com/biapi-dev/testview/home?gameID=541";
+const officialUiCollageDevUrl = "https://galaxy.games.gamania.com/bi-dev/zh-TW/home";
+const domainDefaultDevUrls: Record<string, string> = {
+  BI: defaultRunDevUrl,
+  BI_OFFICIAL_UI_COLLAGE: officialUiCollageDevUrl
+};
 const runActivityPageSize = 500;
 
 type AppEnvironment = {
@@ -411,6 +427,7 @@ function App() {
   const [selectedRunId, setSelectedRunId] = useState<string>("");
   const [runStatusFilter, setRunStatusFilter] = useState("");
   const [runRoundFilter, setRunRoundFilter] = useState("");
+  const [domains, setDomains] = useState<DomainPack[]>([]);
   const [sourceMode, setSourceMode] = useState<"upload" | "conversation">("upload");
   const [runExecutionMode, setRunExecutionMode] = useState<"interactive" | "offline" | "diagnostic">("interactive");
   const [diagnosticFromStep, setDiagnosticFromStep] = useState("");
@@ -423,6 +440,7 @@ function App() {
   const [uploadDocs, setUploadDocs] = useState<File[]>([]);
   const [uploadCsv, setUploadCsv] = useState<File | null>(null);
   const [runRoundId, setRunRoundId] = useState("");
+  const [runDomain, setRunDomain] = useState(defaultRunDomain);
   const [runLocation, setRunLocation] = useState(defaultRunLocation);
   const [runFeatureMain, setRunFeatureMain] = useState(defaultRunFeatureMain);
   const [runFeatureSub, setRunFeatureSub] = useState("");
@@ -467,6 +485,7 @@ function App() {
 
   const selectedConversation = conversations.find((x) => x.id === selectedConversationId) ?? null;
   const selectedRun = history.find((x) => x.id === selectedRunId) ?? null;
+  const selectedDomain = domains.find((domain) => domain.name === runDomain) ?? null;
   const selectedAgent = agents.find((agent) => agent.id === selectedAgentId) ?? null;
   const selectedAgentDoctorStats = selectedAgent?.doctorChecks.reduce(
     (acc, check) => {
@@ -594,6 +613,7 @@ function App() {
     setDiagnosticUntilStep("");
     setDiagnosticPurpose("");
     setRunRoundId("");
+    setRunDomain(defaultRunDomain);
     setRunLocation(defaultRunLocation);
     setRunFeatureMain(defaultRunFeatureMain);
     setRunFeatureSub("");
@@ -1213,6 +1233,20 @@ function App() {
     }
   };
 
+  const loadDomains = async () => {
+    try {
+      const data = await api<{ items: DomainPack[] }>("/api/domains");
+      const validDomains = data.items.filter((domain) => domain.valid);
+      setDomains(validDomains);
+      setRunDomain((current) => {
+        if (current && validDomains.some((domain) => domain.name === current)) return current;
+        return validDomains.find((domain) => domain.name === defaultRunDomain)?.name ?? validDomains[0]?.name ?? defaultRunDomain;
+      });
+    } catch (error) {
+      setRunError(error instanceof Error ? error.message : String(error));
+    }
+  };
+
   const loadAgents = async () => {
     try {
       const data = await api<{ items: AgentItem[] }>("/api/agents");
@@ -1343,8 +1377,19 @@ function App() {
     if (authStatus !== "authenticated") return;
     void loadConversations();
     void loadRuns();
+    void loadDomains();
     void loadAgents();
   }, [authStatus]);
+
+  useEffect(() => {
+    const nextDefaultUrl = domainDefaultDevUrls[runDomain];
+    if (!nextDefaultUrl) return;
+    const currentUrl = runDevUrl.trim();
+    const knownDefaultUrls = new Set(Object.values(domainDefaultDevUrls));
+    if (!currentUrl || knownDefaultUrls.has(currentUrl)) {
+      setRunDevUrl(nextDefaultUrl);
+    }
+  }, [runDomain]);
 
   useEffect(() => {
     if (authStatus !== "authenticated") return;
@@ -1485,6 +1530,7 @@ function App() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          domain: defaultRunDomain,
           roundId: pushRoundId,
           location: "數據中心",
           featureMain: "BI工具",
@@ -1584,6 +1630,7 @@ function App() {
       }
       const formData = new FormData();
       formData.append("sourceMode", sourceMode);
+      formData.append("domain", runDomain);
       formData.append("roundId", runRoundId.trim());
       formData.append("location", runLocation.trim() || "數據中心");
       formData.append("featureMain", runFeatureMain.trim() || "BI工具");
@@ -2075,6 +2122,20 @@ function App() {
                 </select>
               </div>
               <div className="form-group">
+                <label>Domain Pack</label>
+                <select value={runDomain} onChange={(e) => setRunDomain(e.target.value)}>
+                  {domains.length === 0 ? <option value={runDomain}>{runDomain}</option> : null}
+                  {domains.map((domain) => (
+                    <option key={domain.name} value={domain.name}>
+                      {domain.displayName || domain.name}
+                    </option>
+                  ))}
+                </select>
+                <span className="hint-text">
+                  {selectedDomain ? `${selectedDomain.name}${selectedDomain.schemaVersion ? ` / ${selectedDomain.schemaVersion}` : ""}` : "建立 Run 時會傳給 Agent"}
+                </span>
+              </div>
+              <div className="form-group">
                 <label>輪次 ID</label>
                 <input value={runRoundId} onChange={(e) => setRunRoundId(e.target.value)} placeholder="例如 RC-R001" />
               </div>
@@ -2463,6 +2524,7 @@ function App() {
                     <div className="run-info">
                       <div className="run-id">{item.round_id}</div>
                       <div className="run-name">{item.run_name}</div>
+                      <div className="muted">{item.domain || "BI"}</div>
                     </div>
                     <span className={`badge ${item.status}`}>{item.status}</span>
                   </button>
@@ -2503,6 +2565,7 @@ function App() {
                   <span>執行日期: {summary?.date || "—"}</span>
                   <span>測試者: {summary?.tester || "—"}</span>
                   <span>位置: {summary?.location || "—"}</span>
+                  <span>Domain: {summary?.domain || selectedRun?.domain || "BI"}</span>
                   <span>功能: {summary?.featureMain || "—"} / {summary?.featureSub || "—"}</span>
                   <span>Result XLSX: {summary?.resultXlsxAvailable ? "可下載" : "—"}</span>
                   <span>Agent Log: {summary?.logAvailable ? "可下載" : "—"}</span>
