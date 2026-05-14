@@ -1,0 +1,34 @@
+{
+  "schemaVersion": "bi-official-ui-collage-v0.1",
+  "displayName": "Galaxy BI Official UI Collage",
+  "requiredSheets": ["測試案例"],
+  "resultSheets": ["索引", "測試案例", "Bug"],
+  "caseNoColumnCandidates": ["編號", "測試編號", "case_no"],
+  "detailJsonColumnCandidates": ["詳細紀錄JSON", "detail_json"],
+  "expectedCaseColumns": [
+    "輪次ID",
+    "群組ID",
+    "群組",
+    "編號",
+    "測試類型",
+    "測試項目",
+    "風險等級",
+    "測試標的",
+    "狀態清理",
+    "前置條件",
+    "步驟",
+    "預期結果",
+    "結果",
+    "執行方式",
+    "測試日",
+    "詳細紀錄JSON",
+    "驗證方法"
+  ],
+  "domainDefaults": {
+    "mode": "collage",
+    "url": "https://galaxy.games.gamania.com/bi-dev/zh-TW/home",
+    "textJudgment": "semantic",
+    "specPriority": ["PRD", "official_ui_screenshots", "live_dev_site", "legacy_ottest004_package"],
+    "preserveLegacyCases": true
+  }
+}

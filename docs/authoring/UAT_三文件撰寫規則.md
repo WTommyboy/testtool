@@ -1,5 +1,15 @@
 # UAT 三文件撰寫規則
 
+> 拆分狀態（2026-05-15）:
+> 本檔是目前既有流程仍在引用的 legacy 大檔,內容混有共用規則與 BI 專屬規則。
+> 新版規則拆分請先看:
+>
+> 1. 共用規則草稿: `uat-tool/docs/authoring/UAT_三文件撰寫規則_vNext_共用草稿.md`
+> 2. BI 補充規則: `BI_TEST_RULES/BI_UAT_三文件撰寫補充規則.md`
+> 3. 各 domain-pack 邊界規則,例如 `other/bi_v1/BI正式UI_拼貼模式_邊界規則.md`
+>
+> 在 legacy 檔正式瘦身前,若新舊規則有衝突,以「共用 vNext -> BI 補充 -> domain-pack 邊界規則 -> 本輪指派文字」的順序判定。
+
 本文件規範每輪 UAT 測試包必備三份文件的寫法：
 
 1. `測試案例.xlsx`

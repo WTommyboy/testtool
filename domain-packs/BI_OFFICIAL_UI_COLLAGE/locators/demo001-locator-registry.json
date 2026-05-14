@@ -1,0 +1,160 @@
+{
+  "schemaVersion": "bi-official-ui-collage-locator-registry-v0.1",
+  "domain": "BI_OFFICIAL_UI_COLLAGE",
+  "scope": "Official BI frontend collage mode",
+  "generatedAt": "2026-05-15T00:00:00+08:00",
+  "status": "draft_unverified",
+  "policy": [
+    "Locator guidance only; it does not prove PASS/FAIL/BLOCKED.",
+    "All candidates must operate visible UI through Playwright locators.",
+    "Do not use direct BI API calls, internal JS setters, DOM mutation, or force:true clicks.",
+    "If candidates fail, fall back to visible UI exploration and record drift in output/locator-drift.log.",
+    "Read-only DOM/network extraction is allowed only after visible UI state has been set."
+  ],
+  "driftLog": "output/locator-drift.log",
+  "locators": [
+    {
+      "id": "BI_OFFICIAL.common.appShell",
+      "description": "Official BI app shell after SSO.",
+      "candidates": [
+        { "kind": "url", "value": "**/bi-dev/zh-TW/home" },
+        { "kind": "text", "value": "數據統計中心" },
+        { "kind": "text", "value": "公司共享" },
+        { "kind": "text", "value": "我的自訂" }
+      ],
+      "verify": ["URL contains /bi-dev/zh-TW/", "visible text contains 數據統計中心"]
+    },
+    {
+      "id": "BI_OFFICIAL.common.myCustomSection",
+      "description": "Sidebar section for custom BI reports.",
+      "candidates": [
+        { "kind": "role", "role": "button", "name": "我的自訂" },
+        { "kind": "text", "value": "我的自訂" }
+      ],
+      "verify": ["拼貼報表, 報表明細, or 指標趨勢 is visible after expand"]
+    },
+    {
+      "id": "BI_OFFICIAL.collage.modeEntry",
+      "description": "Sidebar entry for collage reports.",
+      "candidates": [
+        { "kind": "role", "role": "button", "name": "拼貼報表" },
+        { "kind": "text", "value": "拼貼報表" }
+      ],
+      "verify": ["collage project list appears after click"]
+    },
+    {
+      "id": "BI_OFFICIAL.collage.projectLinkByName",
+      "description": "Collage project link after the collage project list is expanded.",
+      "params": ["projectName"],
+      "candidates": [
+        { "kind": "role", "role": "link", "nameParam": "projectName" },
+        { "kind": "textParam", "name": "projectName" }
+      ],
+      "verify": ["project page heading matches projectName"]
+    },
+    {
+      "id": "BI_OFFICIAL.project.addReportButton",
+      "description": "Project page add report icon/button.",
+      "candidates": [
+        { "kind": "role", "role": "button", "name": "新增" },
+        { "kind": "label", "name": "新增" },
+        { "kind": "text", "value": "+" }
+      ],
+      "verify": ["URL changes to /report/new or editor page title 自訂報表 appears"]
+    },
+    {
+      "id": "BI_OFFICIAL.project.rowCheckbox",
+      "description": "Project page report row checkbox.",
+      "params": ["reportName"],
+      "candidates": [
+        { "kind": "rowScopedCheckbox", "rowTextParam": "reportName" },
+        { "kind": "role", "role": "checkbox" }
+      ],
+      "verify": ["checkbox checked state changes", "batch buttons enabled/disabled accordingly"]
+    },
+    {
+      "id": "BI_OFFICIAL.project.rowActionDownload",
+      "description": "Project page row download action.",
+      "params": ["reportName"],
+      "candidates": [
+        { "kind": "rowScopedRole", "role": "button", "name": "下載", "rowTextParam": "reportName" },
+        { "kind": "role", "role": "button", "name": "下載" }
+      ],
+      "verify": ["download event, attachment response, or download feedback appears"]
+    },
+    {
+      "id": "BI_OFFICIAL.project.rowActionDelete",
+      "description": "Project page row delete action.",
+      "params": ["reportName"],
+      "candidates": [
+        { "kind": "rowScopedRole", "role": "button", "name": "刪除", "rowTextParam": "reportName" },
+        { "kind": "role", "role": "button", "name": "刪除" }
+      ],
+      "verify": ["delete confirmation modal appears; final confirm requires explicit authorization"]
+    },
+    {
+      "id": "BI_OFFICIAL.editor.collageModeRadio",
+      "description": "Collage mode radio in custom report editor.",
+      "candidates": [
+        { "kind": "role", "role": "radio", "name": "拼貼模式" },
+        { "kind": "text", "value": "拼貼模式" }
+      ],
+      "verify": ["radio is checked for collage cases"]
+    },
+    {
+      "id": "BI_OFFICIAL.editor.sourceReportDropdown",
+      "description": "Source report dropdown in first field row.",
+      "candidates": [
+        { "kind": "role", "role": "button", "name": "請選擇報表" },
+        { "kind": "text", "value": "請選擇報表" }
+      ],
+      "verify": ["dropdown opens with search box and shared report options"]
+    },
+    {
+      "id": "BI_OFFICIAL.editor.timeRangeButton",
+      "description": "Time range button in editor.",
+      "candidates": [
+        { "kind": "role", "role": "button", "name": "時間設置" },
+        { "kind": "text", "value": "過去 7 天" },
+        { "kind": "text", "value": "2026-" }
+      ],
+      "verify": ["time range panel opens with preset buttons and calendars"]
+    },
+    {
+      "id": "BI_OFFICIAL.editor.calculateButton",
+      "description": "Calculate/preview button in editor.",
+      "candidates": [
+        { "kind": "role", "role": "button", "name": "計算" },
+        { "kind": "text", "value": "計算" }
+      ],
+      "verify": ["preview request, table change, or validation feedback occurs"]
+    },
+    {
+      "id": "BI_OFFICIAL.editor.saveButton",
+      "description": "Save report button in new report editor.",
+      "candidates": [
+        { "kind": "role", "role": "button", "name": "儲存報表" },
+        { "kind": "role", "role": "button", "name": "儲存" }
+      ],
+      "verify": ["save modal opens or button disabled state matches case expectation"]
+    },
+    {
+      "id": "BI_OFFICIAL.editor.copyButton",
+      "description": "Copy existing report button.",
+      "candidates": [
+        { "kind": "role", "role": "button", "name": "複製副本" },
+        { "kind": "text", "value": "複製副本" }
+      ],
+      "verify": ["copy modal opens with report name and project dropdown"]
+    },
+    {
+      "id": "BI_OFFICIAL.editor.updateButton",
+      "description": "Update existing report button.",
+      "candidates": [
+        { "kind": "role", "role": "button", "name": "更新設定" },
+        { "kind": "text", "value": "更新設定" }
+      ],
+      "verify": ["update action triggers feedback or persisted setting according to case"]
+    }
+  ]
+}

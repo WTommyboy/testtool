@@ -1,0 +1,21 @@
+{
+  "schemaVersion": "result-parser-adapter-v1",
+  "adapterVersion": "bi-official-ui-collage-result-adapter-v0.1",
+  "parser": "result-xlsx-parser",
+  "sheets": {
+    "index": "索引",
+    "cases": "測試案例",
+    "bugs": "Bug"
+  },
+  "headers": {
+    "cases": ["群組ID", "群組", "編號", "測試項目", "測試類型", "執行方式", "結果", "失敗分類", "詳細紀錄JSON"],
+    "bugs": ["嚴重度", "Bug ID", "關聯編號", "標題", "描述", "建議", "狀態"],
+    "optionalBugHeaders": ["Evidence"]
+  },
+  "detailJsonRequiredFields": {
+    "PASS": ["測試目的", "設定條件", "預期行為", "實際行為"],
+    "FAIL": ["測試目的", "設定條件", "預期行為", "實際行為", "錯誤原因", "根因層級", "驗證方法", "RD 分派"],
+    "BLOCKED": ["測試目的", "設定條件", "預期行為", "實際行為", "blocked_reason"],
+    "PARTIAL": ["部分符合的子項清單", "不符的子項清單"]
+  }
+}
