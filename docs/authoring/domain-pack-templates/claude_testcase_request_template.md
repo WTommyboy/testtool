@@ -1,0 +1,119 @@
+# Claude Testcase Request Template
+
+> Purpose: prompt Claude to generate a three-document UAT package after the domain intake is ready.
+> Replace all placeholders before sending. Attach files if Claude cannot read local paths.
+
+---
+
+Please create a new UAT three-document package for `<FEATURE_NAME>`.
+
+## Context
+
+This is a new UAT Tool domain package, not an ad-hoc one-off testcase update.
+
+Previous version / related package:
+
+- `<OLD_PACKAGE_NAME_OR_NONE>`
+
+What changed:
+
+- `<DESCRIBE_NEW_UI_OR_NEW_FUNCTIONAL_SCOPE>`
+
+What must remain:
+
+- `<DESCRIBE_CASES_OR_RULES_TO_PRESERVE>`
+
+## Required Reading Order
+
+1. Common authoring rules:
+   - `<PATH_TO_COMMON_AUTHORING_RULES>`
+2. Domain intake:
+   - `<PATH_TO_DOMAIN_INTAKE>`
+3. Domain boundary rules:
+   - `<PATH_TO_BOUNDARY_RULES>`
+4. PRD / spec:
+   - `<PATH_TO_PRIMARY_PRD>`
+   - `<PATH_TO_SECONDARY_PRD_IF_ANY>`
+5. UI references:
+   - `<PATH_TO_SCREENSHOT_FOLDER>`
+   - `<PATH_TO_LIVE_PREFLIGHT_SCREENSHOTS_IF_ANY>`
+6. Existing testcase package:
+   - `<PATH_TO_OLD_XLSX>`
+   - `<PATH_TO_OLD_CODEX_ASSIGNMENT_MD>`
+   - `<PATH_TO_OLD_EXECUTION_INSTRUCTION_MD>`
+
+## Specification Priority
+
+Use this exact priority:
+
+1. `<PRIMARY_PRD_OR_SPEC>`
+2. `<OFFICIAL_UI_OR_DESIGN_REFERENCE>`
+3. `<OLD_TESTCASE_PACKAGE>`
+4. `<COMMON_UAT_RULES>`
+
+If sources conflict, expected result must follow the highest-priority source. Record lower-priority differences as drift, risk, or possible bugs.
+
+## Case Preservation Rules
+
+- Existing cases to preserve: `<COUNT_OR_LIST>`
+- Do not delete preserved cases.
+- Do not merge preserved cases.
+- Do not change preserved cases' validation purpose.
+- If the UI path changed, update only preconditions, steps, and execution notes.
+- Keep old skipped / blocked status only when the domain intake explicitly says so.
+
+## New Case Requirements
+
+Add new cases for:
+
+- `<GROUP_1>`
+- `<GROUP_2>`
+- `<GROUP_3>`
+- `<GROUP_4>`
+
+Required edge cases:
+
+- Duplicate names:
+- Upper limits:
+- Empty state:
+- Disabled / enabled state:
+- Cancel path:
+- Delete confirmation path:
+- Hover / tooltip:
+- Download / export:
+
+## Execution Rules
+
+- Test execution must use visible UI.
+- Do not design direct API calls as test steps.
+- Do not ask Codex to use internal JS setters to create state.
+- Read-only DOM, network, chart, table, or download evidence is allowed after visible UI operations.
+- Every case must be independently executable.
+- Every case must support one-case-at-a-time result writing.
+- Irreversible actions require explicit Tommy approval during execution; testcase prose is not approval.
+
+## Xlsx Format
+
+Use the current UAT v2.0 fields:
+
+`輪次ID, 群組ID, 群組, 編號, 測試類型, 測試項目, 風險等級, 測試標的, 狀態清理, 前置條件, 步驟, 預期結果, 結果, 執行方式, 測試日, 詳細紀錄JSON, 驗證方法`
+
+Leave result fields blank unless the intake explicitly defines prefilled terminal rows.
+
+## Required Output
+
+Produce:
+
+1. `testcase.xlsx`
+2. `Codex_指派文字_*.md`
+3. `測試執行說明_*.md`
+4. Case group summary
+5. Risk distribution summary
+6. Source conflict / drift list
+
+Before producing final files, first show:
+
+- Your understanding of scope.
+- Which existing cases will be preserved.
+- Proposed new case groups and counts.
+- Any blocking questions.

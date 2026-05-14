@@ -8,6 +8,8 @@
     "typecheck": "tsc --noEmit",
     "build": "tsc -p tsconfig.json",
     "start": "node dist/server.js",
+    "create:domain-pack": "tsx scripts/create-domain-pack.ts",
+    "verify:domain-pack": "tsx scripts/verify-domain-pack.ts",
     "check:package-consistency": "tsx scripts/check-test-package-consistency.ts",
     "check:result-evidence": "tsx scripts/check-result-evidence-gate.ts",
     "verify:agent-roundtrip": "npm run build && tsx scripts/verify-agent-roundtrip.ts",

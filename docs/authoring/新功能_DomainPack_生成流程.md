@@ -9,6 +9,15 @@
 
 每個新功能 domain-pack 至少要產出三類檔案:
 
+### 1.0 固定樣板
+
+先從樣板複製,再填入本功能內容:
+
+- `docs/authoring/domain-pack-templates/domain_intake_template.md`
+- `docs/authoring/domain-pack-templates/boundary_rules_template.md`
+- `docs/authoring/domain-pack-templates/claude_testcase_request_template.md`
+- `docs/authoring/domain-pack-templates/domain_pack_completion_checklist.md`
+
 ### 1.1 Intake / 出題資料包
 
 放在專案資料區,用來給 PM / Claude / Codex 對齊功能邊界。
@@ -53,6 +62,39 @@ uat-tool/domain-packs/<DOMAIN_PACK_NAME>/
 
 ## 2. 標準流程
 
+### 2.0 角色分工
+
+| 角色 | 負責內容 | 不負責內容 |
+| --- | --- | --- |
+| PM / Tommy | 提供 PRD、UI 參考、舊測試包、規格優先序、資源風險決策 | 不需要手寫 domain pack loader 檔 |
+| Codex | 整理 intake、拆規則層級、建立 domain pack、補流程文件、做 dev push / smoke | 不自行決定高風險產品規則,不替 PM 授權刪除 |
+| Claude | 依 intake / PRD / 邊界規則產出 UAT 三文件 | 不建立工具 domain pack,不改 UAT Tool runtime |
+| UAT Tool / Agent | 載入 domain pack、派工、執行 testcase、收斂 result | 不從 chat 記憶推測缺漏規則 |
+
+交付順序:
+
+1. PM 提供素材。
+2. Codex 產出 / 補齊 intake 與 domain pack。
+3. Claude 產生 testcase 三文件。
+4. Codex / Tool 做 package consistency 與 dev smoke。
+5. 通過 dev 後才考慮 prod promote。
+
+### Phase 0:判斷是否需要新 domain pack
+
+符合任一條件,就應傾向建立新 domain pack,而不是把規則塞進既有 pack:
+
+- 功能使用不同 UI 或不同入口。
+- 同一資料邏輯改由正式 UI 驗收,導致 UI 狀態 / locator / evidence 規則明顯不同。
+- 需要保留舊 case,但新增另一組 UI / flow case。
+- 風險規則、不可逆操作、資源政策與既有功能不同。
+- 執行前置、SSO、URL、租戶 / game / project 入口不同。
+
+不應建立新 domain pack 的情況:
+
+- 只是同一功能的小型 case 增補。
+- 只是更新單輪 testcase 的輸入值。
+- 規則完全可由本輪 `Codex_指派文字` 補充,且不會跨輪重用。
+
 ### Step 1:收集資料
 
 PM 需提供:
@@ -62,6 +104,7 @@ PM 需提供:
 - dev URL。
 - 舊版 testcase / BDD / 既有測試包,若有。
 - 哪些既有 case 要保留。
+- 這次與上一版工具 / UI / testcase 的差異。
 - 是否允許建立 / 修改 / 刪除測試資源。
 - 是否需要 SSO 或特殊前置。
 
@@ -70,6 +113,8 @@ Codex / Agent 應輸出:
 - `domain_intake_draft.md`
 - 已知差異清單。
 - 待 PM 決策問題。
+
+Intake 不完整時,不要急著 scaffold tool pack。最多只能先做草稿,不得進入 dev smoke。
 
 ### Step 2:確認核心決策
 
@@ -85,6 +130,8 @@ Codex / Agent 應輸出:
 - 測試資源命名規則。
 
 決策確認後,寫回 intake,不要只留在 chat。
+
+Gate:沒有完成核心決策前,Claude 不應正式產三文件;最多只能產群組規劃草稿。
 
 ### Step 3:拆規則層級
 
@@ -118,6 +165,13 @@ Codex / Agent 應輸出:
 ### Step 5:建立工具 domain pack
 
 在 `uat-tool/domain-packs/<DOMAIN_PACK_NAME>/` 建立:
+
+可先用 scaffold 工具產生骨架:
+
+```bash
+cd /Users/tommy/Downloads/codex_galaxy/uat-tool
+npm run create:domain-pack -- --name <DOMAIN_PACK_NAME> --display "<Display Name>" --scope "<One-line scope>"
+```
 
 #### `AGENTS.md`
 
@@ -183,6 +237,7 @@ locators/demo001-locator-registry.json
 
 ```bash
 cd /Users/tommy/Downloads/codex_galaxy/uat-tool
+npm run verify:domain-pack -- --name <DOMAIN_PACK_NAME>
 npx tsx -e "import { listDomainPacks } from './src/domain-loader'; console.log(JSON.stringify(listDomainPacks(), null, 2))"
 npm run typecheck
 npm run build
@@ -221,6 +276,8 @@ npm run verify:result-evidence-gate
    - `domain_startup_prompt_template.md`
    - locator registry,若有。
 6. 確認 result workbook 可被 parser ingest。
+
+Gate:dev `/api/domains` 沒看到新 pack 之前,Claude 產出的 testcase 不應送正式 run;最多只做檔案審查。
 
 ### Step 8:prod promote
 
@@ -280,28 +337,34 @@ prod 前檢查:
 
 ## 4. 可工具化方向
 
-未來可新增 scaffold command:
+目前已有最小 scaffold / verify command:
 
 ```bash
-npm run create:domain-pack -- --name BI_OFFICIAL_UI_COLLAGE --display "Galaxy BI Official UI Collage" --base BI
+npm run create:domain-pack -- --name BI_OFFICIAL_UI_COLLAGE --display "Galaxy BI Official UI Collage"
+npm run verify:domain-pack -- --name BI_OFFICIAL_UI_COLLAGE
 ```
 
-工具應自動產生:
+目前 scaffold 會自動產生:
 
 - domain pack 目錄。
 - required four files。
 - README。
 - locator README。
-- authoring checklist。
-- validation command output。
+- placeholder locator registry。
 
-工具也可檢查:
+目前 verify 會檢查:
 
 - required files 是否存在。
 - schema JSON 是否可解析。
 - adapter JSON 是否有必填欄位。
 - startup prompt 是否提到 one-case-at-a-time。
 - AGENTS 是否提到 scope、out-of-scope、irreversible actions。
-- domain loader 是否能列出該 pack。
+- locator registry 是否可解析,若存在。
 
-目前本流程先以文件化與手動 scaffold 為準,等第二個 domain pack 穩定後再考慮實作 CLI。
+後續可再加強:
+
+- 從 intake 自動生成 domain pack skeleton。
+- 從 domain pack 自動生成 Claude request 草稿。
+- 檢查 Claude 產出的 xlsx 是否符合 domain boundary。
+- 建立 1-3 題最小 smoke package。
+- 自動查 dev `/api/domains` 與 domain endpoints。

@@ -100,6 +100,7 @@ Start here:
 - `docs/authoring/UAT_三文件撰寫規則.md` — legacy three-document authoring rulebook (not a specific round's package).
 - `docs/authoring/UAT_三文件撰寫規則_vNext_共用草稿.md` — shared vNext authoring rules draft.
 - `docs/authoring/新功能_DomainPack_生成流程.md` — repeatable workflow for creating a new feature domain pack.
+- `docs/authoring/domain-pack-templates/` — intake, boundary, Claude request, and completion checklist templates for new domain packs.
 - `agent-skills/uat-tool/SKILL.md` — Layer 1 platform skill entry; see `agent-skills/uat-tool/rules/` for individual rules.
 - `domain-packs/BI/` — BI domain pack.
 - `domain-packs/BI_OFFICIAL_UI_COLLAGE/` — BI official frontend UI collage-mode domain pack.
@@ -113,6 +114,8 @@ npm run build                    # root
 npm run typecheck --prefix agent
 npm run build --prefix agent
 npm run build --prefix web
+npm run create:domain-pack -- --name MY_DOMAIN --display "My Domain"
+npm run verify:domain-pack -- --name MY_DOMAIN
 ```
 
 The repo also ships a `verify:*` suite (capability-gate, package-consistency, helper-hints, result-evidence-gate, tool-bridge, case-advance-policy, agent-resume, ...). Run `npm run` to list all available scripts.
