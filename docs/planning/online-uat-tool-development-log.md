@@ -1365,3 +1365,12 @@ Tommy 曾討論是否改成腳本。最後決策是採「半腳本化 / helper �
 - README：Tommy 提供 `/Users/tommy/Downloads/README.md` 新版精簡說明，套入 repo `README.md`。
 - Production promote：commit `1d3f90c` 推到 `dev/uat-agent-config-isolation`、`refactor/mac-agent-mvp`、`codex/uat-tool-mvp`。Railway production `/version` 顯示 branch `codex/uat-tool-mvp`、commit `1d3f90c`，`/health` healthy。
 - 本機 prod Agent：`/Users/tommy/Downloads/codex_galaxy/uat-tool` fast-forward 到 `origin/refactor/mac-agent-mvp`；原本 untracked demo/artifacts 保留不動。已跑 prod repo `typecheck`、root/agent `build`、`verify:open-project-retry`、`verify:fail-bug-fallback`、`verify:save-calculation-judgment`、`verify:agent-result-contract`、`git diff --check`。重建 `agent/dist` 後重啟 `com.tommy.uat-agent`，新 pid `18653`，log 顯示重新 connected。
+
+### 2026-05-15 03:35 - 新功能 Domain Pack 生成流程與常駐觸發規則
+
+- 背景：Tommy 指出未來每新增一個功能或正式 UI 測試 domain,不能再靠單一對話框臨場追問「還缺什麼資料」。本次 BI 正式 UI / 拼貼模式是第一個從既有單一 BI domain 走向新 domain pack 的實例,因此同步建立可重複的作業流程。
+- Domain pack：新增 `domain-packs/BI_OFFICIAL_UI_COLLAGE/` 並推 dev,包含 `AGENTS.md`、`startup_prompt_template.md`、`xlsx_schema.json`、`result_parser_adapter.json`、locator guidance 與 README。Railway dev `/api/domains` 已顯示 `BI_OFFICIAL_UI_COLLAGE valid=true`。
+- Authoring workflow：新增 `docs/authoring/新功能_DomainPack_生成流程.md`,定義角色分工、是否需要新 domain pack 的 Phase 0、intake 決策 gate、規則拆層、Claude 出題資料包、dev smoke 與 prod promote gate。新增樣板 `docs/authoring/domain-pack-templates/`，包含 intake、boundary rules、Claude request、completion checklist。
+- Tooling：新增 `npm run create:domain-pack` 與 `npm run verify:domain-pack`,可建立新 domain pack 骨架並檢查 required files、JSON、startup prompt、AGENTS scope / irreversible policy 等最低條件。`BI_OFFICIAL_UI_COLLAGE` verifier 為 PASS。
+- 常駐規則：`AGENTS.md` 與 `uat-tool/AGENTS.md` 新增 domain pack generation trigger。未來 Tommy 提到新功能 domain pack、新 UI/工具導入 UAT Tool、或請 Claude 產新 domain 三文件時,Codex 必須先讀 domain pack 生成流程與 templates,不可依賴 chat 記憶。
+- 驗證與部署：已跑 `npm run verify:domain-pack -- --name BI_OFFICIAL_UI_COLLAGE`、`npm run typecheck`、`npm run build`、scaffold 暫存目錄 smoke、`git diff --check` 通過。dev commits `c73f507`、`f659856` 已推 `dev/uat-agent-config-isolation`；本批常駐規則補強後續仍只推 dev,不碰 production branch。

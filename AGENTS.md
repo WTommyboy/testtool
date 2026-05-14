@@ -43,6 +43,30 @@ In particular:
   network, or data conditions, report the blocker clearly and do not claim the
   change is deploy-ready.
 
+## Domain Pack Generation
+
+When Tommy asks to create a new feature domain pack, add a new UI/tool into UAT
+Tool, standardize a one-off domain-pack workflow, or prepare Claude to generate
+three-document packages for a new domain, read this workflow first:
+
+- `docs/authoring/新功能_DomainPack_生成流程.md`
+- `docs/authoring/domain-pack-templates/domain_intake_template.md`
+- `docs/authoring/domain-pack-templates/boundary_rules_template.md`
+- `docs/authoring/domain-pack-templates/claude_testcase_request_template.md`
+- `docs/authoring/domain-pack-templates/domain_pack_completion_checklist.md`
+
+Use the scaffold and verifier when appropriate:
+
+```bash
+npm run create:domain-pack -- --name <DOMAIN> --display "<Display Name>"
+npm run verify:domain-pack -- --name <DOMAIN>
+```
+
+Do not let domain-pack decisions live only in chat. Write durable decisions into
+the intake, boundary rules, domain pack, or testcase package. New domain packs
+should go through dev branch and dev `/api/domains` verification before any
+production promote.
+
 ## Session History Hygiene
 
 Do not read raw old session JSONL files unless Tommy explicitly asks. Prefer
