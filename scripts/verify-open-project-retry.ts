@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
-import { __openProjectRetryTestHooks as hooks } from "../agent/src/bi-ui-helper-executor";
+import {
+  __metricFieldIdentityTestHooks as metricHooks,
+  __openProjectRetryTestHooks as hooks
+} from "../agent/src/bi-ui-helper-executor";
 
 const blockedProjectHome = [
   "📊 報表管理",
@@ -102,6 +105,24 @@ assert.equal(
   "retry click scoring should prefer the exact visible project node over a large parent container"
 );
 
+assert.equal(
+  metricHooks.sourceReportLabelMatches("beanfun!導流", "各登入渠道狀況(原 beanfun! 導流)"),
+  true,
+  "official source picker label should match the metadata source alias"
+);
+
+assert.equal(
+  metricHooks.normalizeSourceReportIdentity("雙平台營收占比"),
+  metricHooks.normalizeSourceReportIdentity("雙平台營收佔比"),
+  "official 占/佔 source spelling should normalize to the same identity"
+);
+
+assert.equal(
+  metricHooks.cleanFieldPickerLabel("累計帳號數 數值"),
+  "累計帳號數",
+  "official field picker labels should strip the visible Chinese type badge"
+);
+
 console.log(JSON.stringify({
   ok: true,
   fixture: "open-project-retry",
@@ -110,6 +131,8 @@ console.log(JSON.stringify({
     "official UI sidebar project inference",
     "report-list readiness rejects prompt-only pages",
     "report-list readiness accepts + 新增報表 pages",
-    "candidate scoring prefers exact project nodes"
+    "candidate scoring prefers exact project nodes",
+    "official source aliases normalize",
+    "official field picker type badges are stripped"
   ]
 }, null, 2));

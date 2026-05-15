@@ -4827,7 +4827,7 @@ const normalizeFieldIdentity = (value: string): string =>
     .trim()
     .toLowerCase();
 
-const normalizeSourceReportIdentity = (value: string): string =>
+const normalizeSourceReportIdentityBase = (value: string): string =>
   value
     .replace(/[（]/g, "(")
     .replace(/[）]/g, ")")
@@ -4835,12 +4835,26 @@ const normalizeSourceReportIdentity = (value: string): string =>
     .trim()
     .toLowerCase();
 
+const sourceReportIdentityAliases: Record<string, string> = {
+  [normalizeSourceReportIdentityBase("各登入渠道狀況")]: normalizeSourceReportIdentityBase("各登入渠道狀況(原 beanfun! 導流)"),
+  [normalizeSourceReportIdentityBase("各登入渠道狀況(原beanfun!導流)")]: normalizeSourceReportIdentityBase("各登入渠道狀況(原 beanfun! 導流)"),
+  [normalizeSourceReportIdentityBase("各登入渠道狀況（原beanfun!導流）")]: normalizeSourceReportIdentityBase("各登入渠道狀況(原 beanfun! 導流)"),
+  [normalizeSourceReportIdentityBase("beanfun!導流")]: normalizeSourceReportIdentityBase("各登入渠道狀況(原 beanfun! 導流)"),
+  [normalizeSourceReportIdentityBase("LOGIN_PLATFORM_STATUS")]: normalizeSourceReportIdentityBase("各登入渠道狀況(原 beanfun! 導流)"),
+  [normalizeSourceReportIdentityBase("雙平台營收占比")]: normalizeSourceReportIdentityBase("雙平台營收佔比")
+};
+
+const normalizeSourceReportIdentity = (value: string): string => {
+  const normalized = normalizeSourceReportIdentityBase(value);
+  return sourceReportIdentityAliases[normalized] ?? normalized;
+};
+
 const knownSourceGroupsByCanonicalSource: Record<string, string[]> = {
   [normalizeSourceReportIdentity("每日報表")]: ["DAILY_REPORT"],
-  [normalizeSourceReportIdentity("各登入渠道狀況(原 beanfun! 導流)")]: ["LOGIN_PLATFORM_STATUS"],
-  [normalizeSourceReportIdentity("各登入渠道狀況（原beanfun!導流）")]: ["LOGIN_PLATFORM_STATUS"],
+  [normalizeSourceReportIdentity("各登入渠道狀況(原 beanfun! 導流)")]: ["LOGIN_PLATFORM_STATUS", "beanfun!導流", "各登入渠道狀況"],
+  [normalizeSourceReportIdentity("各登入渠道狀況（原beanfun!導流）")]: ["LOGIN_PLATFORM_STATUS", "beanfun!導流", "各登入渠道狀況"],
   [normalizeSourceReportIdentity("退費追蹤")]: ["REFUND_TRACKING"],
-  [normalizeSourceReportIdentity("雙平台營收佔比")]: ["DOUBLE_PLATFORM_REVENUE", "DUAL_PLATFORM_REVENUE", "PLATFORM_REVENUE_SHARE"]
+  [normalizeSourceReportIdentity("雙平台營收佔比")]: ["DOUBLE_PLATFORM_REVENUE", "DUAL_PLATFORM_REVENUE", "PLATFORM_REVENUE_SHARE", "雙平台營收占比"]
 };
 
 const knownCanonicalSourceByGroup = new Map<string, string>([
@@ -4859,6 +4873,34 @@ const fieldPickerSourceGroupLabels = (sourceReport: string): string[] => {
   return [...new Set([direct, ...known].filter(Boolean))];
 };
 
+const officialSourcePickerAliasLabels = (sourceReport: string): string[] => {
+  const aliases = fieldPickerSourceGroupLabels(sourceReport);
+  const normalized = normalizeSourceReportIdentity(sourceReport);
+  const additional: Record<string, string[]> = {
+    [normalizeSourceReportIdentity("各登入渠道狀況(原 beanfun! 導流)")]: [
+      "各登入渠道狀況",
+      "各登入渠道狀況(原beanfun!導流)",
+      "各登入渠道狀況（原beanfun!導流）",
+      "beanfun!導流",
+      "LOGIN_PLATFORM_STATUS"
+    ],
+    [normalizeSourceReportIdentity("雙平台營收佔比")]: ["雙平台營收占比", "雙平台營收佔比"],
+    [normalizeSourceReportIdentity("每日報表")]: ["每日報表", "DAILY_REPORT"],
+    [normalizeSourceReportIdentity("退費追蹤")]: ["退費追蹤", "REFUND_TRACKING"]
+  };
+  return [...new Set([...aliases, ...(additional[normalized] ?? [])].filter(Boolean))];
+};
+
+const sourceReportLabelMatches = (actual: string, expected: string): boolean => {
+  const actualIdentity = normalizeSourceReportIdentity(actual);
+  return officialSourcePickerAliasLabels(expected).some((alias) => {
+    if (actualIdentity === normalizeSourceReportIdentity(alias)) return true;
+    const actualText = normalizeUiText(actual);
+    const aliasText = normalizeUiText(alias);
+    return Boolean(actualText && aliasText && (actualText.includes(aliasText) || aliasText.includes(actualText)));
+  });
+};
+
 const normalizeFieldPickerGroup = (value: string | null | undefined): string =>
   String(value ?? "")
     .trim()
@@ -4868,6 +4910,7 @@ const normalizeFieldPickerGroup = (value: string | null | undefined): string =>
 const cleanFieldPickerLabel = (text: string, code?: unknown): string => {
   let label = text
     .replace(/\b(NUMERIC|STRING|DATE|DATETIME|BOOLEAN|BOOL|TEXT|NUMBER)\b\s*$/i, "")
+    .replace(/\s*(數值|文字|日期|時間|百分比|布林|布林值)\s*$/i, "")
     .replace(/\s+/g, " ")
     .trim();
   const compact = label.replace(/\s+/g, "");
@@ -5200,9 +5243,13 @@ const fieldPickerTargetMatches = (
 
 export const __metricFieldIdentityTestHooks = {
   normalizeMetricFieldIdentity,
+  normalizeSourceReportIdentity,
   metricFieldAliasIdentities,
   metricFieldIdentitySet: (value: string | null | undefined): string[] => [...metricFieldIdentitySet(value)],
   knownMetricFieldCode,
+  cleanFieldPickerLabel,
+  officialSourcePickerAliasLabels,
+  sourceReportLabelMatches,
   fieldPickerTargetMatches,
   formulaFieldTokenMatches
 };
@@ -5245,6 +5292,376 @@ const clickMetricFieldPickerDomTarget = async (
     }
   }
   return `fieldPicker:domClick:${selected.label}${selected.code ? `:${selected.code}` : ""}`;
+};
+
+type OfficialCollageFieldRow = {
+  rowIndex: number;
+  sourceButtonIndex: number;
+  sourceText: string;
+  fieldButtonIndex: number | null;
+  fieldText: string | null;
+  y: number;
+};
+
+type OfficialPickerDomItem = {
+  index: number;
+  source: string;
+  text: string;
+  label?: string;
+  code: string | null;
+  tagName: string;
+  role: string | null;
+  className: string;
+  groupLabel: string | null;
+  typeBadge?: string | null;
+  rect: { x: number; y: number; width: number; height: number };
+};
+
+type OfficialSourceSelectionResult = {
+  requestedSourceReport: string;
+  sourceControlBefore: string | null;
+  sourceControlAfter: string | null;
+  selectedSource: string | null;
+  verified: boolean;
+  selectedOption: OfficialPickerDomItem | null;
+  sourcePickerOptions: OfficialPickerDomItem[];
+  operations: string[];
+  blockedReason?: string;
+};
+
+type OfficialMetadataDropdownFlow = {
+  handled: true;
+  pickerReadiness: string;
+  pickerOpenAction: string;
+  rawItems: Array<Record<string, unknown>>;
+  officialPickerFlow: Record<string, unknown>;
+  warnings: string[];
+};
+
+const officialFieldTypeBadgePattern = /(數值|文字|日期|時間|百分比|布林|布林值|NUMERIC|STRING|DATE|DATETIME|BOOLEAN|BOOL|TEXT|NUMBER)\s*$/i;
+
+const isOfficialCollageEditorPage = async (page: Page): Promise<boolean> => {
+  const parsed = (() => {
+    try {
+      return new URL(page.url());
+    } catch {
+      return null;
+    }
+  })();
+  if (parsed?.pathname.match(/\/bi-dev\/[^/]+\/report\/new$/)) return true;
+  if (!isOfficialBiUiPageUrl(page.url())) return false;
+  const bodyText = await page.locator("body").innerText({ timeout: 2000 }).catch(() => "");
+  return /自訂報表/.test(bodyText) && /欄位選擇/.test(bodyText) && /請選擇報表|---/.test(bodyText);
+};
+
+const readOfficialCollageFieldRows = async (page: Page): Promise<OfficialCollageFieldRow[]> => {
+  return page.evaluate(() => {
+    const normalize = (value: string | null | undefined) => (value ?? "").trim().replace(/\s+/g, " ");
+    const isVisible = (element: Element): boolean => {
+      const rect = element.getBoundingClientRect();
+      const style = window.getComputedStyle(element);
+      return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden" && style.opacity !== "0";
+    };
+    const buttons = Array.from(document.querySelectorAll<HTMLButtonElement>("button")).flatMap((button, index) => {
+      if (!isVisible(button) || button.disabled) return [];
+      const rect = button.getBoundingClientRect();
+      return [{
+        index,
+        text: normalize(button.innerText || button.textContent),
+        x: Math.round(rect.x),
+        y: Math.round(rect.y),
+        width: Math.round(rect.width),
+        height: Math.round(rect.height)
+      }];
+    });
+    const sourceButtons = buttons
+      .filter((button) => button.text && button.y >= 320 && button.x >= 80 && button.x <= 260)
+      .filter((button) => !/^(?:儲存報表|計算|過去\s*\d+\s*天|\(x\)|\+)$/.test(button.text))
+      .sort((a, b) => a.y - b.y || a.x - b.x);
+    const fieldButtons = buttons
+      .filter((button) => button.text === "---" && button.y >= 320 && button.x >= 220)
+      .sort((a, b) => a.y - b.y || a.x - b.x);
+    return sourceButtons.map((sourceButton, rowIndex) => {
+      const fieldButton = fieldButtons.find((candidate) => Math.abs(candidate.y - sourceButton.y) <= 14 && candidate.x > sourceButton.x);
+      return {
+        rowIndex,
+        sourceButtonIndex: sourceButton.index,
+        sourceText: sourceButton.text,
+        fieldButtonIndex: fieldButton?.index ?? null,
+        fieldText: fieldButton?.text ?? null,
+        y: sourceButton.y
+      };
+    });
+  });
+};
+
+const readOfficialVisiblePickerItems = async (
+  page: Page,
+  kind: "source" | "field",
+  groupLabel: string | null = null
+): Promise<OfficialPickerDomItem[]> => {
+  const items = await page.evaluate(({ pickerKind }) => {
+    const normalize = (value: string | null | undefined) => (value ?? "").trim().replace(/\s+/g, " ");
+    const isVisible = (element: Element): boolean => {
+      const rect = element.getBoundingClientRect();
+      const style = window.getComputedStyle(element);
+      return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden" && style.opacity !== "0";
+    };
+    const rectFor = (element: Element) => {
+      const rect = element.getBoundingClientRect();
+      return {
+        x: Math.round(rect.x),
+        y: Math.round(rect.y),
+        width: Math.round(rect.width),
+        height: Math.round(rect.height)
+      };
+    };
+    const typeBadgePattern = /(數值|文字|日期|時間|百分比|布林|布林值|NUMERIC|STRING|DATE|DATETIME|BOOLEAN|BOOL|TEXT|NUMBER)\s*$/i;
+    const excludedText = /^(?:共享報表|全部|新增帳號|請選擇報表|---|的|=|儲存報表|計算|過去\s*\d+\s*天|\(x\)|欄位選擇|自訂報表|建構方式|拼貼模式)$/;
+    const classNameFor = (element: Element): string => typeof (element as HTMLElement).className === "string" ? (element as HTMLElement).className : "";
+    const all = Array.from(document.querySelectorAll<HTMLElement>("body *"));
+    const candidates = all.flatMap((element, index) => {
+      if (!isVisible(element)) return [];
+      const text = normalize(element.innerText || element.textContent);
+      if (!text || text.length > 120 || excludedText.test(text)) return [];
+      const rect = rectFor(element);
+      const className = classNameFor(element);
+      const role = element.getAttribute("role");
+      const tagName = element.tagName.toLowerCase();
+      const hasTypeBadge = typeBadgePattern.test(text);
+      const clickableish =
+        tagName === "button" ||
+        /button|option|menuitem|tab/i.test(role ?? "") ||
+        /cursor-pointer|hover:bg|content-stretch|items-center/i.test(className);
+      const fieldRowLike =
+        tagName === "button" ||
+        /option|menuitem/i.test(role ?? "") ||
+        /cursor-pointer|hover:bg/i.test(className);
+      const inOfficialPickerBand = rect.y >= 390 && rect.x >= 80 && rect.x <= 700;
+      if (pickerKind === "field") {
+        if (!hasTypeBadge || !fieldRowLike || rect.x < 180) return [];
+      } else {
+        if (hasTypeBadge || !inOfficialPickerBand) return [];
+        if (!fieldRowLike) return [];
+        if (text.length > 60) return [];
+      }
+      return [{
+        index,
+        text,
+        code: element.getAttribute("data-field-code") ?? element.getAttribute("data-field") ?? element.getAttribute("data-value"),
+        tagName,
+        role,
+        className,
+        rect,
+        clickableish
+      }];
+    });
+    const bestByText = new Map<string, typeof candidates[number]>();
+    for (const candidate of candidates) {
+      const key = candidate.text.replace(/\s+/g, "");
+      const current = bestByText.get(key);
+      const candidateScore = (candidate.clickableish ? 0 : 10) + (candidate.tagName === "p" || candidate.tagName === "span" ? 4 : 0) + Math.max(0, candidate.rect.x / 10000);
+      const currentScore = current
+        ? (current.clickableish ? 0 : 10) + (current.tagName === "p" || current.tagName === "span" ? 4 : 0) + Math.max(0, current.rect.x / 10000)
+        : Number.POSITIVE_INFINITY;
+      if (!current || candidateScore < currentScore) bestByText.set(key, candidate);
+    }
+    return [...bestByText.values()]
+      .sort((a, b) => a.rect.y - b.rect.y || a.rect.x - b.rect.x)
+      .map(({ clickableish: _clickableish, ...item }) => item);
+  }, { pickerKind: kind });
+
+  return items.map((item) => {
+    const typeBadge = item.text.match(officialFieldTypeBadgePattern)?.[1] ?? null;
+    return {
+      ...item,
+      source: kind === "field" ? "official-field-picker-row" : "official-source-picker-option",
+      label: kind === "field" ? cleanFieldPickerLabel(item.text, item.code) : item.text,
+      groupLabel,
+      typeBadge
+    };
+  });
+};
+
+const selectOfficialSourceReportForMetadata = async (
+  page: Page,
+  targetSourceReport: string
+): Promise<OfficialSourceSelectionResult> => {
+  const operations: string[] = [];
+  let rows = await readOfficialCollageFieldRows(page);
+  const row = rows[0];
+  if (!row) {
+    return {
+      requestedSourceReport: targetSourceReport,
+      sourceControlBefore: null,
+      sourceControlAfter: null,
+      selectedSource: null,
+      verified: false,
+      selectedOption: null,
+      sourcePickerOptions: [],
+      operations,
+      blockedReason: "OFFICIAL_SOURCE_CONTROL_NOT_FOUND"
+    };
+  }
+
+  if (row.sourceText && !/請選擇報表/.test(row.sourceText) && sourceReportLabelMatches(row.sourceText, targetSourceReport)) {
+    operations.push(`official:source:alreadySelected:${row.sourceText}`);
+    return {
+      requestedSourceReport: targetSourceReport,
+      sourceControlBefore: row.sourceText,
+      sourceControlAfter: row.sourceText,
+      selectedSource: row.sourceText,
+      verified: true,
+      selectedOption: null,
+      sourcePickerOptions: [],
+      operations
+    };
+  }
+
+  await clickVisibleButtonByIndex(page, row.sourceButtonIndex, 8000);
+  operations.push(`official:source:open:${row.sourceText || "empty"}`);
+  await page.waitForTimeout(500);
+  const sourcePickerOptions = await readOfficialVisiblePickerItems(page, "source");
+  const selectedOption = sourcePickerOptions.find((item) => sourceReportLabelMatches(item.text, targetSourceReport)) ?? null;
+  if (!selectedOption) {
+    return {
+      requestedSourceReport: targetSourceReport,
+      sourceControlBefore: row.sourceText,
+      sourceControlAfter: row.sourceText,
+      selectedSource: null,
+      verified: false,
+      selectedOption: null,
+      sourcePickerOptions,
+      operations,
+      blockedReason: `OFFICIAL_SOURCE_OPTION_NOT_FOUND:${targetSourceReport}`
+    };
+  }
+
+  await clickVisibleBodyElementByIndex(page, selectedOption.index, 8000);
+  operations.push(`official:source:select:${selectedOption.text}`);
+  await page.waitForTimeout(650);
+  rows = await readOfficialCollageFieldRows(page);
+  const sourceControlAfter = rows[0]?.sourceText ?? selectedOption.text;
+  const verified = Boolean(sourceControlAfter && sourceReportLabelMatches(sourceControlAfter, targetSourceReport));
+  return {
+    requestedSourceReport: targetSourceReport,
+    sourceControlBefore: row.sourceText,
+    sourceControlAfter,
+    selectedSource: sourceControlAfter,
+    verified,
+    selectedOption,
+    sourcePickerOptions,
+    operations,
+    ...(verified ? {} : { blockedReason: `OFFICIAL_SOURCE_SELECTION_VERIFY_FAILED:${targetSourceReport}:${sourceControlAfter}` })
+  };
+};
+
+const extractOfficialMetadataDropdownFlow = async (
+  page: Page,
+  metadata: ReturnType<typeof readExpectedMetadataFields>,
+  sourceReport: string,
+  targetSourceReports: string[]
+): Promise<OfficialMetadataDropdownFlow | null> => {
+  if (!await isOfficialCollageEditorPage(page)) return null;
+  const warnings: string[] = [];
+  const operations: string[] = [];
+  const requestedSourceReports = targetSourceReports.length > 0 ? targetSourceReports : [sourceReport];
+  const officialPickerFlow: Record<string, unknown> = {
+    mode: metadata.sourceListMode && !metadata.allSourcesFieldMode ? "source_list" : metadata.allSourcesFieldMode ? "all_sources_fields" : "source_report_fields",
+    requestedSourceReports,
+    sourceSelections: [],
+    sourcePickerOptions: [],
+    fieldPickerItemsBySource: [],
+    operations
+  };
+
+  await page.keyboard.press("Escape").catch(() => undefined);
+  await page.waitForTimeout(250);
+  const rowsBefore = await readOfficialCollageFieldRows(page);
+  operations.push(`official:rows:${rowsBefore.length}`);
+  if (rowsBefore.length === 0) warnings.push("OFFICIAL_FIELD_ROWS_NOT_FOUND");
+
+  if (metadata.sourceListMode && !metadata.allSourcesFieldMode) {
+    const firstRow = rowsBefore[0];
+    if (firstRow) {
+      await clickVisibleButtonByIndex(page, firstRow.sourceButtonIndex, 8000);
+      operations.push(`official:sourceList:open:${firstRow.sourceText || "empty"}`);
+      await page.waitForTimeout(500);
+    }
+    const sourceOptions = await readOfficialVisiblePickerItems(page, "source");
+    officialPickerFlow.sourcePickerOptions = sourceOptions;
+    const rawItems = sourceOptions.map((item) => ({
+      ...item,
+      groupLabel: item.text,
+      label: item.text
+    }));
+    if (sourceOptions.length === 0) warnings.push("OFFICIAL_SOURCE_PICKER_NO_OPTIONS");
+    return {
+      handled: true,
+      pickerReadiness: "officialFieldControls:ready",
+      pickerOpenAction: "official:sourcePicker",
+      rawItems,
+      officialPickerFlow,
+      warnings
+    };
+  }
+
+  const rawItems: Array<Record<string, unknown>> = [];
+  for (const targetSourceReport of requestedSourceReports) {
+    await page.keyboard.press("Escape").catch(() => undefined);
+    await page.waitForTimeout(250);
+    const sourceSelection = await selectOfficialSourceReportForMetadata(page, targetSourceReport);
+    operations.push(...sourceSelection.operations);
+    (officialPickerFlow.sourceSelections as unknown[]).push(sourceSelection);
+    const existingOptions = officialPickerFlow.sourcePickerOptions as unknown[];
+    existingOptions.push(...sourceSelection.sourcePickerOptions);
+    if (!sourceSelection.verified || !sourceSelection.selectedSource) {
+      warnings.push(sourceSelection.blockedReason ?? `OFFICIAL_SOURCE_SELECTION_FAILED:${targetSourceReport}`);
+      continue;
+    }
+
+    let fieldItems = await readOfficialVisiblePickerItems(page, "field", sourceSelection.selectedSource);
+    if (fieldItems.length > 0) {
+      operations.push(`official:fieldPicker:alreadyOpen:${sourceSelection.selectedSource}:${fieldItems.length}`);
+    }
+    for (let attempt = 0; fieldItems.length === 0 && attempt < 2; attempt += 1) {
+      const rows = await readOfficialCollageFieldRows(page);
+      const row = rows[0];
+      if (!row || row.fieldButtonIndex === null) {
+        warnings.push(`OFFICIAL_FIELD_CONTROL_NOT_FOUND:${targetSourceReport}`);
+        break;
+      }
+      await clickVisibleButtonByIndex(page, row.fieldButtonIndex, 8000);
+      operations.push(`official:fieldPicker:open:${sourceSelection.selectedSource}:attempt${attempt + 1}`);
+      await page.waitForTimeout(800);
+      fieldItems = await readOfficialVisiblePickerItems(page, "field", sourceSelection.selectedSource);
+    }
+    const fieldRawItems = fieldItems.flatMap((item) => {
+      const label = item.label ?? cleanFieldPickerLabel(item.text, item.code);
+      return label ? [{
+        ...item,
+        groupLabel: sourceSelection.selectedSource,
+        label
+      }] : [];
+    });
+    rawItems.push(...fieldRawItems);
+    (officialPickerFlow.fieldPickerItemsBySource as unknown[]).push({
+      requestedSourceReport: targetSourceReport,
+      selectedSource: sourceSelection.selectedSource,
+      itemCount: fieldRawItems.length,
+      items: fieldRawItems.slice(0, 120)
+    });
+    if (fieldRawItems.length === 0) warnings.push(`OFFICIAL_FIELD_PICKER_NO_ITEMS:${targetSourceReport}`);
+  }
+
+  return {
+    handled: true,
+    pickerReadiness: "officialFieldControls:ready",
+    pickerOpenAction: "official:sourceThenFieldPicker",
+    rawItems,
+    officialPickerFlow,
+    warnings
+  };
 };
 
 const readSelectAllExpectedFields = (options: CliOptions): { fields: string[]; sourceReports: string[]; metadataPath: string | null; warnings: string[] } => {
@@ -5461,20 +5878,24 @@ const extractMetadataDropdownFields = async (options: CliOptions, page: Page, st
   warnings.push(...metadata.warnings);
   const expectedFields = metadata.expectedFields;
   const probeField = expectedFields[0] ?? "新增帳號數";
-  const pickerReadiness = await waitForMetricFieldControls(page);
-  const addOperation = await clickMetricAddFieldControl(page, probeField);
-  await page.waitForTimeout(700);
-
-  const rawItems = await extractFieldPickerDomItems(page);
   const sourceReport = stringParam(options.params, "source") ?? stringParam(options.params, "sourceReport") ?? "每日報表";
   const expectedReportSources = metadata.expectedReportSources;
   const targetSourceReports = metadata.sourceListMode || metadata.allSourcesFieldMode
     ? expectedReportSources
     : [sourceReport];
+  const officialFlow = await extractOfficialMetadataDropdownFlow(page, metadata, sourceReport, targetSourceReports);
+  warnings.push(...(officialFlow?.warnings ?? []));
+  const pickerReadiness = officialFlow?.pickerReadiness ?? await waitForMetricFieldControls(page);
+  const addOperation = officialFlow?.pickerOpenAction ?? await clickMetricAddFieldControl(page, probeField);
+  if (!officialFlow) await page.waitForTimeout(700);
+
+  const rawItems = officialFlow?.rawItems ?? await extractFieldPickerDomItems(page);
   const targetGroups = targetSourceReports.flatMap(fieldPickerSourceGroupLabels).map(normalizeFieldPickerGroup);
   const groupedItems = rawItems.filter((item) => {
     const groupLabel = typeof item.groupLabel === "string" ? item.groupLabel : null;
-    return groupLabel ? targetGroups.includes(normalizeFieldPickerGroup(groupLabel)) : false;
+    if (!groupLabel) return false;
+    if (targetSourceReports.some((source) => sourceReportLabelMatches(groupLabel, source))) return true;
+    return targetGroups.includes(normalizeFieldPickerGroup(groupLabel));
   });
   const rawItemsWithLabels = rawItems.map((item) => ({
     ...item,
@@ -5577,6 +5998,7 @@ const extractMetadataDropdownFields = async (options: CliOptions, page: Page, st
       expectedReportSourceCount: numberParam(options.params, ["expectedReportSourceCount"]),
       actualReportSourceCount: actualSourceReports.length
     },
+    officialPickerFlow: officialFlow?.officialPickerFlow ?? null,
     expectedSource: {
       referenceCsv: metadata.metadataPath,
       referenceCsvRelativePath: metadata.metadataPath ? path.relative(options.runDir, metadata.metadataPath) : null,
