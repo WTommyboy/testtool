@@ -82,6 +82,7 @@ type VersionResponse = {
   nodeEnv?: string;
   timezone?: string;
   version?: VersionInfo;
+  rollout?: RolloutInfo;
 };
 
 type RolloutInfo = {
@@ -99,7 +100,19 @@ type RolloutInfo = {
   };
 };
 
+type GitHubCommitResponse = {
+  commit?: {
+    author?: {
+      date?: string;
+    };
+    committer?: {
+      date?: string;
+    };
+  };
+};
+
 const buildVersionInfo = () => {
+  const localCommitDate = process.env.GIT_COMMIT_DATE ?? readLocalGitCommitDate();
   const commitSha = process.env.RAILWAY_GIT_COMMIT_SHA
     ?? process.env.VERCEL_GIT_COMMIT_SHA
     ?? process.env.GIT_COMMIT_SHA
@@ -122,8 +135,8 @@ const buildVersionInfo = () => {
     projectId: process.env.RAILWAY_PROJECT_ID,
     region: process.env.RAILWAY_REGION,
     buildTime: process.env.BUILD_TIME,
-    commitDate: process.env.GIT_COMMIT_DATE ?? readLocalGitCommitDate(),
-    updatedAt: process.env.BUILD_TIME ?? process.env.GIT_COMMIT_DATE ?? readLocalGitCommitDate()
+    commitDate: localCommitDate,
+    updatedAt: localCommitDate ?? process.env.BUILD_TIME
   }) as VersionInfo;
 };
 
@@ -145,6 +158,47 @@ const fetchJsonWithTimeout = async <T,>(url: string, timeoutMs = 1500): Promise<
   } finally {
     clearTimeout(timeout);
   }
+};
+
+const commitDateCache = new Map<string, string | null>();
+
+const resolveGitHubRepository = (): string | null => {
+  const repository = process.env.VERSION_GITHUB_REPOSITORY
+    ?? process.env.GITHUB_REPOSITORY
+    ?? "WTommyboy/testtool";
+  const normalized = repository.trim();
+  return /^[\w.-]+\/[\w.-]+$/.test(normalized) ? normalized : null;
+};
+
+const resolveCommitDate = async (version: VersionInfo): Promise<string | null> => {
+  if (version.commitDate) return version.commitDate;
+  if (!version.commitSha) return null;
+  if (commitDateCache.has(version.commitSha)) {
+    return commitDateCache.get(version.commitSha) ?? null;
+  }
+
+  const repository = resolveGitHubRepository();
+  if (!repository) {
+    commitDateCache.set(version.commitSha, null);
+    return null;
+  }
+
+  const data = await fetchJsonWithTimeout<GitHubCommitResponse>(
+    `https://api.github.com/repos/${repository}/commits/${version.commitSha}`
+  );
+  const commitDate = data?.commit?.committer?.date ?? data?.commit?.author?.date ?? null;
+  commitDateCache.set(version.commitSha, commitDate);
+  return commitDate;
+};
+
+const buildResolvedVersionInfo = async (version: VersionInfo): Promise<VersionInfo> => {
+  const commitDate = await resolveCommitDate(version);
+  const updatedAt = commitDate ?? version.updatedAt ?? version.buildTime;
+  return compactObject({
+    ...version,
+    commitDate,
+    updatedAt
+  }) as VersionInfo;
 };
 
 const buildDevSmokeInfo = (version: VersionInfo): RolloutInfo["devSmoke"] => {
@@ -169,7 +223,7 @@ const buildDevSmokeInfo = (version: VersionInfo): RolloutInfo["devSmoke"] => {
 
 const buildRolloutInfo = async (version: VersionInfo): Promise<RolloutInfo> => {
   const rollout: RolloutInfo = {
-    updatedAt: version.updatedAt ?? version.buildTime ?? version.commitDate
+    updatedAt: version.updatedAt ?? version.commitDate ?? version.buildTime
   };
 
   if (!isDevDeployment(version)) return rollout;
@@ -241,12 +295,13 @@ app.get("/health", (_req, res) => {
 });
 
 app.get("/version", async (_req, res) => {
+  const resolvedVersionInfo = await buildResolvedVersionInfo(versionInfo);
   res.json({
     service: "uat-tool-api",
     nodeEnv: config.nodeEnv,
     timezone: config.defaultTimezone,
-    version: versionInfo,
-    rollout: await buildRolloutInfo(versionInfo)
+    version: resolvedVersionInfo,
+    rollout: await buildRolloutInfo(resolvedVersionInfo)
   });
 });
 

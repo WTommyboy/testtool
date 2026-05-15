@@ -2216,8 +2216,8 @@ The panel is informational only. It must not change run creation, Agent dispatch
 
 `GET /version` returns the existing service metadata plus:
 
-- `version.commitDate`: git commit date from Railway/Vercel env when present, otherwise local `git show -s --format=%cI HEAD`.
-- `version.updatedAt`: `BUILD_TIME`, `GIT_COMMIT_DATE`, or local git commit date, in that priority order.
+- `version.commitDate`: git commit date from `GIT_COMMIT_DATE`, local `git show -s --format=%cI HEAD`, or GitHub commit API when runtime has no local git metadata.
+- `version.updatedAt`: commit date first, then `BUILD_TIME` as fallback.
 - `rollout.updatedAt`: display timestamp used by the Web UI.
 - `rollout.production`: DEV-only production comparison result.
 - `rollout.devSmoke`: DEV-only smoke status result.
@@ -2226,6 +2226,7 @@ Production comparison is DEV-only. The server reads:
 
 ```env
 PROD_VERSION_URL=https://testtool-production.up.railway.app/version
+VERSION_GITHUB_REPOSITORY=WTommyboy/testtool
 ```
 
 It fetches that endpoint with a short timeout and compares `version.shortCommitSha`:
@@ -2233,6 +2234,8 @@ It fetches that endpoint with a short timeout and compares `version.shortCommitS
 - same short commit: `pushed`
 - different short commit: `not_pushed`
 - missing/fetch failure: `unknown`
+
+`VERSION_GITHUB_REPOSITORY` is used only to resolve commit date by SHA when the deployed image does not include `.git`. If GitHub lookup fails, the endpoint still works and falls back to existing build metadata.
 
 ### 23.3 Dev Smoke Contract
 
