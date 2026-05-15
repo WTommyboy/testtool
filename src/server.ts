@@ -42,10 +42,61 @@ const readLocalGitCommit = (): string | null => {
   }
 };
 
+const readLocalGitCommitDate = (): string | null => {
+  try {
+    return execFileSync("git", ["show", "-s", "--format=%cI", "HEAD"], {
+      cwd: process.cwd(),
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"]
+    }).trim();
+  } catch {
+    return null;
+  }
+};
+
 const compactObject = <T extends Record<string, unknown>>(value: T): Partial<T> => {
   return Object.fromEntries(
     Object.entries(value).filter(([, item]) => item !== undefined && item !== null && item !== "")
   ) as Partial<T>;
+};
+
+type VersionInfo = Partial<{
+  appVersion: string | null;
+  commitSha: string;
+  shortCommitSha: string;
+  branch: string;
+  deploymentId: string;
+  serviceId: string;
+  serviceName: string;
+  environmentId: string;
+  environmentName: string;
+  projectId: string;
+  region: string;
+  buildTime: string;
+  commitDate: string;
+  updatedAt: string;
+}>;
+
+type VersionResponse = {
+  service?: string;
+  nodeEnv?: string;
+  timezone?: string;
+  version?: VersionInfo;
+};
+
+type RolloutInfo = {
+  updatedAt?: string;
+  production?: {
+    status: "pushed" | "not_pushed" | "unknown";
+    prodShortCommitSha?: string;
+    prodUpdatedAt?: string;
+    checkedAt: string;
+  };
+  devSmoke?: {
+    status: "passed" | "not_passed" | "stale" | "unknown";
+    shortCommitSha?: string;
+    passedAt?: string;
+  };
 };
 
 const buildVersionInfo = () => {
@@ -70,8 +121,75 @@ const buildVersionInfo = () => {
     environmentName: process.env.RAILWAY_ENVIRONMENT_NAME,
     projectId: process.env.RAILWAY_PROJECT_ID,
     region: process.env.RAILWAY_REGION,
-    buildTime: process.env.BUILD_TIME
-  });
+    buildTime: process.env.BUILD_TIME,
+    commitDate: process.env.GIT_COMMIT_DATE ?? readLocalGitCommitDate(),
+    updatedAt: process.env.BUILD_TIME ?? process.env.GIT_COMMIT_DATE ?? readLocalGitCommitDate()
+  }) as VersionInfo;
+};
+
+const isDevDeployment = (version: VersionInfo): boolean => {
+  const envName = String(version.environmentName ?? "").toLowerCase();
+  const branch = String(version.branch ?? "").toLowerCase();
+  return envName === "dev" || branch.startsWith("dev/") || branch.includes("dev");
+};
+
+const fetchJsonWithTimeout = async <T,>(url: string, timeoutMs = 1500): Promise<T | null> => {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, { signal: controller.signal });
+    if (!response.ok) return null;
+    return (await response.json()) as T;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timeout);
+  }
+};
+
+const buildDevSmokeInfo = (version: VersionInfo): RolloutInfo["devSmoke"] => {
+  const rawStatus = String(process.env.DEV_SMOKE_STATUS ?? process.env.DEV_VERSION_SMOKE_STATUS ?? "").trim().toLowerCase();
+  const smokeCommit = process.env.DEV_SMOKE_COMMIT_SHA ?? process.env.DEV_VERSION_SMOKE_COMMIT_SHA;
+  const passedAt = process.env.DEV_SMOKE_PASSED_AT ?? process.env.DEV_VERSION_SMOKE_PASSED_AT;
+  const shortCommitSha = smokeCommit ? smokeCommit.slice(0, 7) : undefined;
+  const normalizedCurrent = version.commitSha?.trim();
+  const normalizedSmoke = smokeCommit?.trim();
+
+  if (["passed", "pass", "true", "1", "yes"].includes(rawStatus)) {
+    const status = normalizedCurrent && normalizedSmoke && normalizedCurrent !== normalizedSmoke ? "stale" : "passed";
+    return compactObject({ status, shortCommitSha, passedAt }) as RolloutInfo["devSmoke"];
+  }
+
+  if (["failed", "fail", "false", "0", "no", "not_passed"].includes(rawStatus)) {
+    return compactObject({ status: "not_passed", shortCommitSha, passedAt }) as RolloutInfo["devSmoke"];
+  }
+
+  return { status: "unknown" };
+};
+
+const buildRolloutInfo = async (version: VersionInfo): Promise<RolloutInfo> => {
+  const rollout: RolloutInfo = {
+    updatedAt: version.updatedAt ?? version.buildTime ?? version.commitDate
+  };
+
+  if (!isDevDeployment(version)) return rollout;
+
+  const prodVersionUrl = process.env.PROD_VERSION_URL ?? "https://testtool-production.up.railway.app/version";
+  const prodData = await fetchJsonWithTimeout<VersionResponse>(prodVersionUrl);
+  const prodVersion = prodData?.version;
+  const prodShortCommitSha = prodVersion?.shortCommitSha;
+  const currentShortCommitSha = version.shortCommitSha;
+
+  rollout.production = {
+    status: prodShortCommitSha && currentShortCommitSha
+      ? (prodShortCommitSha === currentShortCommitSha ? "pushed" : "not_pushed")
+      : "unknown",
+    prodShortCommitSha,
+    prodUpdatedAt: prodVersion?.updatedAt ?? prodVersion?.buildTime ?? prodVersion?.commitDate,
+    checkedAt: new Date().toISOString()
+  };
+  rollout.devSmoke = buildDevSmokeInfo(version);
+  return rollout;
 };
 
 ensureDirectory(config.storageRoot);
@@ -122,12 +240,13 @@ app.get("/health", (_req, res) => {
   });
 });
 
-app.get("/version", (_req, res) => {
+app.get("/version", async (_req, res) => {
   res.json({
     service: "uat-tool-api",
     nodeEnv: config.nodeEnv,
     timezone: config.defaultTimezone,
-    version: versionInfo
+    version: versionInfo,
+    rollout: await buildRolloutInfo(versionInfo)
   });
 });
 

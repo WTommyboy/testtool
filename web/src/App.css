@@ -65,7 +65,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  height: 56px;
+  min-height: 56px;
   box-shadow: var(--shadow);
 }
 
@@ -73,6 +73,7 @@
   display: flex;
   align-items: center;
   gap: 16px;
+  min-width: 0;
 }
 
 .topbar h1 {
@@ -125,6 +126,66 @@
   background: #fff1d6;
   border-color: #f0b35a;
   color: #a14f00;
+}
+
+.release-info {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  max-width: min(54vw, 720px);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  padding: 4px 8px;
+  background: var(--bg);
+  font: 500 11px var(--mono);
+  color: var(--text-2);
+  overflow: hidden;
+}
+
+.release-info.dev {
+  border-color: #d4eadf;
+  background: #f6fffa;
+}
+
+.release-info.prod {
+  border-color: #f3d7a7;
+  background: #fffaf0;
+}
+
+.release-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.release-label {
+  color: var(--text-3);
+}
+
+.release-value {
+  color: var(--text);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.release-value.ok {
+  color: var(--pass);
+}
+
+.release-value.warn {
+  color: var(--blocked);
+}
+
+.release-value.bad {
+  color: var(--fail);
+}
+
+.release-value.unknown {
+  color: var(--text-3);
 }
 
 /* ─── Tabs ─── */
@@ -1645,6 +1706,18 @@
   .run-log-tabs {
     min-width: 0;
     flex-wrap: wrap;
+  }
+
+  .release-info {
+    order: 3;
+    width: 100%;
+    max-width: 100%;
+    flex-wrap: wrap;
+    overflow: visible;
+  }
+
+  .release-item {
+    white-space: normal;
   }
 
   .panel {

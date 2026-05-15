@@ -2189,3 +2189,84 @@ Production state after promote:
 - Railway production `/version` reports branch `codex/uat-tool-mvp` and commit `1d3f90c`.
 - Production `/health` is healthy.
 - Local production Agent dist was rebuilt and `com.tommy.uat-agent` restarted from `/Users/tommy/Downloads/codex_galaxy/uat-tool`.
+
+## 23. Topbar Release Metadata Panel
+
+Date: 2026-05-16 Asia/Taipei
+
+This section records the small deployment-awareness panel shown next to the `DEV` / `PROD` badge in the Web UI.
+
+### 23.1 Display Contract
+
+DEV environment:
+
+- `版本`: app version plus short commit, for example `1.1.8 (1455906)`.
+- `Prod`: whether the current dev short commit matches production `/version`.
+- `Smoke`: explicit dev smoke status for this commit.
+- `更新`: version update timestamp.
+
+PROD environment:
+
+- `版本`: app version plus short commit.
+- `更新`: production version update timestamp.
+
+The panel is informational only. It must not change run creation, Agent dispatch, domain pack selection, result parsing, or any UAT execution behavior.
+
+### 23.2 API Contract
+
+`GET /version` returns the existing service metadata plus:
+
+- `version.commitDate`: git commit date from Railway/Vercel env when present, otherwise local `git show -s --format=%cI HEAD`.
+- `version.updatedAt`: `BUILD_TIME`, `GIT_COMMIT_DATE`, or local git commit date, in that priority order.
+- `rollout.updatedAt`: display timestamp used by the Web UI.
+- `rollout.production`: DEV-only production comparison result.
+- `rollout.devSmoke`: DEV-only smoke status result.
+
+Production comparison is DEV-only. The server reads:
+
+```env
+PROD_VERSION_URL=https://testtool-production.up.railway.app/version
+```
+
+It fetches that endpoint with a short timeout and compares `version.shortCommitSha`:
+
+- same short commit: `pushed`
+- different short commit: `not_pushed`
+- missing/fetch failure: `unknown`
+
+### 23.3 Dev Smoke Contract
+
+Dev smoke status is explicit metadata, not inferred from run history.
+
+Supported env vars:
+
+```env
+DEV_SMOKE_STATUS=
+DEV_SMOKE_COMMIT_SHA=
+DEV_SMOKE_PASSED_AT=
+```
+
+Accepted `DEV_SMOKE_STATUS` values:
+
+- pass values: `passed`, `pass`, `true`, `1`, `yes`
+- fail values: `failed`, `fail`, `false`, `0`, `no`, `not_passed`
+
+When `DEV_SMOKE_STATUS` is pass-like and `DEV_SMOKE_COMMIT_SHA` is set to a different commit than the current `/version` commit, the UI shows the smoke state as stale (`舊版通過`). If smoke env is not set, the UI shows `未標記`.
+
+### 23.4 Verification
+
+Required checks for this feature:
+
+```bash
+npm run typecheck
+npm run build --prefix web
+npm run build
+git diff --check
+```
+
+For a local smoke, start API/Web, open the Web UI, and verify:
+
+- release panel is visible next to the environment badge.
+- DEV view shows version, prod status, smoke status, and update date.
+- PROD view hides prod/smoke fields.
+- header does not overflow on desktop or mobile width.

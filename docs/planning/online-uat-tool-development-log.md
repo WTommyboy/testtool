@@ -1381,3 +1381,10 @@ Tommy 曾討論是否改成腳本。最後決策是採「半腳本化 / helper �
 - 修正：Web UI 建立 run 表單新增 `Domain Pack` select,從 `/api/domains` 載入 valid packs；送出 `POST /api/runs` 時帶 `domain`。選 `BI_OFFICIAL_UI_COLLAGE` 時,若 Dev URL 仍是已知預設值或空值,自動切成 `https://galaxy.games.gamania.com/bi-dev/zh-TW/home`。Run history 與 summary 顯示 domain。
 - Backend guard：`POST /api/runs` 與 conversation push-to-run 會驗證 domain pack 存在,不存在回 `DOMAIN_NOT_FOUND`,避免建立出 dispatch 後才缺 domain files 的 run。
 - 驗證：已跑 `npm run typecheck`、`npm run build`、`npm run build --prefix web`、`git diff --check`。本機啟動 API + Web smoke,建立 run 表單看到 `Galaxy BI` / `Galaxy BI Official UI Collage`,選正式 UI pack 後 Dev URL 自動變為 `https://galaxy.games.gamania.com/bi-dev/zh-TW/home`,截圖 `artifacts/domain-pack-selector-smoke.png`。本批待推 dev,不碰 prod。
+
+### 2026-05-16 18:20 - Topbar release metadata panel
+
+- 背景：Tommy 希望在左上角 `DEV` 標籤旁顯示部署資訊,讓 dev/prod 狀態不用靠口頭記憶判斷。DEV 需顯示版本號、是否已推 prod、dev smoke 是否通過、版本更新日期；PROD 只顯示版本號與版本更新日期。
+- Backend：`/version` 新增 `version.commitDate` / `version.updatedAt` 與 `rollout` 區塊。DEV deployment 會以 `PROD_VERSION_URL` 讀 production `/version` 並比對 short commit 判斷 `pushed` / `not_pushed` / `unknown`；dev smoke 狀態只讀 env (`DEV_SMOKE_STATUS`, `DEV_SMOKE_COMMIT_SHA`, `DEV_SMOKE_PASSED_AT`),不由工具自行推測。
+- Web UI：topbar `DEV/PROD` pill 旁新增 release panel。DEV 顯示 `版本`、`Prod`、`Smoke`、`更新`；PROD 顯示 `版本`、`更新`。panel 支援 title tooltip 與 mobile wrap,避免 header overflow。
+- 驗證：已跑 `npm run typecheck`、`npm run build --prefix web`、`npm run build`。本機 API/Web smoke 讀到 `/version` commit `1455906`,DOM 檢查 release panel 顯示 `版本1.1.8 (1455906) / Prod未知 / Smoke未標記 / 更新2026/5/15 03:55:43`,無 console error、desktop 無水平 overflow。本批目標先推 dev,不碰 prod promote。

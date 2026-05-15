@@ -252,6 +252,39 @@ type DomainPack = {
   missingFiles?: string[];
 };
 
+type VersionInfo = {
+  appVersion?: string | null;
+  shortCommitSha?: string;
+  branch?: string;
+  environmentName?: string;
+  buildTime?: string;
+  commitDate?: string;
+  updatedAt?: string;
+};
+
+type ProductionRolloutStatus = "pushed" | "not_pushed" | "unknown";
+type DevSmokeStatus = "passed" | "not_passed" | "stale" | "unknown";
+
+type RolloutInfo = {
+  updatedAt?: string;
+  production?: {
+    status: ProductionRolloutStatus;
+    prodShortCommitSha?: string;
+    prodUpdatedAt?: string;
+    checkedAt: string;
+  };
+  devSmoke?: {
+    status: DevSmokeStatus;
+    shortCommitSha?: string;
+    passedAt?: string;
+  };
+};
+
+type VersionResponse = {
+  version?: VersionInfo;
+  rollout?: RolloutInfo;
+};
+
 const terminalRunStatuses = new Set(["SUCCEEDED", "FAILED", "CANCELLED", "CANCELED"]);
 const cancellableRunStatuses = new Set(["READY", "RUNNING", "WAITING_APPROVAL", "VALIDATING"]);
 const defaultRunLocation = "數據中心";
@@ -322,6 +355,32 @@ const formatDate = (v?: string): string => {
   const d = new Date(v);
   if (Number.isNaN(d.getTime())) return v;
   return d.toLocaleString("zh-TW", { hour12: false });
+};
+
+const formatVersionLabel = (version?: VersionInfo): string => {
+  if (!version) return "-";
+  const appVersion = version.appVersion ?? "unknown";
+  return version.shortCommitSha ? `${appVersion} (${version.shortCommitSha})` : appVersion;
+};
+
+const prodPushLabel = (status?: ProductionRolloutStatus): string => {
+  if (status === "pushed") return "已推";
+  if (status === "not_pushed") return "未推";
+  return "未知";
+};
+
+const devSmokeLabel = (status?: DevSmokeStatus): string => {
+  if (status === "passed") return "已通過";
+  if (status === "not_passed") return "未通過";
+  if (status === "stale") return "舊版通過";
+  return "未標記";
+};
+
+const statusTone = (status?: string): string => {
+  if (status === "pushed" || status === "passed") return "ok";
+  if (status === "not_pushed" || status === "stale") return "warn";
+  if (status === "not_passed") return "bad";
+  return "unknown";
 };
 
 const formatDuration = (ms?: number | null): string => {
@@ -409,6 +468,7 @@ function App() {
   const [authUser, setAuthUser] = useState<AuthUser | null>(null);
   const [authRequired, setAuthRequired] = useState(false);
   const [authError, setAuthError] = useState("");
+  const [versionData, setVersionData] = useState<VersionResponse | null>(null);
 
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [selectedConversationId, setSelectedConversationId] = useState<string>("");
@@ -1374,6 +1434,18 @@ function App() {
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
+    const loadVersion = async () => {
+      const data = await optionalJson<VersionResponse>("/version");
+      if (!cancelled) setVersionData(data);
+    };
+    void loadVersion();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
     if (authStatus !== "authenticated") return;
     void loadConversations();
     void loadRuns();
@@ -1922,6 +1994,17 @@ function App() {
     );
   }
 
+  const releaseUpdatedAt = versionData?.rollout?.updatedAt
+    ?? versionData?.version?.updatedAt
+    ?? versionData?.version?.buildTime
+    ?? versionData?.version?.commitDate;
+  const releaseTitle = [
+    `版本號: ${formatVersionLabel(versionData?.version)}`,
+    `版本更新日期: ${formatDate(releaseUpdatedAt)}`,
+    appEnvironment.label === "DEV" ? `是否已推 prod: ${prodPushLabel(versionData?.rollout?.production?.status)}` : null,
+    appEnvironment.label === "DEV" ? `dev 版本 smoke: ${devSmokeLabel(versionData?.rollout?.devSmoke?.status)}` : null
+  ].filter(Boolean).join("\n");
+
   return (
     <main className="app">
       <header className="topbar">
@@ -1930,6 +2013,32 @@ function App() {
             🔬 <span>Galaxy</span> UAT Test Tool
           </h1>
           <span className={`env-pill ${appEnvironment.tone}`}>{appEnvironment.label}</span>
+          <div className={`release-info ${appEnvironment.tone}`} title={releaseTitle}>
+            <span className="release-item">
+              <span className="release-label">版本</span>
+              <span className="release-value">{formatVersionLabel(versionData?.version)}</span>
+            </span>
+            {appEnvironment.label === "DEV" ? (
+              <>
+                <span className="release-item">
+                  <span className="release-label">Prod</span>
+                  <span className={`release-value ${statusTone(versionData?.rollout?.production?.status)}`}>
+                    {prodPushLabel(versionData?.rollout?.production?.status)}
+                  </span>
+                </span>
+                <span className="release-item">
+                  <span className="release-label">Smoke</span>
+                  <span className={`release-value ${statusTone(versionData?.rollout?.devSmoke?.status)}`}>
+                    {devSmokeLabel(versionData?.rollout?.devSmoke?.status)}
+                  </span>
+                </span>
+              </>
+            ) : null}
+            <span className="release-item">
+              <span className="release-label">更新</span>
+              <span className="release-value">{formatDate(releaseUpdatedAt)}</span>
+            </span>
+          </div>
         </div>
         <div className="tabs">
           <button className={`tab-btn ${tab === "conversations" ? "active" : ""}`} onClick={() => setTab("conversations")}>
