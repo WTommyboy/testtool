@@ -1395,3 +1395,9 @@ Tommy 曾討論是否改成腳本。最後決策是採「半腳本化 / helper �
 - Web UI：`Dev URL` input 右側新增 `開啟連結` button；按鈕使用目前選取的在線 idle Agent。若 URL 無效、未選 Agent、Agent busy、doctor fail、Chrome profile 不 ready 或 Agent 版本未支援 `browser_open_url`,按鈕 disabled 並在 title/錯誤訊息提示原因。
 - Backend / Agent：新增 `POST /api/agents/:id/open-url`,送 `browser.open_url` WebSocket message 給 Agent。Agent `0.2.31` 支援 `browser_open_url`,用 dedicated Chrome profile 與 CDP 開啟 URL,reset tabs 後開單一頁；不建立 UAT run、不寫 result workbook、不改 testcase 狀態。
 - 驗證：已跑 `npm run typecheck`、`npm run typecheck --prefix agent`、`npm run build --prefix agent`、`npm run build --prefix web`、`npm run build`。後續需推 dev 後重啟 dev Agent,再用 Vercel dev UI 實際點 `開啟連結` 做 dedicated Chrome smoke。
+
+### 2026-05-16 21:05 - Dev URL open cold Chrome CDP wait fix
+
+- 背景：Tommy 實測 `開啟連結` 只會開啟 dedicated Chrome,但沒有帶入 Dev URL。回查 dev Agent log,WebSocket message 已收到且 URL 正確,但 Agent 回報 `CHROME_CDP_UNAVAILABLE`；原因是 cold Chrome 啟動後,CDP 有時超過原本 5 秒等待才 ready,導致 Agent 放棄建立 target,只留下空白 Chrome 視窗。
+- 修正：Agent `openUrlInDedicatedChrome` 將 cold Chrome CDP ready timeout 拉長到 15 秒,`/json/new` 開 target timeout 拉長到 5 秒；若 `ensureChromeDebugSession` 第一次回傳 null,會再針對同一 CDP endpoint 做一次等待並接續開 URL,避免 Chrome 已啟動但 CDP 稍晚 ready 時漏開頁面。
+- 版本：Mac Agent source 升到 `0.2.32`。本修正只影響 browser preparation action,不改 UAT run dispatch、result workbook 或 testcase 狀態。

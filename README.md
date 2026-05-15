@@ -135,7 +135,7 @@ Replace `<your-*-host>` placeholders with your own deployment URLs.
 | Component       | Version / Source                          |
 | --------------- | ----------------------------------------- |
 | App / API       | `1.1.8`                                   |
-| Mac Agent       | `0.2.31`                                  |
+| Mac Agent       | `0.2.32`                                  |
 | Default branch  | `codex/uat-tool-mvp` (Railway source)     |
 | Working branch  | `refactor/mac-agent-mvp`                  |
 

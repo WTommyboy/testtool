@@ -7,6 +7,8 @@ import WebSocket from "ws";
 import type { AgentConfig } from "./types";
 
 const defaultDebugPort = 9222;
+const chromeLaunchCdpTimeoutMs = 15_000;
+const cdpOpenTabTimeoutMs = 5_000;
 
 type CdpTarget = {
   id?: string;
@@ -197,7 +199,7 @@ export const ensureSingleUserPageTab = async (endpoint: string, options: { close
 
 const openCdpTab = async (endpoint: string, url: string): Promise<CdpTarget | null> => {
   try {
-    const response = await withTimeout(fetch(`${endpoint}/json/new?${encodeURIComponent(url)}`, { method: "PUT" }), 1000);
+    const response = await withTimeout(fetch(`${endpoint}/json/new?${encodeURIComponent(url)}`, { method: "PUT" }), cdpOpenTabTimeoutMs);
     if (!response.ok) return null;
     const target = (await response.json()) as CdpTarget;
     return target.id ? target : null;
@@ -493,7 +495,7 @@ export const ensureChromeDebugSession = async (
   });
   child.unref();
 
-  const ready = await waitForCdp(endpoint, 5000);
+  const ready = await waitForCdp(endpoint, chromeLaunchCdpTimeoutMs);
   if (ready) {
     if (options.resetTabs) await closeExistingPageTabs(endpoint);
     if (initialUrl && openInitialUrl) {
@@ -546,11 +548,18 @@ export const openUrlInDedicatedChrome = async (
   url: string,
   options: ChromeSessionOptions = {}
 ): Promise<ChromeOpenUrlResult> => {
-  const endpoint = await ensureChromeDebugSession(config, null, {
+  let endpoint = await ensureChromeDebugSession(config, null, {
     resetTabs: false,
     openInitialUrl: false
   });
   const profileDir = path.resolve(config.chrome_profile_dir);
+  if (!endpoint) {
+    const fallbackEndpoint = getChromeCdpEndpoint();
+    if (await waitForCdp(fallbackEndpoint, chromeLaunchCdpTimeoutMs)) {
+      endpoint = fallbackEndpoint;
+    }
+  }
+
   if (!endpoint) {
     return {
       endpoint: null,
