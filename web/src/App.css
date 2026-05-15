@@ -616,6 +616,18 @@
   min-width: 0;
 }
 
+.dev-url-control {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+}
+
+.dev-url-control .btn {
+  white-space: nowrap;
+}
+
 .inline-actions {
   min-height: 38px;
   display: flex;
@@ -1718,6 +1730,10 @@
 
   .release-item {
     white-space: normal;
+  }
+
+  .dev-url-control {
+    grid-template-columns: 1fr;
   }
 
   .panel {

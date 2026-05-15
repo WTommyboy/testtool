@@ -1388,3 +1388,10 @@ Tommy 曾討論是否改成腳本。最後決策是採「半腳本化 / helper �
 - Backend：`/version` 新增 `version.commitDate` / `version.updatedAt` 與 `rollout` 區塊。更新日期以 git commit date 優先；Railway runtime 若沒有 local git metadata,會用 `VERSION_GITHUB_REPOSITORY` + commit SHA 讀 GitHub commit date,`BUILD_TIME` 只作 fallback。DEV deployment 會以 `PROD_VERSION_URL` 讀 production `/version` 並比對 short commit 判斷 `pushed` / `not_pushed` / `unknown`；dev smoke 狀態只讀 env (`DEV_SMOKE_STATUS`, `DEV_SMOKE_COMMIT_SHA`, `DEV_SMOKE_PASSED_AT`),不由工具自行推測。
 - Web UI：topbar `DEV/PROD` pill 旁新增 release panel。DEV 顯示 `版本`、`Prod`、`Smoke`、`更新`；PROD 顯示 `版本`、`更新`。panel 支援 title tooltip 與 mobile wrap,避免 header overflow。
 - 驗證：已跑 `npm run typecheck`、`npm run build --prefix web`、`npm run build`、`git diff --check`。本機 API/Web smoke 讀到 `/version` commit `1455906`,DOM 檢查 release panel 顯示 `版本1.1.8 (1455906) / Prod未知 / Smoke未標記 / 更新2026/5/15 03:55:43`,無 console error、desktop 無水平 overflow。dev push 後 Railway dev `/version` 顯示 commit `d42ab68`,`production.status=not_pushed`,`devSmoke.status=unknown`；後續 commit-date fallback 修正將讓 `updatedAt` 顯示 GitHub commit date 而非 Railway stale `BUILD_TIME`。本批目標先推 dev,不碰 prod promote。
+
+### 2026-05-16 18:50 - Dev URL dedicated Chrome open button
+
+- 背景：Tommy 希望在建立 Run 表單的 `Dev URL` 欄旁新增「開啟連結」,先用正式跑測同一套瀏覽器/profile 開頁並完成登入,避免正式 case 開始後才卡在 SSO 或「載入資料失敗」。此功能不能用一般前端 `window.open`,否則登入狀態會留在使用者目前瀏覽器,不一定進入 Mac Agent / Playwright 專用 profile。
+- Web UI：`Dev URL` input 右側新增 `開啟連結` button；按鈕使用目前選取的在線 idle Agent。若 URL 無效、未選 Agent、Agent busy、doctor fail、Chrome profile 不 ready 或 Agent 版本未支援 `browser_open_url`,按鈕 disabled 並在 title/錯誤訊息提示原因。
+- Backend / Agent：新增 `POST /api/agents/:id/open-url`,送 `browser.open_url` WebSocket message 給 Agent。Agent `0.2.31` 支援 `browser_open_url`,用 dedicated Chrome profile 與 CDP 開啟 URL,reset tabs 後開單一頁；不建立 UAT run、不寫 result workbook、不改 testcase 狀態。
+- 驗證：已跑 `npm run typecheck`、`npm run typecheck --prefix agent`、`npm run build --prefix agent`、`npm run build --prefix web`、`npm run build`。後續需推 dev 後重啟 dev Agent,再用 Vercel dev UI 實際點 `開啟連結` 做 dedicated Chrome smoke。

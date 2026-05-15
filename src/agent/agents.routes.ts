@@ -17,6 +17,12 @@ const createTokenSchema = z.object({
   deviceName: z.string().min(1).optional()
 });
 
+const openUrlSchema = z.object({
+  url: z.string().url().refine((url) => /^https?:\/\//i.test(url), {
+    message: "Only http/https URLs are supported"
+  })
+});
+
 const getBootstrapSecret = (): string => {
   return process.env.AGENT_BOOTSTRAP_SECRET
     || process.env.MAC_AGENT_BOOTSTRAP_TOKEN
@@ -93,6 +99,64 @@ router.get("/:id", (req, res) => {
     return res.status(404).json({ error: "AGENT_NOT_FOUND" });
   }
   return res.json(agent);
+});
+
+router.post("/:id/open-url", (req, res) => {
+  const parsed = openUrlSchema.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    return res.status(400).json({
+      error: "INVALID_PAYLOAD",
+      issues: parsed.error.issues
+    });
+  }
+
+  const agentId = String(req.params.id);
+  const agent = agentRegistry.get(agentId);
+  if (!agent) {
+    return res.status(404).json({ error: "AGENT_NOT_FOUND" });
+  }
+  if (agent.status !== "idle") {
+    return res.status(409).json({
+      error: agent.status === "busy" ? "AGENT_BUSY" : "AGENT_NOT_READY",
+      currentRunId: agent.currentRunId,
+      status: agent.status
+    });
+  }
+  if (agent.doctorOk === false) {
+    return res.status(409).json({
+      error: "AGENT_DOCTOR_FAILED",
+      failedChecks: agent.doctorChecks.filter((check) => check.verdict === "FAIL").map((check) => check.name)
+    });
+  }
+  if (agent.chromeProfileReady === false) {
+    return res.status(409).json({ error: "AGENT_CHROME_PROFILE_NOT_READY" });
+  }
+  if (agent.supportedTaskTypes.length > 0 && !agent.supportedTaskTypes.includes("browser_open_url")) {
+    return res.status(409).json({
+      error: "AGENT_UNSUPPORTED_TASK_TYPE",
+      supportedTaskTypes: agent.supportedTaskTypes
+    });
+  }
+
+  try {
+    const requestId = `browser_open_${Date.now()}`;
+    const message = agentRegistry.send(agentId, "browser.open_url", {
+      request_id: requestId,
+      run_id: requestId,
+      url: parsed.data.url,
+      requested_at: new Date().toISOString()
+    }, true);
+    return res.status(202).json({
+      agentId,
+      messageId: message.id,
+      requestId,
+      status: "DISPATCHED"
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    const status = message === "AGENT_NOT_FOUND" ? 404 : message === "AGENT_SOCKET_NOT_OPEN" ? 503 : 503;
+    return res.status(status).json({ error: message });
+  }
 });
 
 router.post("/:id/dispatch-smoke", requireBootstrapToken, (req, res) => {

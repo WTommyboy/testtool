@@ -1,7 +1,7 @@
 # UAT Tool 最新工程 Spec
 
 **版本**: v2026-05-13
-**狀態**: Mac Agent MVP / App 1.1.8 + Agent 0.2.30 source / Indexed Guidance + Preflight Safeguards + groupId schema + final/partial aggregate result + complete archive MD export + OTTEST002 Collage helper P0 + metadata dropdown source-group scoping + metadata expected-source fallback + metadata source-scope count guard + list-page CSV row refresh + response-body fallback + preview table evidence + CSV header/date normalization + helper-plan auto continuation + existing-report field exact reconciliation + helper-evidence preflight replacement + support-file profile + result repair guard + FAIL-to-Bug linked row contract + server fallback bug candidate + duplicate fallback guard + PASS/ordinary BLOCKED no-auto-bug guard + degraded BLOCKED result guard + Tool Bridge run-event evidence gate + Tool Bridge lifecycle status panel + Tool Bridge result-gate false-positive guard + missing Tool Bridge response wording guard + negative native-confirm prose guard + formula-modal blocked gate guard + source-result runtime skip ingestion + execute selected-field precondition guard + non-destructive validation alert allowlist + A-06 all-zero field inspection helper + editor-session CSV helper chain + same-case project-row CSV planner guard + D0 baseline row-CSV planner guard + temporary report create/delete helper + formula/calculated-field preview helper + stable formula modal selector helper + create-project helper + dotted create-project template routing + dynamic/hybrid date helper support + strict select-all field-count guard + D-02 structured select-all source/count guard + PASS-vs-helper-false-check gate + PM skip classification + preview-only helper skip guards + case-type must-read rules + CSV/metadata/formula authoring contract + formula helper-hints parser compatibility + readonly formula keypad/token input + formula display/code token matching + divide-by-zero=0 calculation judgment + save reportListEvidence + hardened openProject prompt retry + total-refund exact alias/token matching + report-list row-nearby CSV fallback + create-project state carryover + project-page navigation helpers + save-load create-before-reopen guard + same-case save/reopen report-name-prefix guard + save-only no-open-existing/no-reopen/no-download guard + structured date variants/staged boundary helper support + exact metadata source filename contract + background-safe browser lease + no-foreground helper policy + field-list loading wait + inline cleanup consistency parser guard / helper project auto-selection guard / manual_ai helper pre-run guard / manual_ai safe navigation prelude guard / date-variants preview evidence helper / multi-variant date visible-UI routing guard / date UI represented-range evidence / Monday-week date preset guard with weekStart override / select-all fields params guard / selected-field code-label reconciliation / Playwright browser_tabs availability guard / active-question-first session handoff contract / Agent WebSocket reconnect resilience
+**狀態**: Mac Agent MVP / App 1.1.8 + Agent 0.2.31 source / Indexed Guidance + Preflight Safeguards + groupId schema + final/partial aggregate result + complete archive MD export + OTTEST002 Collage helper P0 + metadata dropdown source-group scoping + metadata expected-source fallback + metadata source-scope count guard + list-page CSV row refresh + response-body fallback + preview table evidence + CSV header/date normalization + helper-plan auto continuation + existing-report field exact reconciliation + helper-evidence preflight replacement + support-file profile + result repair guard + FAIL-to-Bug linked row contract + server fallback bug candidate + duplicate fallback guard + PASS/ordinary BLOCKED no-auto-bug guard + degraded BLOCKED result guard + Tool Bridge run-event evidence gate + Tool Bridge lifecycle status panel + Tool Bridge result-gate false-positive guard + missing Tool Bridge response wording guard + negative native-confirm prose guard + formula-modal blocked gate guard + source-result runtime skip ingestion + execute selected-field precondition guard + non-destructive validation alert allowlist + A-06 all-zero field inspection helper + editor-session CSV helper chain + same-case project-row CSV planner guard + D0 baseline row-CSV planner guard + temporary report create/delete helper + formula/calculated-field preview helper + stable formula modal selector helper + create-project helper + dotted create-project template routing + dynamic/hybrid date helper support + strict select-all field-count guard + D-02 structured select-all source/count guard + PASS-vs-helper-false-check gate + PM skip classification + preview-only helper skip guards + case-type must-read rules + CSV/metadata/formula authoring contract + formula helper-hints parser compatibility + readonly formula keypad/token input + formula display/code token matching + divide-by-zero=0 calculation judgment + save reportListEvidence + hardened openProject prompt retry + total-refund exact alias/token matching + report-list row-nearby CSV fallback + create-project state carryover + project-page navigation helpers + save-load create-before-reopen guard + same-case save/reopen report-name-prefix guard + save-only no-open-existing/no-reopen/no-download guard + structured date variants/staged boundary helper support + exact metadata source filename contract + background-safe browser lease + no-foreground helper policy + field-list loading wait + inline cleanup consistency parser guard / helper project auto-selection guard / manual_ai helper pre-run guard / manual_ai safe navigation prelude guard / date-variants preview evidence helper / multi-variant date visible-UI routing guard / date UI represented-range evidence / Monday-week date preset guard with weekStart override / select-all fields params guard / selected-field code-label reconciliation / Playwright browser_tabs availability guard / active-question-first session handoff contract / Agent WebSocket reconnect resilience / Dev URL dedicated Chrome open action
 **適用分支**: `refactor/mac-agent-mvp` / `codex/uat-tool-mvp`  
 **說明**: 檔名沿用 Tommy 提供的 `工程spac.md`;本文內容為工程 spec。
 
@@ -154,7 +154,7 @@ package:
 ```text
 package name: uat-tool-agent
 binary: uat-agent
-version: 0.2.30
+version: 0.2.31
 ```
 
 The Agent WebSocket `X-Agent-Version` header and `agent.online.payload.agent_version` are read from `agent/package.json`; they must not be hard-coded in `agent/src/connection.ts`.
@@ -2273,3 +2273,78 @@ For a local smoke, start API/Web, open the Web UI, and verify:
 - DEV view shows version, prod status, smoke status, and update date.
 - PROD view hides prod/smoke fields.
 - header does not overflow on desktop or mobile width.
+
+## 24. Dev URL Open Link via Dedicated Chrome
+
+Date: 2026-05-16 Asia/Taipei
+
+The Web UI `Dev URL` field has an explicit `開啟連結` action for pre-login / preflight preparation.
+
+### 24.1 Intent
+
+The action must open the URL in the same Mac Agent dedicated Chrome profile used by UAT runs, not in the user's current browser tab through `window.open`.
+
+This preserves the practical workflow:
+
+- PM selects an online idle Agent.
+- PM enters or accepts the `Dev URL`.
+- PM clicks `開啟連結`.
+- Agent opens the URL in dedicated Chrome / CDP profile.
+- PM completes Galaxy SSO or checks the page manually.
+- Later UAT execution reuses the same persistent profile when `keep_chrome_warm=true`.
+
+### 24.2 API Contract
+
+```http
+POST /api/agents/:id/open-url
+Content-Type: application/json
+
+{
+  "url": "https://example.com"
+}
+```
+
+Server behavior:
+
+- Requires normal Web user auth.
+- Validates `http` / `https` URL.
+- Requires target Agent to be online and `idle`.
+- Rejects doctor-failed or Chrome-profile-not-ready Agents.
+- Rejects Agents that advertise `supported_task_types` but do not include `browser_open_url`.
+- Sends a `browser.open_url` WebSocket message to the Agent.
+
+This endpoint is a browser preparation action only. It must not create a UAT run, dispatch `task.dispatch`, write result workbooks, or mutate testcase state.
+
+### 24.3 Agent Contract
+
+Agent version `0.2.31` advertises:
+
+```json
+{
+  "supported_task_types": ["uat_run", "browser_open_url"]
+}
+```
+
+On `browser.open_url`, the Agent:
+
+- Validates the URL again.
+- Ensures the dedicated Chrome CDP session is available.
+- Uses the configured `chrome_profile_dir`.
+- Resets existing page tabs.
+- Opens the requested URL as the single active target.
+- Emits `browser.open_started` and either `browser.open_completed` or `browser.open_failed`.
+
+The action must not run Codex, read testcase files, or mark any UAT run as running.
+
+### 24.4 UI Contract
+
+The Web UI button is disabled when:
+
+- `Dev URL` is empty or invalid.
+- no Agent is selected.
+- selected Agent is busy or not ready.
+- selected Agent doctor failed.
+- selected Agent Chrome profile is not ready.
+- selected Agent does not support `browser_open_url`.
+
+On successful dispatch, the UI shows a short hint telling PM to complete login in dedicated Chrome before starting execution.

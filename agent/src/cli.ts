@@ -5,7 +5,8 @@ import { defaultAgentConfig, ensureAgentDirectories, readConfig, resolveConfigPa
 import { runDoctor } from "./doctor";
 import { installLaunchd, uninstallLaunchd } from "./launchd";
 import { handleTaskDispatch, handleToolResponse } from "./task-runner";
-import { closeChromeDebugSession } from "./browser-session";
+import { closeChromeDebugSession, openUrlInDedicatedChrome } from "./browser-session";
+import type { AgentConfig, AgentMessage } from "./types";
 
 const rawArgs = process.argv.slice(2);
 
@@ -68,6 +69,78 @@ const sendRejection = (
     },
     true
   );
+};
+
+const asHttpUrl = (value: unknown): string | null => {
+  if (typeof value !== "string" || !value.trim()) return null;
+  try {
+    const url = new URL(value.trim());
+    return url.protocol === "http:" || url.protocol === "https:" ? url.toString() : null;
+  } catch {
+    return null;
+  }
+};
+
+const handleBrowserOpenUrl = async (
+  connection: AgentConnection,
+  config: AgentConfig,
+  message: AgentMessage
+): Promise<void> => {
+  const url = asHttpUrl(message.payload.url);
+  const requestId = typeof message.payload.request_id === "string" ? message.payload.request_id : `browser_open_${Date.now()}`;
+  const runId = getPayloadRunId(message) ?? requestId;
+  if (!url) {
+    connection.send("browser.open_failed", {
+      run_id: runId,
+      request_id: requestId,
+      error: "INVALID_URL"
+    }, true);
+    return;
+  }
+
+  connection.send("browser.open_started", {
+    run_id: runId,
+    request_id: requestId,
+    url,
+    started_at: new Date().toISOString()
+  }, false);
+
+  try {
+    const result = await openUrlInDedicatedChrome(config, url, { resetTabs: true, openInitialUrl: true });
+    connection.send("browser.open_completed", {
+      run_id: runId,
+      request_id: requestId,
+      url,
+      endpoint: result.endpoint,
+      target_id: result.target?.id ?? null,
+      target_url: result.target?.url ?? null,
+      profile_dir: result.profileDir,
+      warning: result.warning,
+      completed_at: new Date().toISOString()
+    }, true);
+    printJson({
+      event: "browser_open_completed",
+      requestId,
+      url,
+      endpoint: result.endpoint,
+      targetId: result.target?.id ?? null,
+      warning: result.warning
+    });
+  } catch (error) {
+    const messageText = error instanceof Error ? error.message : String(error);
+    connection.send("browser.open_failed", {
+      run_id: runId,
+      request_id: requestId,
+      url,
+      error: messageText
+    }, true);
+    printJson({
+      event: "browser_open_failed",
+      requestId,
+      url,
+      error: messageText
+    });
+  }
 };
 
 const usage = (): void => {
@@ -208,6 +281,23 @@ const main = async (): Promise<void> => {
             if (runId && activeTask?.runId === runId) activeTask = null;
             printJson({
               event: "task_error",
+              type: message.type,
+              id: message.id,
+              error: error instanceof Error ? error.message : String(error)
+            });
+          });
+          return;
+        }
+        if (message.type === "browser.open_url") {
+          if (activeTask) {
+            sendRejection(connection, "task.rejected", message, "agent_busy", {
+              current_run_id: activeTask.runId
+            });
+            return;
+          }
+          void handleBrowserOpenUrl(connection, config, message).catch((error) => {
+            printJson({
+              event: "browser_open_error",
               type: message.type,
               id: message.id,
               error: error instanceof Error ? error.message : String(error)

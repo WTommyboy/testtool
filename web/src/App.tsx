@@ -529,7 +529,9 @@ function App() {
   const [runArtifacts, setRunArtifacts] = useState<RunArtifact[]>([]);
   const [runBusy, setRunBusy] = useState(false);
   const [isStarting, setIsStarting] = useState(false);
+  const [isOpeningDevUrl, setIsOpeningDevUrl] = useState(false);
   const [runError, setRunError] = useState("");
+  const [devUrlOpenMessage, setDevUrlOpenMessage] = useState("");
   const [startError, setStartError] = useState<string | null>(null);
   const [playwrightStatus, setPlaywrightStatus] = useState<PlaywrightHealthStatus>("checking");
   const [resolvedBy, setResolvedBy] = useState("tommy");
@@ -573,6 +575,26 @@ function App() {
     return null;
   };
   const selectedAgentBlockingReason = getSelectedAgentBlockingReason();
+  const getDevUrlOpenBlockingReason = (): string | null => {
+    const url = runDevUrl.trim();
+    if (!url) return "請先填寫 Dev URL";
+    try {
+      const parsed = new URL(url);
+      if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return "Dev URL 僅支援 http/https";
+    } catch {
+      return "Dev URL 格式不正確";
+    }
+    if (!selectedAgent) return "請先選擇一台在線 Agent";
+    if (selectedAgent.status === "busy") return `Agent 正在執行 ${selectedAgent.currentRunId || "其他 Run"}`;
+    if (selectedAgent.status !== "idle") return "Agent 尚未 ready";
+    if (selectedAgent.doctorOk === false) return "Agent doctor 未通過，請先在本機執行 uat-agent doctor";
+    if (selectedAgent.chromeProfileReady === false) return "Agent Chrome profile 尚未 ready";
+    if (selectedAgent.supportedTaskTypes.length > 0 && !selectedAgent.supportedTaskTypes.includes("browser_open_url")) {
+      return "Agent 版本尚未支援開啟連結，請先更新並重啟 Agent";
+    }
+    return null;
+  };
+  const devUrlOpenBlockingReason = getDevUrlOpenBlockingReason();
 
   const totalCases = runCases.length || Object.values(summary?.caseStats ?? {}).reduce((a, b) => a + b, 0);
   const passCases = numberOf(summary?.caseStats, "PASS") + numberOf(summary?.caseStats, "MANUAL_PASS");
@@ -1678,6 +1700,32 @@ function App() {
     }
   };
 
+  const handleOpenDevUrl = async () => {
+    const blockReason = getDevUrlOpenBlockingReason();
+    if (blockReason) {
+      setRunError(blockReason);
+      return;
+    }
+    if (!selectedAgentId) return;
+
+    setIsOpeningDevUrl(true);
+    setRunError("");
+    setDevUrlOpenMessage("");
+    try {
+      await api(`/api/agents/${selectedAgentId}/open-url`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: runDevUrl.trim() })
+      });
+      setDevUrlOpenMessage(`已送出開啟連結指令給 ${selectedAgent?.deviceName || "Agent"}。請在 dedicated Chrome 完成登入後再開始執行。`);
+      await loadAgents();
+    } catch (error) {
+      setRunError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setIsOpeningDevUrl(false);
+    }
+  };
+
   const handleCreateRun = async () => {
     setRunBusy(true);
     setIsStarting(true);
@@ -2438,7 +2486,24 @@ function App() {
             <div className="form-row">
               <div className="form-group">
                 <label>Dev URL</label>
-                <input value={runDevUrl} onChange={(e) => setRunDevUrl(e.target.value)} />
+                <div className="dev-url-control">
+                  <input value={runDevUrl} onChange={(e) => {
+                    setRunDevUrl(e.target.value);
+                    setDevUrlOpenMessage("");
+                  }} />
+                  <button
+                    type="button"
+                    className="btn sm"
+                    onClick={() => void handleOpenDevUrl()}
+                    disabled={isOpeningDevUrl || runBusy || isStarting || Boolean(devUrlOpenBlockingReason)}
+                    title={devUrlOpenBlockingReason || "透過選取 Agent 的 dedicated Chrome 開啟 Dev URL"}
+                  >
+                    {isOpeningDevUrl ? "開啟中..." : "開啟連結"}
+                  </button>
+                </div>
+                <span className="hint-text">
+                  {devUrlOpenMessage || "使用選取 Agent 的 dedicated Chrome profile 開啟，方便先完成登入。"}
+                </span>
               </div>
               <div className="form-group">
                 <label>參考數據 CSV（選填）</label>

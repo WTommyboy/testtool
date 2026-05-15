@@ -135,10 +135,10 @@ Replace `<your-*-host>` placeholders with your own deployment URLs.
 | Component       | Version / Source                          |
 | --------------- | ----------------------------------------- |
 | App / API       | `1.1.8`                                   |
-| Mac Agent       | `0.2.30`                                  |
+| Mac Agent       | `0.2.31`                                  |
 | Default branch  | `codex/uat-tool-mvp` (Railway source)     |
 | Working branch  | `refactor/mac-agent-mvp`                  |
 
-_Last verified: 2026-05-13 (UTC+8)_
+_Last verified: 2026-05-16 (UTC+8)_
 
 Current focus: Mac Agent MVP regression hardening. Per-change history lives in `docs/planning/online-uat-tool-development-log.md`.

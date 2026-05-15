@@ -55,6 +55,13 @@ export type ChromeBrowserSessionPrepareResult = {
   warning: string | null;
 };
 
+export type ChromeOpenUrlResult = {
+  endpoint: string | null;
+  target: CdpTarget | null;
+  profileDir: string;
+  warning: string | null;
+};
+
 const chromeExecutableCandidates = [
   "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
   "/Applications/Chromium.app/Contents/MacOS/Chromium",
@@ -532,4 +539,44 @@ export const prepareChromeBrowserSession = async (
   const markWarning = await markBrowserSessionTarget(endpoint, lease);
   writeBrowserSessionLease(runDir, lease);
   return { endpoint, lease, warning: markWarning };
+};
+
+export const openUrlInDedicatedChrome = async (
+  config: AgentConfig,
+  url: string,
+  options: ChromeSessionOptions = {}
+): Promise<ChromeOpenUrlResult> => {
+  const endpoint = await ensureChromeDebugSession(config, null, {
+    resetTabs: false,
+    openInitialUrl: false
+  });
+  const profileDir = path.resolve(config.chrome_profile_dir);
+  if (!endpoint) {
+    return {
+      endpoint: null,
+      target: null,
+      profileDir,
+      warning: "CHROME_CDP_UNAVAILABLE"
+    };
+  }
+
+  if (options.resetTabs ?? true) await closeExistingPageTabs(endpoint);
+  const target = await openCdpTab(endpoint, url);
+  if (!target?.id) {
+    return {
+      endpoint,
+      target: null,
+      profileDir,
+      warning: "BROWSER_TARGET_CREATE_FAILED"
+    };
+  }
+
+  await closeExtraPageTabs(endpoint, target.id, { closeNewTab: true });
+  const latestTarget = await waitForTarget(endpoint, target.id, 5000);
+  return {
+    endpoint,
+    target: latestTarget ?? target,
+    profileDir,
+    warning: latestTarget ? null : "BROWSER_TARGET_READY_TIMEOUT"
+  };
 };
