@@ -34,10 +34,27 @@ const readyProjectHome = [
   "刪除"
 ].join("\n");
 
+const officialUiSidebarHome = [
+  "數據統計中心",
+  "公司共享",
+  "我的自訂",
+  "拼貼報表",
+  "BI正式UI測試專案",
+  "報表明細",
+  "指標趨勢",
+  "新增自訂報表"
+].join("\n");
+
 assert.equal(
   hooks.inferVisibleCollageProjectName(blockedProjectHome),
   "拼貼test_001",
   "project inference should still find the visible collage project when the report list is not selected"
+);
+
+assert.equal(
+  hooks.inferVisibleCollageProjectName(officialUiSidebarHome),
+  "BI正式UI測試專案",
+  "project inference should support official UI sidebar labels under 我的自訂 > 拼貼報表"
 );
 
 assert.equal(
@@ -90,6 +107,7 @@ console.log(JSON.stringify({
   fixture: "open-project-retry",
   checked: [
     "visible project inference survives select-project prompt",
+    "official UI sidebar project inference",
     "report-list readiness rejects prompt-only pages",
     "report-list readiness accepts + 新增報表 pages",
     "candidate scoring prefers exact project nodes"

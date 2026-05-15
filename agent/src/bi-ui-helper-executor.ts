@@ -7,6 +7,7 @@ import { closeChromeDebugSession, diagnoseChromeDebugSession, ensureChromeDebugS
 import { readConfig } from "./config";
 import { parseCsv, summarizeCsvAgainstPreview } from "./csv-preview-comparison";
 import { buildDateUiEvidence, normalizeDatePresetLabel, normalizeDateUiWeekStart, type DateUiEvidence } from "./date-ui-evidence";
+import { createHelperObservationWriter, type HelperObservationInput } from "./helper-observability";
 
 type CliOptions = {
   runDir: string;
@@ -144,6 +145,15 @@ const ensureDir = (dir: string): void => {
 const artifactRoot = (options: CliOptions): string => path.join(options.runDir, "output", "helper-artifacts", sanitize(options.caseId));
 
 const runIdFromOptions = (options: CliOptions): string => path.basename(path.resolve(options.runDir));
+
+const observeHelper = (options: CliOptions, input: HelperObservationInput): void => {
+  createHelperObservationWriter({
+    runDir: options.runDir,
+    caseId: options.caseId,
+    action: options.action,
+    params: options.params
+  }).write(input);
+};
 
 const writeReport = (options: CliOptions, report: HelperReport): void => {
   const dir = artifactRoot(options);
@@ -627,7 +637,40 @@ const createReport = (
 const browserSessionWindowNamePrefix = (lease: BrowserSessionLease): string =>
   `uat-tool:${lease.runId}:${lease.caseNo}:${lease.generation}`;
 
-const isGalaxyBiDevUrl = (url: string): boolean => /^https:\/\/galaxy\.games\.gamania\.com\/biapi-dev\//i.test(url);
+const GALAXY_BI_HOST = "galaxy.games.gamania.com";
+const GALAXY_BI_DEV_PATH_PREFIXES = ["/biapi-dev", "/bi-dev"] as const;
+
+const parseHttpUrl = (url: string | null | undefined): URL | null => {
+  if (!url) return null;
+  try {
+    return new URL(url);
+  } catch {
+    return null;
+  }
+};
+
+const isAllowedGalaxyBiPath = (pathname: string): boolean =>
+  GALAXY_BI_DEV_PATH_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
+
+const isGalaxyBiDevUrl = (url: string, expectedDevUrl?: string | null): boolean => {
+  const candidate = parseHttpUrl(url);
+  if (!candidate) return false;
+  if (candidate.protocol !== "https:") return false;
+  if (candidate.hostname.toLowerCase() !== GALAXY_BI_HOST) return false;
+  if (!isAllowedGalaxyBiPath(candidate.pathname)) return false;
+
+  const expected = parseHttpUrl(expectedDevUrl);
+  if (!expected) return true;
+  if (expected.protocol !== "https:") return false;
+  if (expected.hostname.toLowerCase() !== GALAXY_BI_HOST) return false;
+  if (!isAllowedGalaxyBiPath(expected.pathname)) return false;
+  return candidate.origin === expected.origin;
+};
+
+const isOfficialBiUiPageUrl = (url: string): boolean => {
+  const parsed = parseHttpUrl(url);
+  return Boolean(parsed && parsed.hostname.toLowerCase() === GALAXY_BI_HOST && (parsed.pathname === "/bi-dev" || parsed.pathname.startsWith("/bi-dev/")));
+};
 
 const readPageBrowserSessionMarker = async (page: Page): Promise<{ windowName: string; sessionRaw: string | null; url: string } | null> => {
   try {
@@ -659,7 +702,7 @@ const browserSessionEvidence = (
   targetBinding: {
     resolvedBy: "window.name",
     tokenMatch: true,
-    urlMatch: isGalaxyBiDevUrl(page.url()),
+    urlMatch: isGalaxyBiDevUrl(page.url(), lease.devUrl),
     targetIdMatch: "not_checked",
     pageUrl: page.url()
   },
@@ -700,8 +743,8 @@ const resolveBrowserSessionPage = async (
     const marker = await readPageBrowserSessionMarker(page);
     if (!marker) continue;
     if (marker.windowName === lease.windowName) {
-      if (!isGalaxyBiDevUrl(marker.url)) {
-        throw new HelperBlockedError(`BROWSER_SESSION_URL_MISMATCH:url=${marker.url}`);
+      if (!isGalaxyBiDevUrl(marker.url, lease.devUrl)) {
+        throw new HelperBlockedError(`BROWSER_SESSION_URL_MISMATCH:url=${marker.url};leaseDevUrl=${lease.devUrl ?? "null"}`);
       }
       return {
         page,
@@ -713,7 +756,7 @@ const resolveBrowserSessionPage = async (
     }
   }
 
-  const targetStillExists = pages.some((page) => page.url() === lease.devUrl || isGalaxyBiDevUrl(page.url()));
+  const targetStillExists = pages.some((page) => page.url() === lease.devUrl || isGalaxyBiDevUrl(page.url(), lease.devUrl));
   if (targetStillExists) {
     throw new HelperBlockedError(
       `BROWSER_SESSION_TOKEN_MISMATCH:expected=${browserSessionWindowNamePrefix(lease)};uatTargets=${JSON.stringify(mismatches).slice(0, 1000)}`
@@ -1017,6 +1060,27 @@ const captureUiDomProfile = async (options: CliOptions, page: Page, context: str
     if (!reused) {
       fs.writeFileSync(filePath, `${JSON.stringify(profile, null, 2)}\n`);
     }
+    observeHelper(options, {
+      eventType: "ui_state_node",
+      severity: "info",
+      appUrl: profile.url,
+      data: {
+        context,
+        signature: profile.signature,
+        route: profile.route,
+        title: profile.title,
+        relativePath: path.relative(options.runDir, filePath),
+        reused,
+        summary: {
+          visibleButtonCount: profile.controls.buttons.length,
+          visibleInputCount: profile.controls.inputs.length,
+          visibleSelectCount: profile.controls.selects.length,
+          dialogCount: profile.widgets.dialogs.length,
+          hasDatePicker: Boolean(profile.widgets.datePicker.exists),
+          bodyTextExcerptHash: crypto.createHash("sha256").update(profile.bodyTextExcerpt).digest("hex")
+        }
+      }
+    });
     return {
       schemaVersion: "ui-dom-profile-ref-v1",
       context,
@@ -2372,6 +2436,22 @@ const hasSelectProjectPrompt = (bodyText: string): boolean => /請從左側選�
 const isCollageReportListReady = (bodyText: string): boolean =>
   hasCreateReportEntry(bodyText) && !hasSelectProjectPrompt(bodyText);
 
+const isOfficialCollageReportListReady = (page: Page, bodyText: string): boolean => {
+  const parsed = parseHttpUrl(page.url());
+  const isOfficialProjectRoute = Boolean(parsed?.pathname.match(/\/bi-dev\/[^/]+\/report\/myCustom\/tileMode\/[^/]+$/));
+  return (
+    isOfficialProjectRoute &&
+    /拼貼報表/.test(bodyText) &&
+    /報表名稱/.test(bodyText) &&
+    /資料(?:週期)?區間/.test(bodyText) &&
+    /操作/.test(bodyText) &&
+    !hasSelectProjectPrompt(bodyText)
+  );
+};
+
+const isCollageReportListReadyForPage = (page: Page, bodyText: string): boolean =>
+  isCollageReportListReady(bodyText) || isOfficialCollageReportListReady(page, bodyText);
+
 type CollageProjectSelectionAttempt = {
   label: string;
   url: string;
@@ -2391,6 +2471,103 @@ type CollageProjectClickCandidate = {
   role: string | null;
   className: string;
   rect: { x: number; y: number; width: number; height: number };
+};
+
+type VisibleBodyTextClickCandidate = CollageProjectClickCandidate;
+
+const scoreVisibleBodyTextClickCandidate = (
+  candidate: Omit<VisibleBodyTextClickCandidate, "bodyIndex">,
+  targetText: string,
+  options: { preferLeftNav?: boolean } = {}
+): number => {
+  const target = normalizeUiText(targetText);
+  const text = normalizeUiText(candidate.text);
+  if (!target || !text.includes(target)) return Number.POSITIVE_INFINITY;
+  const className = candidate.className.toLowerCase();
+  const role = (candidate.role ?? "").toLowerCase();
+  const tagName = candidate.tagName.toLowerCase();
+  const exact = text === target;
+  const shortText = text.length <= target.length + 8;
+  const clickableish =
+    /button|a|li/.test(tagName) ||
+    /button|treeitem|menuitem|option|tab|link/.test(role) ||
+    /tree|menu|nav|item|node|title|label|sidebar|collapse/.test(className);
+  let score = 0;
+  if (!exact) score += 20;
+  if (!shortText) score += Math.min(100, text.length - target.length);
+  if (!clickableish) score += 12;
+  if (options.preferLeftNav && candidate.rect.x > 520) score += 35;
+  if (candidate.rect.width > 500) score += 8;
+  if (/新增報表|報表名稱|資料區間日期|請從左側選擇|儲存報表/.test(candidate.text)) score += 80;
+  return score + Math.max(0, candidate.rect.y / 10000);
+};
+
+const visibleBodyTextClickCandidates = async (
+  page: Page,
+  targetText: string,
+  options: { preferLeftNav?: boolean } = {}
+): Promise<VisibleBodyTextClickCandidate[]> => {
+  const candidates = await page.evaluate((target) => {
+    const normalize = (value: string | null | undefined) => (value ?? "").trim().replace(/\s+/g, "");
+    const normalizedTarget = normalize(target);
+    const isVisible = (element: Element): boolean => {
+      const rect = element.getBoundingClientRect();
+      const style = window.getComputedStyle(element);
+      return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden" && style.opacity !== "0";
+    };
+    return Array.from(document.querySelectorAll<HTMLElement>("body *")).flatMap((element, bodyIndex) => {
+      if (!isVisible(element)) return [];
+      const text = (element.innerText || element.textContent || "").trim().replace(/\s+/g, " ");
+      if (!text || !normalize(text).includes(normalizedTarget)) return [];
+      const rect = element.getBoundingClientRect();
+      return [{
+        bodyIndex,
+        text,
+        tagName: element.tagName.toLowerCase(),
+        role: element.getAttribute("role"),
+        className: typeof element.className === "string" ? element.className : "",
+        rect: {
+          x: Math.round(rect.x),
+          y: Math.round(rect.y),
+          width: Math.round(rect.width),
+          height: Math.round(rect.height)
+        }
+      }];
+    });
+  }, targetText);
+  return candidates
+    .filter((candidate) => Number.isFinite(scoreVisibleBodyTextClickCandidate(candidate, targetText, options)))
+    .sort((a, b) =>
+      scoreVisibleBodyTextClickCandidate(a, targetText, options) - scoreVisibleBodyTextClickCandidate(b, targetText, options) ||
+      a.rect.y - b.rect.y ||
+      a.rect.x - b.rect.x
+    )
+    .slice(0, 10);
+};
+
+const clickVisibleBodyTextCandidate = async (
+  page: Page,
+  targetText: string,
+  timeout = 7000,
+  options: { preferLeftNav?: boolean } = {}
+): Promise<{ method: string; clickedText: string; candidateCount: number }> => {
+  const candidates = await visibleBodyTextClickCandidates(page, targetText, options);
+  const errors: string[] = [];
+  for (const candidate of candidates.slice(0, 5)) {
+    try {
+      await clickVisibleBodyElementByIndex(page, candidate.bodyIndex, timeout);
+      return { method: "visible_text_candidate", clickedText: candidate.text, candidateCount: candidates.length };
+    } catch (error) {
+      errors.push(error instanceof Error ? error.message.slice(0, 240) : String(error).slice(0, 240));
+    }
+  }
+  try {
+    await clickByText(page, targetText, timeout);
+    return { method: "text_locator_fallback", clickedText: targetText, candidateCount: candidates.length };
+  } catch (error) {
+    errors.push(error instanceof Error ? error.message.slice(0, 240) : String(error).slice(0, 240));
+    throw new HelperBlockedError(`VISIBLE_TEXT_CLICK_FAILED:${targetText}; candidates=${candidates.length}; errors=${errors.join(" | ")}`);
+  }
 };
 
 const scoreCollageProjectClickCandidate = (candidate: Omit<CollageProjectClickCandidate, "bodyIndex">, projectName: string): number => {
@@ -2481,25 +2658,257 @@ export const inferVisibleCollageProjectName = (bodyText: string, explicitProject
   const lines = bodyText.split(/\r?\n/)
     .map((line) => line.trim())
     .filter(Boolean);
-  const collageIndex = lines.findIndex((line) => line === "拼貼模式" || /拼貼模式/.test(line));
-  const stopPattern = /^(?:▶\s*)?(?:明細檢視|指標趨勢|➕\s*新增專案|\+\s*新增專案)$/;
-  const ignored = new Set(["▶", "▼", "🗑️", "報表", "📂", "公司共享", "我的自訂", "拼貼模式"]);
+  const collageIndex = lines.findIndex((line) => line === "拼貼模式" || /拼貼模式/.test(line) || line === "拼貼報表" || /拼貼報表/.test(line));
+  const stopPattern = /^(?:▶\s*)?(?:明細檢視|報表明細|指標趨勢|新增自訂報表|➕\s*新增專案|\+\s*新增專案)$/;
+  const ignored = new Set(["▶", "▼", "🗑️", "報表", "📂", "公司共享", "我的自訂", "拼貼模式", "拼貼報表"]);
   const start = collageIndex >= 0 ? collageIndex + 1 : 0;
   for (let index = start; index < lines.length; index += 1) {
     const line = lines[index] ?? "";
     if (index > start && stopPattern.test(line)) break;
-    if (ignored.has(line) || /^🗑/.test(line) || /新增報表|新增專案|請從左側選擇/.test(line)) continue;
+    if (ignored.has(line) || /^🗑/.test(line) || /新增報表|新增專案|請從左側選擇|數據統計中心|沒有可用|尚無|無資料|載入中|loading/i.test(line)) continue;
     if (/^(?:拼貼test[_\d]*|.+專案)$/.test(line)) return line;
+    if (collageIndex >= 0 && line.length <= 80 && !/[：:]/.test(line)) return line;
   }
   return lines.find((line) => /拼貼test[_\d]*|.+專案/.test(line) && !/新增專案/.test(line)) ?? null;
 };
+
+const hasOfficialNoAvailableProjectState = (bodyText: string): boolean =>
+  /(?:尚無|沒有|無可用|無任何|目前無).{0,20}(?:專案|報表)|(?:專案|報表).{0,20}(?:尚無|沒有|無資料|不存在)/.test(bodyText);
+
+const shouldTryOfficialCollageSidebarNavigation = (page: Page, bodyText: string): boolean =>
+  isOfficialBiUiPageUrl(page.url()) && /我的自訂/.test(bodyText);
 
 export const __openProjectRetryTestHooks = {
   hasCreateReportEntry,
   hasSelectProjectPrompt,
   isCollageReportListReady,
   inferVisibleCollageProjectName,
-  scoreCollageProjectClickCandidate
+  scoreCollageProjectClickCandidate,
+  scoreVisibleBodyTextClickCandidate
+};
+
+const navigateOfficialCollageSidebar = async (
+  options: CliOptions,
+  page: Page,
+  attempts: CollageProjectSelectionAttempt[],
+  initialBodyText: string
+): Promise<string> => {
+  let bodyText = initialBodyText;
+  const labels = /拼貼報表|拼貼模式/.test(bodyText) ? [] : ["我的自訂"];
+
+  for (const label of labels) {
+    if (isCollageReportListReadyForPage(page, bodyText)) return bodyText;
+    const beforeUrl = page.url();
+    const beforeExcerpt = bodyText.slice(0, 500);
+    let clickEvidence: { method: string; clickedText: string; candidateCount: number } | null = null;
+    try {
+      const candidates = await visibleBodyTextClickCandidates(page, label, { preferLeftNav: true });
+      observeHelper(options, {
+        eventType: "locator_attempt",
+        severity: candidates.length ? "info" : "warning",
+        appUrl: beforeUrl,
+        data: {
+          context: "official_collage_sidebar",
+          targetText: label,
+          candidateCount: candidates.length,
+          candidates: candidates.slice(0, 5).map((candidate) => ({
+            text: candidate.text.slice(0, 160),
+            tagName: candidate.tagName,
+            role: candidate.role,
+            className: candidate.className.slice(0, 160),
+            rect: candidate.rect,
+            score: scoreVisibleBodyTextClickCandidate(candidate, label, { preferLeftNav: true })
+          }))
+        }
+      });
+      clickEvidence = await clickVisibleBodyTextCandidate(page, label, 8000, { preferLeftNav: true });
+      await page.waitForTimeout(900);
+      bodyText = await page.locator("body").innerText({ timeout: 5000 }).catch(() => "");
+      attempts.push({
+        label: `official_sidebar_${label}`,
+        url: page.url(),
+        hasCreateReportEntry: hasCreateReportEntry(bodyText),
+        hasSelectProjectPrompt: hasSelectProjectPrompt(bodyText),
+        bodyTextExcerpt: bodyText.slice(0, 800),
+        clickMethod: clickEvidence.method,
+        clickedText: clickEvidence.clickedText.slice(0, 200),
+        candidateCount: clickEvidence.candidateCount
+      });
+      observeHelper(options, {
+        eventType: "navigation_transition",
+        severity: "info",
+        appUrl: page.url(),
+        data: {
+          context: "official_collage_sidebar",
+          targetText: label,
+          status: "clicked",
+          fromUrl: beforeUrl,
+          toUrl: page.url(),
+          beforeTextExcerpt: beforeExcerpt,
+          afterTextExcerpt: bodyText.slice(0, 500),
+          clickEvidence
+        },
+        domainExtension: {
+          namespace: "BI_OFFICIAL_UI_COLLAGE",
+          data: {
+            expectedNavigationPath: "我的自訂 > 拼貼報表",
+            label
+          }
+        }
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      observeHelper(options, {
+        eventType: "navigation_transition",
+        severity: "warning",
+        appUrl: page.url(),
+        data: {
+          context: "official_collage_sidebar",
+          targetText: label,
+          status: "click_failed",
+          fromUrl: beforeUrl,
+          toUrl: page.url(),
+          beforeTextExcerpt: beforeExcerpt,
+          error: message.slice(0, 500)
+        },
+        domainExtension: {
+          namespace: "BI_OFFICIAL_UI_COLLAGE",
+          data: {
+            expectedNavigationPath: "我的自訂 > 拼貼報表",
+            label
+          }
+        }
+      });
+      attempts.push({
+        label: `official_sidebar_${label}_failed`,
+        url: page.url(),
+        hasCreateReportEntry: hasCreateReportEntry(bodyText),
+        hasSelectProjectPrompt: hasSelectProjectPrompt(bodyText),
+        bodyTextExcerpt: bodyText.slice(0, 800),
+        error: message.slice(0, 300),
+        clickMethod: clickEvidence?.method,
+        clickedText: clickEvidence?.clickedText.slice(0, 200),
+        candidateCount: clickEvidence?.candidateCount
+      });
+    }
+  }
+
+  const collageLabel = /拼貼報表/.test(bodyText) ? "拼貼報表" : /拼貼模式/.test(bodyText) ? "拼貼模式" : null;
+  if (collageLabel && !isCollageReportListReadyForPage(page, bodyText)) {
+    const beforeUrl = page.url();
+    const beforeExcerpt = bodyText.slice(0, 500);
+    let clickEvidence: { method: string; clickedText: string; candidateCount: number } | null = null;
+    try {
+      const candidates = await visibleBodyTextClickCandidates(page, collageLabel, { preferLeftNav: true });
+      observeHelper(options, {
+        eventType: "locator_attempt",
+        severity: candidates.length ? "info" : "warning",
+        appUrl: beforeUrl,
+        data: {
+          context: "official_collage_sidebar",
+          targetText: collageLabel,
+          candidateCount: candidates.length,
+          candidates: candidates.slice(0, 5).map((candidate) => ({
+            text: candidate.text.slice(0, 160),
+            tagName: candidate.tagName,
+            role: candidate.role,
+            className: candidate.className.slice(0, 160),
+            rect: candidate.rect,
+            score: scoreVisibleBodyTextClickCandidate(candidate, collageLabel, { preferLeftNav: true })
+          }))
+        }
+      });
+      clickEvidence = await clickVisibleBodyTextCandidate(page, collageLabel, 8000, { preferLeftNav: true });
+      await page.waitForTimeout(900);
+      bodyText = await page.locator("body").innerText({ timeout: 5000 }).catch(() => "");
+      attempts.push({
+        label: `official_sidebar_${collageLabel}`,
+        url: page.url(),
+        hasCreateReportEntry: hasCreateReportEntry(bodyText),
+        hasSelectProjectPrompt: hasSelectProjectPrompt(bodyText),
+        bodyTextExcerpt: bodyText.slice(0, 800),
+        clickMethod: clickEvidence.method,
+        clickedText: clickEvidence.clickedText.slice(0, 200),
+        candidateCount: clickEvidence.candidateCount
+      });
+      observeHelper(options, {
+        eventType: "navigation_transition",
+        severity: "info",
+        appUrl: page.url(),
+        data: {
+          context: "official_collage_sidebar",
+          targetText: collageLabel,
+          status: "clicked",
+          fromUrl: beforeUrl,
+          toUrl: page.url(),
+          beforeTextExcerpt: beforeExcerpt,
+          afterTextExcerpt: bodyText.slice(0, 500),
+          clickEvidence
+        },
+        domainExtension: {
+          namespace: "BI_OFFICIAL_UI_COLLAGE",
+          data: {
+            expectedNavigationPath: "我的自訂 > 拼貼報表",
+            label: collageLabel
+          }
+        }
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      observeHelper(options, {
+        eventType: "navigation_transition",
+        severity: "warning",
+        appUrl: page.url(),
+        data: {
+          context: "official_collage_sidebar",
+          targetText: collageLabel,
+          status: "click_failed",
+          fromUrl: beforeUrl,
+          toUrl: page.url(),
+          beforeTextExcerpt: beforeExcerpt,
+          error: message.slice(0, 500)
+        },
+        domainExtension: {
+          namespace: "BI_OFFICIAL_UI_COLLAGE",
+          data: {
+            expectedNavigationPath: "我的自訂 > 拼貼報表",
+            label: collageLabel
+          }
+        }
+      });
+      attempts.push({
+        label: `official_sidebar_${collageLabel}_failed`,
+        url: page.url(),
+        hasCreateReportEntry: hasCreateReportEntry(bodyText),
+        hasSelectProjectPrompt: hasSelectProjectPrompt(bodyText),
+        bodyTextExcerpt: bodyText.slice(0, 800),
+        error: message.slice(0, 300),
+        clickMethod: clickEvidence?.method,
+        clickedText: clickEvidence?.clickedText.slice(0, 200),
+        candidateCount: clickEvidence?.candidateCount
+      });
+    }
+  } else if (!collageLabel) {
+    observeHelper(options, {
+      eventType: "evidence_contract_gap",
+      severity: "warning",
+      appUrl: page.url(),
+      data: {
+        context: "official_collage_sidebar",
+        expectedLabel: "拼貼報表",
+        observedAfterMyCustom: bodyText.slice(0, 1000),
+        reason: "OFFICIAL_COLLAGE_SIDEBAR_LABEL_NOT_VISIBLE"
+      },
+      domainExtension: {
+        namespace: "BI_OFFICIAL_UI_COLLAGE",
+        data: {
+          expectedNavigationPath: "我的自訂 > 拼貼報表"
+        }
+      }
+    });
+  }
+
+  return bodyText;
 };
 
 const ensureCollageProjectSelected = async (
@@ -2534,22 +2943,81 @@ const ensureCollageProjectSelected = async (
       return page.url();
     }
   })();
-  if (isCollageReportListReady(bodyText) && !explicitProjectName) {
+  if (isCollageReportListReadyForPage(page, bodyText) && !explicitProjectName) {
     return { projectName: null, bodyText, selectedBy: "already_selected", attempts };
   }
-  if (isCollageReportListReady(bodyText) && explicitProjectName && decodedUrl.includes(explicitProjectName)) {
+  if (isCollageReportListReadyForPage(page, bodyText) && explicitProjectName && decodedUrl.includes(explicitProjectName)) {
     return { projectName: explicitProjectName, bodyText, selectedBy: "already_selected", attempts };
+  }
+
+  if (shouldTryOfficialCollageSidebarNavigation(page, bodyText)) {
+    bodyText = await navigateOfficialCollageSidebar(options, page, attempts, bodyText);
+    const updatedDecodedUrl = (() => {
+      try {
+        return decodeURIComponent(page.url());
+      } catch {
+        return page.url();
+      }
+    })();
+    if (isCollageReportListReadyForPage(page, bodyText) && !explicitProjectName) {
+      return { projectName: null, bodyText, selectedBy: "already_selected", attempts };
+    }
+    if (isCollageReportListReadyForPage(page, bodyText) && explicitProjectName && updatedDecodedUrl.includes(explicitProjectName)) {
+      return { projectName: explicitProjectName, bodyText, selectedBy: "already_selected", attempts };
+    }
   }
 
   const projectName = inferVisibleCollageProjectName(bodyText, explicitProjectName);
   if (!projectName) {
-    throw new HelperBlockedError(`COLLAGE_PROJECT_NOT_SELECTED: no projectName param and no visible collage project could be inferred; bodyText=${bodyText.slice(0, 500)}`);
+    const reason = hasOfficialNoAvailableProjectState(bodyText)
+      ? "COLLAGE_NO_AVAILABLE_PROJECT_VISIBLE"
+      : "COLLAGE_PROJECT_NOT_SELECTED";
+    observeHelper(options, {
+      eventType: "blocker_event",
+      severity: "blocked",
+      appUrl: page.url(),
+      data: {
+        reason,
+        context: "openProject.projectSelection",
+        hasOfficialNoAvailableProjectState: hasOfficialNoAvailableProjectState(bodyText),
+        attempts: attempts.slice(-8),
+        bodyTextExcerpt: bodyText.slice(0, 1000)
+      },
+      domainExtension: {
+        namespace: "BI_OFFICIAL_UI_COLLAGE",
+        data: {
+          expectedNavigationPath: "我的自訂 > 拼貼報表 > 任一專案",
+          officialUiUrl: isOfficialBiUiPageUrl(page.url())
+        }
+      }
+    });
+    throw new HelperBlockedError(`${reason}: no projectName param and no visible collage project could be inferred; bodyText=${bodyText.slice(0, 500)}`);
   }
 
   let lastError = "";
   for (let attempt = 0; attempt < 3; attempt += 1) {
     let clickEvidence: { method: string; clickedText: string; candidateCount: number } | null = null;
     try {
+      const candidates = await visibleCollageProjectClickCandidates(page, projectName);
+      observeHelper(options, {
+        eventType: "locator_attempt",
+        severity: candidates.length ? "info" : "warning",
+        appUrl: page.url(),
+        data: {
+          context: "collage_project_selection",
+          attempt: attempt + 1,
+          targetProjectName: projectName,
+          candidateCount: candidates.length,
+          candidates: candidates.slice(0, 5).map((candidate) => ({
+            text: candidate.text.slice(0, 160),
+            tagName: candidate.tagName,
+            role: candidate.role,
+            className: candidate.className.slice(0, 160),
+            rect: candidate.rect,
+            score: scoreCollageProjectClickCandidate(candidate, projectName)
+          }))
+        }
+      });
       clickEvidence = await clickCollageProjectCandidate(page, projectName, attempt === 0 ? 12000 : 8000);
       await page.waitForTimeout(900);
     } catch (error) {
@@ -2572,7 +3040,7 @@ const ensureCollageProjectSelected = async (
         lastAttempt.clickedText = clickEvidence.clickedText.slice(0, 200);
         lastAttempt.candidateCount = clickEvidence.candidateCount;
       }
-      if (isCollageReportListReady(bodyText)) {
+      if (isCollageReportListReadyForPage(page, bodyText)) {
         return { projectName, bodyText, selectedBy, attempts };
       }
       await page.waitForTimeout(500);
@@ -2606,7 +3074,10 @@ const clickCreateReportButton = async (page: Page): Promise<void> => {
   const attempts: Array<() => Promise<void>> = [
     () => page.getByText("+ 新增報表", { exact: false }).first().click({ timeout: 5000 }),
     () => page.getByText("新增報表", { exact: false }).first().click({ timeout: 5000 }),
-    () => page.locator("button, a, [role='button']").filter({ hasText: /新增報表/ }).first().click({ timeout: 5000 })
+    () => page.locator("button, a, [role='button']").filter({ hasText: /新增報表/ }).first().click({ timeout: 5000 }),
+    async () => {
+      await clickVisibleBodyTextCandidate(page, "新增自訂報表", 7000, { preferLeftNav: true });
+    }
   ];
   const errors: string[] = [];
   for (const attempt of attempts) {
@@ -2627,7 +3098,7 @@ const openProject = async (options: CliOptions, page: Page, startedAt: string): 
   }
   await page.waitForTimeout(800);
   const projectSelection = await ensureCollageProjectSelected(options, page);
-  if (!isCollageReportListReady(projectSelection.bodyText)) {
+  if (!isCollageReportListReadyForPage(page, projectSelection.bodyText)) {
     throw new HelperBlockedError(
       `COLLAGE_PROJECT_OPEN_DID_NOT_REACH_REPORT_LIST:${projectSelection.projectName ?? "unknown"}; selectedBy=${projectSelection.selectedBy}; attempts=${JSON.stringify(projectSelection.attempts.slice(-6)).slice(0, 1200)}; bodyText=${projectSelection.bodyText.slice(0, 500)}`
     );
@@ -2646,7 +3117,7 @@ const openProject = async (options: CliOptions, page: Page, startedAt: string): 
 
 const createCollageReport = async (options: CliOptions, page: Page, startedAt: string): Promise<HelperReport> => {
   const projectSelection = await ensureCollageProjectSelected(options, page);
-  if (!isCollageReportListReady(projectSelection.bodyText)) {
+  if (!isCollageReportListReadyForPage(page, projectSelection.bodyText)) {
     throw new HelperBlockedError(
       `CREATE_REPORT_PRECONDITION_NOT_READY:${projectSelection.projectName ?? "unknown"}; selectedBy=${projectSelection.selectedBy}; attempts=${JSON.stringify(projectSelection.attempts.slice(-6)).slice(0, 1200)}; bodyText=${projectSelection.bodyText.slice(0, 500)}`
     );
@@ -6484,6 +6955,22 @@ const run = async (): Promise<void> => {
     const resolved = await resolveBrowserSessionPage(options, browser);
     page = resolved.page;
     runtimeEvidence = resolved.runtimeEvidence;
+    observeHelper(options, {
+      eventType: "action_event",
+      severity: "info",
+      appUrl: page.url(),
+      data: {
+        phase: "start",
+        paramsKeys: Object.keys(options.params).sort(),
+        browserSession: {
+          runId: runtimeEvidence.browserSession.runId,
+          caseNo: runtimeEvidence.browserSession.caseNo,
+          generation: runtimeEvidence.browserSession.generation,
+          targetId: runtimeEvidence.browserSession.targetId,
+          tokenHash: runtimeEvidence.browserSession.tokenHash
+        }
+      }
+    });
     if (options.action !== "collage.openProject" && !isApplicationPage(page)) {
       throw new HelperBlockedError(`GALAXY_PAGE_NOT_FOUND_FOR_HELPER_ACTION:url=${page.url() || "blank"}`);
     }
@@ -6553,6 +7040,18 @@ const run = async (): Promise<void> => {
         break;
     }
     report = attachBrowserSessionEvidence(report, runtimeEvidence);
+    observeHelper(options, {
+      eventType: "action_event",
+      severity: report.status === "ok" ? "info" : report.status === "blocked" ? "blocked" : report.status === "error" ? "error" : "warning",
+      appUrl: page.url(),
+      data: {
+        phase: "end",
+        status: report.status,
+        durationMs: report.durationMs,
+        warningCount: report.warnings.length,
+        artifactKeys: Object.keys(report.artifacts)
+      }
+    });
     writeReport(options, report);
     console.log(JSON.stringify(report, null, 2));
   } catch (error) {
@@ -6573,6 +7072,17 @@ const run = async (): Promise<void> => {
       }));
       evidence.uiProfile = await captureUiDomProfile(options, page, isBlocked ? "blocked" : "error");
     }
+    observeHelper(options, {
+      eventType: isBlocked ? "blocker_event" : "action_event",
+      severity: isBlocked ? "blocked" : "error",
+      appUrl: page?.url() ?? null,
+      data: {
+        phase: isBlocked ? "blocked" : "error",
+        reason: evidence.reason,
+        hasPage: Boolean(page),
+        stack: error instanceof Error ? (error.stack ?? error.message).slice(0, 1500) : String(error).slice(0, 1500)
+      }
+    });
     report = createReport(
       options,
       isBlocked ? "blocked" : "error",
