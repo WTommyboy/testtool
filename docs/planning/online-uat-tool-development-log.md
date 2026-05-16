@@ -1419,3 +1419,10 @@ Tommy 曾討論是否改成腳本。最後決策是採「半腳本化 / helper �
 - 架構邊界：domain pack 不提交 executable helper code；domain pack 應提交 declarative UI/action/evidence contract、helper templates、locator registry、lint rules。stable core 負責 session lease、Tool Bridge、不可逆 guard、artifact/screenshot、DOM/network read；action interpreter 只執行 allowlisted declarative actions。
 - 短期 bridge：BI official collage 先以未來 schema 形狀修當前 blocker，包括 `setMetricRows(metrics[])`、legacy `field/sourceReport` 正規化到 `metrics[]`、picker stale signature evidence、result gate 只檢查實際執行/evidence 欄位、package lint 要求 `metrics[].sourceReport + metrics[].field`。
 - 文件同步：`docs/refactor/工程spac.md` 新增第 26 節；`docs/authoring/新功能_DomainPack_生成流程.md` 在 domain pack 建立流程補 UI / action / evidence contract 要求。
+
+### 2026-05-17 00:30 - BI official UI contract Gen1a/Gen1b wiring
+
+- Gen1a：`BI_OFFICIAL_UI_COLLAGE` domain pack 新增 `ui-contract.json`、`action-contracts/setMetricRows.json`、`evidence-schema.json`、`lint-rules.json`、`discovery/page-map.json`、`discovery/component-inventory.json`。內容先是 reviewed draft seed,聚焦 official collage row-scoped `metrics[].sourceReport + metrics[].field`、stale picker blocker、conditional Tool Bridge evidence。
+- Gen1b：domain loader / API / run input / Agent download filename / run brief / reference-index / rule-index 已接 optional contract files。建立 run 時若 domain pack 有這些檔案,Agent 會下載到 `input/domain_ui_contract.json`、`input/domain_action_set_metric_rows.json`、`input/domain_evidence_schema.json`、`input/domain_lint_rules.json`、`input/domain_discovery_page_map.json`、`input/domain_discovery_component_inventory.json`。
+- Tooling：`create:domain-pack` 新增 generic UI/evidence/lint/discovery scaffold；`verify:domain-pack` 會解析 contract JSON,並對 `BI_OFFICIAL_UI_COLLAGE` 缺 contract files 提醒。authoring 文件與 domain README 同步記錄固定 optional 檔名。
+- 範圍：本批只讓 contract 進入 domain pack 與 run/Agent 可讀面,尚未把 helper 行為改成 Gen3 template 或 Gen4 interpreter。下一步仍是短期 bridge: `setMetricRows(metrics[])` helper 實作與 result evidence gate false-positive 修正。

@@ -88,6 +88,15 @@ Optional locator guidance:
 
 - \`locators/demo001-locator-registry.json\`
 
+Optional UI / action / evidence contract files:
+
+- \`ui-contract.json\`
+- \`action-contracts/<action>.json\`
+- \`evidence-schema.json\`
+- \`lint-rules.json\`
+- \`discovery/page-map.json\`
+- \`discovery/component-inventory.json\`
+
 ${args.base ? `Reference base pack: \`${args.base}\`\n` : ""}Before using this pack, complete the domain intake and boundary rules described in \`docs/authoring/新功能_DomainPack_生成流程.md\`.
 `
   );
@@ -266,6 +275,108 @@ Keep the filename until the domain loader supports configurable locator registry
           "Read-only DOM or network extraction is allowed only after visible UI state has been set."
         ],
         locators: []
+      },
+      null,
+      2
+    )}\n`
+  );
+
+  writeFile(
+    path.join(packDir, "ui-contract.json"),
+    `${JSON.stringify(
+      {
+        schemaVersion: "domain-ui-contract-v0.1",
+        domain: name,
+        status: "draft_unverified",
+        purpose: "Define reviewed pages, components, actions, evidence, and safety boundaries for this domain.",
+        pages: [],
+        components: [],
+        actions: [],
+        evidenceContract: {
+          file: "evidence-schema.json",
+          policy: [
+            "Helper emits evidence only and does not judge testcase result.",
+            "Raw DOM/screenshots are artifacts for review, not the stable contract."
+          ]
+        },
+        lintRules: {
+          file: "lint-rules.json",
+          policy: [
+            "Testcase helper hints should match declared domain actions and params."
+          ]
+        }
+      },
+      null,
+      2
+    )}\n`
+  );
+
+  writeFile(
+    path.join(packDir, "action-contracts", "README.md"),
+    `# Action Contracts
+
+Add one declarative action contract per supported helper action after UI discovery.
+
+Action contracts describe params, allowed declarative operations, locator policy, and required evidence. Do not place arbitrary executable helper code in this directory.
+`
+  );
+
+  writeFile(
+    path.join(packDir, "evidence-schema.json"),
+    `${JSON.stringify(
+      {
+        schemaVersion: "domain-evidence-schema-v0.1",
+        domain: name,
+        status: "draft_unverified",
+        policy: [
+          "Evidence must be current-run and case-scoped.",
+          "Helper status is never PASS or FAIL by itself.",
+          "Tool Bridge response is conditional evidence and is required only when irreversible/native dialog execution is reached."
+        ],
+        evidenceObjects: {},
+        conditionalEvidenceRules: []
+      },
+      null,
+      2
+    )}\n`
+  );
+
+  writeFile(
+    path.join(packDir, "lint-rules.json"),
+    `${JSON.stringify(
+      {
+        schemaVersion: "domain-lint-rules-v0.1",
+        domain: name,
+        status: "draft_unverified",
+        rules: []
+      },
+      null,
+      2
+    )}\n`
+  );
+
+  writeFile(
+    path.join(packDir, "discovery", "page-map.json"),
+    `${JSON.stringify(
+      {
+        schemaVersion: "domain-ui-discovery-page-map-v0.1",
+        domain: name,
+        status: "draft_unverified",
+        pages: []
+      },
+      null,
+      2
+    )}\n`
+  );
+
+  writeFile(
+    path.join(packDir, "discovery", "component-inventory.json"),
+    `${JSON.stringify(
+      {
+        schemaVersion: "domain-ui-discovery-component-inventory-v0.1",
+        domain: name,
+        status: "draft_unverified",
+        components: []
       },
       null,
       2

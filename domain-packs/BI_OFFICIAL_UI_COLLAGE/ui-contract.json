@@ -1,0 +1,195 @@
+{
+  "schemaVersion": "domain-ui-contract-v0.1",
+  "domain": "BI_OFFICIAL_UI_COLLAGE",
+  "status": "draft_discovery_seed",
+  "purpose": "Define the official BI collage UI pages, components, actions, evidence, and safety boundaries shared by testcase generation, package lint, helper planning, and result gates.",
+  "sourceRunIds": [
+    "67990303-2c1b-4559-924a-297a089b5949"
+  ],
+  "pages": [
+    {
+      "id": "officialHome",
+      "routePatterns": [
+        "/bi-dev/zh-TW/*"
+      ],
+      "purpose": "Official BI entry page after auth and lease navigation.",
+      "entryPoints": [
+        "sidebar.myCustom",
+        "sidebar.collageReports"
+      ],
+      "components": [
+        "sidebar.navigation",
+        "projectList.container"
+      ],
+      "stateAssertions": [
+        "lease.originMatches",
+        "page.visibleShell"
+      ]
+    },
+    {
+      "id": "collageProjectList",
+      "routePatterns": [
+        "/bi-dev/zh-TW/*"
+      ],
+      "purpose": "Project/report list reached through My Custom > Collage Report.",
+      "entryPoints": [
+        "sidebar.collageReports"
+      ],
+      "components": [
+        "projectList.container",
+        "projectList.emptyState",
+        "projectList.row"
+      ],
+      "stateAssertions": [
+        "projectList.loadedOrEmpty",
+        "projectList.noBlockingOverlay"
+      ]
+    },
+    {
+      "id": "collageEditor",
+      "routePatterns": [
+        "/bi-dev/zh-TW/*"
+      ],
+      "purpose": "Official collage report editor where metric rows, formulas, preview, save, and download flows are operated.",
+      "entryPoints": [
+        "projectList.row",
+        "createReport.button"
+      ],
+      "components": [
+        "metricRows.container",
+        "metricRows.row",
+        "metricRows.sourceReportControl",
+        "metricRows.fieldControl",
+        "fieldPicker.popover",
+        "dateRange.control",
+        "display.control",
+        "preview.button",
+        "preview.result",
+        "save.modal",
+        "download.control"
+      ],
+      "stateAssertions": [
+        "editor.loaded",
+        "metricRows.readable",
+        "preview.preconditionHasSelectedField"
+      ]
+    }
+  ],
+  "components": [
+    {
+      "id": "sidebar.navigation",
+      "type": "navigationTree",
+      "purpose": "Navigate official BI feature areas.",
+      "locatorStrategies": [
+        "visible text for stable menu labels",
+        "role=button or role=treeitem with expanded state when exposed",
+        "nearby text fallback for nested menu items"
+      ],
+      "interactionHazards": [
+        "collapsed parent menu",
+        "same text reused across navigation levels"
+      ]
+    },
+    {
+      "id": "projectList.container",
+      "type": "listOrTable",
+      "purpose": "Read available projects/reports or detect a no-project state.",
+      "locatorStrategies": [
+        "heading or table/list landmark near collage report page",
+        "row-local project/report name lookup",
+        "empty-state text lookup"
+      ],
+      "stateAssertions": [
+        "listRowsVisible || emptyStateVisible"
+      ]
+    },
+    {
+      "id": "metricRows.row",
+      "type": "formRow",
+      "purpose": "Row-scoped metric configuration unit.",
+      "locatorStrategies": [
+        "row container containing source report control and field control",
+        "nth row only after reading visible row count",
+        "label-proximity within the row"
+      ],
+      "interactionHazards": [
+        "global text lookup may pick an option outside the target row",
+        "row DOM can rerender after source report changes"
+      ]
+    },
+    {
+      "id": "metricRows.sourceReportControl",
+      "type": "picker",
+      "purpose": "Select the source report for a metric row.",
+      "locatorStrategies": [
+        "row-local combobox/button near source/report label",
+        "popover option text within the opened source picker"
+      ],
+      "stateAssertions": [
+        "rowSourceTextEquals"
+      ]
+    },
+    {
+      "id": "metricRows.fieldControl",
+      "type": "picker",
+      "purpose": "Select the metric field after source report is selected.",
+      "locatorStrategies": [
+        "row-local combobox/button near field/metric label",
+        "field option text inside current picker only"
+      ],
+      "stateAssertions": [
+        "rowFieldTextEquals",
+        "fieldPickerSourceSignatureMatchesRowSource"
+      ],
+      "interactionHazards": [
+        "field picker can keep stale options after source report switch",
+        "same field names can exist under different source reports"
+      ]
+    }
+  ],
+  "actions": [
+    {
+      "id": "setMetricRows",
+      "contractFile": "action-contracts/setMetricRows.json",
+      "purpose": "Configure one or more official collage metric rows by source report and field.",
+      "capabilities": [
+        "collage.metricRows.single",
+        "collage.metricRows.multiple",
+        "collage.metricRows.sourceReport",
+        "collage.metricRows.field",
+        "collage.metricRows.stalePickerDetection"
+      ]
+    }
+  ],
+  "evidenceContract": {
+    "file": "evidence-schema.json",
+    "policy": [
+      "Helper emits current-run evidence only and never judges PASS, FAIL, or BLOCKED.",
+      "Raw DOM and screenshots are artifacts for review, not the stable contract.",
+      "Tool Bridge response is conditional evidence and is required only when irreversible/native dialog execution is reached."
+    ]
+  },
+  "lintRules": {
+    "file": "lint-rules.json",
+    "policy": [
+      "Official collage testcases should express metric setup as metrics[].sourceReport + metrics[].field.",
+      "Legacy field/sourceReport params may be normalized by compatibility code, but new cases should not rely on natural-language-only field setup."
+    ]
+  },
+  "safety": {
+    "urlPolicy": {
+      "base": "input/browser-session.json lease.devUrl",
+      "origin": "same-origin only",
+      "allowedPathPrefixes": [
+        "/bi-dev/zh-TW/",
+        "/biapi-dev/testview"
+      ],
+      "forbidden": [
+        "arbitrary external sites",
+        "direct product API as testcase result source",
+        "internal JavaScript state setters",
+        "DOM mutation for setup"
+      ]
+    }
+  }
+}

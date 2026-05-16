@@ -25,7 +25,7 @@ import {
   type ResultEvidenceGateReport
 } from "./result-parser/result-evidence-gate";
 import { buildMissingBugCandidates } from "./result-parser/fail-bug-fallback";
-import { getDomainPack, readOptionalDomainPackFile } from "./domain-loader";
+import { getDomainPack, readOptionalDomainPackFile, type OptionalDomainPackFile } from "./domain-loader";
 import { writeFinalAggregateResultXlsx, type AggregateBug, type AggregateCase, type AggregateRun } from "./result-aggregate-writer";
 
 const router = Router();
@@ -743,15 +743,29 @@ const getRunInputUrls = (req: Request, runId: string, paths: RunInputPaths): Rec
 
 const getDomainInputUrls = (req: Request, domain: string): Record<string, string> => {
   const base = getRequestBaseUrl(req);
-  const encodedDomain = encodeURIComponent(domain || "BI");
+  const domainName = domain || "BI";
+  const encodedDomain = encodeURIComponent(domainName);
   const urls: Record<string, string> = {
     domain_rules: `${base}/api/domains/${encodedDomain}/rules`,
     domain_schema: `${base}/api/domains/${encodedDomain}/schema`,
     domain_result_adapter: `${base}/api/domains/${encodedDomain}/result-adapter`,
     domain_startup_template: `${base}/api/domains/${encodedDomain}/startup-template`
   };
-  if (readOptionalDomainPackFile(domain || "BI", "locators/demo001-locator-registry.json") !== null) {
-    urls.domain_locator_registry = `${base}/api/domains/${encodedDomain}/locator-registry`;
+
+  const optionalDomainInputs: Array<{ key: string; fileName: OptionalDomainPackFile; path: string }> = [
+    { key: "domain_locator_registry", fileName: "locators/demo001-locator-registry.json", path: "locator-registry" },
+    { key: "domain_ui_contract", fileName: "ui-contract.json", path: "ui-contract" },
+    { key: "domain_action_set_metric_rows", fileName: "action-contracts/setMetricRows.json", path: "action-contracts/setMetricRows" },
+    { key: "domain_evidence_schema", fileName: "evidence-schema.json", path: "evidence-schema" },
+    { key: "domain_lint_rules", fileName: "lint-rules.json", path: "lint-rules" },
+    { key: "domain_discovery_page_map", fileName: "discovery/page-map.json", path: "discovery/page-map" },
+    { key: "domain_discovery_component_inventory", fileName: "discovery/component-inventory.json", path: "discovery/component-inventory" }
+  ];
+
+  for (const input of optionalDomainInputs) {
+    if (readOptionalDomainPackFile(domainName, input.fileName) !== null) {
+      urls[input.key] = `${base}/api/domains/${encodedDomain}/${input.path}`;
+    }
   }
   return urls;
 };

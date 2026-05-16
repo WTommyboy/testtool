@@ -1,0 +1,137 @@
+{
+  "schemaVersion": "domain-evidence-schema-v0.1",
+  "domain": "BI_OFFICIAL_UI_COLLAGE",
+  "status": "draft_contract",
+  "policy": [
+    "Evidence must be current-run and case-scoped.",
+    "Helper status is never PASS or FAIL by itself.",
+    "Screenshots support structured evidence but do not replace concrete DOM/network/result values.",
+    "Tool Bridge response is required only when irreversible/native dialog execution is actually reached."
+  ],
+  "evidenceObjects": {
+    "metricRows.before": {
+      "type": "array",
+      "requiredFields": [
+        "rowIndex",
+        "visibleText",
+        "sourceReport",
+        "field"
+      ],
+      "purpose": "Baseline row state before action."
+    },
+    "metricRows.after": {
+      "type": "array",
+      "requiredFields": [
+        "rowIndex",
+        "visibleText",
+        "sourceReport",
+        "field"
+      ],
+      "purpose": "Row state after action; must prove requested metrics were selected."
+    },
+    "sourceControl.after": {
+      "type": "object",
+      "requiredFields": [
+        "rowIndex",
+        "expected",
+        "actual",
+        "asserted"
+      ]
+    },
+    "fieldControl.after": {
+      "type": "object",
+      "requiredFields": [
+        "rowIndex",
+        "expected",
+        "actual",
+        "asserted"
+      ]
+    },
+    "fieldPicker.signature": {
+      "type": "object",
+      "requiredFields": [
+        "rowIndex",
+        "sourceReport",
+        "optionCount",
+        "sampleOptions",
+        "signature"
+      ],
+      "purpose": "Detect stale field picker options after source report changes."
+    },
+    "locatorAttempts": {
+      "type": "array",
+      "requiredFields": [
+        "component",
+        "strategy",
+        "status"
+      ]
+    },
+    "preview.result": {
+      "type": "object",
+      "requiredFields": [
+        "triggeredByVisibleUi",
+        "requestObserved",
+        "resultSummary"
+      ]
+    },
+    "toolBridge.response": {
+      "type": "object",
+      "requiredFields": [
+        "requestId",
+        "approved",
+        "action"
+      ],
+      "purpose": "Authorization evidence for irreversible/native dialog execution only."
+    }
+  },
+  "conditionalEvidenceRules": [
+    {
+      "id": "TOOL_BRIDGE_ONLY_WHEN_NATIVE_OR_IRREVERSIBLE_REACHED",
+      "when": {
+        "executionStateAnyOf": [
+          "nativeDialogReached",
+          "irreversibleActionReached",
+          "overwriteConfirmReached",
+          "deleteConfirmReached"
+        ]
+      },
+      "requires": [
+        "toolBridge.response"
+      ]
+    },
+    {
+      "id": "TOOL_BRIDGE_NOT_REQUIRED_WHEN_SETUP_OR_PREVIEW_NOT_REACHED",
+      "when": {
+        "executionStateAnyOf": [
+          "setupBlocked",
+          "previewNotReached",
+          "saveNotReached"
+        ]
+      },
+      "notRequired": [
+        "toolBridge.response"
+      ]
+    },
+    {
+      "id": "SAVE_EVIDENCE_NOT_REQUIRED_BEFORE_SAVE_FLOW",
+      "when": {
+        "executionStateAnyOf": [
+          "setupBlocked",
+          "previewBlocked",
+          "previewNotReached"
+        ]
+      },
+      "notRequired": [
+        "save.modal",
+        "projectList.rowAfterSave",
+        "download.result"
+      ]
+    }
+  ],
+  "blockedCategories": {
+    "FIELD_PICKER_STALE_AFTER_SOURCE_CHANGE": "Field picker options did not refresh after changing the source report.",
+    "FIELD_PICKER_SOURCE_MISMATCH": "Field picker options appear to belong to a different source report than the row source.",
+    "EXECUTE_PRECONDITION_NO_SELECTED_FIELDS": "Preview execute was blocked because no metric field was selected.",
+    "EVIDENCE_INSUFFICIENT": "Required current-run evidence was not collected."
+  }
+}

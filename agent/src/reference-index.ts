@@ -33,17 +33,29 @@ const roleForGeneratedKey = (key: string): string => {
   return roles[key] ?? key;
 };
 
+const roleForInputKey = (key: string): string => {
+  if (key.startsWith("supporting_doc_")) return "supporting document";
+  const roles: Record<string, string> = {
+    domain_rules: "domain pack rules entrypoint",
+    domain_schema: "domain workbook schema",
+    domain_result_adapter: "domain result parser adapter",
+    domain_startup_template: "domain startup prompt template",
+    domain_locator_registry: "domain UI locator registry",
+    domain_ui_contract: "domain UI/action/evidence contract",
+    domain_action_set_metric_rows: "domain action contract for official collage metric rows",
+    domain_evidence_schema: "domain current-run evidence schema",
+    domain_lint_rules: "domain testcase lint rules",
+    domain_discovery_page_map: "domain UI discovery page map",
+    domain_discovery_component_inventory: "domain UI discovery component inventory"
+  };
+  return roles[key] ?? (key.startsWith("domain_") ? "domain pack" : key);
+};
+
 export const writeReferenceIndex = ({ runDir, inputs, generated }: ReferenceIndexInput): string => {
   const filePath = path.join(runDir, "input", "reference-index.json");
   const inputEntries = Object.entries(inputs).map(([key, inputPath]) => ({
     key,
-    role: key.startsWith("supporting_doc_")
-      ? "supporting document"
-      : key.startsWith("domain_")
-        ? key === "domain_locator_registry"
-          ? "domain UI locator registry"
-          : "domain pack"
-        : key,
+    role: roleForInputKey(key),
     path: inputPath,
     exists: exists(inputPath)
   }));

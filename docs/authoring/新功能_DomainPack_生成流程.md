@@ -49,6 +49,12 @@ uat-tool/domain-packs/<DOMAIN_PACK_NAME>/
 - `README.md`
 - `locators/README.md`
 - `locators/demo001-locator-registry.json`
+- `ui-contract.json`
+- `action-contracts/<action>.json`
+- `evidence-schema.json`
+- `lint-rules.json`
+- `discovery/page-map.json`
+- `discovery/component-inventory.json`
 
 ### 1.3 共用規則 / domain common 規則
 
@@ -223,13 +229,13 @@ npm run create:domain-pack -- --name <DOMAIN_PACK_NAME> --display "<Display Name
 
 若 UI 操作複雜,可新增 locator registry。
 
-注意:MVP endpoint 目前只讀:
+目前 runtime 可讀的 legacy locator endpoint:
 
 ```text
 locators/demo001-locator-registry.json
 ```
 
-若新功能使用不同檔名,需要先改 domain loader / API / Agent download contract。
+若新功能使用不同 locator 檔名,需要先改 domain loader / API / Agent download contract。UI / action / evidence contract 目前已支援固定 optional 檔名:`ui-contract.json`、`evidence-schema.json`、`lint-rules.json`、`discovery/page-map.json`、`discovery/component-inventory.json`,以及已接線的 `action-contracts/setMetricRows.json`。
 
 #### UI / action / evidence contract
 

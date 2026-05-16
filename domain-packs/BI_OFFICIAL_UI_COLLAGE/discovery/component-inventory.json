@@ -1,0 +1,138 @@
+{
+  "schemaVersion": "domain-ui-discovery-component-inventory-v0.1",
+  "domain": "BI_OFFICIAL_UI_COLLAGE",
+  "status": "draft_seed_from_run_evidence",
+  "components": [
+    {
+      "id": "sidebar.myCustom",
+      "page": "officialHome",
+      "type": "navigationItem",
+      "purpose": "Expand or open the My Custom section.",
+      "candidateSignals": [
+        "visible text: 我的自訂",
+        "visible text: My Custom",
+        "expandable navigation item"
+      ],
+      "assertAfterAction": [
+        "collage report menu item becomes visible"
+      ]
+    },
+    {
+      "id": "sidebar.collageReports",
+      "page": "officialHome",
+      "type": "navigationItem",
+      "purpose": "Open collage report list.",
+      "candidateSignals": [
+        "visible text: 拼貼報表",
+        "visible text: Collage Report"
+      ],
+      "assertAfterAction": [
+        "collage project/report list or empty state becomes visible"
+      ]
+    },
+    {
+      "id": "projectList.row",
+      "page": "collageProjectList",
+      "type": "listRow",
+      "purpose": "Open an existing project/report by visible name.",
+      "candidateSignals": [
+        "row contains project/report name",
+        "row contains open/edit action"
+      ],
+      "assertAfterAction": [
+        "collage editor metric row area becomes visible"
+      ]
+    },
+    {
+      "id": "projectList.emptyState",
+      "page": "collageProjectList",
+      "type": "emptyState",
+      "purpose": "Detect no available project/report precondition.",
+      "candidateSignals": [
+        "no data text",
+        "empty state illustration/text",
+        "zero list rows after load completed"
+      ],
+      "assertAfterAction": [
+        "case should become BLOCKED with no-project reason unless testcase is for creation"
+      ]
+    },
+    {
+      "id": "metricRows.container",
+      "page": "collageEditor",
+      "type": "formRegion",
+      "purpose": "Read and operate metric rows.",
+      "candidateSignals": [
+        "contains one or more metric row controls",
+        "near labels for source report and field"
+      ],
+      "assertAfterAction": [
+        "requested metric row count exists"
+      ]
+    },
+    {
+      "id": "metricRows.sourceReportControl",
+      "page": "collageEditor",
+      "type": "rowScopedPicker",
+      "purpose": "Select source report for one metric row.",
+      "candidateSignals": [
+        "row-local combobox/button",
+        "near source/report label",
+        "opened options contain report names"
+      ],
+      "assertAfterAction": [
+        "same row displays selected source report"
+      ]
+    },
+    {
+      "id": "metricRows.fieldControl",
+      "page": "collageEditor",
+      "type": "rowScopedPicker",
+      "purpose": "Select field for one metric row after source report selection.",
+      "candidateSignals": [
+        "row-local combobox/button",
+        "near field/metric label",
+        "opened options contain fields for selected source report"
+      ],
+      "assertAfterAction": [
+        "same row displays selected field",
+        "field picker signature matches selected source report"
+      ]
+    },
+    {
+      "id": "preview.button",
+      "page": "collageEditor",
+      "type": "button",
+      "purpose": "Run preview after selected field precondition passes.",
+      "candidateSignals": [
+        "visible text: 執行",
+        "visible text: Preview",
+        "visible text: Run"
+      ],
+      "preconditions": [
+        "selected metric field count > 0"
+      ],
+      "assertAfterAction": [
+        "UI-triggered preview request observed or result region changed"
+      ]
+    },
+    {
+      "id": "save.modal",
+      "page": "collageEditor",
+      "type": "modalOrNativeDialog",
+      "purpose": "Save/overwrite report only after Tool Bridge policy allows it.",
+      "candidateSignals": [
+        "save dialog visible",
+        "native confirm/alert reached",
+        "project/report name input visible"
+      ],
+      "preconditions": [
+        "preview/setup was reached and passed",
+        "Tool Bridge response if native or irreversible path is reached"
+      ],
+      "assertAfterAction": [
+        "report list row visible after save or explicit save failure evidence"
+      ]
+    }
+  ]
+}

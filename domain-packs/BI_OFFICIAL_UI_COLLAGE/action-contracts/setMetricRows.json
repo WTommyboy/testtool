@@ -1,0 +1,165 @@
+{
+  "schemaVersion": "domain-action-contract-v0.1",
+  "domain": "BI_OFFICIAL_UI_COLLAGE",
+  "action": "setMetricRows",
+  "status": "draft_contract",
+  "purpose": "Configure official collage metric rows through visible row-scoped UI controls.",
+  "capabilities": [
+    "collage.metricRows.single",
+    "collage.metricRows.multiple",
+    "collage.metricRows.sourceReport",
+    "collage.metricRows.field",
+    "collage.metricRows.stalePickerDetection"
+  ],
+  "paramsSchema": {
+    "type": "object",
+    "required": [
+      "metrics"
+    ],
+    "properties": {
+      "metrics": {
+        "type": "array",
+        "minItems": 1,
+        "items": {
+          "type": "object",
+          "required": [
+            "sourceReport",
+            "field"
+          ],
+          "properties": {
+            "sourceReport": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Visible source report label in the official UI."
+            },
+            "field": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Visible field label under the selected source report."
+            },
+            "metricIndex": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Optional zero-based target row. If omitted, rows are configured in array order."
+            }
+          },
+          "additionalProperties": false
+        }
+      }
+    },
+    "legacyCompatibility": [
+      {
+        "from": {
+          "sourceReport": "string",
+          "field": "string"
+        },
+        "to": {
+          "metrics": [
+            {
+              "sourceReport": "${sourceReport}",
+              "field": "${field}"
+            }
+          ]
+        }
+      }
+    ],
+    "additionalProperties": true
+  },
+  "declarativePlan": [
+    {
+      "op": "ensurePage",
+      "page": "collageEditor"
+    },
+    {
+      "op": "readMetricRows",
+      "saveAs": "metricRows.before"
+    },
+    {
+      "op": "forEach",
+      "itemsFrom": "params.metrics",
+      "as": "metric",
+      "steps": [
+        {
+          "op": "ensureMetricRow",
+          "rowFrom": "metric.metricIndex",
+          "fallbackRowFrom": "loop.index"
+        },
+        {
+          "op": "selectRowSource",
+          "rowFrom": "metric.metricIndex",
+          "fallbackRowFrom": "loop.index",
+          "valueFrom": "metric.sourceReport"
+        },
+        {
+          "op": "assertRowSource",
+          "rowFrom": "metric.metricIndex",
+          "fallbackRowFrom": "loop.index",
+          "valueFrom": "metric.sourceReport"
+        },
+        {
+          "op": "openRowFieldPicker",
+          "rowFrom": "metric.metricIndex",
+          "fallbackRowFrom": "loop.index"
+        },
+        {
+          "op": "waitForPickerSignatureChange",
+          "target": "fieldPicker",
+          "sourceValueFrom": "metric.sourceReport"
+        },
+        {
+          "op": "selectPickerOption",
+          "target": "fieldPicker",
+          "valueFrom": "metric.field"
+        },
+        {
+          "op": "assertRowField",
+          "rowFrom": "metric.metricIndex",
+          "fallbackRowFrom": "loop.index",
+          "valueFrom": "metric.field"
+        }
+      ]
+    },
+    {
+      "op": "readMetricRows",
+      "saveAs": "metricRows.after"
+    }
+  ],
+  "locatorPolicy": {
+    "rowScopedOnly": true,
+    "disallowGlobalOptionTextClick": true,
+    "afterRerender": "reacquire row and picker locators",
+    "readOnlyDomAllowedFor": [
+      "row count",
+      "row visible labels",
+      "picker option labels",
+      "picker source signature"
+    ],
+    "forbidden": [
+      "direct product API setup",
+      "internal JavaScript setters",
+      "DOM mutation",
+      "force:true clicks"
+    ]
+  },
+  "requiredEvidence": [
+    "metricRows.before",
+    "metricRows.after",
+    "sourceControl.after",
+    "fieldControl.after",
+    "fieldPicker.signature",
+    "locatorAttempts"
+  ],
+  "blockerCodes": [
+    "METRIC_ROW_NOT_FOUND",
+    "SOURCE_REPORT_OPTION_NOT_FOUND",
+    "FIELD_OPTION_NOT_FOUND",
+    "FIELD_PICKER_STALE_AFTER_SOURCE_CHANGE",
+    "FIELD_PICKER_SOURCE_MISMATCH",
+    "METRIC_ROW_ASSERTION_FAILED"
+  ],
+  "successState": {
+    "allRequestedRowsConfigured": true,
+    "sourceAndFieldAssertedAfterSelection": true,
+    "noStalePickerBlocker": true
+  }
+}

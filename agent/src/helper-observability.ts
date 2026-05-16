@@ -139,11 +139,17 @@ const readAgentVersion = (): string | null => {
 const inferDomainPackVersion = (runDir: string): string | null => {
   const locatorRegistry = safeReadJson(path.join(runDir, "input", "domain_locator_registry.json"));
   const resultAdapter = safeReadJson(path.join(runDir, "input", "domain_result_parser_adapter.json"));
+  const uiContract = safeReadJson(path.join(runDir, "input", "domain_ui_contract.json"));
+  const evidenceSchema = safeReadJson(path.join(runDir, "input", "domain_evidence_schema.json"));
   return firstString(
+    getString(uiContract, "version"),
+    getString(uiContract, "schemaVersion"),
     getString(locatorRegistry, "version"),
     getString(locatorRegistry, "schemaVersion"),
     getString(resultAdapter, "version"),
-    getString(resultAdapter, "schemaVersion")
+    getString(resultAdapter, "schemaVersion"),
+    getString(evidenceSchema, "version"),
+    getString(evidenceSchema, "schemaVersion")
   );
 };
 

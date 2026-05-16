@@ -2436,6 +2436,8 @@ Observed A-04 evidence after helper fix shows real metadata/UI drift (`missingCo
 
 Date: 2026-05-16 Asia/Taipei
 
+Status update 2026-05-17: Gen1a/Gen1b started in dev. `BI_OFFICIAL_UI_COLLAGE` now owns draft `ui-contract.json`, `action-contracts/setMetricRows.json`, `evidence-schema.json`, `lint-rules.json`, `discovery/page-map.json`, and `discovery/component-inventory.json`; the domain API/run input/Agent prompt/reference-index/rule-index path downloads and exposes those files when present.
+
 Planning source: [domain-ui-contract-helper-gen3-gen4-plan.md](/Users/tommy/Downloads/codex_galaxy_dev/uat-tool/docs/planning/domain-ui-contract-helper-gen3-gen4-plan.md)
 
 Run `67990303-2c1b-4559-924a-297a089b5949` exposed two platform-level issues:
@@ -2462,3 +2464,9 @@ Short-term BI official collage fixes should be shaped as compatibility bridges t
 - narrow result evidence gate Tool Bridge checks to actual execution/evidence fields, not `測試目的` / `設定條件` / `預期行為`.
 - add package lint requiring `metrics[].sourceReport + metrics[].field` for preview/date/formula/save templates.
 - upload helper observations to cloud artifacts so blocked evidence can update domain contract/template candidates later.
+
+Remaining work after Gen1 wiring:
+
+- implement the current-helper compatibility bridge for `setMetricRows(metrics[])`.
+- fix result evidence gate false positives for conditional Tool Bridge evidence.
+- promote these contracts from draft seeds into executable Gen3 helper templates only after live official UI evidence is reviewed.

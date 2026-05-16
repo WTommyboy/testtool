@@ -13,6 +13,6 @@ Rules:
 - If all candidates fail, fall back to visible UI exploration and write a drift item to `output/locator-drift.log`.
 - Do not auto-edit registry files during a UAT run.
 
-MVP note:
+Runtime note:
 
-The current domain-pack endpoint exposes only `locators/demo001-locator-registry.json`. The filename is legacy; the content in this pack is for official UI collage flows.
+The domain-pack endpoint exposes this legacy-named locator registry and the optional UI/action/evidence contract files in the pack root. The locator filename is legacy; the content in this pack is for official UI collage flows.

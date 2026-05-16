@@ -1,0 +1,73 @@
+{
+  "schemaVersion": "domain-ui-discovery-page-map-v0.1",
+  "domain": "BI_OFFICIAL_UI_COLLAGE",
+  "status": "draft_seed_from_run_evidence",
+  "generatedFrom": {
+    "runIds": [
+      "67990303-2c1b-4559-924a-297a089b5949"
+    ],
+    "notes": "Seeded from official collage UAT blockers and prior helper navigation fixes. Raw DOM/screenshots should remain run artifacts and be promoted into this file only after review."
+  },
+  "pages": [
+    {
+      "id": "officialHome",
+      "routePattern": "/bi-dev/zh-TW/*",
+      "expectedSignals": [
+        "official BI shell is visible",
+        "navigation menu contains My Custom or localized equivalent",
+        "lease origin matches input/browser-session.json"
+      ],
+      "nextPages": [
+        "collageProjectList"
+      ],
+      "knownHazards": [
+        "sidebar menu may be collapsed",
+        "project name may not be visible before expanding My Custom > Collage Report"
+      ]
+    },
+    {
+      "id": "collageProjectList",
+      "routePattern": "/bi-dev/zh-TW/*",
+      "expectedSignals": [
+        "collage report area is visible",
+        "project/report list is loaded or a no-project empty state is visible"
+      ],
+      "nextPages": [
+        "collageEditor"
+      ],
+      "knownHazards": [
+        "no available project is a real BLOCKED/precondition state, not a locator failure",
+        "project/report list can load after menu navigation"
+      ]
+    },
+    {
+      "id": "collageEditor",
+      "routePattern": "/bi-dev/zh-TW/*",
+      "expectedSignals": [
+        "metric row area is visible",
+        "preview/execute control is present",
+        "date/display controls are readable when relevant"
+      ],
+      "nextPages": [
+        "saveModal",
+        "downloadFlow"
+      ],
+      "knownHazards": [
+        "metric row DOM can rerender after source report changes",
+        "field picker options can be stale after source report changes",
+        "preview must not be clicked when zero fields are selected"
+      ]
+    },
+    {
+      "id": "saveModal",
+      "routePattern": "/bi-dev/zh-TW/*",
+      "expectedSignals": [
+        "save dialog or native confirm is visible only after save action is reached"
+      ],
+      "knownHazards": [
+        "Tool Bridge response is required only when native/irreversible action is actually reached",
+        "save evidence is not required when setup or preview blocked earlier"
+      ]
+    }
+  ]
+}

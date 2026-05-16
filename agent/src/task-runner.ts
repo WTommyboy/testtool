@@ -236,6 +236,12 @@ const writeRunBrief = (
   const biMetadataCsvPath = path.join(runDir, "rules", "BI_DATA", "metadata.csv");
   const biMetadataCsv = fs.existsSync(biMetadataCsvPath) ? biMetadataCsvPath : null;
   const domainLocatorRegistry = inputs.domain_locator_registry ?? null;
+  const domainUiContract = inputs.domain_ui_contract ?? null;
+  const domainActionSetMetricRows = inputs.domain_action_set_metric_rows ?? null;
+  const domainEvidenceSchema = inputs.domain_evidence_schema ?? null;
+  const domainLintRules = inputs.domain_lint_rules ?? null;
+  const domainDiscoveryPageMap = inputs.domain_discovery_page_map ?? null;
+  const domainDiscoveryComponentInventory = inputs.domain_discovery_component_inventory ?? null;
   const inputLines = Object.entries(inputs).map(([key, filePath]) => `- ${key}: ${filePath}`);
   const briefPath = path.join(runDir, "input", "run-brief.md");
   const content = [
@@ -281,6 +287,12 @@ const writeRunBrief = (
     `- network_observation_guidance: ${guides.networkObservationGuidancePath}`,
     `- bi_metadata_csv: ${biMetadataCsv ?? "(not copied; use uploaded/reference docs only)"}`,
     `- domain_locator_registry: ${domainLocatorRegistry ?? "(not downloaded; use visible UI exploration)"}`,
+    `- domain_ui_contract: ${domainUiContract ?? "(not downloaded; use visible UI exploration)"}`,
+    `- domain_action_set_metric_rows: ${domainActionSetMetricRows ?? "(not downloaded; no domain action contract)"}`,
+    `- domain_evidence_schema: ${domainEvidenceSchema ?? "(not downloaded; use generic evidence policy)"}`,
+    `- domain_lint_rules: ${domainLintRules ?? "(not downloaded; use package consistency only)"}`,
+    `- domain_discovery_page_map: ${domainDiscoveryPageMap ?? "(not downloaded; discover pages from visible UI)"}`,
+    `- domain_discovery_component_inventory: ${domainDiscoveryComponentInventory ?? "(not downloaded; discover components from visible UI)"}`,
     "",
     "## Required Inputs",
     inputLines.length > 0 ? inputLines.join("\n") : "- none",
@@ -428,7 +440,13 @@ const inputFileNameByKey: Record<string, string> = {
   domain_schema: "domain_xlsx_schema.json",
   domain_result_adapter: "domain_result_parser_adapter.json",
   domain_startup_template: "domain_startup_prompt_template.md",
-  domain_locator_registry: "domain_locator_registry.json"
+  domain_locator_registry: "domain_locator_registry.json",
+  domain_ui_contract: "domain_ui_contract.json",
+  domain_action_set_metric_rows: "domain_action_set_metric_rows.json",
+  domain_evidence_schema: "domain_evidence_schema.json",
+  domain_lint_rules: "domain_lint_rules.json",
+  domain_discovery_page_map: "domain_discovery_page_map.json",
+  domain_discovery_component_inventory: "domain_discovery_component_inventory.json"
 };
 
 const sanitizeInputFileName = (value: string, fallback: string): string => {
@@ -1237,6 +1255,12 @@ const buildPrompt = (
   const biMetadataCsvPath = path.join(runDir, "rules", "BI_DATA", "metadata.csv");
   const biMetadataCsv = fs.existsSync(biMetadataCsvPath) ? biMetadataCsvPath : null;
   const domainLocatorRegistry = inputs.domain_locator_registry ?? null;
+  const domainUiContract = inputs.domain_ui_contract ?? null;
+  const domainActionSetMetricRows = inputs.domain_action_set_metric_rows ?? null;
+  const domainEvidenceSchema = inputs.domain_evidence_schema ?? null;
+  const domainLintRules = inputs.domain_lint_rules ?? null;
+  const domainDiscoveryPageMap = inputs.domain_discovery_page_map ?? null;
+  const domainDiscoveryComponentInventory = inputs.domain_discovery_component_inventory ?? null;
 
   return [
     "You are executing a Galaxy UAT Tool run inside the Mac Agent.",
@@ -1268,6 +1292,24 @@ const buildPrompt = (
     domainLocatorRegistry
       ? `- For BI locator hints, use: ${domainLocatorRegistry}`
       : "- BI locator registry was not downloaded; use visible UI exploration.",
+    domainUiContract
+      ? `- For domain UI/action/evidence contract, use: ${domainUiContract}`
+      : "- Domain UI contract was not downloaded; derive page/component context from visible UI.",
+    domainActionSetMetricRows
+      ? `- For official collage metric row setup contract, use: ${domainActionSetMetricRows}`
+      : "- Domain setMetricRows action contract was not downloaded.",
+    domainEvidenceSchema
+      ? `- For domain evidence requirements, use: ${domainEvidenceSchema}`
+      : "- Domain evidence schema was not downloaded; use generic current-run evidence policy.",
+    domainLintRules
+      ? `- For domain testcase lint expectations, use: ${domainLintRules}`
+      : "- Domain lint rules were not downloaded.",
+    domainDiscoveryPageMap
+      ? `- For discovered official UI page map, use: ${domainDiscoveryPageMap}`
+      : "- Domain discovery page map was not downloaded.",
+    domainDiscoveryComponentInventory
+      ? `- For discovered component inventory, use: ${domainDiscoveryComponentInventory}`
+      : "- Domain component inventory was not downloaded.",
     `- For network request observation, use: ${guides.networkObservationGuidancePath}`,
     `- Result workbook template reference: ${guides.resultTemplatePath}`,
     `- Full Layer 1 platform skill is available if needed: ${platformSkillPath}`,
@@ -1357,6 +1399,12 @@ const buildPrompt = (
     `Result template workbook: ${guides.resultTemplatePath}`,
     `BI metadata CSV: ${biMetadataCsv ?? "(not copied; use uploaded/reference docs only)"}`,
     `BI locator registry: ${domainLocatorRegistry ?? "(not downloaded; use visible UI exploration)"}`,
+    `Domain UI contract: ${domainUiContract ?? "(not downloaded)"}`,
+    `Domain setMetricRows action contract: ${domainActionSetMetricRows ?? "(not downloaded)"}`,
+    `Domain evidence schema: ${domainEvidenceSchema ?? "(not downloaded)"}`,
+    `Domain lint rules: ${domainLintRules ?? "(not downloaded)"}`,
+    `Domain discovery page map: ${domainDiscoveryPageMap ?? "(not downloaded)"}`,
+    `Domain discovery component inventory: ${domainDiscoveryComponentInventory ?? "(not downloaded)"}`,
     `Expected result workbook path: ${resultXlsxPath}`,
     "",
     "Downloaded input files:",
@@ -1368,6 +1416,12 @@ const buildPrompt = (
     `- domain rules entrypoint: ${inputs.domain_rules ?? "rules/PROJECT_AGENTS_FULL.md"}`,
     `- domain startup template: ${inputs.domain_startup_template ?? "(missing)"}`,
     `- domain locator registry: ${domainLocatorRegistry ?? "(none)"}`,
+    `- domain UI contract: ${domainUiContract ?? "(none)"}`,
+    `- domain setMetricRows action contract: ${domainActionSetMetricRows ?? "(none)"}`,
+    `- domain evidence schema: ${domainEvidenceSchema ?? "(none)"}`,
+    `- domain lint rules: ${domainLintRules ?? "(none)"}`,
+    `- domain discovery page map: ${domainDiscoveryPageMap ?? "(none)"}`,
+    `- domain discovery component inventory: ${domainDiscoveryComponentInventory ?? "(none)"}`,
     `- baseline/reference csv: ${inputs.baseline ?? "(none)"}`,
     "",
     "Supporting documents:",

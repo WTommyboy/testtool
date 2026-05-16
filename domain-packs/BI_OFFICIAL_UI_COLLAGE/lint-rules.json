@@ -1,0 +1,65 @@
+{
+  "schemaVersion": "domain-lint-rules-v0.1",
+  "domain": "BI_OFFICIAL_UI_COLLAGE",
+  "status": "draft_contract",
+  "purpose": "Pre-run package checks that keep testcase intent aligned with official collage UI helper capabilities.",
+  "rules": [
+    {
+      "id": "BI_OFFICIAL_COLLAGE_METRICS_ARRAY_REQUIRED",
+      "severity": "warning_until_gen3_gate",
+      "appliesWhen": {
+        "domain": "BI_OFFICIAL_UI_COLLAGE",
+        "operationTemplates": [
+          "collage_preview",
+          "collage_date_variants_preview",
+          "collage_formula_preview",
+          "collage_save",
+          "collage_download"
+        ]
+      },
+      "require": [
+        "helperHints.params.metrics[].sourceReport",
+        "helperHints.params.metrics[].field"
+      ],
+      "message": "Official collage metric setup must declare each metric row as sourceReport + field. Natural-language-only field setup is not enough for row-scoped UI."
+    },
+    {
+      "id": "BI_OFFICIAL_COLLAGE_FORMULA_BASE_FIELDS_REQUIRE_SOURCE",
+      "severity": "warning_until_gen3_gate",
+      "appliesWhen": {
+        "operationTemplates": [
+          "collage_formula_preview",
+          "collage_formula_save"
+        ]
+      },
+      "require": [
+        "helperHints.params.baseFields[].sourceReport",
+        "helperHints.params.baseFields[].field"
+      ],
+      "message": "Formula cases must identify each base field by source report and field so the helper can configure the correct official UI row."
+    },
+    {
+      "id": "BI_OFFICIAL_COLLAGE_TOOL_BRIDGE_CONDITIONAL",
+      "severity": "error",
+      "appliesWhen": {
+        "requiredEvidenceContains": "toolBridge.response"
+      },
+      "require": [
+        "conditionalEvidence.when"
+      ],
+      "message": "Tool Bridge response must be conditional on native/irreversible execution state unless the testcase itself is explicitly testing authorization."
+    },
+    {
+      "id": "BI_OFFICIAL_COLLAGE_NO_LEGACY_GLOBAL_FIELD_PICK",
+      "severity": "warning_until_gen3_gate",
+      "appliesWhen": {
+        "domain": "BI_OFFICIAL_UI_COLLAGE"
+      },
+      "forbid": [
+        "helperHints.params.field without helperHints.params.sourceReport",
+        "steps that assume a globally visible field option is enough"
+      ],
+      "message": "Official collage field selection is row-scoped and source-dependent; testcase steps must not assume global field text is sufficient."
+    }
+  ]
+}

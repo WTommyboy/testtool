@@ -19,4 +19,13 @@ Optional locator guidance:
 
 - `locators/demo001-locator-registry.json`
 
-The optional locator filename is currently constrained by the MVP domain loader endpoint. Its content is for official UI collage flows, not DEMO001.
+Optional UI / action / evidence contract files:
+
+- `ui-contract.json`
+- `action-contracts/setMetricRows.json`
+- `evidence-schema.json`
+- `lint-rules.json`
+- `discovery/page-map.json`
+- `discovery/component-inventory.json`
+
+The optional locator filename is legacy; its content is for official UI collage flows, not DEMO001. The contract files are Gen1 seeds for Domain UI Discovery and later Gen3/Gen4 helper templates/interpreter work.

@@ -134,6 +134,12 @@ const buildCurrentCaseRecommendations = (runDir: string, entries: RuleIndexEntry
       addMatching(ids, /metadata|metadata摘要|BI系統_metadata/i);
       notes.push("Metadata/dropdown behavior may require BI metadata reference.");
     }
+    if (/collage|拼貼|metric|field|欄位|source|報表/i.test(`${operationTemplate ?? ""}\n${JSON.stringify(currentCase)}`)) {
+      add(ids, "domain-ui-contract");
+      add(ids, "domain-action-set-metric-rows");
+      add(ids, "domain-evidence-schema");
+      notes.push("Official collage UI behavior should use the domain UI/action/evidence contract when available.");
+    }
     if (/csv|download|下載|匯出/i.test(`${operationTemplate ?? ""}\n${JSON.stringify(currentCase)}`)) {
       add(ids, "reference-index");
       add(ids, "evidence-template-index");
@@ -143,6 +149,9 @@ const buildCurrentCaseRecommendations = (runDir: string, entries: RuleIndexEntry
     if (/前端呈現|前後端整合|功能流程/.test(testTarget)) {
       add(ids, "bi-project-agents-full");
       add(ids, "bi-locator-registry");
+      add(ids, "domain-ui-contract");
+      add(ids, "domain-discovery-page-map");
+      add(ids, "domain-discovery-component-inventory");
     }
   } else {
     basedOn.push("current-case-pack.json=(unavailable)");
@@ -239,6 +248,48 @@ export const writeRuleIndex = (runDir: string, domain: string): string => {
     filePath: path.join(runDir, "input", "domain_locator_registry.json"),
     loadWhen: ["BI UI operation", "selector exploration would be slow", "locator drift suspected"],
     summary: "BI locator hints for current UI flows. Guidance only; failed locators require visible UI fallback and drift logging."
+  });
+  addIfExists(entries, runDir, {
+    id: "domain-ui-contract",
+    scope: "domain",
+    filePath: path.join(runDir, "input", "domain_ui_contract.json"),
+    loadWhen: ["domain UI flow", "helper action planning", "evidence contract unclear", "official collage behavior"],
+    summary: "Domain UI/action/evidence contract shared by testcase generation, helper planning, and result gates."
+  });
+  addIfExists(entries, runDir, {
+    id: "domain-action-set-metric-rows",
+    scope: "domain",
+    filePath: path.join(runDir, "input", "domain_action_set_metric_rows.json"),
+    loadWhen: ["official collage metric setup", "source report plus field selection", "helper setMetricRows params"],
+    summary: "Official collage row-scoped metric setup contract. Requires metrics[].sourceReport and metrics[].field."
+  });
+  addIfExists(entries, runDir, {
+    id: "domain-evidence-schema",
+    scope: "domain",
+    filePath: path.join(runDir, "input", "domain_evidence_schema.json"),
+    loadWhen: ["domain evidence sufficiency unclear", "Tool Bridge conditional evidence", "result gate ambiguity"],
+    summary: "Domain current-run evidence schema, including conditional Tool Bridge rules."
+  });
+  addIfExists(entries, runDir, {
+    id: "domain-lint-rules",
+    scope: "domain",
+    filePath: path.join(runDir, "input", "domain_lint_rules.json"),
+    loadWhen: ["testcase package lint", "helper capability mismatch", "new testcase authoring review"],
+    summary: "Domain testcase lint expectations for official collage helper-compatible cases."
+  });
+  addIfExists(entries, runDir, {
+    id: "domain-discovery-page-map",
+    scope: "domain",
+    filePath: path.join(runDir, "input", "domain_discovery_page_map.json"),
+    loadWhen: ["official UI navigation", "page state unclear", "project list or editor entry flow"],
+    summary: "Reviewed page map from Domain UI Discovery. Raw DOM remains artifact-only."
+  });
+  addIfExists(entries, runDir, {
+    id: "domain-discovery-component-inventory",
+    scope: "domain",
+    filePath: path.join(runDir, "input", "domain_discovery_component_inventory.json"),
+    loadWhen: ["component locator exploration", "picker row-scoping", "official UI component behavior"],
+    summary: "Reviewed component inventory from Domain UI Discovery for official collage flows."
   });
   addIfExists(entries, runDir, {
     id: "bi-project-agents-full",

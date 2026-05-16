@@ -1,7 +1,7 @@
 # Domain UI Contract / Helper Gen3-Gen4 Plan
 
 Date: 2026-05-16 Asia/Taipei
-Status: planned, dev-tracked
+Status: planned, dev-tracked; Gen1a/Gen1b contract wiring started on 2026-05-17
 Primary trigger: BIUI_COLLAGE_R001 run `67990303-2c1b-4559-924a-297a089b5949`
 
 ## 1. Why This Exists
@@ -64,6 +64,12 @@ domain-packs/<DOMAIN>/
     dom-fingerprints.json
     screenshots-manifest.json
 ```
+
+Gen1a/Gen1b implementation note:
+
+- `BI_OFFICIAL_UI_COLLAGE` now includes `ui-contract.json`, `action-contracts/setMetricRows.json`, `evidence-schema.json`, `lint-rules.json`, `discovery/page-map.json`, and `discovery/component-inventory.json`.
+- The UAT Tool domain loader/API/run input contract exposes those files when present, and the Agent downloads them into `input/domain_*.json` files for prompt, reference-index, and rule-index usage.
+- This is a readability/data-contract step only. Helper execution remains in the existing helper path until the short-term `setMetricRows(metrics[])` bridge and later Gen 3 template runtime are implemented.
 
 ## 4. Layer 2: Domain UI + Action + Evidence Contract
 
@@ -272,4 +278,3 @@ Based on run `67990303-2c1b-4559-924a-297a089b5949`:
 
 5. cloud feedback storage
    Store helper observations in cloud artifacts for future domain contract updates.
-

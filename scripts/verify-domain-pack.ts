@@ -2,7 +2,15 @@ import fs from "node:fs";
 import path from "node:path";
 
 const requiredFiles = ["AGENTS.md", "xlsx_schema.json", "result_parser_adapter.json", "startup_prompt_template.md"] as const;
-const optionalFiles = ["README.md", "locators/README.md", "locators/demo001-locator-registry.json"] as const;
+const recommendedFiles = ["README.md", "locators/README.md", "locators/demo001-locator-registry.json"] as const;
+const contractFiles = [
+  "ui-contract.json",
+  "action-contracts/setMetricRows.json",
+  "evidence-schema.json",
+  "lint-rules.json",
+  "discovery/page-map.json",
+  "discovery/component-inventory.json"
+] as const;
 
 type Finding = {
   level: "error" | "warning";
@@ -96,13 +104,24 @@ const verifyPack = (packDir: string): Finding[] => {
     }
   }
 
-  for (const fileName of optionalFiles) {
+  for (const fileName of recommendedFiles) {
     const filePath = path.join(packDir, fileName);
     if (!fs.existsSync(filePath)) {
       findings.push({ level: "warning", message: `${relPackDir} optional file missing: ${fileName}` });
       continue;
     }
     if (fileName.endsWith(".json")) parseJson(filePath, findings);
+  }
+
+  for (const fileName of contractFiles) {
+    const filePath = path.join(packDir, fileName);
+    if (!fs.existsSync(filePath)) {
+      if (path.basename(packDir) === "BI_OFFICIAL_UI_COLLAGE") {
+        findings.push({ level: "warning", message: `${relPackDir} contract file missing: ${fileName}` });
+      }
+      continue;
+    }
+    parseJson(filePath, findings);
   }
 
   return findings;

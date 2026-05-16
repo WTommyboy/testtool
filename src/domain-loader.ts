@@ -2,7 +2,18 @@ import fs from "node:fs";
 import path from "node:path";
 
 const requiredFiles = ["AGENTS.md", "xlsx_schema.json", "result_parser_adapter.json", "startup_prompt_template.md"] as const;
-const optionalFiles = ["locators/demo001-locator-registry.json"] as const;
+const optionalFiles = [
+  "locators/demo001-locator-registry.json",
+  "ui-contract.json",
+  "action-contracts/setMetricRows.json",
+  "evidence-schema.json",
+  "lint-rules.json",
+  "discovery/page-map.json",
+  "discovery/component-inventory.json"
+] as const;
+
+export type RequiredDomainPackFile = typeof requiredFiles[number];
+export type OptionalDomainPackFile = typeof optionalFiles[number];
 
 export type DomainPackSummary = {
   name: string;
@@ -48,7 +59,7 @@ export const getDomainPack = (name: string): DomainPackSummary | null => {
   return listDomainPacks().find((pack) => pack.name === name) ?? null;
 };
 
-export const readDomainPackFile = (name: string, fileName: typeof requiredFiles[number]): string | null => {
+export const readDomainPackFile = (name: string, fileName: RequiredDomainPackFile): string | null => {
   const pack = getDomainPack(name);
   if (!pack) return null;
   const filePath = path.join(pack.path, fileName);
@@ -56,7 +67,7 @@ export const readDomainPackFile = (name: string, fileName: typeof requiredFiles[
   return fs.readFileSync(filePath, "utf8");
 };
 
-export const readOptionalDomainPackFile = (name: string, fileName: typeof optionalFiles[number]): string | null => {
+export const readOptionalDomainPackFile = (name: string, fileName: OptionalDomainPackFile): string | null => {
   const pack = getDomainPack(name);
   if (!pack) return null;
   const filePath = path.join(pack.path, fileName);
