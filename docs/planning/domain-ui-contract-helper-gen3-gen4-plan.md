@@ -295,3 +295,6 @@ Based on run `67990303-2c1b-4559-924a-297a089b5949`:
 
 5. cloud feedback storage
    Store helper observations in cloud artifacts for future domain contract updates.
+
+6. frontend observation routing guard
+   Until Gen 3 has declarative observation templates, no-hints frontend observation cases must not fall back to generic preview helpers. Project/sidebar/list observations may use `openProject` as a prelude; editor initial-state observations may use `openProject + createReport`; all case-specific assertions require Codex visible UI or a future domain template. This prevents false `EXECUTE_PRECONDITION_NO_SELECTED_FIELDS` blockers like run `4bf277d7-6193-4943-9770-fc317a11ee1f` J/I cases.

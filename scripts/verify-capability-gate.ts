@@ -996,6 +996,35 @@ const main = (): void => {
       "project-page navigation case should stop at openProject and not enter report editor"
     );
 
+    const projectLimitObservationCase = {
+      ...collageSaveReopenCase,
+      caseNo: "BIUI_COLLAGE_R001-J-12",
+      groupId: "J",
+      groupName: "J:專案頁按鈕與列表狀態",
+      caseTitle: "專案 5 個上限阻擋與提示",
+      testType: "前端呈現",
+      riskLevel: "🟢 觀察",
+      testTarget: "前端呈現",
+      cleanupChecklist: "欄位=不影響;篩選=不影響;分組=不影響;時間=不影響;顯示=不影響",
+      preconditions: "起始頁面: BI 工具首頁\n建構模式: 拼貼模式\n前置資源: 執行前確認拼貼專案數可達 4 或 5 個",
+      stepsSummary: "1. 進入首頁,展開拼貼報表\n2. 若 N < 5,依新增專案流程建立臨時專案直到 N = 5\n3. 達 5 個後再次嘗試開啟新增專案入口\n4. 讀取阻擋/提示語意",
+      expected: "達 5 個時新增入口或儲存被阻擋，顯示專案數量已達上限提示",
+      validationMethod: "DOM read button state + error message; evidence: dom.state, screenshot"
+    };
+    const projectLimitGate = evaluateCapabilityGate(projectLimitObservationCase, null);
+    assert.equal(projectLimitGate.supportStatus, "degraded", "J-12 no-hints frontend observation should not be advertised as fully helper-supported");
+    assert.deepEqual(
+      projectLimitGate.supportedHelperTemplates,
+      ["collage.openProject"],
+      "J-12 no-hints frontend observation should only advertise openProject prelude"
+    );
+    const projectLimitPlan = buildHelperExecutionPlan({ runDir, currentCase: projectLimitObservationCase, helperHints: null });
+    assert.deepEqual(
+      projectLimitPlan.actions.map((item) => item.template),
+      ["collage.openProject"],
+      "J-12 no-hints frontend observation must not fall through to createReport/configureMetric/runPreview"
+    );
+
     const selectAllCase = {
       ...collageSaveReopenCase,
       caseNo: "OTTEST004-D-02",
@@ -1145,6 +1174,7 @@ const main = (): void => {
           "manual hybrid D0 CSV baseline cases chain date preview, save, and report-list download",
           "relative D0 CSV baseline cases create unique reports and defer D+1 comparison",
           "delete temporary report cases create a pending Tool Bridge helper action",
+          "no-hints frontend project/list observations run only a safe openProject prelude",
           "selectAllFields helper hints preserve sourceReports/expected count and avoid synthetic field text",
           "actual D-02 expectedSources/expectedTotalFieldCount infer select-all 4-source/72-field helper params",
           "A-06 all-zero field inspection uses a dedicated select-all preview evidence helper",

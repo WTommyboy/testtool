@@ -223,6 +223,35 @@ const needsReportEditorPrelude = (currentCase: CaseManifestCase | null): boolean
   );
 };
 
+const hasExplicitHelperTemplate = (helperHints: HelperHints | null): boolean => {
+  const template = helperHints?.operationTemplate?.trim();
+  return Boolean(template && template !== "manual_ai") || helperHints?.automationLevel === "helper";
+};
+
+const isFrontendObservationPreludeCase = (
+  currentCase: CaseManifestCase | null,
+  helperHints: HelperHints | null
+): { matched: boolean; needsEditor: boolean } => {
+  if (hasExplicitHelperTemplate(helperHints)) return { matched: false, needsEditor: false };
+  const features = detectCaseFeatures(currentCase, helperHints);
+  if (features.mode !== "collage" || features.hasFilter || features.hasGroup) return { matched: false, needsEditor: false };
+  if (features.isMetadataDropdown) return { matched: false, needsEditor: false };
+  const targetText = [currentCase?.testType, currentCase?.testTarget, currentCase?.riskLevel].filter(Boolean).join("\n");
+  const isFrontendTarget = /前端呈現/.test(targetText);
+  const isObservationRisk = /🟢\s*觀察/.test(targetText);
+  if (!isFrontendTarget && !isObservationRisk) return { matched: false, needsEditor: false };
+  const text = features.behaviorText;
+  const projectOrSidebarObservation =
+    /側欄|sidebar|公司共享|我的自訂|拼貼報表|專案頁|專案清單|報表清單|breadcrumb|勾選|全選|hover|tooltip|下載\/刪除\s*icon|刪除\s*icon|下載\s*icon|新增專案|重名|上限|分頁|每頁|game selector|使用者按鈕|入口|disabled|enabled/i.test(text);
+  const editorObservation =
+    /新增自訂報表入口|新增報表入口|新增報表頁|報表設定頁|建構方式\s*radio|第一列|欄位預設|刪除列|複製列|報表\s*picker|欄位\s*picker|空設定|未完成設定|時間面板|時間區間\s*button|儲存報表.{0,16}disabled|editor\s*右上|preview table/i.test(text);
+  const dataExecutionIntent =
+    /network\.requestBody|network request body|request body|response|chart\.datasets|preview\s*成功|預覽成功|CSV\s*(?:row|數值|表頭)|下載\s*CSV|downloaded\s*CSV|儲存報表成功|重開還原|公式|運算欄位|後端功能|daily\s*資料|指標\s*ID/i.test(text);
+  if (!isFrontendTarget && editorObservation) return { matched: false, needsEditor: false };
+  if ((!projectOrSidebarObservation && !editorObservation) || dataExecutionIntent) return { matched: false, needsEditor: false };
+  return { matched: true, needsEditor: editorObservation };
+};
+
 const dateRequiresCodexVisibleUi = (currentCase: CaseManifestCase | null, helperHints: HelperHints | null): boolean => {
   const params = paramsObject(helperHints);
   const cleanup = parseCleanupTargets(currentCase?.cleanupChecklist);
@@ -676,6 +705,30 @@ const buildActions = (currentCase: CaseManifestCase | null, helperHints: HelperH
         notes: ["只點報表名稱進 editor，不點下載/刪除控制。"]
       })
     ];
+  }
+  const frontendObservationPrelude = isFrontendObservationPreludeCase(currentCase, helperHints);
+  if (frontendObservationPrelude.matched) {
+    const actions: HelperPlanAction[] = [
+      action("H1", "collage.openProject", "開啟指定拼貼專案（前端觀察題前置導航）", params, {
+        requiredEvidence: ["dom.url", "dom.pageTitle", "dom.state", "screenshot"],
+        notes: [
+          "前端觀察 / 專案頁 / 側欄 / list 類 case 僅允許安全前置導航。",
+          "不可自動進入 generic configureMetric/runPreview；case-specific UI assertion 必須由 Codex 或後續專用 helper 完成。"
+        ]
+      })
+    ];
+    if (frontendObservationPrelude.needsEditor) {
+      actions.push(
+        action("H2", "collage.createReport", "進入新增報表頁（前端觀察題前置導航）", params, {
+          requiredEvidence: ["dom.url", "dom.pageTitle", "dom.state", "screenshot"],
+          notes: [
+            "只到達 editor 初始狀態，不選欄位、不設定日期、不按計算。",
+            "K/L/M/N 類 editor UI assertion 需要專用 helper template 或 Codex visible UI 接手。"
+          ]
+        })
+      );
+    }
+    return actions;
   }
   const formulaHelperFlow = hasFormulaParams(helperParams) || hasFormulaParams(params);
   if (formulaHelperFlow) {

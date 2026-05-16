@@ -2440,6 +2440,8 @@ Status update 2026-05-17: Gen1a/Gen1b started in dev. `BI_OFFICIAL_UI_COLLAGE` n
 
 Status update 2026-05-17 Gen1c hardening pass: package consistency now applies downloaded domain lint rules, so official collage testcase packages receive compatibility-period warnings when helper hints omit `metrics[].sourceReport + metrics[].field`. `verify:domain-pack` now validates the key UI/action/evidence/lint/discovery contract shape. Result gate also reads structured `executionState`, requiring Tool Bridge response only for reached native/irreversible states and not for `setupBlocked` / `previewNotReached` / `saveNotReached`.
 
+Status update 2026-05-16 run 4bf routing guard: live run `4bf277d7-6193-4943-9770-fc317a11ee1f` showed a separate planner issue. I/J frontend observation cases without parsed helper hints were falling through to the generic collage preview path and producing false `EXECUTE_PRECONDITION_NO_SELECTED_FIELDS` blockers. The short-term bridge now detects no-hints frontend observation cases and limits helper pre-run to safe navigation only: project/sidebar/list cases run only `collage.openProject`; editor initial-state observation cases may run `collage.openProject + collage.createReport`; neither path may auto-run `configureMetric` or `runPreview`. This is a compatibility guard before Gen3 domain-driven observation templates exist, not a replacement for those templates.
+
 Planning source: [domain-ui-contract-helper-gen3-gen4-plan.md](/Users/tommy/Downloads/codex_galaxy_dev/uat-tool/docs/planning/domain-ui-contract-helper-gen3-gen4-plan.md)
 
 Run `67990303-2c1b-4559-924a-297a089b5949` exposed two platform-level issues:
