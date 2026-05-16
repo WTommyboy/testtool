@@ -1401,3 +1401,13 @@ Tommy 曾討論是否改成腳本。最後決策是採「半腳本化 / helper �
 - 背景：Tommy 實測 `開啟連結` 只會開啟 dedicated Chrome,但沒有帶入 Dev URL。回查 dev Agent log,WebSocket message 已收到且 URL 正確,但 Agent 回報 `CHROME_CDP_UNAVAILABLE`；原因是 cold Chrome 啟動後,CDP 有時超過原本 5 秒等待才 ready,導致 Agent 放棄建立 target,只留下空白 Chrome 視窗。
 - 修正：Agent `openUrlInDedicatedChrome` 將 cold Chrome CDP ready timeout 拉長到 15 秒,`/json/new` 開 target timeout 拉長到 5 秒；若 `ensureChromeDebugSession` 第一次回傳 null,會再針對同一 CDP endpoint 做一次等待並接續開 URL,避免 Chrome 已啟動但 CDP 稍晚 ready 時漏開頁面。
 - 版本：Mac Agent source 升到 `0.2.32`。本修正只影響 browser preparation action,不改 UAT run dispatch、result workbook 或 testcase 狀態。
+
+### 2026-05-16 23:58 - BI official UI collage picker extraction 修正
+
+- 背景：BIUI_COLLAGE_R001 A-04 在正確選擇 `BI_OFFICIAL_UI_COLLAGE` domain pack 後仍被 helper 擋住。`openProject` 與 `createReport` 已可進 official `/bi-dev/zh-TW/report/new`,但 `collage.extractMetadataDropdownFields` 仍沿用 legacy `+ 新增欄位` / `addFieldToSelection` 假設,導致 official editor 回 `METADATA_DROPDOWN_NO_VISIBLE_ITEMS_EXTRACTED`。
+- 根因：official UI 的欄位流程不是「點 + 新增欄位展開全部來源欄位」。正確流程是第一列先點 `請選擇報表`,選 source,再點該列 `---` 欄位 picker。A-04 的 metadata source `各登入渠道狀況(原 beanfun! 導流)` 在 official UI 顯示為 `beanfun!導流`。
+- 修正：`agent/src/bi-ui-helper-executor.ts` 新增 official collage editor adapter。它會偵測 `/bi-dev/.../report/new`,讀 first-row source/field controls,用 source aliases 選 `beanfun!導流`,驗證 control 文字變更,再打開 `---` 欄位 picker並讀 clickable field rows。欄位 row 文字如 `累計帳號數 數值` 會清掉中文 type badge 後寫入既有 `metadataDropdownEvidence.actualVisibleItems`。legacy `/biapi-dev/testview` 的 `addFieldToSelection` 路徑維持不變。
+- Alias / fixture：source identity 新增 `beanfun!導流` / `LOGIN_PLATFORM_STATUS` / `各登入渠道狀況` / `各登入渠道狀況(原 beanfun! 導流)` 正規化,以及 `雙平台營收占比` / `雙平台營收佔比` 正規化。`scripts/verify-open-project-retry.ts` 補 fixture 鎖住 official source alias 與中文 type badge 清洗。
+- Smoke：已跑 `npm run typecheck --prefix agent`、`npm run build --prefix agent`、`npm run verify:open-project-retry`、`npm run verify:helper-field-aliases`、`git diff --check`。Live official smoke 從 home 重跑 `collage.openProject -> collage.createReport -> collage.extractMetadataDropdownFields`: openProject `ok`, createReport `ok`, extract `ok`, selected source=`beanfun!導流`, `actualCount=27`, `missingSources=[]`, warnings empty。
+- 結論：A-04 不再是 helper DOM blocker。修復後留下的 `missingCount=16` / `extraCount=16` 是 metadata v1.2.5 與 official UI 實際欄位清單的差異 evidence,需由 testcase 判定層處理,不是 `METADATA_DROPDOWN_NO_VISIBLE_ITEMS_EXTRACTED`。
+- Push：dev commit `24e37c9 fix: support official BI field picker extraction` 已推 `dev/uat-agent-config-isolation`;本次只推 dev,未推 prod。

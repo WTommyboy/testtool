@@ -2349,3 +2349,85 @@ The Web UI button is disabled when:
 - selected Agent does not support `browser_open_url`.
 
 On successful dispatch, the UI shows a short hint telling PM to complete login in dedicated Chrome before starting execution.
+
+## 25. BI Official UI Collage Helper Adapter
+
+Date: 2026-05-16 Asia/Taipei
+
+The BI official UI collage domain uses the same helper report/evidence contract as legacy BI, but the page model is different. Helper code must treat the official UI as an adapter over generic picker actions, not as a one-off testcase script.
+
+### 25.1 Navigation Contract
+
+`collage.openProject` supports both legacy `/biapi-dev/testview` and official `/bi-dev/zh-TW/...` routes.
+
+Official UI navigation is:
+
+- Start from `lease.devUrl` in `input/browser-session.json`.
+- Enforce same origin and only allowed BI path prefixes.
+- On official home/sidebar, expand or use `我的自訂`.
+- Select `拼貼報表`.
+- Select a visible collage project such as `拼貼test_001`.
+- Treat report list as ready only when the official project route and report table/list are visible.
+
+### 25.2 Picker Adapter Contract
+
+Legacy picker flow remains unchanged:
+
+- open field picker through visible `+ 新增欄位`.
+- read visible `addFieldToSelection(...)` rows or legacy dropdown/menu containers.
+- use group headers such as `DAILY_REPORT` / `LOGIN_PLATFORM_STATUS` for source scoping.
+
+Official picker flow is source-first:
+
+- detect official editor by `/bi-dev/.../report/new` or visible `自訂報表 / 欄位選擇 / 請選擇報表 / ---`.
+- click first-row source control `請選擇報表`.
+- read visible source options from clickable picker rows only.
+- select source by aliases derived from metadata/domain params.
+- verify the source control changed.
+- open the first-row field control `---`.
+- read clickable field rows such as `累計帳號數 數值`.
+- strip visible type badges (`數值`, `文字`, `日期`, etc.) before writing `actualVisibleItems`.
+
+The source alias layer is domain adapter data. For BI official collage, `beanfun!導流`, `LOGIN_PLATFORM_STATUS`, `各登入渠道狀況`, and `各登入渠道狀況(原 beanfun! 導流)` normalize to the same source identity. `雙平台營收占比` and `雙平台營收佔比` also normalize to the same identity.
+
+### 25.3 Evidence Contract
+
+`collage.extractMetadataDropdownFields` keeps writing `metadata-dropdown-evidence.json` using the existing schema:
+
+- `actualVisibleItems`
+- `actualCount`
+- `expectedFields`
+- `missingFields`
+- `extraFields`
+- `exactMissingFields`
+- `exactExtraFields`
+- `sourceGroupEvidence`
+
+Official-specific runtime details are stored under `officialPickerFlow`:
+
+- `requestedSourceReports`
+- `sourceSelections`
+- `sourcePickerOptions`
+- `fieldPickerItemsBySource`
+- `operations`
+
+Helper still does not judge testcase PASS/FAIL. It only supplies DOM evidence. Metadata/UI drift remains a PM/Codex result-judgment responsibility.
+
+### 25.4 Smoke Baseline
+
+Dev commit `24e37c9` verified official BI collage picker support:
+
+- `npm run typecheck --prefix agent`
+- `npm run build --prefix agent`
+- `npm run verify:open-project-retry`
+- `npm run verify:helper-field-aliases`
+- `git diff --check`
+
+Live official smoke on run `8b3ba38e-28d4-4a86-871d-870b1ee911ff`:
+
+- `collage.openProject`: `ok`, reached `/bi-dev/zh-TW/report/myCustom/tileMode/9`.
+- `collage.createReport`: `ok`, reached `/bi-dev/zh-TW/report/new`.
+- `collage.extractMetadataDropdownFields`: `ok`, selected `beanfun!導流`, extracted `actualCount=27`, `missingSources=[]`.
+- The previous blocker `METADATA_DROPDOWN_NO_VISIBLE_ITEMS_EXTRACTED` is resolved.
+
+Observed A-04 evidence after helper fix shows real metadata/UI drift (`missingCount=16`, `extraCount=16`) rather than a helper DOM extraction blocker.
