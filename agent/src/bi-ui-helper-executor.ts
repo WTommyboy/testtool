@@ -253,6 +253,54 @@ const metricFieldsFromParams = (params: Record<string, unknown>): string[] => {
   return splitCompositeMetricFields(nonNeutralUiTarget(firstStringParam(params, ["field", "metric", "metricField"])));
 };
 
+type MetricRowParam = {
+  sourceReport: string;
+  field: string;
+  metricIndex: number | null;
+};
+
+const metricRowsFromUnknownArray = (value: unknown, fallbackSourceReport: string): MetricRowParam[] => {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item, index) => {
+    if (!item || typeof item !== "object" || Array.isArray(item)) return [];
+    const record = item as Record<string, unknown>;
+    const sourceReport = firstStringFromRecord(record, ["sourceReport", "source", "report", "reportName"]) ?? fallbackSourceReport;
+    const field = firstStringFromRecord(record, ["field", "metric", "metricField", "label", "name"]);
+    const rawMetricIndex = record.metricIndex ?? record.rowIndex ?? record.index;
+    const metricIndex =
+      typeof rawMetricIndex === "number" && Number.isInteger(rawMetricIndex) && rawMetricIndex >= 0
+        ? rawMetricIndex
+        : typeof rawMetricIndex === "string" && /^\d+$/.test(rawMetricIndex.trim())
+          ? Number(rawMetricIndex.trim())
+          : index;
+    if (!field || isNeutralUiTarget(field)) return [];
+    return [{ sourceReport, field, metricIndex }];
+  });
+};
+
+const metricRowsFromParams = (params: Record<string, unknown>): MetricRowParam[] => {
+  if (paramsRequestSelectAllFields(params)) return [];
+  const fallbackSourceReport = firstStringParam(params, ["sourceReport", "source", "report", "reportName"]) ?? "每日報表";
+  const explicitRows = metricRowsFromUnknownArray(params.metrics, fallbackSourceReport);
+  if (explicitRows.length > 0) return explicitRows;
+  return metricFieldsFromParams(params).map((field, index) => ({
+    sourceReport: fallbackSourceReport,
+    field,
+    metricIndex: index
+  }));
+};
+
+const metricRowsFromBaseFieldsParams = (params: Record<string, unknown>): MetricRowParam[] => {
+  const fallbackSourceReport = firstStringParam(params, ["sourceReport", "source", "report", "reportName"]) ?? "每日報表";
+  const explicitRows = metricRowsFromUnknownArray(params.baseFields, fallbackSourceReport);
+  if (explicitRows.length > 0) return explicitRows;
+  return calculatedBaseFieldsFromParams(params).map((field, index) => ({
+    sourceReport: fallbackSourceReport,
+    field,
+    metricIndex: index
+  }));
+};
+
 const timestampId = (): string => new Date().toISOString().replace(/[-:T.Z]/g, "").slice(0, 12);
 
 const resolveReportName = (options: CliOptions): string => {
@@ -268,6 +316,7 @@ const deleteTemporaryReportEvidencePath = (options: CliOptions): string => path.
 const calculatedFieldEvidencePath = (options: CliOptions): string => path.join(artifactRoot(options), "calculated-field-evidence.json");
 const createProjectEvidencePath = (options: CliOptions): string => path.join(artifactRoot(options), "create-project-evidence.json");
 const createdProjectStatePath = (options: CliOptions): string => path.join(artifactRoot(options), "created-project.json");
+const metricRowsEvidencePath = (options: CliOptions): string => path.join(artifactRoot(options), "metric-rows-evidence.json");
 const dateUiEvidencePath = (options: CliOptions, suffix: string | null = null): string =>
   path.join(artifactRoot(options), suffix ? `date-ui-evidence-${sanitize(suffix)}.json` : "date-ui-evidence.json");
 
@@ -3673,14 +3722,23 @@ const selectedFieldText = async (page: Page): Promise<string> => {
 
 const selectedMetricFieldGuardEvidence = async (page: Page): Promise<Record<string, unknown>> => {
   const selected = await readSelectedMetricFields(page).catch(() => []);
+  const officialRows = await readOfficialCollageFieldRows(page).catch(() => []);
+  const selectedOfficialRows = officialRows.filter((row) => officialMetricRowHasSelectedField(row));
   const dom = await readDomState(page).catch(() => null);
   const cleanupState = dom?.cleanupState && typeof dom.cleanupState === "object" ? dom.cleanupState as Record<string, unknown> : {};
   return {
-    selectedCount: selected.length,
+    selectedCount: selected.length + selectedOfficialRows.length,
     selectedMetricFields: selected.map((item) => ({
       label: item.label,
       code: item.code,
       buttonIndex: item.buttonIndex
+    })),
+    selectedOfficialMetricRows: selectedOfficialRows.map((row) => ({
+      rowIndex: row.rowIndex,
+      sourceReport: row.sourceText,
+      field: row.fieldText,
+      sourceButtonIndex: row.sourceButtonIndex,
+      fieldButtonIndex: row.fieldButtonIndex
     })),
     fieldSelectionText: cleanupState.fieldSelectionText ?? null,
     bodyTextExcerpt: typeof dom?.bodyTextExcerpt === "string" ? dom.bodyTextExcerpt.slice(0, 800) : null
@@ -3903,14 +3961,19 @@ const reconcileMetricFieldsThroughUi = async (page: Page, targetFields: string[]
 const configureMetric = async (options: CliOptions, page: Page, startedAt: string): Promise<HelperReport> => {
   const warnings: string[] = [];
   const fields = metricFieldsFromParams(options.params);
+  const metricRows = metricRowsFromParams(options.params);
   const dateRange = nonNeutralUiTarget(stringParam(options.params, "dateRange"));
   const uiProfileBefore = await captureUiDomProfile(options, page, "configureMetric.before");
   const stateDeltaBefore = await readStateDelta(page, options.params);
   const operations: string[] = [];
+  let metricRowsEvidence: OfficialMetricRowsEvidence | null = null;
   let dateRangeEvidence: Record<string, unknown> | null = null;
   let dateRangeUiProfiles: UiDomProfileRef[] = [];
   let dateUiArtifact: string | null = null;
-  if (paramsRequestSelectAllFields(options.params)) {
+  metricRowsEvidence = await setMetricRowsThroughOfficialUi(options, page, metricRows);
+  if (metricRowsEvidence) {
+    operations.push(...metricRowsEvidence.operations);
+  } else if (paramsRequestSelectAllFields(options.params)) {
     operations.push(...await selectAllMetricFieldsThroughUi(options, page));
   } else if (fields.length > 0) {
     operations.push(...await reconcileMetricFieldsThroughUi(page, fields));
@@ -3949,6 +4012,7 @@ const configureMetric = async (options: CliOptions, page: Page, startedAt: strin
         dateRange: dateRangeUiProfiles
       },
       requestedDateRange: dateRange,
+      metricRows: metricRowsEvidence,
       dateRangeEvidence,
       stateDelta: {
         before: stateDeltaBefore,
@@ -3958,6 +4022,7 @@ const configureMetric = async (options: CliOptions, page: Page, startedAt: strin
     },
     {
       ...(shot ? { screenshot: shot } : {}),
+      ...(metricRowsEvidence ? { metricRowsEvidence: metricRowsEvidencePath(options) } : {}),
       ...(dateUiArtifact ? { dateUiEvidence: dateUiArtifact } : {})
     },
     shot ? warnings : [...warnings, "SCREENSHOT_UNAVAILABLE"]
@@ -4407,13 +4472,17 @@ const configureCalculatedMetricAndPreview = async (options: CliOptions, page: Pa
   const operations: string[] = [];
   const formula = stringParam(options.params, "formula");
   if (!formula) throw new HelperBlockedError("FORMULA_PARAM_MISSING");
-  const baseFields = calculatedBaseFieldsFromParams(options.params);
+  const baseMetricRows = metricRowsFromBaseFieldsParams(options.params);
+  const baseFieldsFromParams = calculatedBaseFieldsFromParams(options.params);
+  const baseFields = baseFieldsFromParams.length > 0 ? baseFieldsFromParams : baseMetricRows.map((row) => row.field);
   if (baseFields.length === 0) throw new HelperBlockedError("FORMULA_BASE_FIELDS_MISSING");
   const calculatedFieldName = calculatedFieldNameFromParams(options);
   const uiProfileBefore = await captureUiDomProfile(options, page, "calculatedMetric.before");
   const stateBefore = await readStateDelta(page, options.params).catch((error) => ({ readError: error instanceof Error ? error.message : String(error) }));
 
-  operations.push(...await reconcileMetricFieldsThroughUi(page, baseFields));
+  const metricRowsEvidence = await setMetricRowsThroughOfficialUi(options, page, baseMetricRows);
+  if (metricRowsEvidence) operations.push(...metricRowsEvidence.operations);
+  else operations.push(...await reconcileMetricFieldsThroughUi(page, baseFields));
   operations.push(await clickCalculatedFieldControl(page));
   await page.waitForTimeout(700);
   const modalOpenedProfile = await captureUiDomProfile(options, page, "calculatedMetric.modalOpened");
@@ -4456,6 +4525,8 @@ const configureCalculatedMetricAndPreview = async (options: CliOptions, page: Pa
     generatedAt: new Date().toISOString(),
     caseId: options.caseId,
     baseFields,
+    baseMetricRows,
+    metricRows: metricRowsEvidence,
     calculatedFieldName,
     formula,
     formulaUi,
@@ -4498,6 +4569,7 @@ const configureCalculatedMetricAndPreview = async (options: CliOptions, page: Pa
     {
       calculatedFieldEvidence: calculatedFieldEvidencePath(options),
       previewEvidence: previewEvidencePath(options),
+      ...(metricRowsEvidence ? { metricRowsEvidence: metricRowsEvidencePath(options) } : {}),
       ...(dateUiArtifact ? { dateUiEvidence: dateUiArtifact } : {}),
       ...(shot ? { screenshot: shot } : {})
     },
@@ -4516,7 +4588,11 @@ const inspectAllZeroFields = async (options: CliOptions, page: Page, startedAt: 
   warnings.push(...expectedSelection.warnings);
 
   const fields = metricFieldsFromParams(options.params);
-  if (paramsRequestSelectAllFields(options.params) || fields.length === 0) {
+  const metricRows = metricRowsFromParams(options.params);
+  const metricRowsEvidence = await setMetricRowsThroughOfficialUi(options, page, metricRows);
+  if (metricRowsEvidence) {
+    operations.push(...metricRowsEvidence.operations);
+  } else if (paramsRequestSelectAllFields(options.params) || fields.length === 0) {
     operations.push(...await selectAllMetricFieldsThroughUi(options, page));
   } else {
     operations.push(...await reconcileMetricFieldsThroughUi(page, fields));
@@ -4588,6 +4664,7 @@ const inspectAllZeroFields = async (options: CliOptions, page: Page, startedAt: 
     generatedAt: new Date().toISOString(),
     caseId: options.caseId,
     operation: "collage.inspectAllZeroFields",
+    metricRows: metricRowsEvidence,
     expectedSelection: {
       sourceReports: expectedSelection.sourceReports,
       metadataPath: expectedSelection.metadataPath,
@@ -4642,6 +4719,7 @@ const inspectAllZeroFields = async (options: CliOptions, page: Page, startedAt: 
     {
       previewEvidence: previewEvidencePath(options),
       allZeroFieldInspectionEvidence: allZeroFieldInspectionEvidencePath(options),
+      ...(metricRowsEvidence ? { metricRowsEvidence: metricRowsEvidencePath(options) } : {}),
       ...(dateUiArtifact ? { dateUiEvidence: dateUiArtifact } : {}),
       ...(shot ? { screenshot: shot } : {})
     },
@@ -4660,12 +4738,16 @@ const runDateVariantsPreviewEvidence = async (options: CliOptions, page: Page, s
   }
 
   const fields = metricFieldsFromParams(options.params);
+  const metricRows = metricRowsFromParams(options.params);
   const beforeProfile = await captureUiDomProfile(options, page, "dateVariants.before");
   const stateBefore = await readStateDelta(page, options.params).catch((error) => ({
     readError: error instanceof Error ? error.message : String(error)
   }));
 
-  if (paramsRequestSelectAllFields(options.params)) {
+  const metricRowsEvidence = await setMetricRowsThroughOfficialUi(options, page, metricRows);
+  if (metricRowsEvidence) {
+    operations.push(...metricRowsEvidence.operations);
+  } else if (paramsRequestSelectAllFields(options.params)) {
     operations.push(...await selectAllMetricFieldsThroughUi(options, page));
   } else if (fields.length > 0) {
     operations.push(...await reconcileMetricFieldsThroughUi(page, fields));
@@ -4758,6 +4840,7 @@ const runDateVariantsPreviewEvidence = async (options: CliOptions, page: Page, s
     generatedAt: new Date().toISOString(),
     caseId: options.caseId,
     fields,
+    metricRows: metricRowsEvidence,
     requestedLabels: specs.map((spec) => spec.requestedLabel),
     requestedSpecs: specs.map((spec) => ({
       requestedLabel: spec.requestedLabel,
@@ -4804,7 +4887,10 @@ const runDateVariantsPreviewEvidence = async (options: CliOptions, page: Page, s
       },
       dateVariantsPreviewEvidence: evidence
     },
-    { dateVariantsPreviewEvidence: dateVariantsPreviewEvidencePath(options) },
+    {
+      dateVariantsPreviewEvidence: dateVariantsPreviewEvidencePath(options),
+      ...(metricRowsEvidence ? { metricRowsEvidence: metricRowsEvidencePath(options) } : {})
+    },
     warnings
   );
 };
@@ -5251,7 +5337,11 @@ export const __metricFieldIdentityTestHooks = {
   officialSourcePickerAliasLabels,
   sourceReportLabelMatches,
   fieldPickerTargetMatches,
-  formulaFieldTokenMatches
+  formulaFieldTokenMatches,
+  metricRowsFromParams,
+  metricRowsFromBaseFieldsParams,
+  officialMetricRowHasSelectedField,
+  officialMetricRowFieldMatches
 };
 
 const clickMetricFieldPickerDomTarget = async (
@@ -5317,6 +5407,20 @@ type OfficialPickerDomItem = {
   rect: { x: number; y: number; width: number; height: number };
 };
 
+const officialFieldPlaceholderPattern = /^(?:---|請選擇(?:欄位|指標|資料)?|選擇(?:欄位|指標|資料)?|欄位|指標)?$/i;
+
+function officialMetricRowHasSelectedField(row: OfficialCollageFieldRow): boolean {
+  const fieldText = row.fieldText?.trim() ?? "";
+  return Boolean(fieldText && !officialFieldPlaceholderPattern.test(fieldText));
+}
+
+function officialMetricRowFieldMatches(row: OfficialCollageFieldRow, expectedField: string): boolean {
+  if (!officialMetricRowHasSelectedField(row)) return false;
+  const fieldText = row.fieldText ?? "";
+  const targetKeys = metricFieldIdentitySet(expectedField);
+  return targetKeys.has(normalizeMetricFieldIdentity(fieldText));
+}
+
 type OfficialSourceSelectionResult = {
   requestedSourceReport: string;
   sourceControlBefore: string | null;
@@ -5378,11 +5482,16 @@ const readOfficialCollageFieldRows = async (page: Page): Promise<OfficialCollage
       .filter((button) => button.text && button.y >= 320 && button.x >= 80 && button.x <= 260)
       .filter((button) => !/^(?:儲存報表|計算|過去\s*\d+\s*天|\(x\)|\+)$/.test(button.text))
       .sort((a, b) => a.y - b.y || a.x - b.x);
+    const fieldButtonExcluded = /^(?:儲存報表|儲存|保存|執行|查詢|搜尋|刪除|取消|計算|過去\s*\d+\s*天|\(x\)|\+|請選擇報表)$/;
     const fieldButtons = buttons
-      .filter((button) => button.text === "---" && button.y >= 320 && button.x >= 220)
+      .filter((button) => button.y >= 320 && button.x >= 220 && !fieldButtonExcluded.test(button.text))
       .sort((a, b) => a.y - b.y || a.x - b.x);
     return sourceButtons.map((sourceButton, rowIndex) => {
-      const fieldButton = fieldButtons.find((candidate) => Math.abs(candidate.y - sourceButton.y) <= 14 && candidate.x > sourceButton.x);
+      const fieldButton = fieldButtons.find((candidate) =>
+        candidate.index !== sourceButton.index &&
+        Math.abs(candidate.y - sourceButton.y) <= 16 &&
+        candidate.x > sourceButton.x + Math.max(24, sourceButton.width * 0.35)
+      );
       return {
         rowIndex,
         sourceButtonIndex: sourceButton.index,
@@ -5483,13 +5592,48 @@ const readOfficialVisiblePickerItems = async (
   });
 };
 
+const officialPickerSignature = (items: OfficialPickerDomItem[]): Record<string, unknown> => {
+  const labels = items
+    .map((item) => `${normalizeMetricFieldIdentity(item.label ?? item.text)}:${normalizeMetricFieldIdentity(item.code)}`)
+    .filter((item) => item !== ":")
+    .sort();
+  const signature = crypto.createHash("sha1").update(labels.join("|")).digest("hex").slice(0, 16);
+  return {
+    signature,
+    optionCount: items.length,
+    sampleOptions: items.slice(0, 20).map((item) => ({
+      label: item.label ?? item.text,
+      code: item.code,
+      groupLabel: item.groupLabel,
+      typeBadge: item.typeBadge ?? null
+    }))
+  };
+};
+
+const targetForOfficialField = (field: string, sourceReport: string): Pick<FieldPickerDomTarget, "label" | "code"> & { groupLabels: Set<string> } => ({
+  label: field,
+  code: knownMetricFieldCode(field),
+  groupLabels: new Set(fieldPickerSourceGroupLabels(sourceReport).map(normalizeFieldPickerGroup))
+});
+
+const officialFieldItemMatches = (item: OfficialPickerDomItem, field: string, sourceReport: string): boolean =>
+  fieldPickerTargetMatches(
+    {
+      label: item.label ?? cleanFieldPickerLabel(item.text, item.code),
+      code: item.code,
+      groupLabel: item.groupLabel
+    },
+    targetForOfficialField(field, sourceReport)
+  );
+
 const selectOfficialSourceReportForMetadata = async (
   page: Page,
-  targetSourceReport: string
+  targetSourceReport: string,
+  rowIndex = 0
 ): Promise<OfficialSourceSelectionResult> => {
   const operations: string[] = [];
   let rows = await readOfficialCollageFieldRows(page);
-  const row = rows[0];
+  const row = rows[rowIndex];
   if (!row) {
     return {
       requestedSourceReport: targetSourceReport,
@@ -5505,7 +5649,7 @@ const selectOfficialSourceReportForMetadata = async (
   }
 
   if (row.sourceText && !/請選擇報表/.test(row.sourceText) && sourceReportLabelMatches(row.sourceText, targetSourceReport)) {
-    operations.push(`official:source:alreadySelected:${row.sourceText}`);
+    operations.push(`official:source:alreadySelected:row${rowIndex}:${row.sourceText}`);
     return {
       requestedSourceReport: targetSourceReport,
       sourceControlBefore: row.sourceText,
@@ -5519,7 +5663,7 @@ const selectOfficialSourceReportForMetadata = async (
   }
 
   await clickVisibleButtonByIndex(page, row.sourceButtonIndex, 8000);
-  operations.push(`official:source:open:${row.sourceText || "empty"}`);
+  operations.push(`official:source:open:row${rowIndex}:${row.sourceText || "empty"}`);
   await page.waitForTimeout(500);
   const sourcePickerOptions = await readOfficialVisiblePickerItems(page, "source");
   const selectedOption = sourcePickerOptions.find((item) => sourceReportLabelMatches(item.text, targetSourceReport)) ?? null;
@@ -5538,10 +5682,10 @@ const selectOfficialSourceReportForMetadata = async (
   }
 
   await clickVisibleBodyElementByIndex(page, selectedOption.index, 8000);
-  operations.push(`official:source:select:${selectedOption.text}`);
+  operations.push(`official:source:select:row${rowIndex}:${selectedOption.text}`);
   await page.waitForTimeout(650);
   rows = await readOfficialCollageFieldRows(page);
-  const sourceControlAfter = rows[0]?.sourceText ?? selectedOption.text;
+  const sourceControlAfter = rows[rowIndex]?.sourceText ?? selectedOption.text;
   const verified = Boolean(sourceControlAfter && sourceReportLabelMatches(sourceControlAfter, targetSourceReport));
   return {
     requestedSourceReport: targetSourceReport,
@@ -5554,6 +5698,133 @@ const selectOfficialSourceReportForMetadata = async (
     operations,
     ...(verified ? {} : { blockedReason: `OFFICIAL_SOURCE_SELECTION_VERIFY_FAILED:${targetSourceReport}:${sourceControlAfter}` })
   };
+};
+
+type OfficialMetricRowSelectionResult = {
+  requested: MetricRowParam;
+  rowIndex: number;
+  rowsBefore: OfficialCollageFieldRow[];
+  rowsAfterSource: OfficialCollageFieldRow[];
+  rowsAfterField: OfficialCollageFieldRow[];
+  sourceSelection: OfficialSourceSelectionResult;
+  fieldControlBefore: string | null;
+  fieldControlAfter: string | null;
+  fieldPickerSignature: Record<string, unknown>;
+  selectedFieldOption: OfficialPickerDomItem | null;
+  fieldPickerItems: OfficialPickerDomItem[];
+  operations: string[];
+  verified: boolean;
+};
+
+const setSingleMetricRowThroughOfficialUi = async (
+  page: Page,
+  metric: MetricRowParam,
+  defaultRowIndex: number
+): Promise<OfficialMetricRowSelectionResult> => {
+  const requestedRowIndex = metric.metricIndex ?? defaultRowIndex;
+  const operations: string[] = [];
+  const rowsBefore = await readOfficialCollageFieldRows(page);
+  const beforeRow = rowsBefore[requestedRowIndex] ?? null;
+  if (!beforeRow) {
+    throw new HelperBlockedError(`METRIC_ROW_NOT_FOUND:row=${requestedRowIndex}; rows=${JSON.stringify(rowsBefore).slice(0, 1200)}`);
+  }
+
+  const sourceSelection = await selectOfficialSourceReportForMetadata(page, metric.sourceReport, requestedRowIndex);
+  operations.push(...sourceSelection.operations);
+  if (!sourceSelection.verified || !sourceSelection.selectedSource) {
+    throw new HelperBlockedError(sourceSelection.blockedReason ?? `SOURCE_REPORT_OPTION_NOT_FOUND:${metric.sourceReport}`);
+  }
+
+  const rowsAfterSource = await readOfficialCollageFieldRows(page);
+  const sourceRow = rowsAfterSource[requestedRowIndex] ?? null;
+  if (!sourceRow || sourceRow.fieldButtonIndex === null) {
+    throw new HelperBlockedError(`FIELD_CONTROL_NOT_FOUND:row=${requestedRowIndex}; source=${metric.sourceReport}; rows=${JSON.stringify(rowsAfterSource).slice(0, 1200)}`);
+  }
+
+  await clickVisibleButtonByIndex(page, sourceRow.fieldButtonIndex, 8000);
+  operations.push(`official:fieldPicker:open:row${requestedRowIndex}:${sourceSelection.selectedSource}`);
+  await page.waitForTimeout(800);
+  const fieldPickerItems = await readOfficialVisiblePickerItems(page, "field", sourceSelection.selectedSource);
+  const fieldPickerSignature = officialPickerSignature(fieldPickerItems);
+  if (fieldPickerItems.length === 0) {
+    throw new HelperBlockedError(`FIELD_PICKER_STALE_AFTER_SOURCE_CHANGE:row=${requestedRowIndex}; source=${sourceSelection.selectedSource}; optionCount=0`);
+  }
+
+  const selectedFieldOption = fieldPickerItems.find((item) => officialFieldItemMatches(item, metric.field, sourceSelection.selectedSource ?? metric.sourceReport)) ?? null;
+  if (!selectedFieldOption) {
+    throw new HelperBlockedError(
+      `FIELD_OPTION_NOT_FOUND:row=${requestedRowIndex}; source=${sourceSelection.selectedSource}; field=${metric.field}; options=${JSON.stringify(fieldPickerItems.slice(0, 80)).slice(0, 2000)}`
+    );
+  }
+
+  await clickVisibleBodyElementByIndex(page, selectedFieldOption.index, 8000);
+  operations.push(`official:field:select:row${requestedRowIndex}:${selectedFieldOption.label ?? selectedFieldOption.text}`);
+  await page.waitForTimeout(700);
+  const rowsAfterField = await readOfficialCollageFieldRows(page);
+  const afterRow = rowsAfterField[requestedRowIndex] ?? null;
+  const verified = Boolean(afterRow && officialMetricRowFieldMatches(afterRow, metric.field));
+  if (!verified) {
+    throw new HelperBlockedError(
+      `METRIC_ROW_ASSERTION_FAILED:row=${requestedRowIndex}; expected=${metric.field}; after=${JSON.stringify(afterRow).slice(0, 1200)}`
+    );
+  }
+
+  return {
+    requested: metric,
+    rowIndex: requestedRowIndex,
+    rowsBefore,
+    rowsAfterSource,
+    rowsAfterField,
+    sourceSelection,
+    fieldControlBefore: beforeRow.fieldText,
+    fieldControlAfter: afterRow?.fieldText ?? null,
+    fieldPickerSignature,
+    selectedFieldOption,
+    fieldPickerItems: fieldPickerItems.slice(0, 120),
+    operations,
+    verified
+  };
+};
+
+type OfficialMetricRowsEvidence = {
+  mode: "official_row_scoped_setMetricRows";
+  requestedMetrics: MetricRowParam[];
+  rowsBefore: OfficialCollageFieldRow[];
+  rowsAfter: OfficialCollageFieldRow[];
+  selections: OfficialMetricRowSelectionResult[];
+  operations: string[];
+  warnings: string[];
+};
+
+const setMetricRowsThroughOfficialUi = async (
+  options: CliOptions,
+  page: Page,
+  metrics: MetricRowParam[]
+): Promise<OfficialMetricRowsEvidence | null> => {
+  if (metrics.length === 0) return null;
+  if (!await isOfficialCollageEditorPage(page)) return null;
+  const rowsBefore = await readOfficialCollageFieldRows(page);
+  const operations: string[] = [`official:setMetricRows:requested:${metrics.length}`, `official:setMetricRows:rowsBefore:${rowsBefore.length}`];
+  const selections: OfficialMetricRowSelectionResult[] = [];
+  for (const [index, metric] of metrics.entries()) {
+    const result = await setSingleMetricRowThroughOfficialUi(page, metric, index);
+    operations.push(...result.operations);
+    selections.push(result);
+  }
+  const rowsAfter = await readOfficialCollageFieldRows(page);
+  const warnings: string[] = [];
+  const evidence: OfficialMetricRowsEvidence = {
+    mode: "official_row_scoped_setMetricRows",
+    requestedMetrics: metrics,
+    rowsBefore,
+    rowsAfter,
+    selections,
+    operations,
+    warnings
+  };
+  ensureDir(artifactRoot(options));
+  fs.writeFileSync(metricRowsEvidencePath(options), `${JSON.stringify(evidence, null, 2)}\n`);
+  return evidence;
 };
 
 const extractOfficialMetadataDropdownFlow = async (

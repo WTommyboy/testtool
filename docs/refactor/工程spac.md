@@ -2436,7 +2436,7 @@ Observed A-04 evidence after helper fix shows real metadata/UI drift (`missingCo
 
 Date: 2026-05-16 Asia/Taipei
 
-Status update 2026-05-17: Gen1a/Gen1b started in dev. `BI_OFFICIAL_UI_COLLAGE` now owns draft `ui-contract.json`, `action-contracts/setMetricRows.json`, `evidence-schema.json`, `lint-rules.json`, `discovery/page-map.json`, and `discovery/component-inventory.json`; the domain API/run input/Agent prompt/reference-index/rule-index path downloads and exposes those files when present.
+Status update 2026-05-17: Gen1a/Gen1b started in dev. `BI_OFFICIAL_UI_COLLAGE` now owns draft `ui-contract.json`, `action-contracts/setMetricRows.json`, `evidence-schema.json`, `lint-rules.json`, `discovery/page-map.json`, and `discovery/component-inventory.json`; the domain API/run input/Agent prompt/reference-index/rule-index path downloads and exposes those files when present. The short-term helper bridge also started: existing helper paths now normalize `metrics[]` and legacy `sourceReport + field` params into official row-scoped source + field operations, while result gate ignores Tool Bridge prose outside actual execution/evidence fields.
 
 Planning source: [domain-ui-contract-helper-gen3-gen4-plan.md](/Users/tommy/Downloads/codex_galaxy_dev/uat-tool/docs/planning/domain-ui-contract-helper-gen3-gen4-plan.md)
 
@@ -2465,8 +2465,8 @@ Short-term BI official collage fixes should be shaped as compatibility bridges t
 - add package lint requiring `metrics[].sourceReport + metrics[].field` for preview/date/formula/save templates.
 - upload helper observations to cloud artifacts so blocked evidence can update domain contract/template candidates later.
 
-Remaining work after Gen1 wiring:
+Remaining work after Gen1 wiring / bridge:
 
-- implement the current-helper compatibility bridge for `setMetricRows(metrics[])`.
-- fix result evidence gate false positives for conditional Tool Bridge evidence.
 - promote these contracts from draft seeds into executable Gen3 helper templates only after live official UI evidence is reviewed.
+- broaden package lint so new testcase packages are warned or blocked when official collage metric setup omits `metrics[].sourceReport + metrics[].field`.
+- promote reviewed helper observations into cloud-backed feedback candidates for contract/template updates.

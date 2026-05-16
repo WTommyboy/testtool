@@ -234,6 +234,30 @@ const flattenedDetailText = (detail: Record<string, unknown>): string => {
   return parts.join("\n");
 };
 
+const TOOL_BRIDGE_CONTEXT_EXCLUDED_PATH_PATTERNS = [
+  /(?:^|\.)(測試目的|testPurpose|purpose)(?:\.|$)/i,
+  /(?:^|\.)(設定條件|setting|setup|conditions)(?:\.|$)/i,
+  /(?:^|\.)(預期行為|預期結果|expected|expectedResult)(?:\.|$)/i
+];
+
+const isToolBridgeContextExcludedPath = (path: string): boolean => {
+  const normalized = path.replace(/\[\d+\]/g, "").replace(/\s+/g, "");
+  return TOOL_BRIDGE_CONTEXT_EXCLUDED_PATH_PATTERNS.some((pattern) => pattern.test(normalized));
+};
+
+const flattenedToolBridgeExecutionText = (detail: Record<string, unknown>): string => {
+  const parts: string[] = [];
+  walkDetail(detail, ({ key, value, path }) => {
+    if (path && isToolBridgeContextExcludedPath(path)) return;
+    if (key) parts.push(key);
+    if (path) parts.push(path);
+    if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+      parts.push(String(value));
+    }
+  });
+  return parts.join("\n");
+};
+
 const hasCurrentRunEvidence = (detail: Record<string, unknown>): boolean => {
   let keyMatch = false;
   walkDetail(detail, ({ key, path, value }) => {
@@ -254,7 +278,7 @@ const hasCurrentRunEvidence = (detail: Record<string, unknown>): boolean => {
 };
 
 const claimsToolBridgeAction = (detail: Record<string, unknown>): boolean => {
-  let text = flattenedDetailText(detail);
+  let text = flattenedToolBridgeExecutionText(detail);
   for (const pattern of NEGATIVE_OR_MISSING_TOOL_BRIDGE_CLAIM_PATTERNS) {
     text = text.replace(pattern, "NEGATED_OR_MISSING_EVIDENCE_TEXT");
   }
@@ -267,7 +291,21 @@ const claimsToolBridgeAction = (detail: Record<string, unknown>): boolean => {
 };
 
 const hasToolBridgeResponse = (detail: Record<string, unknown>): boolean => {
-  const text = flattenedDetailText(detail);
+  let foundStructured = false;
+  walkDetail(detail, ({ key, value, path }) => {
+    if (foundStructured || !path || isToolBridgeContextExcludedPath(path) || !isMeaningfulValue(value)) return;
+    const target = `${key ?? ""}\n${path}`;
+    if (TOOL_BRIDGE_RESPONSE_PATTERNS.some((pattern) => pattern.test(target))) foundStructured = true;
+  });
+  if (foundStructured) return true;
+  const primitiveParts: string[] = [];
+  walkDetail(detail, ({ value, path }) => {
+    if (path && isToolBridgeContextExcludedPath(path)) return;
+    if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+      primitiveParts.push(String(value));
+    }
+  });
+  const text = primitiveParts.join("\n");
   return TOOL_BRIDGE_RESPONSE_PATTERNS.some((pattern) => pattern.test(text));
 };
 

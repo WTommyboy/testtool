@@ -1,7 +1,7 @@
 # Domain UI Contract / Helper Gen3-Gen4 Plan
 
 Date: 2026-05-16 Asia/Taipei
-Status: planned, dev-tracked; Gen1a/Gen1b contract wiring started on 2026-05-17
+Status: planned, dev-tracked; Gen1a/Gen1b contract wiring started on 2026-05-17; short-term bridge implementation started on 2026-05-17
 Primary trigger: BIUI_COLLAGE_R001 run `67990303-2c1b-4559-924a-297a089b5949`
 
 ## 1. Why This Exists
@@ -70,6 +70,13 @@ Gen1a/Gen1b implementation note:
 - `BI_OFFICIAL_UI_COLLAGE` now includes `ui-contract.json`, `action-contracts/setMetricRows.json`, `evidence-schema.json`, `lint-rules.json`, `discovery/page-map.json`, and `discovery/component-inventory.json`.
 - The UAT Tool domain loader/API/run input contract exposes those files when present, and the Agent downloads them into `input/domain_*.json` files for prompt, reference-index, and rule-index usage.
 - This is a readability/data-contract step only. Helper execution remains in the existing helper path until the short-term `setMetricRows(metrics[])` bridge and later Gen 3 template runtime are implemented.
+
+Short-term bridge implementation note:
+
+- Existing helper paths now normalize `metrics[]` and legacy `sourceReport + field` params into row-scoped metric row requests.
+- On official collage editor pages, `configureMetric`, date variants, formula base-field setup, and all-zero inspection first try visible source-report + field row controls and emit `metric-rows-evidence.json`.
+- Preview execute precondition now counts official UI selected metric rows, not only legacy remove-field buttons.
+- Result evidence gate now ignores Tool Bridge prose in `測試目的` / `設定條件` / `預期行為`; it only requires Tool Bridge response when actual execution/evidence text claims native dialog, authorization, or irreversible action was reached.
 
 ## 4. Layer 2: Domain UI + Action + Evidence Contract
 

@@ -288,6 +288,29 @@ const main = async (): Promise<void> => {
       `formula modal blocked wording should not require Tool Bridge response; issues=${JSON.stringify(formulaModalBlockedReport.issues)}`
     );
 
+    const expectedToolBridgeOnly = path.join(tempRoot, "expected-tool-bridge-only-result.xlsx");
+    await writeWorkbook(expectedToolBridgeOnly, [
+      {
+        caseNo: "FIX-H-01",
+        status: "BLOCKED",
+        detailJson: JSON.stringify({
+          測試目的: "驗證儲存流程需等待 Tool Bridge response 後才能處理 native confirm。",
+          設定條件: "本題預期儲存時需要 Tommy 授權覆寫。",
+          預期行為: "Tool Bridge response 到齊後才可點擊儲存並處理 native dialog。",
+          實際行為:
+            "helper current-run evidence 顯示欄位設定階段已 blocked，preview/save/native dialog 均未到達，因此本題缺少儲存前置 evidence，未執行不可逆或 native dialog 動作。",
+          blocked_reason: "EVIDENCE_INSUFFICIENT: setupBlocked/saveNotReached",
+          currentRunEvidence: goodDetail.currentRunEvidence
+        })
+      }
+    ]);
+    const expectedToolBridgeOnlyReport = await runGate(expectedToolBridgeOnly);
+    assert.equal(
+      expectedToolBridgeOnlyReport.status,
+      "ok",
+      `Tool Bridge prose in purpose/setup/expected fields should not trigger response gate; issues=${JSON.stringify(expectedToolBridgeOnlyReport.issues)}`
+    );
+
     const missingToolBridgeResponseProse = path.join(tempRoot, "missing-tool-bridge-response-prose-result.xlsx");
     await writeWorkbook(missingToolBridgeResponseProse, [
       {
@@ -347,6 +370,7 @@ const main = async (): Promise<void> => {
             "non-destructive selected-field validation alert does not require Tool Bridge response",
             "negative or insufficient native-confirm prose does not require Tool Bridge response",
             "formula modal blocked prose does not require Tool Bridge response",
+            "Tool Bridge prose in purpose/setup/expected fields does not trigger response gate",
             "missing Tool Bridge response prose does not require a second Tool Bridge response",
             "Tool Bridge action claim can be satisfied by current-run server event evidence",
             "invalid detail_json is blocked"

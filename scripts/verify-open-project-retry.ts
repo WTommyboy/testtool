@@ -123,6 +123,72 @@ assert.equal(
   "official field picker labels should strip the visible Chinese type badge"
 );
 
+assert.deepEqual(
+  metricHooks.metricRowsFromParams({
+    metrics: [
+      { sourceReport: "每日報表", field: "新增帳號數" },
+      { sourceReport: "雙平台營收占比", field: "iOS總營收", metricIndex: 2 }
+    ]
+  }),
+  [
+    { sourceReport: "每日報表", field: "新增帳號數", metricIndex: 0 },
+    { sourceReport: "雙平台營收占比", field: "iOS總營收", metricIndex: 2 }
+  ],
+  "metrics[] should be preserved as row-scoped official UI params"
+);
+
+assert.deepEqual(
+  metricHooks.metricRowsFromParams({
+    sourceReport: "每日報表",
+    field: "新增帳號數 + 活躍帳號數"
+  }),
+  [
+    { sourceReport: "每日報表", field: "新增帳號數", metricIndex: 0 },
+    { sourceReport: "每日報表", field: "活躍帳號數", metricIndex: 1 }
+  ],
+  "legacy field/sourceReport params should normalize to metrics[] for compatibility"
+);
+
+assert.deepEqual(
+  metricHooks.metricRowsFromBaseFieldsParams({
+    baseFields: [
+      { sourceReport: "每日報表", field: "新增帳號數" },
+      { sourceReport: "退費追蹤", field: "總退費金額" }
+    ]
+  }),
+  [
+    { sourceReport: "每日報表", field: "新增帳號數", metricIndex: 0 },
+    { sourceReport: "退費追蹤", field: "總退費金額", metricIndex: 1 }
+  ],
+  "formula baseFields[] objects should preserve source report for official row-scoped setup"
+);
+
+assert.equal(
+  metricHooks.officialMetricRowHasSelectedField({
+    rowIndex: 0,
+    sourceButtonIndex: 1,
+    sourceText: "每日報表",
+    fieldButtonIndex: 2,
+    fieldText: "新增帳號數",
+    y: 360
+  }),
+  true,
+  "official selected row fields should count as execute precondition evidence"
+);
+
+assert.equal(
+  metricHooks.officialMetricRowFieldMatches({
+    rowIndex: 0,
+    sourceButtonIndex: 1,
+    sourceText: "每日報表",
+    fieldButtonIndex: 2,
+    fieldText: "新增帳號數",
+    y: 360
+  }, "新增帳號數"),
+  true,
+  "official row selected field should verify against requested metric"
+);
+
 console.log(JSON.stringify({
   ok: true,
   fixture: "open-project-retry",
@@ -133,6 +199,10 @@ console.log(JSON.stringify({
     "report-list readiness accepts + 新增報表 pages",
     "candidate scoring prefers exact project nodes",
     "official source aliases normalize",
-    "official field picker type badges are stripped"
+    "official field picker type badges are stripped",
+    "metrics[] params normalize for official row-scoped setup",
+    "legacy sourceReport/field params normalize to metrics[]",
+    "formula baseFields[] preserve sourceReport",
+    "official selected row fields satisfy execute precondition evidence"
   ]
 }, null, 2));
