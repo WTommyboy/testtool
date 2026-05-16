@@ -231,6 +231,21 @@ locators/demo001-locator-registry.json
 
 若新功能使用不同檔名,需要先改 domain loader / API / Agent download contract。
 
+#### UI / action / evidence contract
+
+新 domain pack 不能只包含 prompt、xlsx schema 與 locator guidance。若該功能有正式 UI flow 或 helper automation,domain pack 應同步規劃 UI contract:
+
+- page map:URL、入口、頁面狀態、modal/drawer/popover。
+- component inventory:表格、row、picker、date panel、save/delete modal、toast。
+- action contracts:例如 `setMetricRows`、`setDateRange`、`runPreview`、`saveReport`。
+- params schema:例如 BI official collage 的 metric 必須是 `metrics[].sourceReport + metrics[].field`,不可只靠自然語言「加欄位 X」。
+- evidence schema:每個 action 的 required / conditional evidence,包含 Tool Bridge response 何時才需要。
+- lint rules:package consistency 應在跑測前擋掉 helper 無法執行的 testcase contract。
+
+Discovery 產物應隨 domain pack lifecycle 管理。raw DOM / screenshots 只作 artifact;穩定來源是整理後的 UI / action / evidence contract。
+
+詳見 planning: [domain-ui-contract-helper-gen3-gen4-plan.md](/Users/tommy/Downloads/codex_galaxy_dev/uat-tool/docs/planning/domain-ui-contract-helper-gen3-gen4-plan.md)。
+
 ### Step 6:本地驗證
 
 最低驗證:

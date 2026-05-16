@@ -2431,3 +2431,34 @@ Live official smoke on run `8b3ba38e-28d4-4a86-871d-870b1ee911ff`:
 - The previous blocker `METADATA_DROPDOWN_NO_VISIBLE_ITEMS_EXTRACTED` is resolved.
 
 Observed A-04 evidence after helper fix shows real metadata/UI drift (`missingCount=16`, `extraCount=16`) rather than a helper DOM extraction blocker.
+
+## 26. Domain UI Contract / Helper Gen3-Gen4 Direction
+
+Date: 2026-05-16 Asia/Taipei
+
+Planning source: [domain-ui-contract-helper-gen3-gen4-plan.md](/Users/tommy/Downloads/codex_galaxy_dev/uat-tool/docs/planning/domain-ui-contract-helper-gen3-gen4-plan.md)
+
+Run `67990303-2c1b-4559-924a-297a089b5949` exposed two platform-level issues:
+
+- Helper generic ability was not sufficient for official UI. Many cases were blocked by `VISIBLE_UI_CLICK_BLOCKED: text="新增帳號數"` because the helper still treated field selection as global text clicking, while official collage UI requires row-scoped source + field selection.
+- Result gate / upload contract can still false-positive. F-01 local evidence reached BLOCKED before save/native dialog, but upload failed with `TOOL_BRIDGE_RESPONSE_MISSING` because Tool Bridge was mentioned in expected behavior text.
+
+The long-term architecture direction is:
+
+```text
+Domain UI Discovery
+  -> Domain UI + Action + Evidence Contract
+  -> Gen 3 Domain-driven Helper Templates
+  -> Gen 4 Stable Core + Action Interpreter
+  -> Cloud Feedback Loop
+```
+
+Domain packs should own declarative UI/action/evidence contracts, not executable helper code. Discovery output belongs to the domain pack lifecycle because it feeds Claude testcase generation, package lint, helper templates, result evidence validation, and later drift updates.
+
+Short-term BI official collage fixes should be shaped as compatibility bridges toward that architecture:
+
+- add `setMetricRows(metrics[])` to the current helper path and normalize legacy `field/sourceReport` params into `metrics[]`.
+- add stale picker signature evidence such as `FIELD_PICKER_STALE_AFTER_SOURCE_CHANGE` and `FIELD_PICKER_SOURCE_MISMATCH`.
+- narrow result evidence gate Tool Bridge checks to actual execution/evidence fields, not `測試目的` / `設定條件` / `預期行為`.
+- add package lint requiring `metrics[].sourceReport + metrics[].field` for preview/date/formula/save templates.
+- upload helper observations to cloud artifacts so blocked evidence can update domain contract/template candidates later.

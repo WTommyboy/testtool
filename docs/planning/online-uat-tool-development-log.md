@@ -1411,3 +1411,11 @@ Tommy 曾討論是否改成腳本。最後決策是採「半腳本化 / helper �
 - Smoke：已跑 `npm run typecheck --prefix agent`、`npm run build --prefix agent`、`npm run verify:open-project-retry`、`npm run verify:helper-field-aliases`、`git diff --check`。Live official smoke 從 home 重跑 `collage.openProject -> collage.createReport -> collage.extractMetadataDropdownFields`: openProject `ok`, createReport `ok`, extract `ok`, selected source=`beanfun!導流`, `actualCount=27`, `missingSources=[]`, warnings empty。
 - 結論：A-04 不再是 helper DOM blocker。修復後留下的 `missingCount=16` / `extraCount=16` 是 metadata v1.2.5 與 official UI 實際欄位清單的差異 evidence,需由 testcase 判定層處理,不是 `METADATA_DROPDOWN_NO_VISIBLE_ITEMS_EXTRACTED`。
 - Push：dev commit `24e37c9 fix: support official BI field picker extraction` 已推 `dev/uat-agent-config-isolation`;本次只推 dev,未推 prod。
+
+### 2026-05-16 23:59 - Domain UI Contract / Helper Gen3-Gen4 plan recorded
+
+- 背景：Tommy 針對 BIUI_COLLAGE_R001 run `67990303-2c1b-4559-924a-297a089b5949` 指出兩個主問題應用通用方式解決：helper 通用能力不足造成大量 `VISIBLE_UI_CLICK_BLOCKED: text="新增帳號數"` BLOCKED，以及 result gate / 上傳契約在 F-01 類 BLOCKED case 出現 `TOOL_BRIDGE_RESPONSE_MISSING` false positive。Tommy 也提出 Domain UI Discovery / UI Contract 應屬於 domain pack lifecycle,不只是 testcase 生成前的臨時資料。
+- 決策：新增 planning 文件 `docs/planning/domain-ui-contract-helper-gen3-gen4-plan.md`。完整方向定為五層：Domain UI Discovery -> Domain UI + Action + Evidence Contract -> Gen 3 Domain-driven Helper Templates -> Gen 4 Stable Core + Action Interpreter -> Cloud Feedback Loop。
+- 架構邊界：domain pack 不提交 executable helper code；domain pack 應提交 declarative UI/action/evidence contract、helper templates、locator registry、lint rules。stable core 負責 session lease、Tool Bridge、不可逆 guard、artifact/screenshot、DOM/network read；action interpreter 只執行 allowlisted declarative actions。
+- 短期 bridge：BI official collage 先以未來 schema 形狀修當前 blocker，包括 `setMetricRows(metrics[])`、legacy `field/sourceReport` 正規化到 `metrics[]`、picker stale signature evidence、result gate 只檢查實際執行/evidence 欄位、package lint 要求 `metrics[].sourceReport + metrics[].field`。
+- 文件同步：`docs/refactor/工程spac.md` 新增第 26 節；`docs/authoring/新功能_DomainPack_生成流程.md` 在 domain pack 建立流程補 UI / action / evidence contract 要求。
