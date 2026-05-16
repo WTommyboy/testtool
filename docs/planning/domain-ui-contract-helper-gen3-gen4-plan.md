@@ -1,7 +1,7 @@
 # Domain UI Contract / Helper Gen3-Gen4 Plan
 
 Date: 2026-05-16 Asia/Taipei
-Status: planned, dev-tracked; Gen1a/Gen1b contract wiring started on 2026-05-17; short-term bridge implementation started on 2026-05-17
+Status: planned, dev-tracked; Gen1a/Gen1b contract wiring and short-term bridge are in dev; Gen1c contract hardening added before next live UAT
 Primary trigger: BIUI_COLLAGE_R001 run `67990303-2c1b-4559-924a-297a089b5949`
 
 ## 1. Why This Exists
@@ -77,6 +77,13 @@ Short-term bridge implementation note:
 - On official collage editor pages, `configureMetric`, date variants, formula base-field setup, and all-zero inspection first try visible source-report + field row controls and emit `metric-rows-evidence.json`.
 - Preview execute precondition now counts official UI selected metric rows, not only legacy remove-field buttons.
 - Result evidence gate now ignores Tool Bridge prose in `測試目的` / `設定條件` / `預期行為`; it only requires Tool Bridge response when actual execution/evidence text claims native dialog, authorization, or irreversible action was reached.
+
+Gen1c contract hardening note:
+
+- `test-package-consistency.json` now applies `input/domain_lint_rules.json` when the run downloads a domain pack with lint rules. The standalone checker also accepts `--domain` and `--domain-lint-rules`.
+- `BI_OFFICIAL_UI_COLLAGE/lint-rules.json` warns when new official collage helper hints still use legacy top-level `sourceReport + field` instead of `metrics[].sourceReport + metrics[].field`, and formula templates require `baseFields[].sourceReport + baseFields[].field`.
+- `verify:domain-pack` validates the critical contract shape for `ui-contract.json`, `action-contracts/setMetricRows.json`, `evidence-schema.json`, `lint-rules.json`, and discovery files instead of only checking JSON parseability.
+- Result evidence gate now supports structured `executionState`. `nativeDialogReached`, `irreversibleActionReached`, `overwriteConfirmReached`, and `deleteConfirmReached` require Tool Bridge response evidence; `setupBlocked`, `previewNotReached`, and `saveNotReached` do not.
 
 ## 4. Layer 2: Domain UI + Action + Evidence Contract
 
@@ -266,6 +273,7 @@ Short-term dev fixes should be shaped like the future contract:
    - preview/date/formula/save templates should require `metrics[]`.
    - formula `baseFields[]` should include `sourceReport` and `field`.
    - `toolBridge.response` should be conditional, not unconditional, except delete/overwrite/native-dialog execution states.
+   - current Gen1c implementation emits warnings for compatibility-period legacy helper hints; Gen3 gate can later promote selected rules from warning to error.
 
 ## 9. Immediate BI Official Collage Priorities
 
@@ -282,6 +290,8 @@ Based on run `67990303-2c1b-4559-924a-297a089b5949`:
 
 4. package lint
    Prevent future Claude-generated packages from being human-readable but helper-unexecutable.
+
+   Gen1c status: implemented as a compatibility-period warning in package consistency. This gives Claude/testcase generation feedback without blocking current legacy packages prematurely.
 
 5. cloud feedback storage
    Store helper observations in cloud artifacts for future domain contract updates.

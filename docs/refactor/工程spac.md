@@ -2438,6 +2438,8 @@ Date: 2026-05-16 Asia/Taipei
 
 Status update 2026-05-17: Gen1a/Gen1b started in dev. `BI_OFFICIAL_UI_COLLAGE` now owns draft `ui-contract.json`, `action-contracts/setMetricRows.json`, `evidence-schema.json`, `lint-rules.json`, `discovery/page-map.json`, and `discovery/component-inventory.json`; the domain API/run input/Agent prompt/reference-index/rule-index path downloads and exposes those files when present. The short-term helper bridge also started: existing helper paths now normalize `metrics[]` and legacy `sourceReport + field` params into official row-scoped source + field operations, while result gate ignores Tool Bridge prose outside actual execution/evidence fields.
 
+Status update 2026-05-17 Gen1c hardening pass: package consistency now applies downloaded domain lint rules, so official collage testcase packages receive compatibility-period warnings when helper hints omit `metrics[].sourceReport + metrics[].field`. `verify:domain-pack` now validates the key UI/action/evidence/lint/discovery contract shape. Result gate also reads structured `executionState`, requiring Tool Bridge response only for reached native/irreversible states and not for `setupBlocked` / `previewNotReached` / `saveNotReached`.
+
 Planning source: [domain-ui-contract-helper-gen3-gen4-plan.md](/Users/tommy/Downloads/codex_galaxy_dev/uat-tool/docs/planning/domain-ui-contract-helper-gen3-gen4-plan.md)
 
 Run `67990303-2c1b-4559-924a-297a089b5949` exposed two platform-level issues:

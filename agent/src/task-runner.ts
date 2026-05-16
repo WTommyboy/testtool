@@ -1120,7 +1120,9 @@ const generateRunGuides = async (
     helperHintSourcePaths: helperHintSourcePaths(inputs),
     startCaseHint,
     xlsxPath: inputs.xlsx,
-    baseDir: runDir
+    baseDir: runDir,
+    domain,
+    domainLintRulesPath: inputs.domain_lint_rules ?? null
   });
   const documentConsistencyPath = writeDocumentConsistency(
     runDir,

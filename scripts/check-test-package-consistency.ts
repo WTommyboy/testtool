@@ -11,11 +11,13 @@ type Args = {
   helperSources: string[];
   preferredStartCase?: string;
   out?: string;
+  domain?: string;
+  domainLintRules?: string;
 };
 
 const usage = (): string =>
   [
-    "Usage: npm run check:package-consistency -- --xlsx <testcase.xlsx> --assignment <Codex_指派文字.md> --instruction <測試執行說明.md> [--helper-source <file.md>] [--preferred-start-case <case>] [--out <report.json>]",
+    "Usage: npm run check:package-consistency -- --xlsx <testcase.xlsx> --assignment <Codex_指派文字.md> --instruction <測試執行說明.md> [--helper-source <file.md>] [--preferred-start-case <case>] [--domain <DOMAIN>] [--domain-lint-rules <file.json>] [--out <report.json>]",
     "",
     "Produces a warning/error report only. It never edits the testcase package."
   ].join("\n");
@@ -42,6 +44,12 @@ const parseArgs = (argv: string[]): Args => {
       index += 1;
     } else if (arg === "--out") {
       args.out = next;
+      index += 1;
+    } else if (arg === "--domain") {
+      args.domain = next;
+      index += 1;
+    } else if (arg === "--domain-lint-rules") {
+      args.domainLintRules = next;
       index += 1;
     } else if (arg === "--help" || arg === "-h") {
       console.log(usage());
@@ -73,7 +81,9 @@ const main = async (): Promise<void> => {
       instructionPath: args.instruction,
       helperHintSourcePaths: args.helperSources.length > 0 ? args.helperSources : args.instruction ? [args.instruction] : [],
       xlsxPath: args.xlsx,
-      baseDir: path.dirname(args.xlsx)
+      baseDir: path.dirname(args.xlsx),
+      domain: args.domain,
+      domainLintRulesPath: args.domainLintRules
     });
     console.log(JSON.stringify({ ok: report.status !== "error", status: report.status, outputPath, issueCount: report.issues.length }, null, 2));
     if (report.status === "error") process.exitCode = 2;

@@ -47,6 +47,141 @@ const includesAny = (content: string, needles: string[]): boolean => {
   return needles.some((needle) => normalized.includes(needle.toLowerCase()));
 };
 
+const asRecord = (value: unknown): Record<string, unknown> | null =>
+  value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
+
+const asRecordArray = (value: unknown): Array<Record<string, unknown>> =>
+  Array.isArray(value) ? value.map(asRecord).filter((item): item is Record<string, unknown> => Boolean(item)) : [];
+
+const stringArray = (value: unknown): string[] =>
+  Array.isArray(value) ? value.filter((item): item is string => typeof item === "string" && item.trim().length > 0) : [];
+
+const requireString = (findings: Finding[], relPath: string, json: Record<string, unknown>, field: string): void => {
+  const value = json[field];
+  if (typeof value !== "string" || !value.trim()) {
+    findings.push({ level: "error", message: `${relPath} missing string field: ${field}` });
+  }
+};
+
+const requireRecord = (findings: Finding[], relPath: string, json: Record<string, unknown>, field: string): Record<string, unknown> | null => {
+  const record = asRecord(json[field]);
+  if (!record) findings.push({ level: "error", message: `${relPath} missing object field: ${field}` });
+  return record;
+};
+
+const requireRecordArray = (findings: Finding[], relPath: string, json: Record<string, unknown>, field: string): Array<Record<string, unknown>> => {
+  const records = asRecordArray(json[field]);
+  if (records.length === 0) findings.push({ level: "error", message: `${relPath} missing non-empty array field: ${field}` });
+  return records;
+};
+
+const requireStringArray = (findings: Finding[], relPath: string, json: Record<string, unknown>, field: string): string[] => {
+  const values = stringArray(json[field]);
+  if (values.length === 0) findings.push({ level: "error", message: `${relPath} missing non-empty string array field: ${field}` });
+  return values;
+};
+
+const validateUiContract = (relPath: string, json: Record<string, unknown>, findings: Finding[]): void => {
+  requireString(findings, relPath, json, "schemaVersion");
+  requireString(findings, relPath, json, "domain");
+  const pages = requireRecordArray(findings, relPath, json, "pages");
+  const components = requireRecordArray(findings, relPath, json, "components");
+  const actions = requireRecordArray(findings, relPath, json, "actions");
+  for (const [index, page] of pages.entries()) {
+    requireString(findings, `${relPath} pages[${index}]`, page, "id");
+    requireStringArray(findings, `${relPath} pages[${index}]`, page, "routePatterns");
+    requireStringArray(findings, `${relPath} pages[${index}]`, page, "components");
+  }
+  for (const [index, component] of components.entries()) {
+    requireString(findings, `${relPath} components[${index}]`, component, "id");
+    requireString(findings, `${relPath} components[${index}]`, component, "type");
+    requireStringArray(findings, `${relPath} components[${index}]`, component, "locatorStrategies");
+  }
+  for (const [index, action] of actions.entries()) {
+    requireString(findings, `${relPath} actions[${index}]`, action, "id");
+    requireString(findings, `${relPath} actions[${index}]`, action, "contractFile");
+    requireStringArray(findings, `${relPath} actions[${index}]`, action, "capabilities");
+  }
+};
+
+const validateSetMetricRowsContract = (relPath: string, json: Record<string, unknown>, findings: Finding[]): void => {
+  requireString(findings, relPath, json, "schemaVersion");
+  requireString(findings, relPath, json, "domain");
+  if (json.action !== "setMetricRows") {
+    findings.push({ level: "error", message: `${relPath} action must be setMetricRows` });
+  }
+  const paramsSchema = requireRecord(findings, relPath, json, "paramsSchema");
+  if (paramsSchema && !stringArray(paramsSchema.required).includes("metrics")) {
+    findings.push({ level: "error", message: `${relPath} paramsSchema.required must include metrics` });
+  }
+  requireRecordArray(findings, relPath, json, "declarativePlan");
+  requireStringArray(findings, relPath, json, "requiredEvidence");
+  const blockerCodes = requireStringArray(findings, relPath, json, "blockerCodes");
+  for (const expected of ["FIELD_PICKER_STALE_AFTER_SOURCE_CHANGE", "FIELD_PICKER_SOURCE_MISMATCH"]) {
+    if (!blockerCodes.includes(expected)) {
+      findings.push({ level: "error", message: `${relPath} blockerCodes must include ${expected}` });
+    }
+  }
+};
+
+const validateEvidenceSchema = (relPath: string, json: Record<string, unknown>, findings: Finding[]): void => {
+  requireString(findings, relPath, json, "schemaVersion");
+  requireString(findings, relPath, json, "domain");
+  const evidenceObjects = requireRecord(findings, relPath, json, "evidenceObjects");
+  if (evidenceObjects && !asRecord(evidenceObjects["toolBridge.response"])) {
+    findings.push({ level: "error", message: `${relPath} evidenceObjects must define toolBridge.response` });
+  }
+  const rules = requireRecordArray(findings, relPath, json, "conditionalEvidenceRules");
+  if (!rules.some((rule) => stringArray(rule.requires).includes("toolBridge.response"))) {
+    findings.push({ level: "error", message: `${relPath} conditionalEvidenceRules must include a toolBridge.response requirement` });
+  }
+};
+
+const validateLintRules = (relPath: string, json: Record<string, unknown>, findings: Finding[]): void => {
+  requireString(findings, relPath, json, "schemaVersion");
+  requireString(findings, relPath, json, "domain");
+  const rules = requireRecordArray(findings, relPath, json, "rules");
+  for (const [index, rule] of rules.entries()) {
+    requireString(findings, `${relPath} rules[${index}]`, rule, "id");
+    requireString(findings, `${relPath} rules[${index}]`, rule, "severity");
+    if (!Array.isArray(rule.require) && !Array.isArray(rule.forbid)) {
+      findings.push({ level: "error", message: `${relPath} rules[${index}] must define require or forbid` });
+    }
+  }
+};
+
+const validateDiscoveryPageMap = (relPath: string, json: Record<string, unknown>, findings: Finding[]): void => {
+  requireString(findings, relPath, json, "schemaVersion");
+  requireString(findings, relPath, json, "domain");
+  const pages = requireRecordArray(findings, relPath, json, "pages");
+  for (const [index, page] of pages.entries()) {
+    requireString(findings, `${relPath} pages[${index}]`, page, "id");
+    requireString(findings, `${relPath} pages[${index}]`, page, "routePattern");
+    requireStringArray(findings, `${relPath} pages[${index}]`, page, "expectedSignals");
+  }
+};
+
+const validateDiscoveryComponentInventory = (relPath: string, json: Record<string, unknown>, findings: Finding[]): void => {
+  requireString(findings, relPath, json, "schemaVersion");
+  requireString(findings, relPath, json, "domain");
+  const components = requireRecordArray(findings, relPath, json, "components");
+  for (const [index, component] of components.entries()) {
+    requireString(findings, `${relPath} components[${index}]`, component, "id");
+    requireString(findings, `${relPath} components[${index}]`, component, "page");
+    requireString(findings, `${relPath} components[${index}]`, component, "type");
+    requireStringArray(findings, `${relPath} components[${index}]`, component, "candidateSignals");
+  }
+};
+
+const validateContractFile = (relPath: string, json: Record<string, unknown>, findings: Finding[]): void => {
+  if (relPath.endsWith("ui-contract.json")) validateUiContract(relPath, json, findings);
+  if (relPath.endsWith("action-contracts/setMetricRows.json")) validateSetMetricRowsContract(relPath, json, findings);
+  if (relPath.endsWith("evidence-schema.json")) validateEvidenceSchema(relPath, json, findings);
+  if (relPath.endsWith("lint-rules.json")) validateLintRules(relPath, json, findings);
+  if (relPath.endsWith("discovery/page-map.json")) validateDiscoveryPageMap(relPath, json, findings);
+  if (relPath.endsWith("discovery/component-inventory.json")) validateDiscoveryComponentInventory(relPath, json, findings);
+};
+
 const verifyPack = (packDir: string): Finding[] => {
   const findings: Finding[] = [];
   const relPackDir = path.relative(process.cwd(), packDir);
@@ -121,7 +256,8 @@ const verifyPack = (packDir: string): Finding[] => {
       }
       continue;
     }
-    parseJson(filePath, findings);
+    const parsed = parseJson(filePath, findings);
+    if (parsed) validateContractFile(path.relative(process.cwd(), filePath), parsed, findings);
   }
 
   return findings;

@@ -141,6 +141,22 @@ const TOOL_BRIDGE_RESPONSE_PATTERNS = [
   /Tool Bridge response/i
 ];
 
+const TOOL_BRIDGE_REQUIRED_EXECUTION_STATES = new Set([
+  "nativedialogreached",
+  "irreversibleactionreached",
+  "overwriteconfirmreached",
+  "deleteconfirmreached"
+]);
+
+const EXECUTION_STATE_PATH_PATTERNS = [
+  /(?:^|[._-])executionstate(?:$|[._-])/i,
+  /(?:^|[._-])execution_state(?:$|[._-])/i,
+  /(?:^|[._-])workflowstate(?:$|[._-])/i,
+  /(?:^|[._-])workflow_state(?:$|[._-])/i,
+  /(?:^|[._-])nativedialogstate(?:$|[._-])/i,
+  /(?:^|[._-])native_dialog_state(?:$|[._-])/i
+];
+
 const NON_DESTRUCTIVE_NATIVE_VALIDATION_DIALOG_PATTERN =
   /(?:請至少選擇一個欄位|至少選擇.{0,12}欄位|請選擇.{0,12}欄位|select\s+at\s+least\s+one\s+field|at\s+least\s+one\s+field)/i;
 const TOOL_BRIDGE_AUTH_OR_DESTRUCTIVE_PATTERN =
@@ -149,6 +165,8 @@ const NEGATIVE_OR_MISSING_TOOL_BRIDGE_CLAIM_PATTERNS = [
   /TOOL_BRIDGE_RESPONSE_MISSING/gi,
   /(?:tool\s*bridge|toolbridge|tool_bridge).{0,24}(?:response|回覆).{0,24}(?:missing|缺少|缺乏|未取得|沒有取得|無法取得|不足)/gi,
   /(?:missing|without|缺少|缺乏|未取得|沒有取得|無法取得|不足).{0,40}(?:tool\s*bridge|toolbridge|tool_bridge).{0,24}(?:response|回覆|evidence|證據|紀錄)/gi,
+  /(?:未附|未提供|未包含|未寫入|未记录|未記錄).{0,40}(?:tool\s*bridge|toolbridge|tool_bridge).{0,24}(?:response|回覆|evidence|證據|紀錄)/gi,
+  /(?:tool\s*bridge|toolbridge|tool_bridge).{0,24}(?:response|回覆|evidence|證據|紀錄).{0,40}(?:未附|未提供|未包含|未寫入|未记录|未記錄)/gi,
   /(?:無|未|沒有|不會|不應|不需|不需要|不出現|未出現|沒有出現|未觸發|沒有觸發).{0,24}(?:native\s*)?(?:confirm|alert|dialog|原生\s*(?:confirm|alert|dialog)|確認)/gi,
   /(?:native\s*)?(?:confirm|alert|dialog|原生\s*(?:confirm|alert|dialog)|確認).{0,24}(?:無|未|沒有|不會|不應|不需|不需要|不出現|未出現|沒有出現|未觸發|沒有觸發)/gi,
   /(?:缺少|缺乏|未取得|沒有取得|無法取得|不足).{0,40}(?:tool\s*bridge|toolbridge|tool_bridge|approval|authorization|授權|回覆|response|native\s*)?(?:confirm|alert|dialog|原生\s*(?:confirm|alert|dialog)|證據|驗證|紀錄)/gi,
@@ -258,6 +276,25 @@ const flattenedToolBridgeExecutionText = (detail: Record<string, unknown>): stri
   return parts.join("\n");
 };
 
+const normalizeExecutionState = (value: string): string => value.replace(/[\s._-]+/g, "").toLowerCase();
+
+const collectExecutionStates = (detail: Record<string, unknown>): string[] => {
+  const states: string[] = [];
+  walkDetail(detail, ({ value, path }) => {
+    if (!path) return;
+    if (isToolBridgeContextExcludedPath(path)) return;
+    const normalizedPath = path.replace(/\[\d+\]/g, "").replace(/\s+/g, "");
+    if (!EXECUTION_STATE_PATH_PATTERNS.some((pattern) => pattern.test(normalizedPath))) return;
+    if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+      states.push(String(value));
+    }
+  });
+  return states;
+};
+
+const hasToolBridgeRequiredExecutionState = (detail: Record<string, unknown>): boolean =>
+  collectExecutionStates(detail).some((state) => TOOL_BRIDGE_REQUIRED_EXECUTION_STATES.has(normalizeExecutionState(state)));
+
 const hasCurrentRunEvidence = (detail: Record<string, unknown>): boolean => {
   let keyMatch = false;
   walkDetail(detail, ({ key, path, value }) => {
@@ -305,7 +342,10 @@ const hasToolBridgeResponse = (detail: Record<string, unknown>): boolean => {
       primitiveParts.push(String(value));
     }
   });
-  const text = primitiveParts.join("\n");
+  let text = primitiveParts.join("\n");
+  for (const pattern of NEGATIVE_OR_MISSING_TOOL_BRIDGE_CLAIM_PATTERNS) {
+    text = text.replace(pattern, "NEGATED_OR_MISSING_EVIDENCE_TEXT");
+  }
   return TOOL_BRIDGE_RESPONSE_PATTERNS.some((pattern) => pattern.test(text));
 };
 
@@ -465,11 +505,9 @@ export const evaluateResultEvidenceGate = (input: ResultEvidenceGateInput): Resu
       });
     }
 
-    if (
-      claimsToolBridgeAction(item.detailJson) &&
-      !hasToolBridgeResponse(item.detailJson) &&
-      !hasExternalToolBridgeResponse(item.caseNo, externalToolBridgeEvidenceByCase)
-    ) {
+    const requiresToolBridgeResponse =
+      hasToolBridgeRequiredExecutionState(item.detailJson) || claimsToolBridgeAction(item.detailJson);
+    if (requiresToolBridgeResponse && !hasToolBridgeResponse(item.detailJson) && !hasExternalToolBridgeResponse(item.caseNo, externalToolBridgeEvidenceByCase)) {
       issues.push({
         severity: "error",
         code: "TOOL_BRIDGE_RESPONSE_MISSING",

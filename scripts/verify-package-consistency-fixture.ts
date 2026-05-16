@@ -135,16 +135,120 @@ const writeInstruction = (filePath: string, riskLevel = "🟢 觀察", cleanupSt
   );
 };
 
-const runChecker = (xlsx: string, assignment: string, instruction: string, out: string): { status: string; issues: Array<{ code: string; severity: string }> } => {
+const runChecker = (
+  xlsx: string,
+  assignment: string,
+  instruction: string,
+  out: string,
+  extraArgs: string[] = []
+): { status: string; issues: Array<{ code: string; severity: string; context?: Record<string, unknown> }> } => {
   try {
-    execFileSync("npx", ["tsx", checker, "--xlsx", xlsx, "--assignment", assignment, "--instruction", instruction, "--helper-source", instruction, "--out", out], {
-      cwd: toolRoot,
-      stdio: "pipe"
-    });
+    execFileSync(
+      "npx",
+      ["tsx", checker, "--xlsx", xlsx, "--assignment", assignment, "--instruction", instruction, "--helper-source", instruction, "--out", out, ...extraArgs],
+      {
+        cwd: toolRoot,
+        stdio: "pipe"
+      }
+    );
   } catch {
     // Error status intentionally exits non-zero; inspect the report below.
   }
   return JSON.parse(fs.readFileSync(out, "utf8")) as { status: string; issues: Array<{ code: string; severity: string }> };
+};
+
+const officialCollageHint = (withMetrics: boolean) => ({
+  caseId,
+  automationLevel: "helper",
+  operationTemplate: "collage_date_variants_preview",
+  params: withMetrics
+    ? {
+        metrics: [{ sourceReport: "每日報表", field: "新增帳號數" }],
+        dateVariants: [{ uiLabel: "昨日" }],
+        display: "每天"
+      }
+    : {
+        sourceReport: "每日報表",
+        field: "新增帳號數",
+        dateVariants: [{ uiLabel: "昨日" }],
+        display: "每天"
+      },
+  requiredEvidence: ["dom.state", "network.requestBody", "chart.datasets"],
+  forbiddenAutomation: ["direct_bi_api", "internal_js_setter", "multi_case_batch"],
+  aiDecisionRequired: true
+});
+
+const writeOfficialCollageWorkbook = async (xlsxPath: string): Promise<void> => {
+  const workbook = new ExcelJS.Workbook();
+  const sheet = workbook.addWorksheet("測試案例");
+  sheet.addRow([
+    "輪次ID",
+    "群組ID",
+    "群組",
+    "編號",
+    "測試類型",
+    "測試項目",
+    "風險等級",
+    "測試標的",
+    "狀態清理",
+    "前置條件",
+    "步驟",
+    "預期結果",
+    "結果",
+    "執行方式",
+    "測試日",
+    "詳細紀錄JSON",
+    "驗證方法"
+  ]);
+  sheet.addRow([
+    "FIXTURE",
+    "H",
+    "H:Official collage lint fixture",
+    caseId,
+    "前後端整合",
+    "官方拼貼 UI metrics[] domain lint fixture",
+    "🟢 觀察",
+    "前後端整合",
+    "欄位=新增帳號數;篩選=0組;分組=0組;時間=昨日;顯示=每天",
+    "起始頁面: DEV URL 首頁; 建構模式: 拼貼; 來源報表: 每日報表",
+    "1. 透過官方拼貼 UI 在來源報表「每日報表」下選擇欄位「新增帳號數」\n2. 設定時間「昨日」且顯示「每天」\n3. 按執行並讀取 DOM state、network request body、chart datasets",
+    "request body 與 chart datasets 皆有 current-run evidence",
+    "",
+    "",
+    "",
+    "",
+    "DOM state + network request body + Chart.js datasets"
+  ]);
+  await workbook.xlsx.writeFile(xlsxPath);
+};
+
+const writeOfficialCollageDocs = (assignmentPath: string, instructionPath: string, withMetrics: boolean): void => {
+  const lines = [
+    "# Official Collage Domain Lint Fixture",
+    "",
+    "起始 case: FIX-H-01",
+    "",
+    `### ${caseId} — Official collage metrics lint`,
+    "",
+    "**風險等級**: 🟢 觀察",
+    "",
+    "**測試標的**: 前後端整合",
+    "",
+    "**狀態清理**(固定 5 項格式):",
+    "```",
+    "欄位=新增帳號數;篩選=0組;分組=0組;時間=昨日;顯示=每天",
+    "```",
+    "",
+    "本題透過官方拼貼 UI 從來源報表「每日報表」設定欄位「新增帳號數」，時間「昨日」，顯示「每天」。",
+    "",
+    "Helper hints:",
+    "```json",
+    JSON.stringify(officialCollageHint(withMetrics), null, 2),
+    "```",
+    ""
+  ].join("\n");
+  fs.writeFileSync(assignmentPath, lines);
+  fs.writeFileSync(instructionPath, lines);
 };
 
 const writeToolPrefixedWorkbook = async (xlsxPath: string): Promise<void> => {
@@ -287,6 +391,45 @@ const main = async (): Promise<void> => {
       `TOOL-prefixed package should resolve shorthand A-02 to TOOL-A-02 when unique; issues=${JSON.stringify(toolReport.issues)}`
     );
 
+    const officialLintArgs = [
+      "--domain",
+      "BI_OFFICIAL_UI_COLLAGE",
+      "--domain-lint-rules",
+      path.join(toolRoot, "domain-packs", "BI_OFFICIAL_UI_COLLAGE", "lint-rules.json")
+    ];
+    const officialXlsx = path.join(tempRoot, "OfficialCollage_測試案例_v1_0.xlsx");
+    const officialAssignment = path.join(tempRoot, "Codex_指派文字_OfficialCollage_v1_0.md");
+    const officialInstruction = path.join(tempRoot, "OfficialCollage_測試執行說明_for_v1_0.md");
+    await writeOfficialCollageWorkbook(officialXlsx);
+    writeOfficialCollageDocs(officialAssignment, officialInstruction, true);
+    const officialGoodReport = runChecker(
+      officialXlsx,
+      officialAssignment,
+      officialInstruction,
+      path.join(tempRoot, "official-domain-lint-good-report.json"),
+      officialLintArgs
+    );
+    assert.ok(
+      !officialGoodReport.issues.some((item) => item.code === "DOMAIN_LINT_RULE_FAILED"),
+      `official collage metrics[] helper hints should satisfy domain lint; issues=${JSON.stringify(officialGoodReport.issues)}`
+    );
+
+    writeOfficialCollageDocs(officialAssignment, officialInstruction, false);
+    const officialBadReport = runChecker(
+      officialXlsx,
+      officialAssignment,
+      officialInstruction,
+      path.join(tempRoot, "official-domain-lint-bad-report.json"),
+      officialLintArgs
+    );
+    assert.equal(officialBadReport.status, "warning", `legacy official collage helper hints should warn; issues=${JSON.stringify(officialBadReport.issues)}`);
+    assert.ok(
+      officialBadReport.issues.some(
+        (item) => item.code === "DOMAIN_LINT_RULE_FAILED" && item.context?.ruleId === "BI_OFFICIAL_COLLAGE_METRICS_ARRAY_REQUIRED"
+      ),
+      `legacy official collage helper hints should trigger metrics[] domain lint; issues=${JSON.stringify(officialBadReport.issues)}`
+    );
+
     console.log(
       JSON.stringify(
         {
@@ -298,7 +441,8 @@ const main = async (): Promise<void> => {
             "risk-level conflict emits blocking error",
             "abbreviated xlsx-order line and inline deleted case refs do not create false package errors",
             "DEMO001 v1_4 has no blocking consistency error",
-            "TOOL-prefixed case ids do not conflict with pause-table shorthand"
+            "TOOL-prefixed case ids do not conflict with pause-table shorthand",
+            "official collage domain lint accepts metrics[] helper hints and warns on legacy top-level field/sourceReport"
           ]
         },
         null,

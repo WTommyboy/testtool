@@ -11,10 +11,12 @@
         "domain": "BI_OFFICIAL_UI_COLLAGE",
         "operationTemplates": [
           "collage_preview",
+          "collage_build_preview_save_reopen",
           "collage_date_variants_preview",
           "collage_formula_preview",
           "collage_save",
-          "collage_download"
+          "collage_download",
+          "download_csv_verify"
         ]
       },
       "require": [
@@ -27,9 +29,11 @@
       "id": "BI_OFFICIAL_COLLAGE_FORMULA_BASE_FIELDS_REQUIRE_SOURCE",
       "severity": "warning_until_gen3_gate",
       "appliesWhen": {
+        "domain": "BI_OFFICIAL_UI_COLLAGE",
         "operationTemplates": [
           "collage_formula_preview",
-          "collage_formula_save"
+          "collage_formula_save",
+          "collage.configureCalculatedMetricAndPreview"
         ]
       },
       "require": [
@@ -42,6 +46,7 @@
       "id": "BI_OFFICIAL_COLLAGE_TOOL_BRIDGE_CONDITIONAL",
       "severity": "error",
       "appliesWhen": {
+        "domain": "BI_OFFICIAL_UI_COLLAGE",
         "requiredEvidenceContains": "toolBridge.response"
       },
       "require": [

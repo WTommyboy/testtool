@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import type { CaseManifestCase, CaseManifestResult } from "./case-manifest";
 import type { DocumentConsistencyIssue } from "./document-consistency";
-import { findHelperHints, parseHelperHintsFromMarkdown } from "./helper-hints";
+import { findHelperHints, parseHelperHintsFromMarkdown, type HelperHints } from "./helper-hints";
 import { detectStartCaseHint, type StartCaseHint } from "./start-case";
 
 export type TestPackageConsistencyReport = {
@@ -14,6 +14,7 @@ export type TestPackageConsistencyReport = {
     assignmentPath: string | null;
     instructionPath: string | null;
     helperHintSourcePaths: string[];
+    domainLintRulesPath: string | null;
   };
   caseCount: number;
   caseNos: string[];
@@ -34,6 +35,8 @@ export type TestPackageConsistencyInput = {
   startCaseHint?: StartCaseHint | null;
   xlsxPath?: string | null;
   baseDir?: string;
+  domain?: string | null;
+  domainLintRulesPath?: string | null;
 };
 
 const CASE_ID_PATTERN = /\b(?:DEMO-)?[A-Z]+(?:-[A-Z]+)?-\d{1,3}\b/g;
@@ -218,6 +221,138 @@ const stringLeaves = (value: unknown): string[] => {
   return [];
 };
 
+const asRecord = (value: unknown): Record<string, unknown> | null =>
+  value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
+
+const meaningfulString = (value: unknown): string | null =>
+  typeof value === "string" && value.trim() ? value.trim() : null;
+
+const readJsonRecord = (filePath: string | null | undefined): Record<string, unknown> | null => {
+  if (!filePath || !fs.existsSync(filePath) || !fs.statSync(filePath).isFile()) return null;
+  try {
+    return asRecord(JSON.parse(fs.readFileSync(filePath, "utf8")) as unknown);
+  } catch {
+    return null;
+  }
+};
+
+const arrayOfRecords = (value: unknown): Array<Record<string, unknown>> =>
+  Array.isArray(value) ? value.map(asRecord).filter((item): item is Record<string, unknown> => Boolean(item)) : [];
+
+const severityFromDomainRule = (value: unknown): DocumentConsistencyIssue["severity"] => {
+  const severity = meaningfulString(value) ?? "warning";
+  return severity === "error" ? "error" : "warning";
+};
+
+const helperParamsRecord = (params: unknown): Record<string, unknown> => asRecord(params) ?? {};
+
+const operationTemplateMatches = (ruleAppliesWhen: Record<string, unknown>, operationTemplate: string | null): boolean => {
+  const templates = Array.isArray(ruleAppliesWhen.operationTemplates)
+    ? ruleAppliesWhen.operationTemplates.filter((item): item is string => typeof item === "string")
+    : [];
+  return templates.length === 0 || Boolean(operationTemplate && templates.includes(operationTemplate));
+};
+
+const domainMatches = (ruleAppliesWhen: Record<string, unknown>, domain: string | null | undefined): boolean => {
+  const expected = meaningfulString(ruleAppliesWhen.domain);
+  return !expected || expected === domain;
+};
+
+const requiredEvidenceMatches = (ruleAppliesWhen: Record<string, unknown>, requiredEvidence: string[]): boolean => {
+  const token = meaningfulString(ruleAppliesWhen.requiredEvidenceContains);
+  if (!token) return true;
+  return requiredEvidence.some((item) => item === token || item.startsWith(`${token}.`));
+};
+
+const domainRuleApplies = (
+  rule: Record<string, unknown>,
+  domain: string | null | undefined,
+  operationTemplate: string | null,
+  requiredEvidence: string[]
+): boolean => {
+  const appliesWhen = asRecord(rule.appliesWhen) ?? {};
+  return (
+    domainMatches(appliesWhen, domain) &&
+    operationTemplateMatches(appliesWhen, operationTemplate) &&
+    requiredEvidenceMatches(appliesWhen, requiredEvidence)
+  );
+};
+
+const paramsArrayFieldHasRequiredString = (
+  params: Record<string, unknown>,
+  arrayKey: string,
+  fieldKey: string
+): boolean => {
+  const array = params[arrayKey];
+  if (!Array.isArray(array) || array.length === 0) return false;
+  return array.every((item) => {
+    const record = asRecord(item);
+    return Boolean(record && meaningfulString(record[fieldKey]));
+  });
+};
+
+const helperHasRequiredDomainPath = (helperHints: HelperHints, requirement: string): boolean => {
+  const normalized = requirement.replace(/^helperHints\./, "");
+  const params = helperParamsRecord(helperHints.params);
+  if (normalized === "params.metrics[].sourceReport") return paramsArrayFieldHasRequiredString(params, "metrics", "sourceReport");
+  if (normalized === "params.metrics[].field") return paramsArrayFieldHasRequiredString(params, "metrics", "field");
+  if (normalized === "params.baseFields[].sourceReport") return paramsArrayFieldHasRequiredString(params, "baseFields", "sourceReport");
+  if (normalized === "params.baseFields[].field") return paramsArrayFieldHasRequiredString(params, "baseFields", "field");
+  if (normalized === "conditionalEvidence.when") {
+    const raw = helperHints.raw;
+    const conditional = raw.conditionalEvidence;
+    if (Array.isArray(conditional)) return conditional.some((item) => Boolean(asRecord(item)?.when));
+    return Boolean(asRecord(conditional)?.when);
+  }
+  return true;
+};
+
+const helperViolatesDomainForbid = (helperHints: HelperHints, forbid: string): boolean => {
+  const params = helperParamsRecord(helperHints.params);
+  if (forbid === "helperHints.params.field without helperHints.params.sourceReport") {
+    return Boolean(meaningfulString(params.field) && !meaningfulString(params.sourceReport) && !meaningfulString(params.source));
+  }
+  return false;
+};
+
+const applyDomainLintRules = (
+  issues: DocumentConsistencyIssue[],
+  caseNo: string,
+  helperHints: HelperHints,
+  domain: string | null | undefined,
+  lintRules: Record<string, unknown> | null
+): void => {
+  const rules = arrayOfRecords(lintRules?.rules);
+  for (const rule of rules) {
+    if (!domainRuleApplies(rule, domain, helperHints.operationTemplate, helperHints.requiredEvidence)) continue;
+    const ruleId = meaningfulString(rule.id) ?? "DOMAIN_LINT_RULE";
+    const severity = severityFromDomainRule(rule.severity);
+    const message = meaningfulString(rule.message) ?? `Domain lint rule failed: ${ruleId}`;
+    const required = Array.isArray(rule.require) ? rule.require.filter((item): item is string => typeof item === "string") : [];
+    for (const requirement of required) {
+      if (!helperHasRequiredDomainPath(helperHints, requirement)) {
+        issue(issues, severity, "DOMAIN_LINT_RULE_FAILED", `${caseNo}: ${message}`, {
+          caseNo,
+          ruleId,
+          requirement,
+          operationTemplate: helperHints.operationTemplate
+        });
+      }
+    }
+    const forbid = Array.isArray(rule.forbid) ? rule.forbid.filter((item): item is string => typeof item === "string") : [];
+    for (const forbidden of forbid) {
+      if (helperViolatesDomainForbid(helperHints, forbidden)) {
+        issue(issues, severity, "DOMAIN_LINT_RULE_FAILED", `${caseNo}: ${message}`, {
+          caseNo,
+          ruleId,
+          forbidden,
+          operationTemplate: helperHints.operationTemplate
+        });
+      }
+    }
+  }
+};
+
 export const buildTestPackageConsistencyReport = (input: TestPackageConsistencyInput): TestPackageConsistencyReport => {
   const issues: DocumentConsistencyIssue[] = [];
   const caseNos = input.caseManifest.cases.map((item) => normalizeCaseNo(item.caseNo));
@@ -228,6 +363,12 @@ export const buildTestPackageConsistencyReport = (input: TestPackageConsistencyI
   const helperTexts = helperSourcePaths
     .map((filePath) => ({ filePath, text: readText(filePath) }))
     .filter((item): item is { filePath: string; text: string } => Boolean(item.text));
+  const domainLintRules = readJsonRecord(input.domainLintRulesPath);
+  if (input.domainLintRulesPath && !domainLintRules) {
+    issue(issues, "error", "DOMAIN_LINT_RULES_UNREADABLE", "Domain lint rules file is missing, unreadable, or invalid JSON.", {
+      domainLintRulesPath: input.domainLintRulesPath
+    });
+  }
 
   if (!input.xlsxPath && !input.caseManifest.manifestPath) {
     issue(issues, "error", "XLSX_SOURCE_MISSING", "No testcase workbook or case manifest path was provided.");
@@ -377,6 +518,7 @@ export const buildTestPackageConsistencyReport = (input: TestPackageConsistencyI
   for (const item of input.caseManifest.cases) {
     const search = findHelperHints(helperSourcePaths, item.caseNo, input.baseDir);
     if (!search.helperHints) continue;
+    applyDomainLintRules(issues, item.caseNo, search.helperHints, input.domain, domainLintRules);
     const caseText = [item.caseTitle, item.preconditions, item.stepsSummary, item.expected, item.validationMethod, item.cleanupChecklist]
       .filter(Boolean)
       .join("\n");
@@ -414,7 +556,8 @@ export const buildTestPackageConsistencyReport = (input: TestPackageConsistencyI
       xlsxPath: input.xlsxPath ?? input.caseManifest.manifestPath,
       assignmentPath: input.assignmentPath ?? null,
       instructionPath: input.instructionPath ?? null,
-      helperHintSourcePaths: helperSourcePaths
+      helperHintSourcePaths: helperSourcePaths,
+      domainLintRulesPath: input.domainLintRulesPath ?? null
     },
     caseCount: input.caseManifest.cases.length,
     caseNos,

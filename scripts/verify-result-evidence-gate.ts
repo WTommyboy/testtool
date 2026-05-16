@@ -296,7 +296,10 @@ const main = async (): Promise<void> => {
         detailJson: JSON.stringify({
           測試目的: "驗證儲存流程需等待 Tool Bridge response 後才能處理 native confirm。",
           設定條件: "本題預期儲存時需要 Tommy 授權覆寫。",
-          預期行為: "Tool Bridge response 到齊後才可點擊儲存並處理 native dialog。",
+          預期行為: {
+            description: "Tool Bridge response 到齊後才可點擊儲存並處理 native dialog。",
+            executionState: "nativeDialogReached"
+          },
           實際行為:
             "helper current-run evidence 顯示欄位設定階段已 blocked，preview/save/native dialog 均未到達，因此本題缺少儲存前置 evidence，未執行不可逆或 native dialog 動作。",
           blocked_reason: "EVIDENCE_INSUFFICIENT: setupBlocked/saveNotReached",
@@ -310,6 +313,53 @@ const main = async (): Promise<void> => {
       "ok",
       `Tool Bridge prose in purpose/setup/expected fields should not trigger response gate; issues=${JSON.stringify(expectedToolBridgeOnlyReport.issues)}`
     );
+
+    const saveNotReachedExecutionState = path.join(tempRoot, "save-not-reached-execution-state-result.xlsx");
+    await writeWorkbook(saveNotReachedExecutionState, [
+      {
+        caseNo: "FIX-H-01",
+        status: "BLOCKED",
+        detailJson: JSON.stringify({
+          測試目的: "驗證儲存流程需等待 Tool Bridge response 後才能處理 native confirm。",
+          設定條件: "helper 已完成設定但 preview 前 blocked。",
+          預期行為: "Tool Bridge response 到齊後才可進行儲存。",
+          實際行為: "本次 executionState=saveNotReached；未到達 native dialog 或不可逆動作。",
+          blocked_reason: "EVIDENCE_INSUFFICIENT: saveNotReached",
+          currentRunEvidence: {
+            ...goodDetail.currentRunEvidence,
+            executionState: "saveNotReached"
+          }
+        })
+      }
+    ]);
+    const saveNotReachedExecutionStateReport = await runGate(saveNotReachedExecutionState);
+    assert.equal(
+      saveNotReachedExecutionStateReport.status,
+      "ok",
+      `saveNotReached executionState should not require Tool Bridge response; issues=${JSON.stringify(saveNotReachedExecutionStateReport.issues)}`
+    );
+
+    const nativeDialogReachedMissingResponse = path.join(tempRoot, "native-dialog-reached-missing-response-result.xlsx");
+    await writeWorkbook(nativeDialogReachedMissingResponse, [
+      {
+        caseNo: "FIX-H-01",
+        status: "BLOCKED",
+        detailJson: JSON.stringify({
+          測試目的: "驗證 native dialog reached 時必須有 Tool Bridge response。",
+          設定條件: "helper 已到達 save native dialog。",
+          預期行為: "Tool Bridge response 到齊後才可處理 native dialog。",
+          實際行為: "本次 executionState=nativeDialogReached，但未附 Tool Bridge response。",
+          blocked_reason: "TOOL_BRIDGE_RESPONSE_MISSING",
+          currentRunEvidence: {
+            ...goodDetail.currentRunEvidence,
+            executionState: "nativeDialogReached"
+          }
+        })
+      }
+    ]);
+    const nativeDialogReachedMissingResponseReport = await runGate(nativeDialogReachedMissingResponse);
+    assert.equal(nativeDialogReachedMissingResponseReport.status, "error");
+    assert.ok(hasIssue(nativeDialogReachedMissingResponseReport, "TOOL_BRIDGE_RESPONSE_MISSING"));
 
     const missingToolBridgeResponseProse = path.join(tempRoot, "missing-tool-bridge-response-prose-result.xlsx");
     await writeWorkbook(missingToolBridgeResponseProse, [
@@ -371,6 +421,8 @@ const main = async (): Promise<void> => {
             "negative or insufficient native-confirm prose does not require Tool Bridge response",
             "formula modal blocked prose does not require Tool Bridge response",
             "Tool Bridge prose in purpose/setup/expected fields does not trigger response gate",
+            "saveNotReached executionState does not require Tool Bridge response",
+            "nativeDialogReached executionState requires Tool Bridge response",
             "missing Tool Bridge response prose does not require a second Tool Bridge response",
             "Tool Bridge action claim can be satisfied by current-run server event evidence",
             "invalid detail_json is blocked"
