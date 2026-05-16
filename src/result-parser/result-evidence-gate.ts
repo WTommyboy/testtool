@@ -252,6 +252,40 @@ const flattenedDetailText = (detail: Record<string, unknown>): string => {
   return parts.join("\n");
 };
 
+const SELECTED_FIELD_PREVIEW_PRECONDITION_PATTERN =
+  /EXECUTE_PRECONDITION_NO_SELECTED_FIELDS|selected\s*(?:metric\s*)?fields?\s*(?:=|:|is)?\s*(?:0|\[\])|selectedMetricFields[\s\S]{0,80}(?:\[\]|0)/i;
+
+const isFalseLike = (value: unknown): boolean =>
+  value === false || (typeof value === "string" && value.trim().toLowerCase() === "false");
+
+const detailDeclaresPreviewNotRequired = (detail: Record<string, unknown>): boolean => {
+  let found = false;
+  walkDetail(detail, ({ key, value, path }) => {
+    if (found || !isFalseLike(value)) return;
+    const normalizedKey = key?.replace(/\s+/g, "").toLowerCase() ?? "";
+    const normalizedPath = path.replace(/\[\d+\]/g, "").replace(/\s+/g, "").toLowerCase();
+    if (
+      normalizedKey === "previewrequired" &&
+      (normalizedPath === "previewrequired" || normalizedPath.endsWith(".previewrequired"))
+    ) {
+      found = true;
+    }
+  });
+  return found;
+};
+
+const parsedCaseImpliesPreviewNotRequired = (item: ParsedResultCase): boolean =>
+  /^BIUI_COLLAGE_R001-(?:I|J|K|L|M|N)-/i.test(item.caseNo) && /前端呈現/.test(item.testType ?? "");
+
+const hasOutOfScopeSelectedFieldPreviewBlocker = (item: ParsedResultCase, normalizedStatus: string): boolean => {
+  if (normalizedStatus !== "BLOCKED" || !item.detailJson) return false;
+  if (!detailDeclaresPreviewNotRequired(item.detailJson) && !parsedCaseImpliesPreviewNotRequired(item)) return false;
+  const text = [item.verdictReason, item.detailJsonRaw, flattenedDetailText(item.detailJson)]
+    .filter(Boolean)
+    .join("\n");
+  return SELECTED_FIELD_PREVIEW_PRECONDITION_PATTERN.test(text);
+};
+
 const TOOL_BRIDGE_CONTEXT_EXCLUDED_PATH_PATTERNS = [
   /(?:^|\.)(測試目的|testPurpose|purpose)(?:\.|$)/i,
   /(?:^|\.)(設定條件|setting|setup|conditions)(?:\.|$)/i,
@@ -494,6 +528,18 @@ export const evaluateResultEvidenceGate = (input: ResultEvidenceGateInput): Resu
       missingFieldIssues(item, "BLOCKED", BLOCKED_REQUIRED_FIELDS, issues);
     } else if (status === "PARTIAL") {
       missingFieldIssues(item, "PARTIAL", PARTIAL_REQUIRED_FIELDS, issues);
+    }
+
+    if (hasOutOfScopeSelectedFieldPreviewBlocker(item, status)) {
+      issues.push({
+        severity: "error",
+        code: "RESULT_SCOPE_OUT_OF_SCOPE_PREVIEW_BLOCKER",
+        caseNo: item.caseNo,
+        message: "A frontend-observation result with previewRequired=false cannot be blocked by selected-field preview precondition evidence.",
+        context: {
+          rule: "selectedMetricFields=0 / EXECUTE_PRECONDITION_NO_SELECTED_FIELDS is only valid for preview/download execution scopes"
+        }
+      });
     }
 
     if (!hasCurrentRunEvidence(item.detailJson)) {

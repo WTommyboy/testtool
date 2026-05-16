@@ -1,7 +1,7 @@
 # UAT Tool 最新工程 Spec
 
 **版本**: v2026-05-13
-**狀態**: Mac Agent MVP / App 1.1.8 + Agent 0.2.33 source / Indexed Guidance + Preflight Safeguards + groupId schema + final/partial aggregate result + complete archive MD export + OTTEST002 Collage helper P0 + metadata dropdown source-group scoping + metadata expected-source fallback + metadata source-scope count guard + list-page CSV row refresh + response-body fallback + preview table evidence + CSV header/date normalization + helper-plan auto continuation + existing-report field exact reconciliation + helper-evidence preflight replacement + support-file profile + result repair guard + FAIL-to-Bug linked row contract + server fallback bug candidate + duplicate fallback guard + PASS/ordinary BLOCKED no-auto-bug guard + degraded BLOCKED result guard + Tool Bridge run-event evidence gate + Tool Bridge lifecycle status panel + Tool Bridge result-gate false-positive guard + missing Tool Bridge response wording guard + negative native-confirm prose guard + formula-modal blocked gate guard + source-result runtime skip ingestion + execute selected-field precondition guard + non-destructive validation alert allowlist + A-06 all-zero field inspection helper + editor-session CSV helper chain + same-case project-row CSV planner guard + D0 baseline row-CSV planner guard + temporary report create/delete helper + formula/calculated-field preview helper + stable formula modal selector helper + create-project helper + dotted create-project template routing + dynamic/hybrid date helper support + strict select-all field-count guard + D-02 structured select-all source/count guard + PASS-vs-helper-false-check gate + PM skip classification + preview-only helper skip guards + case-type must-read rules + CSV/metadata/formula authoring contract + formula helper-hints parser compatibility + readonly formula keypad/token input + formula display/code token matching + divide-by-zero=0 calculation judgment + save reportListEvidence + hardened openProject prompt retry + total-refund exact alias/token matching + report-list row-nearby CSV fallback + create-project state carryover + project-page navigation helpers + save-load create-before-reopen guard + same-case save/reopen report-name-prefix guard + save-only no-open-existing/no-reopen/no-download guard + structured date variants/staged boundary helper support + exact metadata source filename contract + background-safe browser lease + no-foreground helper policy + field-list loading wait + inline cleanup consistency parser guard / helper project auto-selection guard / manual_ai helper pre-run guard / manual_ai safe navigation prelude guard / date-variants preview evidence helper / multi-variant date visible-UI routing guard / date UI represented-range evidence / Monday-week date preset guard with weekStart override / select-all fields params guard / selected-field code-label reconciliation / Playwright browser_tabs availability guard / active-question-first session handoff contract / Agent WebSocket reconnect resilience / Dev URL dedicated Chrome open action
+**狀態**: Mac Agent MVP / App 1.1.8 + Agent 0.2.33 source / Indexed Guidance + Preflight Safeguards + groupId schema + final/partial aggregate result + complete archive MD export + OTTEST002 Collage helper P0 + metadata dropdown source-group scoping + metadata expected-source fallback + metadata source-scope count guard + list-page CSV row refresh + response-body fallback + preview table evidence + CSV header/date normalization + helper-plan auto continuation + existing-report field exact reconciliation + helper-evidence preflight replacement + support-file profile + result repair guard + FAIL-to-Bug linked row contract + server fallback bug candidate + duplicate fallback guard + PASS/ordinary BLOCKED no-auto-bug guard + degraded BLOCKED result guard + Tool Bridge run-event evidence gate + Tool Bridge lifecycle status panel + Tool Bridge result-gate false-positive guard + missing Tool Bridge response wording guard + negative native-confirm prose guard + formula-modal blocked gate guard + source-result runtime skip ingestion + execute selected-field precondition guard + non-destructive validation alert allowlist + A-06 all-zero field inspection helper + editor-session CSV helper chain + same-case project-row CSV planner guard + D0 baseline row-CSV planner guard + temporary report create/delete helper + formula/calculated-field preview helper + stable formula modal selector helper + create-project helper + dotted create-project template routing + dynamic/hybrid date helper support + strict select-all field-count guard + D-02 structured select-all source/count guard + PASS-vs-helper-false-check gate + PM skip classification + preview-only helper skip guards + case-type must-read rules + CSV/metadata/formula authoring contract + formula helper-hints parser compatibility + readonly formula keypad/token input + formula display/code token matching + divide-by-zero=0 calculation judgment + save reportListEvidence + hardened openProject prompt retry + total-refund exact alias/token matching + report-list row-nearby CSV fallback + create-project state carryover + project-page navigation helpers + save-load create-before-reopen guard + same-case save/reopen report-name-prefix guard + save-only no-open-existing/no-reopen/no-download guard + structured date variants/staged boundary helper support + exact metadata source filename contract + background-safe browser lease + no-foreground helper policy + field-list loading wait + inline cleanup consistency parser guard / helper project auto-selection guard / manual_ai helper pre-run guard / manual_ai safe navigation prelude guard / date-variants preview evidence helper / multi-variant date visible-UI routing guard / date UI represented-range evidence / Monday-week date preset guard with weekStart override / select-all fields params guard / selected-field code-label reconciliation / Playwright browser_tabs availability guard / active-question-first session handoff contract / Agent WebSocket reconnect resilience / Dev URL dedicated Chrome open action / scope-aware P0 runtime guards
 **適用分支**: `refactor/mac-agent-mvp` / `codex/uat-tool-mvp`  
 **說明**: 檔名沿用 Tommy 提供的 `工程spac.md`;本文內容為工程 spec。
 
@@ -920,6 +920,16 @@ Result evidence gate scoping:
 - The gate must not treat ordinary testcase prose as an irreversible-action claim. For example, date/preview assertions that say the second preview result should "覆蓋" the first preview are not Tool Bridge actions.
 - Tool Bridge response evidence is required only for explicit approval claims, native dialog handling claims, `browser_handle_dialog`, or destructive/irreversible action claims such as delete or overwrite-save.
 - Negative or insufficient evidence wording such as `無 native confirm`, `不出現 native dialog`, or `缺少 native dialog 驗證` is treated as a BLOCKED evidence statement, not as a claim that a native dialog was handled.
+
+Case scope / judgment gate planning:
+
+- Result gates must be scoped by the testcase's declared intent before helper evidence is interpreted. A frontend observation case may be satisfied by visible UI evidence; it must not inherit preview-only blockers simply because a fallback helper attempted preview.
+- Preview preconditions such as selected metric fields apply only when `caseScope.previewRequired=true` or the chosen action template explicitly reaches preview execution.
+- If `caseScope.previewRequired=false`, evidence like `selectedMetricFields=0` can be recorded as observed UI state, but it is not a blocker by itself.
+- If the case requires a domain action and no action template/hints exist, the correct blocker is `HELPER_CONTRACT_MISSING` or a package lint failure, not a fallback to `configureMetric` / `runPreview`.
+- If required evidence for the declared scope was already captured, unrelated downstream helper blockers must not override the case result.
+- The stable runtime must stay domain-neutral. Generic fields include `targetPage`, `testIntent`, `caseScope`, `riskLevel`, `allowedActions`, `forbiddenActions`, `requiredEvidence`, `actionTemplate`, `cleanupPolicy`, and `judgmentPolicy`; BI-specific fields such as `metrics`, `sourceReport`, `dateRange`, `displayMode`, or `formula.baseFields` stay in the BI domain pack and testcase package.
+- Domain packs may contribute declarative adapters, locator maps, aliases, action templates, evidence schemas, lint rules, and hazards. They must not contribute arbitrary executable small helpers or per-domain agents.
 
 Violation result:
 
@@ -2444,6 +2454,10 @@ Status update 2026-05-16 run 4bf routing guard: live run `4bf277d7-6193-4943-977
 
 Status update 2026-05-16 A-06 smoke hardening: official `setMetricRows` bridge now handles metadata/display-name drift in search queries, including offline mall labels with spaces such as `線下商城 GASH 總營收` and CODAPAY display labels for metadata `Coda`. Large select-all flows add row buffer before field picker selection so the dropdown is not forced off viewport, and the final count gate uses verified row-scoped selection evidence rather than only visible rows in the scroll container. Live smoke passed A-06 at `/Users/tommy/.uat-agent-dev/runs/live-smoke-a06-rerun20-20260516195045` and B-04/E-04/F-01/G-01 at `/Users/tommy/.uat-agent-dev/runs/live-smoke-regression-befg-20260516195912`.
 
+Status update 2026-05-17 scope-aware contract refinement: run `81455108-f612-4024-9d71-4f1995e08d7a` completed without interruption, but Tommy's manual checkreport showed many invalid BLOCKED and judgment errors. The root class is that agent planning, helper fallback, and result gate did not consistently understand case scope. K/I/J/L/M/N UI observation cases were judged through preview-only concepts such as `selectedMetricFields=0`, and B/L divergence must be classified as template/hint/scope mismatch before being treated as product UI reachability failure. The contract plan is now refined from a four-layer phrase into a scope-aware stack: Domain UI Discovery -> Domain UI Contract -> Case Scope / Intent Contract -> Action Template Contract -> Evidence Contract -> Result / Judgment Contract -> Feedback / Drift Loop -> Gen 4 Stable Core + Action Interpreter.
+
+Status update 2026-05-17 P0 runtime guards: `agent/src/case-scope.ts` now infers first-pass generic scope from the existing manifest/hints path. Capability gate emits this `caseScope`, blocks missing-template official UI observation cases with `HELPER_CONTRACT_MISSING:<template>`, and helper execution plan no longer generates soft generic prelude actions for those missing-template cases. Result evidence gate rejects `selectedMetricFields=0` / `EXECUTE_PRECONDITION_NO_SELECTED_FIELDS` blockers when `previewRequired=false`; package consistency promotes missing instruction sections for `BI_OFFICIAL_UI_COLLAGE` I/J/K/L/M/N frontend observation cases to error. Mode detection also treats `拼貼報表` as collage so project/report-row observation cases without the exact `拼貼模式` wording do not fall through to generic preview. This is P0 containment, not the final authored scope schema or Gen4 action interpreter.
+
 Planning source: [domain-ui-contract-helper-gen3-gen4-plan.md](/Users/tommy/Downloads/codex_galaxy_dev/uat-tool/docs/planning/domain-ui-contract-helper-gen3-gen4-plan.md)
 
 Run `67990303-2c1b-4559-924a-297a089b5949` exposed two platform-level issues:
@@ -2455,13 +2469,33 @@ The long-term architecture direction is:
 
 ```text
 Domain UI Discovery
-  -> Domain UI + Action + Evidence Contract
-  -> Gen 3 Domain-driven Helper Templates
+  -> Domain UI Contract
+  -> Case Scope / Intent Contract
+  -> Action Template Contract
+  -> Evidence Contract
+  -> Result / Judgment Contract
+  -> Feedback / Drift Loop
   -> Gen 4 Stable Core + Action Interpreter
-  -> Cloud Feedback Loop
 ```
 
 Domain packs should own declarative UI/action/evidence contracts, not executable helper code. Discovery output belongs to the domain pack lifecycle because it feeds Claude testcase generation, package lint, helper templates, result evidence validation, and later drift updates.
+
+Stable runtime boundary:
+
+- Generic runtime fields: `targetPage`, `testIntent`, `caseScope`, `riskLevel`, `allowedActions`, `forbiddenActions`, `requiredEvidence`, `actionTemplate`, `cleanupPolicy`, `judgmentPolicy`.
+- BI-specific fields: `metrics`, `sourceReport`, `dateRange`, `displayMode`, `formula.baseFields`. These belong in `BI_OFFICIAL_UI_COLLAGE` domain contracts and testcase values, not in the stable core.
+- Domain packs may include declarative adapters, aliases, locator maps, action templates, evidence schemas, lint rules, and hazards. They must not include arbitrary small helpers or per-domain agents.
+- If a case needs a domain action but has no template/hints, planner should return `HELPER_CONTRACT_MISSING` or package lint failure instead of falling back to generic preview.
+- Preview preconditions such as selected field count apply only when `caseScope.previewRequired=true` or the selected action template reaches preview. For observation-only cases, `selectedMetricFields=0` is evidence, not a blocker.
+
+Implementation sequencing:
+
+- Phase 0: contain current Gen1/Gen2 bridge misrouting; no-hints observation cases may only run safe navigation/read prelude.
+- Phase 1: add scope schema and package lint for `caseScope` / `judgmentPolicy` / contradictory action scope.
+- Phase 2: promote reviewed official UI flows into declarative domain action templates.
+- Phase 3: make planner/result gate fully scope-aware so only in-scope evidence can decide the case.
+- Phase 4: persist feedback/drift classifications and promote reviewed patterns into domain contract updates.
+- Phase 5: replace BI bridge behavior with the generic Gen4 action interpreter.
 
 Short-term BI official collage fixes should be shaped as compatibility bridges toward that architecture:
 
@@ -2471,8 +2505,10 @@ Short-term BI official collage fixes should be shaped as compatibility bridges t
 - add package lint requiring `metrics[].sourceReport + metrics[].field` for preview/date/formula/save templates.
 - upload helper observations to cloud artifacts so blocked evidence can update domain contract/template candidates later.
 
-Remaining work after Gen1 wiring / bridge:
+Remaining work after Gen1 wiring / bridge and P0 containment:
 
 - promote these contracts from draft seeds into executable Gen3 helper templates only after live official UI evidence is reviewed.
 - broaden package lint so new testcase packages are warned or blocked when official collage metric setup omits `metrics[].sourceReport + metrics[].field`.
+- add explicit `caseScope` / `judgmentPolicy` authoring and package-lint requirements so observation cases, preview cases, save/load cases, and delete cases cannot be routed through the same fallback assumptions.
+- extend result gate scope awareness beyond the P0 selected-field preview blocker into authored `caseScope` / `judgmentPolicy` evidence rules.
 - promote reviewed helper observations into cloud-backed feedback candidates for contract/template updates.

@@ -30,6 +30,7 @@
     "verify:final-aggregate-result": "tsx scripts/verify-final-aggregate-result.ts",
     "verify:helper-report-gate": "tsx scripts/verify-helper-report-gate.ts",
     "verify:source-prefilled-results": "tsx scripts/verify-source-prefilled-results.ts",
+    "verify:p0-scope-contract": "tsx scripts/verify-p0-scope-contract.ts",
     "verify:all": "npm run typecheck && npm run build --prefix agent && npm run build --prefix web && npm run verify:date-ui-evidence && npm run verify:date-ui-dom-smoke && npm run verify:helper-report-gate && npm run verify:capability-gate && npm run verify:case-advance-policy && npm run verify:tool-bridge && npm run verify:agent-connection-resilience && npm run verify:agent-roundtrip",
     "verify:tool-bridge": "tsx scripts/verify-tool-bridge.ts",
     "postinstall": "playwright install chromium"

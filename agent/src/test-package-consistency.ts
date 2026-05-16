@@ -165,6 +165,14 @@ const parseCleanupKeys = (value: string | null | undefined): string[] =>
     .map((part) => part.split("=")[0]?.trim())
     .filter(Boolean);
 
+const isOfficialUiScopeCriticalCase = (
+  item: CaseManifestCase,
+  domain: string | null | undefined
+): boolean =>
+  domain === "BI_OFFICIAL_UI_COLLAGE" &&
+  /^BIUI_COLLAGE_R001-(?:I|J|K|L|M|N)-/i.test(item.caseNo) &&
+  (/前端呈現/.test(item.testTarget ?? "") || /🟢\s*觀察/.test(item.riskLevel ?? ""));
+
 const allHelperBlocks = (text: string, sourcePath: string, baseDir?: string) => {
   const blocks: Array<{ caseId: string | null; sourcePath: string; warnings: string[] }> = [];
   for (const match of text.matchAll(/```(?:json)?\s*([\s\S]*?)```/gi)) {
@@ -452,7 +460,8 @@ export const buildTestPackageConsistencyReport = (input: TestPackageConsistencyI
     for (const item of input.caseManifest.cases) {
       const section = headingSectionForCase(instructionText, item.caseNo);
       if (!section) {
-        issue(issues, "warning", "INSTRUCTION_CASE_SECTION_MISSING", `Instruction markdown has no case section for ${item.caseNo}.`, {
+        const severity = isOfficialUiScopeCriticalCase(item, input.domain) ? "error" : "warning";
+        issue(issues, severity, "INSTRUCTION_CASE_SECTION_MISSING", `Instruction markdown has no case section for ${item.caseNo}.`, {
           caseNo: item.caseNo
         });
         continue;

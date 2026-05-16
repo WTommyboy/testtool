@@ -74,7 +74,7 @@ const detectMode = (text: string, operationTemplate: string | null): CaseFeature
   if (constructionMode?.[1]?.includes("明細")) return "record";
   if (constructionMode?.[1]?.includes("指標")) return "metric";
 
-  if (/collage|拼貼模式|我的自訂\s*>\s*拼貼模式|新增報表|儲存報表|重開|重新檢視/.test(source)) return "collage";
+  if (/collage|拼貼模式|拼貼報表|我的自訂\s*>\s*拼貼模式|新增報表|儲存報表|重開|重新檢視/.test(source)) return "collage";
   if (/record_static_fields|明細檢視|record[-_ ]?(?:centric|mode|view)|detail[-_ ]?(?:centric|mode|view)/i.test(source)) return "record";
   if (/metric_(?:date|filter|group)|指標趨勢|metric[-_ ]?(?:centric|mode|view)/i.test(source)) return "metric";
   return "unknown";

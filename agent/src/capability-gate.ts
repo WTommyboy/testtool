@@ -3,6 +3,7 @@ import path from "node:path";
 import type { CaseManifestCase } from "./case-manifest";
 import type { HelperHints } from "./helper-hints";
 import { detectCaseFeatures } from "./case-feature-detection";
+import { inferCaseScope, missingActionTemplateBlocker, type InferredCaseScope } from "./case-scope";
 
 export type CapabilityGateReport = {
   schemaVersion: "uat-capability-gate-v1";
@@ -14,6 +15,7 @@ export type CapabilityGateReport = {
   blockingReason: string | null;
   unsupportedFeatures: string[];
   supportedHelperTemplates: string[];
+  caseScope: InferredCaseScope;
   detected: {
     mode: "collage" | "record" | "metric" | "unknown";
     hasFilter: boolean;
@@ -265,8 +267,11 @@ const isFrontendObservationPreludeCase = (
     /側欄|sidebar|公司共享|我的自訂|拼貼報表|專案頁|專案清單|報表清單|breadcrumb|勾選|全選|hover|tooltip|下載\/刪除\s*icon|刪除\s*icon|下載\s*icon|新增專案|重名|上限|分頁|每頁|game selector|使用者按鈕|入口|disabled|enabled/i.test(text);
   const editorObservation =
     /新增自訂報表入口|新增報表入口|新增報表頁|報表設定頁|建構方式\s*radio|第一列|欄位預設|刪除列|複製列|報表\s*picker|欄位\s*picker|空設定|未完成設定|時間面板|時間區間\s*button|儲存報表.{0,16}disabled|editor\s*右上|preview table/i.test(text);
-  const dataExecutionIntent =
-    /network\.requestBody|network request body|request body|response|chart\.datasets|preview\s*成功|預覽成功|CSV\s*(?:row|數值|表頭)|下載\s*CSV|downloaded\s*CSV|儲存報表成功|重開還原|公式|運算欄位|後端功能|daily\s*資料|指標\s*ID/i.test(text);
+  const nonDownloadDataExecutionIntent =
+    /network\.requestBody|network request body|request body|response|chart\.datasets|preview\s*成功|預覽成功|儲存報表成功|重開還原|公式|運算欄位|後端功能|daily\s*資料|指標\s*ID/i.test(text);
+  const downloadDataExecutionIntent =
+    /CSV\s*(?:row|數值|表頭)|下載\s*CSV|downloaded\s*CSV/i.test(text) && !textExplicitlyDisablesDownload(text);
+  const dataExecutionIntent = nonDownloadDataExecutionIntent || downloadDataExecutionIntent;
   if (!isFrontendTarget && editorObservation) return { matched: false, needsEditor: false };
   if ((!projectOrSidebarObservation && !editorObservation) || dataExecutionIntent) return { matched: false, needsEditor: false };
   return { matched: true, needsEditor: editorObservation };
@@ -313,6 +318,8 @@ export const evaluateCapabilityGate = (
   const dateNeedsCodexVisibleUi = dateRequiresCodexVisibleUi(currentCase, helperHints);
   const navigationPreludeAllowed = needsCollageNavigationPrelude(currentCase, helperHints);
   const frontendObservationPrelude = isFrontendObservationPreludeCase(currentCase, helperHints);
+  const caseScope = inferCaseScope(currentCase, helperHints);
+  const helperContractBlocker = missingActionTemplateBlocker(caseScope);
   const datePreviewEvidenceAllowed = mode === "collage" && !hasFilter && !hasGroup && canRunDatePreviewEvidenceHelper(params);
   const manualDateSaveAllowed =
     !noSave &&
@@ -375,7 +382,7 @@ export const evaluateCapabilityGate = (
       "collage.openProject",
       "collage.createAndDeleteTemporaryReport"
     );
-  } else if (frontendObservationPrelude.matched) {
+  } else if (frontendObservationPrelude.matched && !helperContractBlocker) {
     supportedHelperTemplates.push(
       "collage.openProject",
       ...(frontendObservationPrelude.needsEditor ? ["collage.createReport"] : [])
@@ -422,7 +429,12 @@ export const evaluateCapabilityGate = (
   let helperPreRunAllowed = false;
   let blockingReason: string | null = null;
 
-  if (frontendObservationPrelude.matched) {
+  if (helperContractBlocker) {
+    supportStatus = "unsupported";
+    executionMode = "blocked_unsupported";
+    helperPreRunAllowed = false;
+    blockingReason = helperContractBlocker;
+  } else if (frontendObservationPrelude.matched) {
     supportStatus = "degraded";
     executionMode = "codex_visible_ui";
     helperPreRunAllowed = true;
@@ -450,8 +462,10 @@ export const evaluateCapabilityGate = (
     helperPreRunAllowed = false;
   }
 
-  const codexInstruction = supportStatus === "unsupported"
-    ? "Do not execute trusted browser testcase steps for this case. Write a single-case BLOCKED result with fail_category=UNSUPPORTED_ONLINE_CAPABILITY and detail_json.blocked_reason from this capability gate."
+  const codexInstruction = helperContractBlocker
+    ? "Do not fallback to generic preview/helper actions. Write a single-case BLOCKED result with fail_category=HELPER_CONTRACT_MISSING and detail_json.blocked_reason from this capability gate."
+    : supportStatus === "unsupported"
+      ? "Do not execute trusted browser testcase steps for this case. Write a single-case BLOCKED result with fail_category=UNSUPPORTED_ONLINE_CAPABILITY and detail_json.blocked_reason from this capability gate."
     : supportStatus === "supported"
       ? "Use helper pre-run evidence when status=ok and matching this case; continue with visible UI only for incomplete evidence. Codex still judges PASS/FAIL/BLOCKED."
       : navigationPreludeAllowed
@@ -470,6 +484,7 @@ export const evaluateCapabilityGate = (
     blockingReason,
     unsupportedFeatures,
     supportedHelperTemplates,
+    caseScope,
     detected: {
       mode,
       hasFilter,
@@ -496,6 +511,8 @@ const writeCapabilityGateMarkdown = (filePath: string, report: CapabilityGateRep
     `- blocking_reason: ${report.blockingReason ?? "none"}`,
     `- unsupported_features: ${report.unsupportedFeatures.length > 0 ? report.unsupportedFeatures.join(", ") : "none"}`,
     `- supported_helper_templates: ${report.supportedHelperTemplates.length > 0 ? report.supportedHelperTemplates.join(", ") : "none"}`,
+    `- case_scope: ${report.caseScope.testIntent}; preview_required=${report.caseScope.previewRequired}; execution_required=${report.caseScope.executionRequired}`,
+    `- missing_action_template: ${report.caseScope.missingActionTemplate ?? "none"}`,
     "",
     "## Codex Instruction",
     report.codexInstruction,

@@ -1,6 +1,6 @@
 # 線上 UAT Tool 開發與規劃日誌
 
-最後更新：2026-05-12
+最後更新：2026-05-17
 
 本文件記錄「UAT Tool 線上派工 + Mac Agent」這條路徑的歷史決策、設計理由、目前架構與後續待辦。它的用途是跨聊天室、跨 session 交接，不取代 `AGENTS.md`、Layer rules、authoring spec 或實作 spec。
 
@@ -1458,3 +1458,29 @@ Tommy 曾討論是否改成腳本。最後決策是採「半腳本化 / helper �
 - Live smoke：A-06 run `/Users/tommy/.uat-agent-dev/runs/live-smoke-a06-rerun20-20260516195045` 通過 `openProject -> createReport -> inspectAllZeroFields`; preview request 送出 32 個 field code,包含 `TOTAL_REVENUE_WEBSHOP_GASH`, `PAYMENT_ACCOUNTS_WEBSHOP_GASH`, `TOTAL_REVENUE_WEBSHOP_CODAPAY`, `TOTAL_REVENUE_WEBSHOP_BEANPOINT`, `TOTAL_REVENUE_WEBSHOP_BEANPOINTHK` 等,狀態 `ok`,僅保留 `DATE_UI_CONTROL_TEXT_NOT_FOUND` warning。
 - Regression smoke：run `/Users/tommy/.uat-agent-dev/runs/live-smoke-regression-befg-20260516195912` 通過 `BIUI_COLLAGE_R001-B-04`、`E-04`、`F-01`、`G-01`。B-04 warnings 為既有 date UI 文案：`DATE_UI_REPRESENTED_RANGE_NOT_VISIBLE` / `DATE_UI_CONTROL_TEXT_NOT_FOUND`; E-04 warning 為 `DATE_UI_CONTROL_TEXT_NOT_FOUND`; F-01 preview/save 與 G-01 createProject 均 `ok` 且無 warnings。
 - 驗證：已跑 `npm run typecheck --prefix agent`、`npm run build --prefix agent`、`npm run verify:helper-field-aliases`、`git diff --check`。本批仍只推 dev,不推 prod。
+
+### 2026-05-17 - Scope-aware Domain Contract refinement after run 814
+
+- 背景：BIUI_COLLAGE_R001 run `81455108-f612-4024-9d71-4f1995e08d7a` 至少完整跑完,但 Tommy 的人工 checkreport 指出大量 BLOCKED 與判斷錯誤。這不是單一 helper bug；主要類型是 agent planning / helper fallback / result gate 三層沒有理解 case scope。
+- 典型問題：K/I/J/L/M/N 類 UI observation case 被 preview-only evidence 牽引,出現以 `selectedMetricFields=0` 直接 BLOCKED 的錯誤。這個值可以是 UI 狀態 evidence,但若 case scope 不需要 preview,它不是 blocker。B 類能展開設定而 L 類不會,也必須先檢查 B 有明確 helper hints / L 缺少 action template 或 case section,不可直接判成產品 UI 不可達。
+- 決策：原本 `Domain UI Discovery + UI Contract + Action Template + Evidence Contract` 方向繼續走,但補成 scope-aware contract stack：Domain UI Discovery -> Domain UI Contract -> Case Scope / Intent Contract -> Action Template Contract -> Evidence Contract -> Result / Judgment Contract -> Feedback / Drift Loop -> Gen 4 Stable Core + Action Interpreter。
+- 邊界：不在每個 domain pack 放小 helper 或小 agent。domain pack 可以放 declarative adapters、locator maps、aliases、action templates、evidence schemas、lint rules、hazards；不能放 arbitrary executable helper code。stable core 保持通用,只懂 `targetPage`、`testIntent`、`caseScope`、`riskLevel`、`allowedActions`、`forbiddenActions`、`requiredEvidence`、`actionTemplate`、`cleanupPolicy`、`judgmentPolicy` 等 generic fields；BI 的 `metrics/sourceReport/dateRange/displayMode/formula.baseFields` 留在 BI domain pack/testcase 層。
+- 後續方向：package lint 要能抓缺少 `caseScope` / `judgmentPolicy` / operationTemplate 的 observation 或 preview case；planner 若缺 domain action template,應回 `HELPER_CONTRACT_MISSING` 或 lint failure,不能 fallback 到 generic `configureMetric/runPreview`；result gate 要依 declared scope 判斷,已滿足 scope evidence 時不能被 unrelated downstream helper blocker 覆蓋。
+- 文件同步：更新 `docs/planning/domain-ui-contract-helper-gen3-gen4-plan.md` 與 `docs/refactor/工程spac.md`。本次只更新規劃/spec,不改 runtime code、不推 production。
+
+### 2026-05-17 - P0 scope contract concept fixture
+
+- 背景：Tommy 確認先做 P0 概念驗證 smoke / regression fixture,確認測試能抓住 run 814 問題後再進 runtime 調整。
+- 新增：`scripts/verify-p0-scope-contract.ts` 與 npm script `verify:p0-scope-contract`。此 fixture 不跑 live BI,而是用 run 814 代表 case 建立 offline smoke: I-01/J-12/K-01/L-02 observation、B-04/N-03 preview/download control、result gate out-of-scope selected-field blocker、official UI missing case section severity。
+- 三模式：預設模式 `npm run verify:p0-scope-contract` 用來確認目前錯誤可重現且 exit 0；`npm run verify:p0-scope-contract -- --prototype` 用純函式模擬預計解法並應通過；`npm run verify:p0-scope-contract -- --expect-fixed` 是 P0 修完後的 runtime 驗收模式,目前預期紅燈。
+- 目前結果：預設模式通過並重現三個 gap: result gate 仍接受 observation case 因 `selectedMetricFields=0` 被 BLOCKED、`INSTRUCTION_CASE_SECTION_MISSING` 仍是 warning-only、L-02 date-panel interaction 仍只是 soft prelude 而非 explicit contract/template missing。`--prototype` 通過,證明預計規則會將 I/J/K/L 歸為 non-preview observation、B/N 維持 preview/download,並將 L-02 分類為 missing `collage.datePanelObservation` action template。`--expect-fixed` 目前在 result gate scope assertion 紅燈,符合尚未修 P0 runtime 的預期。
+- 驗證：已跑 `npm run verify:p0-scope-contract`、`npm run verify:p0-scope-contract -- --prototype`、`npm run verify:p0-scope-contract -- --expect-fixed`(預期失敗)、`npm run typecheck`、`git diff --check`。本批仍未修改 runtime code。
+
+### 2026-05-17 - P0 scope runtime guards
+
+- 背景：概念 fixture 已證明能抓住 run 814 的三個核心 gap 後,進入 P0 runtime 調整。此批仍在 dev 工作分支,不推 production,不跑完整 live UAT。
+- Runtime：新增 `agent/src/case-scope.ts`,先用現有 case manifest / helper hints 推導 generic `testIntent`、`previewRequired`、`executionRequired`、`requiredEvidence`、`missingActionTemplate`。這是 compatibility containment,不是最終 domain contract schema。
+- Planner/capability gate：`capability-gate` 輸出 `caseScope`；L-02 這類 official UI date-panel observation 若缺 action template,會回 `HELPER_CONTRACT_MISSING:collage.datePanelObservation` 且不允許 generic preview fallback。`helper-execution-plan` 同步不產生 soft prelude actions,避免看似有跑但其實沒覆蓋 case scope。mode detection 也把 `拼貼報表` 視為 collage,避免 J 類 project/report-row observation 因沒有寫 `拼貼模式` 而掉入 generic preview。
+- Package/result gate：`BI_OFFICIAL_UI_COLLAGE` 的 I/J/K/L/M/N observation case 若 instruction 缺 per-case section,`INSTRUCTION_CASE_SECTION_MISSING` 從 warning 升為 error。`result-evidence-gate` 會拒絕 `caseScope.previewRequired=false` 的 result 用 `selectedMetricFields=0` / `EXECUTE_PRECONDITION_NO_SELECTED_FIELDS` 當 BLOCKED 原因。
+- Fixture：`npm run verify:p0-scope-contract` 現在預設就是 fixed 驗收模式；`--prototype` 保留概念模型對照；舊的 current-failure 檢查只作 pre-fix 歷史語意,修完後不再是應通過模式。fixture 覆蓋 I-01/J-12/J-07/K-01/L-02 observation,以及 B-04/N-03 preview/download controls。
+- 驗證：已跑 `npm run verify:p0-scope-contract -- --expect-fixed`、`npm run verify:p0-scope-contract`、`npm run verify:p0-scope-contract -- --prototype`、`npm run verify:capability-gate`、`npm run verify:result-evidence-gate`、`npm run verify:package-consistency`、`npm run typecheck --prefix agent`、`npm run typecheck`、`npm run build --prefix agent`、`npm run build`、`git diff --check`。

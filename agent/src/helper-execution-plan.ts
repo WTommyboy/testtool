@@ -3,6 +3,7 @@ import path from "node:path";
 import type { CaseManifestCase } from "./case-manifest";
 import type { HelperHints } from "./helper-hints";
 import { detectCaseFeatures, isNeutralCleanupTarget, parseCleanupTargets } from "./case-feature-detection";
+import { inferCaseScope, missingActionTemplateBlocker } from "./case-scope";
 
 export type HelperPlanAction = {
   id: string;
@@ -245,8 +246,11 @@ const isFrontendObservationPreludeCase = (
     /側欄|sidebar|公司共享|我的自訂|拼貼報表|專案頁|專案清單|報表清單|breadcrumb|勾選|全選|hover|tooltip|下載\/刪除\s*icon|刪除\s*icon|下載\s*icon|新增專案|重名|上限|分頁|每頁|game selector|使用者按鈕|入口|disabled|enabled/i.test(text);
   const editorObservation =
     /新增自訂報表入口|新增報表入口|新增報表頁|報表設定頁|建構方式\s*radio|第一列|欄位預設|刪除列|複製列|報表\s*picker|欄位\s*picker|空設定|未完成設定|時間面板|時間區間\s*button|儲存報表.{0,16}disabled|editor\s*右上|preview table/i.test(text);
-  const dataExecutionIntent =
-    /network\.requestBody|network request body|request body|response|chart\.datasets|preview\s*成功|預覽成功|CSV\s*(?:row|數值|表頭)|下載\s*CSV|downloaded\s*CSV|儲存報表成功|重開還原|公式|運算欄位|後端功能|daily\s*資料|指標\s*ID/i.test(text);
+  const nonDownloadDataExecutionIntent =
+    /network\.requestBody|network request body|request body|response|chart\.datasets|preview\s*成功|預覽成功|儲存報表成功|重開還原|公式|運算欄位|後端功能|daily\s*資料|指標\s*ID/i.test(text);
+  const downloadDataExecutionIntent =
+    /CSV\s*(?:row|數值|表頭)|下載\s*CSV|downloaded\s*CSV/i.test(text) && !textExplicitlyDisablesDownload(text);
+  const dataExecutionIntent = nonDownloadDataExecutionIntent || downloadDataExecutionIntent;
   if (!isFrontendTarget && editorObservation) return { matched: false, needsEditor: false };
   if ((!projectOrSidebarObservation && !editorObservation) || dataExecutionIntent) return { matched: false, needsEditor: false };
   return { matched: true, needsEditor: editorObservation };
@@ -621,6 +625,7 @@ const buildActions = (currentCase: CaseManifestCase | null, helperHints: HelperH
     features.hasGroup;
   const metadataOnly = features.isMetadataDropdown;
   if (unsupportedHelperTarget) return [];
+  if (missingActionTemplateBlocker(inferCaseScope(currentCase, helperHints))) return [];
   const createProjectFlow = isCreateProjectOnlyFlow(currentCase, helperHints);
   if (createProjectFlow) {
     const projectParams = {
