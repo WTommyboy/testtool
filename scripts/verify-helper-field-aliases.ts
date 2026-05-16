@@ -50,6 +50,17 @@ for (const item of [
   );
 }
 
+assert.deepEqual(
+  hooks.metricFieldSearchQueries("線下商城GASH總營收"),
+  ["線下商城GASH總營收", "線下商城 GASH總營收", "線下商城 GASH 總營收"],
+  "official UI search needs spaced offline channel variants"
+);
+
+assert.ok(
+  hooks.metricFieldSearchQueries("線下商城Coda總營收").includes("線下商城 CODAPAY 總營收"),
+  "Coda metadata label should search the official CODAPAY display label"
+);
+
 console.log(JSON.stringify({
   ok: true,
   fixture: "helper-field-aliases",
@@ -57,6 +68,7 @@ console.log(JSON.stringify({
     "退費總金額 maps to TOTAL_REFUND",
     "退費總金額 and 總退費金額 are explicit aliases",
     "platform refund fields do not satisfy TOTAL_REFUND",
-    "formula modal uses TOTAL_REFUND and rejects platform refund tokens"
+    "formula modal uses TOTAL_REFUND and rejects platform refund tokens",
+    "offline mall field search emits official spaced channel labels"
   ]
 }, null, 2));

@@ -303,10 +303,28 @@ const metricRowsFromBaseFieldsParams = (params: Record<string, unknown>): Metric
 
 const timestampId = (): string => new Date().toISOString().replace(/[-:T.Z]/g, "").slice(0, 12);
 
+const normalizeUiResourceName = (value: string): string => value.replace(/[^0-9A-Za-z\u4e00-\u9fff]/g, "");
+
+const fitUiResourceName = (value: string, maxLength = 20): string => {
+  const normalized = normalizeUiResourceName(value) || `BIUI${timestampId()}`;
+  if (normalized.length <= maxLength) return normalized;
+  const stamp = timestampId().slice(-8);
+  const explicitCasePrefix =
+    /BIUI.*G.*01/i.test(normalized) ? "BIUIG01" :
+    /BIUI.*F.*01/i.test(normalized) ? "BIUIF01" :
+    /BIUI.*E.*04/i.test(normalized) ? "BIUIE04" :
+    /BIUI.*COLLAGE/i.test(normalized) ? "BIUICOL" :
+    "";
+  if (explicitCasePrefix && explicitCasePrefix.length + stamp.length <= maxLength) {
+    return `${explicitCasePrefix}${stamp}`;
+  }
+  return `${normalized.slice(0, Math.max(1, maxLength - stamp.length))}${stamp}`;
+};
+
 const resolveReportName = (options: CliOptions): string => {
   const explicit = firstStringParam(options.params, ["reportName", "reportNamePattern", "name"]);
-  if (explicit) return explicit.replace("<timestamp>", timestampId());
-  return `${sanitize(options.caseId)}_${timestampId()}`;
+  if (explicit) return fitUiResourceName(explicit.replace("<timestamp>", timestampId()));
+  return fitUiResourceName(`${sanitize(options.caseId)}_${timestampId()}`);
 };
 
 const savedReportStatePath = (options: CliOptions): string => path.join(artifactRoot(options), "saved-report.json");
@@ -575,6 +593,8 @@ const wildcardPatternToRegExp = (value: string): RegExp => {
     .replace(/\\\*/g, ".*");
   return new RegExp(`^${pattern}$`, "i");
 };
+
+const escapeRegex = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 const reportNameMatchesPattern = (reportName: string, pattern: string): boolean => {
   if (reportName === pattern) return true;
@@ -1208,7 +1228,7 @@ const normalizeMetricFieldIdentity = (value: string | null | undefined): string 
     .replace(/[_-]/g, "")
     .toUpperCase();
 
-const metricFieldAliasIdentities = (value: string | null | undefined): string[] => {
+const metricFieldAliasLabels = (value: string | null | undefined): string[] => {
   const key = normalizeMetricFieldIdentity(value);
   const aliases: Record<string, string[]> = {
     [normalizeMetricFieldIdentity("總營收")]: ["總營收(TWD)", "平台總營收"],
@@ -1229,12 +1249,55 @@ const metricFieldAliasIdentities = (value: string | null | undefined): string[] 
     [normalizeMetricFieldIdentity("線下商城Coda付費次數")]: ["線下商城CODAPAY付費次數"],
     [normalizeMetricFieldIdentity("線下商城CODAPAY付費次數")]: ["線下商城Coda付費次數"]
   };
-  return aliases[key]?.map(normalizeMetricFieldIdentity) ?? [];
+  return aliases[key] ?? [];
+};
+
+const metricFieldAliasIdentities = (value: string | null | undefined): string[] => {
+  return metricFieldAliasLabels(value).map(normalizeMetricFieldIdentity);
+};
+
+const metricFieldSearchLabelVariants = (value: string): string[] => {
+  const trimmed = value.trim();
+  const variants = [trimmed];
+  const offlineChannel = trimmed.match(/^線下商城\s*(GASH|CODAPAY|Coda|STEAM|樂豆點(?:\([^)]+\))?)(.+)$/i);
+  if (offlineChannel) {
+    const channel = /^coda$/i.test(offlineChannel[1]) ? "CODAPAY" : offlineChannel[1];
+    const suffix = offlineChannel[2].trim();
+    variants.push(`線下商城 ${channel}${suffix}`);
+    variants.push(`線下商城 ${channel} ${suffix}`);
+  }
+  return variants;
+};
+
+const metricFieldSearchQueries = (value: string | null | undefined): string[] => {
+  const seen = new Set<string>();
+  return [value ?? "", ...metricFieldAliasLabels(value)]
+    .flatMap((item) => metricFieldSearchLabelVariants(item))
+    .map((item) => item.trim())
+    .filter((item) => {
+      const key = item.toUpperCase();
+      if (!normalizeMetricFieldIdentity(item) || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
 };
 
 const metricFieldIdentitySet = (value: string | null | undefined): Set<string> => {
   const base = normalizeMetricFieldIdentity(value);
   return new Set([base, ...metricFieldAliasIdentities(value)].filter(Boolean));
+};
+
+const metricFieldLabelMatchesExpected = (actual: string | null | undefined, expected: string | null | undefined): boolean => {
+  const actualKey = normalizeMetricFieldIdentity(actual);
+  if (!actualKey) return false;
+  const targetKeys = metricFieldIdentitySet(expected);
+  if (targetKeys.has(actualKey)) return true;
+  for (const targetKey of targetKeys) {
+    if (!targetKey || !actualKey.startsWith(targetKey)) continue;
+    const suffix = actualKey.slice(targetKey.length);
+    if (/^[A-Z0-9]{2,}$/.test(suffix)) return true;
+  }
+  return false;
 };
 
 const knownMetricFieldCode = (field: string): string | null => {
@@ -1477,6 +1540,28 @@ const visibleButtons = async (page: Page): Promise<VisibleButton[]> => {
   });
 };
 
+const clickRunPreviewButton = async (page: Page, timeout = 15000): Promise<void> => {
+  const clicked = await clickFirstVisible([
+    page.getByRole("button", { name: /^(執行|計算)$/ }),
+    page.getByText("執行", { exact: true }),
+    page.getByText("計算", { exact: true }),
+    page.locator("button").filter({ hasText: /^(執行|計算)$/ })
+  ], timeout);
+  if (clicked) return;
+  const buttons = await visibleButtons(page).catch(() => []);
+  throw new HelperBlockedError(`RUN_PREVIEW_BUTTON_NOT_CLICKABLE: visibleButtons=${JSON.stringify(buttons.slice(0, 30)).slice(0, 1200)}`);
+};
+
+const clickDateConfirmButton = async (page: Page, timeout = 5000): Promise<boolean> => {
+  return clickFirstVisible([
+    page.locator("button[onclick=\"confirmDateRange()\"]"),
+    page.getByRole("button", { name: /^(確認|確定)$/ }),
+    page.getByText("確認", { exact: true }),
+    page.getByText("確定", { exact: true }),
+    page.locator("button").filter({ hasText: /^(確認|確定)$/ })
+  ], timeout);
+};
+
 const visibleExactTextTargets = async (page: Page, expectedText: string): Promise<VisibleTextTarget[]> => {
   return page.evaluate((targetText) => {
     const normalize = (value: string | null | undefined) => (value ?? "").trim().replace(/\s+/g, " ");
@@ -1626,6 +1711,28 @@ const clickSideButton = async (page: Page, text: string | RegExp, side: Calendar
   return true;
 };
 
+const clickCalendarNavButton = async (page: Page, side: CalendarSide, direction: "prev" | "next", timeout = 5000): Promise<boolean> => {
+  const months = (await visibleCalendarMonths(page)).sort((a, b) => a.x - b.x || a.y - b.y);
+  const month = side === "left" ? months[0] : months[months.length - 1];
+  if (!month) return false;
+  const monthMidY = month.y + month.height / 2;
+  const buttons = await visibleButtons(page);
+  const candidates = buttons
+    .filter((button) => {
+      const centerX = button.x + button.width / 2;
+      const centerY = button.y + button.height / 2;
+      if (Math.abs(centerY - monthMidY) > Math.max(24, month.height)) return false;
+      if (button.width > 64 || button.height > 64) return false;
+      if (direction === "prev") return centerX < month.x && centerX > month.x - 80;
+      return centerX > month.x + month.width && centerX < month.x + month.width + 80;
+    })
+    .sort((a, b) => Math.abs((a.y + a.height / 2) - monthMidY) - Math.abs((b.y + b.height / 2) - monthMidY));
+  const selected = candidates[0];
+  if (!selected) return false;
+  await clickVisibleButtonByIndex(page, selected.index, timeout);
+  return true;
+};
+
 const ensureStaticCalendarTabs = async (page: Page): Promise<void> => {
   await clickSideButton(page, "靜態時間", "left", 3000).catch(() => false);
   await page.waitForTimeout(150);
@@ -1681,7 +1788,9 @@ const moveCalendarToMonth = async (page: Page, side: CalendarSide, targetYear: n
       .catch(() => false);
     if (!clicked) {
       const direction = diff < 0 ? "‹" : "›";
-      const fallbackClicked = await clickSideButton(page, direction, side, 3000);
+      const fallbackClicked =
+        await clickCalendarNavButton(page, side, diff < 0 ? "prev" : "next", 3000) ||
+        await clickSideButton(page, direction, side, 3000);
       if (!fallbackClicked) return false;
     }
     await page.waitForTimeout(250);
@@ -1813,7 +1922,7 @@ const setStaticDateRangeByCalendar = async (
   }
   uiProfiles.push(await captureUiDomProfile(options, page, "dateRange.afterEndDay"));
 
-  const confirmed = await clickFirstVisible([page.getByText("確認", { exact: true }), page.locator("button").filter({ hasText: "確認" })], 5000);
+  const confirmed = await clickDateConfirmButton(page, 5000);
   if (!confirmed) {
     return {
       ok: false,
@@ -1941,11 +2050,7 @@ const setStructuredDateRange = async (
     };
   }
 
-  const confirmed = await clickFirstVisible([
-    page.locator("button[onclick=\"confirmDateRange()\"]"),
-    page.getByText("確認", { exact: true }),
-    page.locator("button").filter({ hasText: "確認" })
-  ], 5000);
+  const confirmed = await clickDateConfirmButton(page, 5000);
   if (!confirmed) {
     return {
       ok: false,
@@ -2005,7 +2110,7 @@ const setDateRange = async (options: CliOptions, page: Page, dateRange: string):
   for (let i = 0; i < 2; i += 1) {
     await page.locator("input").nth(targets[i].index).fill(values[i], { timeout: 5000 });
   }
-  await clickFirstVisible([page.getByText("確認", { exact: true }), page.locator("button").filter({ hasText: "確認" })], 5000);
+  await clickDateConfirmButton(page, 5000);
   await page.waitForTimeout(800);
 
   const ok = await bodyContainsDateRange(page, parsed.display);
@@ -2049,7 +2154,7 @@ const setDatePreset = async (options: CliOptions, page: Page, preset: string): P
       uiProfiles
     };
   }
-  await clickFirstVisible([page.getByText("確認", { exact: true }), page.locator("button").filter({ hasText: "確認" })], 3000).catch(() => false);
+  await clickDateConfirmButton(page, 3000).catch(() => false);
   await page.waitForTimeout(800);
 
   const ok = await bodyContainsText(page, uiPreset);
@@ -3181,10 +3286,10 @@ const createCollageReport = async (options: CliOptions, page: Page, startedAt: s
 const createProjectNameFromParams = (options: CliOptions): string => {
   const fitProjectName = (value: string): string => {
     const maxLength = 20;
-    const trimmed = value.trim();
+    const trimmed = fitUiResourceName(value.trim(), maxLength);
     if (trimmed.length <= maxLength) return trimmed;
     const stamp = timestampId();
-    const preferredPrefixes = ["OTTEST004_G01_", "OTTEST004-G01-", "OTTEST004_"];
+    const preferredPrefixes = ["BIUI_COLLAGE_G-01_", "BIUI_COLLAGE_G01_", "BIUI_COLLAGE_", "OTTEST004_G01_", "OTTEST004-G01-", "OTTEST004_"];
     const preferredPrefix = preferredPrefixes.find((prefix) => trimmed.startsWith(prefix) && prefix.length < maxLength);
     if (preferredPrefix) {
       return `${preferredPrefix}${stamp.slice(-(maxLength - preferredPrefix.length))}`;
@@ -3201,6 +3306,10 @@ const createProjectNameFromParams = (options: CliOptions): string => {
   const prefix = firstStringParam(options.params, ["projectNamePrefix"]) ?? "OTTEST004_G01_";
   return fitProjectName(`${prefix}${timestampId()}`);
 };
+
+const isCurrentCaseSafeCreateProjectName = (projectName: string): boolean =>
+  /OTTEST004_G01|OTTEST004-Project|OTTEST004|BIUI_COLLAGE_G-?01|BIUI_COLLAGE_G01|BIUI_COLLAGE|BIUICOLLAGE|BIUIG01|BIUICOL/i.test(projectName) &&
+  !/tommytest|主專案|正式|production|prod/i.test(projectName);
 
 const readCreateProjectModalState = async (page: Page): Promise<Record<string, unknown>> => {
   return page.evaluate(() => {
@@ -3267,16 +3376,49 @@ const clickCreateProjectButton = async (page: Page): Promise<void> => {
     page.getByText("新增專案", { exact: false }),
     page.locator("button, a, [role='button']").filter({ hasText: /新增專案/ })
   ], 8000);
-  if (!clicked) {
-    const buttons = await visibleButtons(page).catch(() => []);
-    throw new HelperBlockedError(`CREATE_PROJECT_BUTTON_NOT_CLICKABLE: visibleButtons=${JSON.stringify(buttons.slice(0, 30)).slice(0, 1200)}`);
+  if (clicked) return;
+
+  const buttons = await visibleButtons(page).catch(() => []);
+  const collageSidebarRow = buttons
+    .filter((button) => /拼貼報表/.test(button.text) && button.x < 260)
+    .sort((a, b) => a.y - b.y || a.x - b.x)[0];
+  if (collageSidebarRow) {
+    const rowMidY = collageSidebarRow.y + collageSidebarRow.height / 2;
+    const iconCandidate = buttons
+      .filter((button) => {
+        const buttonMidY = button.y + button.height / 2;
+        const text = button.text.trim();
+        if (text && text !== "+") return false;
+        if (button.width > 56 || button.height > 56) return false;
+        if (Math.abs(buttonMidY - rowMidY) > 8) return false;
+        return button.x > collageSidebarRow.x + collageSidebarRow.width - 8 && button.x < 260;
+      })
+      .sort((a, b) => Math.abs((a.y + a.height / 2) - rowMidY) - Math.abs((b.y + b.height / 2) - rowMidY))[0];
+    if (iconCandidate) {
+      await clickVisibleButtonByIndex(page, iconCandidate.index, 8000);
+      return;
+    }
   }
+
+  throw new HelperBlockedError(`CREATE_PROJECT_BUTTON_NOT_CLICKABLE: visibleButtons=${JSON.stringify(buttons.slice(0, 30)).slice(0, 1200)}`);
 };
 
 const selectCreateProjectMode = async (page: Page, requestedMode: string): Promise<Record<string, unknown>> => {
   const before = await readCreateProjectModalState(page);
   const dialogs = Array.isArray(before.dialogs) ? before.dialogs as Array<Record<string, unknown>> : [];
   const dialog = dialogs.find((item) => /新增專案|專案名稱|建構模式|類型|模式/.test(String(item.textExcerpt ?? ""))) ?? dialogs[0];
+  const bodyText = String(before.bodyTextExcerpt ?? "");
+  const visibleProjectNameInput = (await visibleInputIndexes(page).catch(() => []))
+    .find((item) => /專案|project/i.test(item.placeholder));
+  if (!dialog && ((/新增專案/.test(bodyText) && /專案名稱/.test(bodyText)) || visibleProjectNameInput)) {
+    return {
+      method: "implicit_official_collage_context",
+      requestedMode,
+      visibleProjectNameInput,
+      before,
+      after: before
+    };
+  }
   if (!dialog) throw new HelperBlockedError(`CREATE_PROJECT_MODAL_NOT_VISIBLE: state=${JSON.stringify(before).slice(0, 1500)}`);
   const dialogIndex = typeof dialog.dialogIndex === "number" ? dialog.dialogIndex : 0;
   const dialogLocator = page.locator("[role='dialog'], .modal, .ant-modal, .MuiDialog-root, .swal2-popup").nth(dialogIndex);
@@ -3312,6 +3454,14 @@ const selectCreateProjectMode = async (page: Page, requestedMode: string): Promi
     dialogLocator.getByText("拼貼模式", { exact: false }),
     dialogLocator.locator("label, button, [role='button']").filter({ hasText: /拼貼|Collage/i })
   ], 8000);
+  if (!clicked && /新增專案/.test(bodyText) && /專案名稱/.test(bodyText)) {
+    return {
+      method: "implicit_official_collage_context",
+      requestedMode,
+      before,
+      after: await readCreateProjectModalState(page)
+    };
+  }
   if (!clicked) throw new HelperBlockedError(`CREATE_PROJECT_MODE_OPTION_NOT_CLICKABLE: modal=${JSON.stringify(before).slice(0, 1800)}`);
   await page.waitForTimeout(300);
   return {
@@ -3392,7 +3542,9 @@ const clickCreateProjectSubmit = async (page: Page): Promise<void> => {
     page.locator("[role='dialog'] button").filter({ hasText: /建立|新增|確認|確定|Create/i }),
     page.locator(".modal button").filter({ hasText: /建立|新增|確認|確定|Create/i }),
     page.locator(".ant-modal button").filter({ hasText: /建立|新增|確認|確定|Create/i }),
-    page.locator(".MuiDialog-root button").filter({ hasText: /建立|新增|確認|確定|Create/i })
+    page.locator(".MuiDialog-root button").filter({ hasText: /建立|新增|確認|確定|Create/i }),
+    page.getByRole("button", { name: /^(建立|新增|確認|確定|Create)$/i }),
+    page.locator("button").filter({ hasText: /^(建立|新增|確認|確定|Create)$/i })
   ], 8000);
   if (!clicked) throw new HelperBlockedError("CREATE_PROJECT_SUBMIT_BUTTON_NOT_CLICKABLE");
 };
@@ -3464,7 +3616,7 @@ const createProject = async (options: CliOptions, page: Page, startedAt: string)
   if (!options.approvedToolRequestId) return approvalRequired(options, "Create current-case temporary/test project through visible BI UI.", startedAt);
 
   const projectName = createProjectNameFromParams(options);
-  if (!/OTTEST004_G01|OTTEST004-Project|OTTEST004/.test(projectName)) {
+  if (!isCurrentCaseSafeCreateProjectName(projectName)) {
     throw new HelperBlockedError(`CREATE_PROJECT_NAME_NOT_CURRENT_CASE_SAFE:${projectName}`);
   }
   const projectMode = firstStringParam(options.params, ["projectMode", "mode"]) ?? "拼貼";
@@ -3498,6 +3650,13 @@ const createProject = async (options: CliOptions, page: Page, startedAt: string)
 
   page.on("dialog", dialogHandler);
   try {
+    const initialBodyText = await page.locator("body").innerText({ timeout: 5000 }).catch(() => "");
+    if (!/新增專案/.test(initialBodyText) && shouldTryOfficialCollageSidebarNavigation(page, initialBodyText)) {
+      const attempts: CollageProjectSelectionAttempt[] = [];
+      await navigateOfficialCollageSidebar(options, page, attempts, initialBodyText);
+      operations.push(`project:create:navigateCollageSidebar:${attempts.map((attempt) => attempt.label).join("|")}`);
+      await page.waitForTimeout(700);
+    }
     await clickCreateProjectButton(page);
     operations.push("project:create:openModal");
     await page.waitForTimeout(600);
@@ -3517,12 +3676,18 @@ const createProject = async (options: CliOptions, page: Page, startedAt: string)
     const projectListReady = visibilityEvidence.projectListReady === true;
     const successDialogObserved = nativeDialogs.some((dialog) => /成功|已建立|新增完成|建立完成|created|success/i.test(String(dialog.message ?? "")));
     const verifiedBySuccessDialog = successDialogObserved && !dialogBlocksFlow;
-    if (projectVisible && projectListReady) {
+    const officialEmptyProjectReady = projectVisible && /\/report\/myCustom\/tileMode\/\d+/.test(page.url()) && /無數據|尚無資料|沒有資料/.test(bodyText);
+    const successToastObserved = projectVisible && new RegExp(`專案[「"]?${escapeRegex(projectName)}[」"]?新增成功`).test(bodyText);
+    const projectCreationCompleted = projectVisible && !dialogBlocksFlow && (projectListReady || officialEmptyProjectReady || verifiedBySuccessDialog || successToastObserved);
+    if (projectCreationCompleted) {
       writeCreatedProjectState(options, projectName, {
         approvedToolRequestId: options.approvedToolRequestId,
         projectMode,
         projectVisible,
         projectListReady,
+        officialEmptyProjectReady,
+        successToastObserved,
+        projectCreationCompleted,
         verifiedBySuccessDialog,
         visibilityEvidence,
         nativeDialogs
@@ -3543,6 +3708,9 @@ const createProject = async (options: CliOptions, page: Page, startedAt: string)
       dialogBlocksFlow,
       projectVisible,
       projectListReady,
+      officialEmptyProjectReady,
+      successToastObserved,
+      projectCreationCompleted,
       verifiedBySuccessDialog,
       visibilityEvidence,
       bodyTextExcerpt: bodyText.slice(0, 2400),
@@ -3553,12 +3721,12 @@ const createProject = async (options: CliOptions, page: Page, startedAt: string)
     fs.writeFileSync(createProjectEvidencePath(options), `${JSON.stringify(evidence, null, 2)}\n`);
     if (dialogBlocksFlow) warnings.push("CREATE_PROJECT_NATIVE_DIALOG_BLOCKED_FLOW");
     if (!projectVisible) warnings.push(verifiedBySuccessDialog ? "CREATE_PROJECT_VISIBILITY_NOT_CONFIRMED_BUT_SUCCESS_DIALOG_ACCEPTED" : "CREATE_PROJECT_NOT_VISIBLE_AFTER_SUBMIT");
-    if (projectVisible && !projectListReady) warnings.push("CREATE_PROJECT_REPORT_LIST_NOT_READY_AFTER_SELECTION");
+    if (projectVisible && !projectCreationCompleted) warnings.push("CREATE_PROJECT_REPORT_LIST_NOT_READY_AFTER_SELECTION");
     const shot = await screenshot(options, page, "create-project");
     const uiProfileAfter = await captureUiDomProfile(options, page, "createProject.after");
     return createReport(
       options,
-      projectVisible && projectListReady && !dialogBlocksFlow ? "ok" : "blocked",
+      projectCreationCompleted ? "ok" : "blocked",
       startedAt,
       {
         domState: await readDomState(page),
@@ -4059,7 +4227,7 @@ const runPreview = async (options: CliOptions, page: Page, startedAt: string): P
   const uiProfileBefore = await captureUiDomProfile(options, page, "runPreview.before");
   const executePrecondition = await ensureMetricFieldSelectedBeforeExecute(page, "runPreview");
   const observed = await observeDuring(page, async () => {
-    await page.getByText("執行", { exact: true }).first().click({ timeout: 15000 });
+    await clickRunPreviewButton(page, 15000);
     await page.waitForTimeout(2500);
   });
   const chart = await readChartSummary(page);
@@ -4163,13 +4331,17 @@ const readVisibleFormulaModalState = async (page: Page): Promise<Record<string, 
 
 const clickCalculatedFieldControl = async (page: Page): Promise<string> => {
   const clicked = await clickFirstVisible([
+    page.locator("button[aria-label='新增自訂欄位']"),
+    page.locator("button[aria-label*='自訂欄位']"),
     page.locator("button[onclick=\"openCalculatedFieldEditor()\"]"),
+    page.getByRole("button", { name: /新增自訂欄位|\(x\)/ }),
+    page.locator("button").filter({ hasText: /^\(x\)$/ }),
     page.getByText("+ 新增運算欄位", { exact: false }),
-    page.locator("button").filter({ hasText: /新增運算|運算欄位|Calculated|Formula/i })
+    page.locator("button").filter({ hasText: /新增運算|新增自訂|自訂欄位|運算欄位|Calculated|Formula/i })
   ], 10000);
   if (clicked) return "calculatedField:openButton";
   const buttons = await visibleButtons(page).catch(() => []);
-  const match = buttons.find((button) => /新增運算|運算欄位|Calculated|Formula/i.test(button.text));
+  const match = buttons.find((button) => /^(?:\(x\))$|新增運算|新增自訂|自訂欄位|運算欄位|Calculated|Formula/i.test(button.text));
   if (match) {
     await clickVisibleButtonByIndex(page, match.index, 8000);
     return `calculatedField:visibleButton:${match.text}`;
@@ -4377,6 +4549,42 @@ const enterReadonlyFormulaThroughModalButtons = async (
   };
 };
 
+const fillOfficialInlineCalculatedField = async (
+  page: Page,
+  fieldName: string,
+  formula: string,
+  before: Record<string, unknown>
+): Promise<Record<string, unknown>> => {
+  const formulaInputLocator = page
+    .locator("input[placeholder*='運算式'], input[placeholder*='公式'], input[placeholder*='插入欄位'], textarea[placeholder*='運算式'], textarea[placeholder*='公式']")
+    .last();
+  if ((await formulaInputLocator.count()) === 0) {
+    throw new HelperBlockedError(`FORMULA_MODAL_NOT_VISIBLE: state=${JSON.stringify(before).slice(0, 1500)}`);
+  }
+  await formulaInputLocator.fill(formula, { timeout: 10000 });
+  const formulaValue = await formulaInputLocator.inputValue({ timeout: 8000 });
+  if (normalizeFormulaExpression(formulaValue) !== normalizeFormulaExpression(formula)) {
+    throw new HelperBlockedError(`FORMULA_INLINE_INPUT_VALUE_MISMATCH: expected=${formula}; actual=${formulaValue}`);
+  }
+  return {
+    fieldName,
+    formula,
+    mode: "official_inline_calculated_field",
+    selectedNameInput: null,
+    selectedFormulaInput: {
+      selector: "input[placeholder*='運算式']",
+      value: formulaValue,
+      readOnly: false,
+      entry: { method: "direct_fill_inline" },
+      expectedFormulaValues: [formula],
+      matchMode: "display_formula"
+    },
+    before,
+    afterFill: await readVisibleFormulaModalState(page),
+    afterSubmit: null
+  };
+};
+
 const fillCalculatedFieldModal = async (
   page: Page,
   fieldName: string,
@@ -4384,7 +4592,7 @@ const fillCalculatedFieldModal = async (
 ): Promise<Record<string, unknown>> => {
   const before = await readVisibleFormulaModalState(page);
   const dialog = Array.isArray(before.dialogs) ? (before.dialogs as Array<Record<string, unknown>>)[0] : null;
-  if (!dialog) throw new HelperBlockedError(`FORMULA_MODAL_NOT_VISIBLE: state=${JSON.stringify(before).slice(0, 1500)}`);
+  if (!dialog) return fillOfficialInlineCalculatedField(page, fieldName, formula, before);
 
   const modalLocator = page.locator("#formulaEditorModal").first();
   await modalLocator.waitFor({ state: "visible", timeout: 8000 });
@@ -4513,7 +4721,7 @@ const configureCalculatedMetricAndPreview = async (options: CliOptions, page: Pa
 
   const executePrecondition = await ensureMetricFieldSelectedBeforeExecute(page, "calculatedMetricPreview");
   const observed = await observeDuringWithResponseBodies(page, async () => {
-    await page.getByText("執行", { exact: true }).first().click({ timeout: 15000 });
+    await clickRunPreviewButton(page, 15000);
     await page.waitForTimeout(3000);
   });
   const chart = await readChartSummary(page);
@@ -4627,7 +4835,7 @@ const inspectAllZeroFields = async (options: CliOptions, page: Page, startedAt: 
   const executePrecondition = await ensureMetricFieldSelectedBeforeExecute(page, "allZeroFieldInspection");
   const selectedBeforeExecute = await readSelectedMetricFields(page).catch(() => []);
   const observed = await observeDuringWithResponseBodies(page, async () => {
-    await page.getByText("執行", { exact: true }).first().click({ timeout: 15000 });
+    await clickRunPreviewButton(page, 15000);
     await page.waitForTimeout(3000);
   });
   const chart = await readChartSummary(page);
@@ -4785,7 +4993,7 @@ const runDateVariantsPreviewEvidence = async (options: CliOptions, page: Page, s
     if (setResult.ok) {
       executePrecondition = await ensureMetricFieldSelectedBeforeExecute(page, `dateVariant:${label}`);
       const previewObserved = await observeDuring(page, async () => {
-        await page.getByText("執行", { exact: true }).first().click({ timeout: 15000 });
+        await clickRunPreviewButton(page, 15000);
         await page.waitForTimeout(2500);
       });
       observed = { requests: previewObserved.requests, responses: previewObserved.responses };
@@ -5278,7 +5486,7 @@ const extractFieldPickerDomItems = async (page: Page): Promise<Array<Record<stri
           .filter((child) => {
             const text = normalize(child.innerText || child.textContent);
             if (!text || text.length > 90) return false;
-            if (/^(← 返回|拼貼|指標|明細|儲存報表|執行|\+ 新增欄位|\+ 新增運算欄位|時間區間|過去7天|每天|確認|取消|×)$/i.test(text)) return false;
+            if (/^(← 返回|拼貼|指標|明細|儲存報表|執行|計算|\+ 新增欄位|\+ 新增運算欄位|時間區間|過去7天|每天|確認|確定|取消|×)$/i.test(text)) return false;
             return true;
           });
         return { element, leaves };
@@ -5330,7 +5538,10 @@ const fieldPickerTargetMatches = (
 export const __metricFieldIdentityTestHooks = {
   normalizeMetricFieldIdentity,
   normalizeSourceReportIdentity,
+  metricFieldAliasLabels,
   metricFieldAliasIdentities,
+  metricFieldSearchLabelVariants,
+  metricFieldSearchQueries,
   metricFieldIdentitySet: (value: string | null | undefined): string[] => [...metricFieldIdentitySet(value)],
   knownMetricFieldCode,
   cleanFieldPickerLabel,
@@ -5417,8 +5628,7 @@ function officialMetricRowHasSelectedField(row: OfficialCollageFieldRow): boolea
 function officialMetricRowFieldMatches(row: OfficialCollageFieldRow, expectedField: string): boolean {
   if (!officialMetricRowHasSelectedField(row)) return false;
   const fieldText = row.fieldText ?? "";
-  const targetKeys = metricFieldIdentitySet(expectedField);
-  return targetKeys.has(normalizeMetricFieldIdentity(fieldText));
+  return metricFieldLabelMatchesExpected(fieldText, expectedField);
 }
 
 type OfficialSourceSelectionResult = {
@@ -5478,30 +5688,112 @@ const readOfficialCollageFieldRows = async (page: Page): Promise<OfficialCollage
         height: Math.round(rect.height)
       }];
     });
+    const rowMarkers = buttons
+      .filter((button) => /^\d+$/.test(button.text) && button.y >= 320 && button.x >= 45 && button.x <= 110)
+      .concat(Array.from(document.querySelectorAll<HTMLElement>("body *")).flatMap((element) => {
+        const text = normalize(element.innerText || element.textContent);
+        if (!/^\d+$/.test(text) || !isVisible(element)) return [];
+        const hasExactVisibleChild = Array.from(element.children).some((child) => normalize(child.textContent) === text && isVisible(child));
+        if (hasExactVisibleChild) return [];
+        const rect = element.getBoundingClientRect();
+        if (rect.y < 320 || rect.x < 55 || rect.x > 105 || rect.width > 48 || rect.height > 40) return [];
+        return [{
+          index: -1,
+          text,
+          x: Math.round(rect.x),
+          y: Math.round(rect.y),
+          width: Math.round(rect.width),
+          height: Math.round(rect.height)
+        }];
+      }))
+      .sort((a, b) => a.y - b.y || a.x - b.x);
     const sourceButtons = buttons
-      .filter((button) => button.text && button.y >= 320 && button.x >= 80 && button.x <= 260)
+      .filter((button) => button.text && button.y >= 320 && button.x >= 80 && button.x < 235)
       .filter((button) => !/^(?:儲存報表|計算|過去\s*\d+\s*天|\(x\)|\+)$/.test(button.text))
       .sort((a, b) => a.y - b.y || a.x - b.x);
     const fieldButtonExcluded = /^(?:儲存報表|儲存|保存|執行|查詢|搜尋|刪除|取消|計算|過去\s*\d+\s*天|\(x\)|\+|請選擇報表)$/;
     const fieldButtons = buttons
-      .filter((button) => button.y >= 320 && button.x >= 220 && !fieldButtonExcluded.test(button.text))
+      .filter((button) => button.y >= 320 && button.x >= 230 && button.x <= 430 && !fieldButtonExcluded.test(button.text))
       .sort((a, b) => a.y - b.y || a.x - b.x);
-    return sourceButtons.map((sourceButton, rowIndex) => {
+    const rows: Array<{
+      rowIndex: number;
+      sourceButtonIndex: number;
+      sourceText: string;
+      fieldButtonIndex: number;
+      fieldText: string;
+      y: number;
+    }> = [];
+    for (const marker of rowMarkers) {
+      const sourceButton = sourceButtons
+        .filter((candidate) =>
+          ((candidate.y - marker.y >= 24 && candidate.y - marker.y <= 56) || Math.abs(candidate.y - marker.y) <= 16) &&
+          candidate.x > marker.x + Math.max(12, marker.width * 0.4)
+        )
+        .sort((a, b) => a.x - b.x || Math.abs(a.y - marker.y) - Math.abs(b.y - marker.y))[0];
+      if (!sourceButton) continue;
       const fieldButton = fieldButtons.find((candidate) =>
         candidate.index !== sourceButton.index &&
         Math.abs(candidate.y - sourceButton.y) <= 16 &&
         candidate.x > sourceButton.x + Math.max(24, sourceButton.width * 0.35)
       );
-      return {
-        rowIndex,
+      if (!fieldButton) continue;
+      rows.push({
+        rowIndex: Math.max(0, Number.parseInt(marker.text, 10) - 1),
         sourceButtonIndex: sourceButton.index,
         sourceText: sourceButton.text,
-        fieldButtonIndex: fieldButton?.index ?? null,
-        fieldText: fieldButton?.text ?? null,
+        fieldButtonIndex: fieldButton.index,
+        fieldText: fieldButton.text,
+        y: marker.y
+      });
+    }
+    if (rows.length > 0) return rows;
+
+    for (const sourceButton of sourceButtons) {
+      const fieldButton = fieldButtons.find((candidate) =>
+        candidate.index !== sourceButton.index &&
+        Math.abs(candidate.y - sourceButton.y) <= 16 &&
+        candidate.x > sourceButton.x + Math.max(24, sourceButton.width * 0.35)
+      );
+      if (!fieldButton) continue;
+      rows.push({
+        rowIndex: rows.length,
+        sourceButtonIndex: sourceButton.index,
+        sourceText: sourceButton.text,
+        fieldButtonIndex: fieldButton.index,
+        fieldText: fieldButton.text,
         y: sourceButton.y
-      };
-    });
+      });
+    }
+    return rows;
   });
+};
+
+const officialRowByIndex = (rows: OfficialCollageFieldRow[], rowIndex: number): OfficialCollageFieldRow | null =>
+  rows.find((row) => row.rowIndex === rowIndex) ?? rows[rowIndex] ?? null;
+
+const officialRowByStablePosition = (
+  rows: OfficialCollageFieldRow[],
+  rowIndex: number,
+  originalRow: OfficialCollageFieldRow | null
+): OfficialCollageFieldRow | null => {
+  const exact = officialRowByIndex(rows, rowIndex);
+  if (exact) return exact;
+  if (originalRow) {
+    const sameY = rows
+      .filter((row) => Math.abs(row.y - originalRow.y) <= 18)
+      .sort((a, b) => Math.abs(a.y - originalRow.y) - Math.abs(b.y - originalRow.y))[0];
+    if (sameY) return sameY;
+  }
+  return rows[rowIndex] ?? null;
+};
+
+const dismissOfficialPickerOverlay = async (page: Page): Promise<void> => {
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    await page.keyboard.press("Escape").catch(() => undefined);
+    await page.waitForTimeout(180);
+  }
+  await page.getByText("自訂報表", { exact: false }).first().click({ timeout: 1500 }).catch(() => undefined);
+  await page.waitForTimeout(250);
 };
 
 const readOfficialVisiblePickerItems = async (
@@ -5514,7 +5806,15 @@ const readOfficialVisiblePickerItems = async (
     const isVisible = (element: Element): boolean => {
       const rect = element.getBoundingClientRect();
       const style = window.getComputedStyle(element);
-      return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden" && style.opacity !== "0";
+      return rect.width > 0 &&
+        rect.height > 0 &&
+        rect.bottom > 0 &&
+        rect.right > 0 &&
+        rect.top < window.innerHeight &&
+        rect.left < window.innerWidth &&
+        style.display !== "none" &&
+        style.visibility !== "hidden" &&
+        style.opacity !== "0";
     };
     const rectFor = (element: Element) => {
       const rect = element.getBoundingClientRect();
@@ -5538,6 +5838,7 @@ const readOfficialVisiblePickerItems = async (
       const role = element.getAttribute("role");
       const tagName = element.tagName.toLowerCase();
       const hasTypeBadge = typeBadgePattern.test(text);
+      const floatingPickerAncestor = element.closest("[class*='fixed'][class*='z-50'], [class*='absolute'][class*='z-50']");
       const clickableish =
         tagName === "button" ||
         /button|option|menuitem|tab/i.test(role ?? "") ||
@@ -5546,12 +5847,20 @@ const readOfficialVisiblePickerItems = async (
         tagName === "button" ||
         /option|menuitem/i.test(role ?? "") ||
         /cursor-pointer|hover:bg/i.test(className);
+      const sourceOptionLike =
+        Boolean(floatingPickerAncestor) &&
+        tagName !== "p" &&
+        rect.height >= 24 &&
+        rect.height <= 48 &&
+        rect.width >= 80 &&
+        rect.width <= 360 &&
+        text.length <= 60;
       const inOfficialPickerBand = rect.y >= 390 && rect.x >= 80 && rect.x <= 700;
       if (pickerKind === "field") {
         if (!hasTypeBadge || !fieldRowLike || rect.x < 180) return [];
       } else {
         if (hasTypeBadge || !inOfficialPickerBand) return [];
-        if (!fieldRowLike) return [];
+        if (!fieldRowLike && !sourceOptionLike) return [];
         if (text.length > 60) return [];
       }
       return [{
@@ -5562,22 +5871,30 @@ const readOfficialVisiblePickerItems = async (
         role,
         className,
         rect,
-        clickableish
+        clickableish,
+        sourceOptionLike
       }];
     });
     const bestByText = new Map<string, typeof candidates[number]>();
     for (const candidate of candidates) {
       const key = candidate.text.replace(/\s+/g, "");
       const current = bestByText.get(key);
-      const candidateScore = (candidate.clickableish ? 0 : 10) + (candidate.tagName === "p" || candidate.tagName === "span" ? 4 : 0) + Math.max(0, candidate.rect.x / 10000);
+      const candidateScore =
+        (pickerKind === "source" && candidate.sourceOptionLike ? -20 : 0) +
+        (candidate.clickableish ? 0 : 10) +
+        (candidate.tagName === "p" || candidate.tagName === "span" ? 4 : 0) +
+        Math.max(0, candidate.rect.x / 10000);
       const currentScore = current
-        ? (current.clickableish ? 0 : 10) + (current.tagName === "p" || current.tagName === "span" ? 4 : 0) + Math.max(0, current.rect.x / 10000)
+        ? (pickerKind === "source" && current.sourceOptionLike ? -20 : 0) +
+          (current.clickableish ? 0 : 10) +
+          (current.tagName === "p" || current.tagName === "span" ? 4 : 0) +
+          Math.max(0, current.rect.x / 10000)
         : Number.POSITIVE_INFINITY;
       if (!current || candidateScore < currentScore) bestByText.set(key, candidate);
     }
     return [...bestByText.values()]
       .sort((a, b) => a.rect.y - b.rect.y || a.rect.x - b.rect.x)
-      .map(({ clickableish: _clickableish, ...item }) => item);
+      .map(({ clickableish: _clickableish, sourceOptionLike: _sourceOptionLike, ...item }) => item);
   }, { pickerKind: kind });
 
   return items.map((item) => {
@@ -5610,6 +5927,26 @@ const officialPickerSignature = (items: OfficialPickerDomItem[]): Record<string,
   };
 };
 
+const searchOfficialFieldPicker = async (
+  page: Page,
+  query: string,
+  groupLabel: string | null
+): Promise<{ searched: boolean; input: Record<string, unknown> | null; items: OfficialPickerDomItem[] }> => {
+  const inputs = await visibleInputIndexes(page).catch(() => []);
+  const searchInput =
+    inputs.find((item) => /搜尋|搜索|search/i.test(item.placeholder)) ??
+    inputs.find((item) => item.type === "search") ??
+    null;
+  if (!searchInput) return { searched: false, input: null, items: [] };
+  await page.locator("input").nth(searchInput.index).fill(query, { timeout: 5000 });
+  await page.waitForTimeout(700);
+  return {
+    searched: true,
+    input: searchInput,
+    items: await readOfficialVisiblePickerItems(page, "field", groupLabel)
+  };
+};
+
 const targetForOfficialField = (field: string, sourceReport: string): Pick<FieldPickerDomTarget, "label" | "code"> & { groupLabels: Set<string> } => ({
   label: field,
   code: knownMetricFieldCode(field),
@@ -5617,6 +5954,7 @@ const targetForOfficialField = (field: string, sourceReport: string): Pick<Field
 });
 
 const officialFieldItemMatches = (item: OfficialPickerDomItem, field: string, sourceReport: string): boolean =>
+  metricFieldLabelMatchesExpected(item.label ?? cleanFieldPickerLabel(item.text, item.code), field) ||
   fieldPickerTargetMatches(
     {
       label: item.label ?? cleanFieldPickerLabel(item.text, item.code),
@@ -5633,7 +5971,7 @@ const selectOfficialSourceReportForMetadata = async (
 ): Promise<OfficialSourceSelectionResult> => {
   const operations: string[] = [];
   let rows = await readOfficialCollageFieldRows(page);
-  const row = rows[rowIndex];
+  const row = officialRowByIndex(rows, rowIndex);
   if (!row) {
     return {
       requestedSourceReport: targetSourceReport,
@@ -5666,7 +6004,12 @@ const selectOfficialSourceReportForMetadata = async (
   operations.push(`official:source:open:row${rowIndex}:${row.sourceText || "empty"}`);
   await page.waitForTimeout(500);
   const sourcePickerOptions = await readOfficialVisiblePickerItems(page, "source");
-  const selectedOption = sourcePickerOptions.find((item) => sourceReportLabelMatches(item.text, targetSourceReport)) ?? null;
+  const scopedSourcePickerOptions = sourcePickerOptions.filter((item) => item.rect.y >= row.y - 8);
+  operations.push(`official:source:options:row${rowIndex}:all=${sourcePickerOptions.length}:scoped=${scopedSourcePickerOptions.length}`);
+  const selectedOption =
+    scopedSourcePickerOptions.find((item) => sourceReportLabelMatches(item.text, targetSourceReport)) ??
+    sourcePickerOptions.find((item) => sourceReportLabelMatches(item.text, targetSourceReport)) ??
+    null;
   if (!selectedOption) {
     return {
       requestedSourceReport: targetSourceReport,
@@ -5684,8 +6027,10 @@ const selectOfficialSourceReportForMetadata = async (
   await clickVisibleBodyElementByIndex(page, selectedOption.index, 8000);
   operations.push(`official:source:select:row${rowIndex}:${selectedOption.text}`);
   await page.waitForTimeout(650);
+  await dismissOfficialPickerOverlay(page);
   rows = await readOfficialCollageFieldRows(page);
-  const sourceControlAfter = rows[rowIndex]?.sourceText ?? selectedOption.text;
+  const rowAfter = officialRowByStablePosition(rows, rowIndex, row);
+  const sourceControlAfter = rowAfter?.sourceText ?? selectedOption.text;
   const verified = Boolean(sourceControlAfter && sourceReportLabelMatches(sourceControlAfter, targetSourceReport));
   return {
     requestedSourceReport: targetSourceReport,
@@ -5710,6 +6055,7 @@ type OfficialMetricRowSelectionResult = {
   fieldControlBefore: string | null;
   fieldControlAfter: string | null;
   fieldPickerSignature: Record<string, unknown>;
+  fieldPickerSearch: Record<string, unknown> | null;
   selectedFieldOption: OfficialPickerDomItem | null;
   fieldPickerItems: OfficialPickerDomItem[];
   operations: string[];
@@ -5724,7 +6070,7 @@ const setSingleMetricRowThroughOfficialUi = async (
   const requestedRowIndex = metric.metricIndex ?? defaultRowIndex;
   const operations: string[] = [];
   const rowsBefore = await readOfficialCollageFieldRows(page);
-  const beforeRow = rowsBefore[requestedRowIndex] ?? null;
+  const beforeRow = officialRowByIndex(rowsBefore, requestedRowIndex);
   if (!beforeRow) {
     throw new HelperBlockedError(`METRIC_ROW_NOT_FOUND:row=${requestedRowIndex}; rows=${JSON.stringify(rowsBefore).slice(0, 1200)}`);
   }
@@ -5735,33 +6081,77 @@ const setSingleMetricRowThroughOfficialUi = async (
     throw new HelperBlockedError(sourceSelection.blockedReason ?? `SOURCE_REPORT_OPTION_NOT_FOUND:${metric.sourceReport}`);
   }
 
-  const rowsAfterSource = await readOfficialCollageFieldRows(page);
-  const sourceRow = rowsAfterSource[requestedRowIndex] ?? null;
+  let rowsAfterSource = await readOfficialCollageFieldRows(page);
+  let sourceRow = officialRowByStablePosition(rowsAfterSource, requestedRowIndex, beforeRow);
   if (!sourceRow || sourceRow.fieldButtonIndex === null) {
     throw new HelperBlockedError(`FIELD_CONTROL_NOT_FOUND:row=${requestedRowIndex}; source=${metric.sourceReport}; rows=${JSON.stringify(rowsAfterSource).slice(0, 1200)}`);
+  }
+  const viewportHeight = page.viewportSize()?.height ?? 900;
+  const desiredRowY = Math.min(620, Math.max(420, viewportHeight - 520));
+  if (sourceRow.y > viewportHeight - 360 || sourceRow.y < 300) {
+    const deltaY = Math.round(sourceRow.y - desiredRowY);
+    await page.mouse.move(240, Math.min(viewportHeight - 220, Math.max(340, sourceRow.y + 30)));
+    await page.mouse.wheel(0, deltaY);
+    await page.waitForTimeout(500);
+    rowsAfterSource = await readOfficialCollageFieldRows(page);
+    sourceRow = officialRowByStablePosition(rowsAfterSource, requestedRowIndex, beforeRow);
+    operations.push(`official:row:scrollForPicker:row${requestedRowIndex}:deltaY=${deltaY}`);
+  }
+  if (!sourceRow || sourceRow.fieldButtonIndex === null) {
+    throw new HelperBlockedError(`FIELD_CONTROL_NOT_FOUND_AFTER_SCROLL:row=${requestedRowIndex}; source=${metric.sourceReport}; rows=${JSON.stringify(rowsAfterSource).slice(0, 1200)}`);
   }
 
   await clickVisibleButtonByIndex(page, sourceRow.fieldButtonIndex, 8000);
   operations.push(`official:fieldPicker:open:row${requestedRowIndex}:${sourceSelection.selectedSource}`);
   await page.waitForTimeout(800);
-  const fieldPickerItems = await readOfficialVisiblePickerItems(page, "field", sourceSelection.selectedSource);
+  let fieldPickerItems = await readOfficialVisiblePickerItems(page, "field", sourceSelection.selectedSource);
+  let selectedFieldOption = fieldPickerItems.find((item) => officialFieldItemMatches(item, metric.field, sourceSelection.selectedSource ?? metric.sourceReport)) ?? null;
+  let fieldPickerSearch: Record<string, unknown> | null = null;
+  if (!selectedFieldOption) {
+    const attempts: Record<string, unknown>[] = [];
+    for (const query of metricFieldSearchQueries(metric.field)) {
+      const searched = await searchOfficialFieldPicker(page, query, sourceSelection.selectedSource);
+      const attempt = {
+        query,
+        searched: searched.searched,
+        input: searched.input,
+        optionCountAfterSearch: searched.items.length,
+        sampleOptionsAfterSearch: searched.items.slice(0, 20).map((item) => ({
+          label: item.label ?? item.text,
+          text: item.text,
+          code: item.code,
+          typeBadge: item.typeBadge ?? null
+        }))
+      };
+      attempts.push(attempt);
+      if (!searched.searched) {
+        fieldPickerSearch = { attempts };
+        break;
+      }
+      operations.push(`official:fieldPicker:search:row${requestedRowIndex}:${query}:options=${searched.items.length}`);
+      fieldPickerItems = searched.items;
+      selectedFieldOption = fieldPickerItems.find((item) => officialFieldItemMatches(item, metric.field, sourceSelection.selectedSource ?? metric.sourceReport)) ?? null;
+      fieldPickerSearch = { attempts, selectedQuery: selectedFieldOption ? query : null };
+      if (selectedFieldOption) break;
+    }
+  }
   const fieldPickerSignature = officialPickerSignature(fieldPickerItems);
   if (fieldPickerItems.length === 0) {
-    throw new HelperBlockedError(`FIELD_PICKER_STALE_AFTER_SOURCE_CHANGE:row=${requestedRowIndex}; source=${sourceSelection.selectedSource}; optionCount=0`);
+    throw new HelperBlockedError(`FIELD_PICKER_STALE_AFTER_SOURCE_CHANGE:row=${requestedRowIndex}; source=${sourceSelection.selectedSource}; optionCount=0; search=${JSON.stringify(fieldPickerSearch).slice(0, 1200)}`);
   }
 
-  const selectedFieldOption = fieldPickerItems.find((item) => officialFieldItemMatches(item, metric.field, sourceSelection.selectedSource ?? metric.sourceReport)) ?? null;
   if (!selectedFieldOption) {
     throw new HelperBlockedError(
-      `FIELD_OPTION_NOT_FOUND:row=${requestedRowIndex}; source=${sourceSelection.selectedSource}; field=${metric.field}; options=${JSON.stringify(fieldPickerItems.slice(0, 80)).slice(0, 2000)}`
+      `FIELD_OPTION_NOT_FOUND:row=${requestedRowIndex}; source=${sourceSelection.selectedSource}; field=${metric.field}; options=${JSON.stringify(fieldPickerItems.slice(0, 80)).slice(0, 2000)}; search=${JSON.stringify(fieldPickerSearch).slice(0, 1200)}`
     );
   }
 
   await clickVisibleBodyElementByIndex(page, selectedFieldOption.index, 8000);
   operations.push(`official:field:select:row${requestedRowIndex}:${selectedFieldOption.label ?? selectedFieldOption.text}`);
   await page.waitForTimeout(700);
+  await dismissOfficialPickerOverlay(page);
   const rowsAfterField = await readOfficialCollageFieldRows(page);
-  const afterRow = rowsAfterField[requestedRowIndex] ?? null;
+  const afterRow = officialRowByStablePosition(rowsAfterField, requestedRowIndex, beforeRow);
   const verified = Boolean(afterRow && officialMetricRowFieldMatches(afterRow, metric.field));
   if (!verified) {
     throw new HelperBlockedError(
@@ -5779,11 +6169,39 @@ const setSingleMetricRowThroughOfficialUi = async (
     fieldControlBefore: beforeRow.fieldText,
     fieldControlAfter: afterRow?.fieldText ?? null,
     fieldPickerSignature,
+    fieldPickerSearch,
     selectedFieldOption,
     fieldPickerItems: fieldPickerItems.slice(0, 120),
     operations,
     verified
   };
+};
+
+const ensureOfficialMetricRowCount = async (page: Page, rowCount: number): Promise<string[]> => {
+  const operations: string[] = [];
+  for (let attempt = 0; attempt < Math.max(4, rowCount * 3); attempt += 1) {
+    const rows = await readOfficialCollageFieldRows(page);
+    const maxVisibleRowIndex = Math.max(-1, ...rows.map((row) => row.rowIndex));
+    if (rows.some((row) => row.rowIndex === rowCount - 1) || rows.length >= rowCount || maxVisibleRowIndex >= rowCount - 1) return operations;
+    await page.keyboard.press("Escape").catch(() => undefined);
+    await page.waitForTimeout(200);
+    const clicked = await clickFirstVisible([
+      page.locator("button[aria-label='新增欄位']").first(),
+      page.getByRole("button", { name: /新增欄位/ }).first(),
+      page.locator("button").filter({ hasText: /^\+$/ }).first()
+    ], 8000);
+    if (!clicked) {
+      throw new HelperBlockedError(`OFFICIAL_ADD_METRIC_ROW_NOT_CLICKABLE:needed=${rowCount};current=${rows.length}`);
+    }
+    await page.waitForTimeout(700);
+    const after = await readOfficialCollageFieldRows(page);
+    operations.push(`official:row:add:${rows.length}->${after.length}`);
+  }
+  const finalRows = await readOfficialCollageFieldRows(page);
+  if (finalRows.length < rowCount) {
+    throw new HelperBlockedError(`OFFICIAL_METRIC_ROW_COUNT_NOT_REACHED:needed=${rowCount};current=${finalRows.length};rows=${JSON.stringify(finalRows).slice(0, 1200)}`);
+  }
+  return operations;
 };
 
 type OfficialMetricRowsEvidence = {
@@ -5807,6 +6225,9 @@ const setMetricRowsThroughOfficialUi = async (
   const operations: string[] = [`official:setMetricRows:requested:${metrics.length}`, `official:setMetricRows:rowsBefore:${rowsBefore.length}`];
   const selections: OfficialMetricRowSelectionResult[] = [];
   for (const [index, metric] of metrics.entries()) {
+    const requestedRowIndex = metric.metricIndex ?? index;
+    const bufferedRowCount = Math.min(metrics.length, requestedRowIndex + 6);
+    operations.push(...await ensureOfficialMetricRowCount(page, bufferedRowCount));
     const result = await setSingleMetricRowThroughOfficialUi(page, metric, index);
     operations.push(...result.operations);
     selections.push(result);
@@ -6072,6 +6493,34 @@ const selectAllMetricFieldsThroughUi = async (options: CliOptions, page: Page): 
   const expected = readSelectAllExpectedFields(options);
   operations.push(`field:selectAll:requested:sources=${expected.sourceReports.join("|") || "all"};expectedFieldCount=${expectedFieldCount ?? "unknown"}`);
   operations.push(...expected.warnings.map((warning) => `field:selectAll:warning:${warning}`));
+
+  if (await isOfficialCollageEditorPage(page)) {
+    const fallbackSource = stringParam(options.params, "source") ?? stringParam(options.params, "sourceReport") ?? expected.sourceReports[0] ?? "每日報表";
+    const officialFields = expected.fields.length > 0
+      ? expected.fields
+      : metricFieldsFromParams(options.params);
+    if (officialFields.length > 0) {
+      const officialRows = officialFields.map((field, index) => ({
+        sourceReport: expected.sourceReports[0] ?? fallbackSource,
+        field,
+        metricIndex: index
+      }));
+      const evidence = await setMetricRowsThroughOfficialUi(options, page, officialRows);
+      if (evidence) {
+        operations.push(...evidence.operations);
+        const selected = await readOfficialCollageFieldRows(page).catch(() => []);
+        const visibleSelectedCount = selected.filter((row) => officialMetricRowHasSelectedField(row)).length;
+        const selectedCount = evidence.selections.filter((selection) => selection.verified).length;
+        operations.push(`field:selectAll:officialFinalSelected:${selectedCount};visible=${visibleSelectedCount};visibleRows=${selected.length}`);
+        if (expectedFieldCount !== null && selectedCount !== expectedFieldCount) {
+          const message = `SELECT_ALL_FIELD_COUNT_MISMATCH:expected=${expectedFieldCount}; selected=${selectedCount}; visibleSelected=${visibleSelectedCount}; officialRows=${selected.length}`;
+          if (strictSelectAllFieldCountRequired(options.params)) throw new HelperBlockedError(message);
+          operations.push(`field:selectAll:nonBlockingCountMismatch:${message}`);
+        }
+        return operations;
+      }
+    }
+  }
 
   if (expected.sourceReports.length > 0) {
     const readiness = await waitForMetricFieldControls(page);
@@ -6897,17 +7346,68 @@ const fillVisibleReportNameInput = async (page: Page, reportName: string): Promi
   return { selectedInput: preferred, visibleInputs: inputs };
 };
 
+const clickExactVisibleButtonText = async (page: Page, labels: string[], timeout = 8000): Promise<boolean> => {
+  const buttons = await visibleButtons(page).catch(() => []);
+  const labelSet = new Set(labels.map((label) => label.trim()));
+  const candidates = buttons
+    .filter((button) => labelSet.has(button.text.trim()))
+    .sort((a, b) => b.y - a.y || b.x - a.x);
+  const target = candidates[0];
+  if (!target) return false;
+  await clickVisibleButtonByIndex(page, target.index, timeout);
+  return true;
+};
+
+const selectSaveReportProjectIfNeeded = async (page: Page, projectName: string): Promise<Record<string, unknown>> => {
+  const bodyText = await page.locator("body").innerText({ timeout: 3000 }).catch(() => "");
+  if (!/請選擇專案|儲存專案/.test(bodyText)) {
+    return { skipped: true, reason: "save_project_selector_not_visible" };
+  }
+  const opened = await clickFirstVisible([
+    page.getByText("請選擇專案", { exact: false }),
+    page.locator("button").filter({ hasText: /請選擇專案/ })
+  ], 5000);
+  if (!opened) return { skipped: false, selected: false, reason: "save_project_selector_not_clickable", projectName };
+  await page.waitForTimeout(500);
+  const exactTargets = await visibleExactTextTargets(page, projectName).catch(() => []);
+  const target = exactTargets
+    .filter((item) => item.x >= 450 && item.x <= 1050 && item.y >= 260)
+    .sort((a, b) => b.y - a.y || b.x - a.x)[0] ?? exactTargets.at(-1);
+  if (target) {
+    await clickVisibleBodyElementByIndex(page, target.index, 8000);
+    await page.waitForTimeout(500);
+    return { skipped: false, selected: true, method: "visibleExactTextTarget", projectName, target };
+  }
+  const clickedFallback = await page.getByText(projectName, { exact: true }).last().click({ timeout: 5000 }).then(() => true).catch(() => false);
+  await page.waitForTimeout(500);
+  return {
+    skipped: false,
+    selected: clickedFallback,
+    method: clickedFallback ? "textLocatorLast" : "not_found",
+    projectName,
+    availableTargets: exactTargets.slice(0, 20)
+  };
+};
+
 const clickModalSaveButton = async (page: Page): Promise<void> => {
   const clicked = await clickFirstVisible([
+    page.getByRole("button", { name: /^(儲存|確認|確定|保存)$/ }),
+    page.getByText("儲存", { exact: true }),
+    page.getByText("確認", { exact: true }),
+    page.getByText("確定", { exact: true }),
     page.locator(".modal button").filter({ hasText: /儲存|確認|確定|保存/ }),
     page.locator("[role=dialog] button").filter({ hasText: /儲存|確認|確定|保存/ }),
-    page.locator("button").filter({ hasText: /儲存|確認|確定|保存/ })
+    page.locator("button").filter({ hasText: /^(儲存|確認|確定|保存)$/ })
   ], 8000);
-  if (!clicked) throw new HelperBlockedError("SAVE_MODAL_SUBMIT_BUTTON_NOT_CLICKABLE");
+  if (clicked) return;
+  if (await clickExactVisibleButtonText(page, ["儲存", "確認", "確定", "保存"], 8000)) return;
+  const buttons = await visibleButtons(page).catch(() => []);
+  throw new HelperBlockedError(`SAVE_MODAL_SUBMIT_BUTTON_NOT_CLICKABLE visibleButtons=${JSON.stringify(buttons.slice(0, 30)).slice(0, 1200)}`);
 };
 
 const clickDialogOnlySaveButton = async (page: Page): Promise<boolean> => {
   return clickFirstVisible([
+    page.getByRole("button", { name: /^(儲存|確認|確定|保存)$/ }),
     page.locator(".modal button").filter({ hasText: /儲存|確認|確定|保存/ }),
     page.locator("[role=dialog] button").filter({ hasText: /儲存|確認|確定|保存/ })
   ], 5000);
@@ -6945,6 +7445,7 @@ const decideSaveDialogHandling = (dialogRecord: Record<string, unknown>, sequenc
 
 type SaveReportObservedResult = {
   nameInputEvidence: Record<string, unknown> | null;
+  projectSelectionEvidence: Record<string, unknown> | null;
   saveModalProfile: UiDomProfileRef;
   saveModalAfterFillProfile: UiDomProfileRef | null;
 };
@@ -6991,9 +7492,12 @@ const saveReport = async (options: CliOptions, page: Page, startedAt: string): P
         await page.waitForTimeout(600);
         const saveModalProfile = await captureUiDomProfile(options, page, "saveReport.modalOpened");
         let nameInputEvidence: Record<string, unknown> | null = null;
+        let projectSelectionEvidence: Record<string, unknown> | null = null;
         let saveModalAfterFillProfile: UiDomProfileRef | null = null;
         try {
           nameInputEvidence = await fillVisibleReportNameInput(page, reportName);
+          const targetProjectName = firstStringParam(options.params, ["saveProjectName", "projectName", "project"]) ?? "拼貼test_001";
+          projectSelectionEvidence = await selectSaveReportProjectIfNeeded(page, targetProjectName);
           saveModalAfterFillProfile = await captureUiDomProfile(options, page, "saveReport.modalAfterFill");
           await withTimeout(clickModalSaveButton(page), 20000, "SAVE_MODAL_SUBMIT_TIMEOUT");
         } catch (error) {
@@ -7007,7 +7511,7 @@ const saveReport = async (options: CliOptions, page: Page, startedAt: string): P
           };
         }
         await page.waitForTimeout(1800);
-        return { nameInputEvidence, saveModalProfile, saveModalAfterFillProfile };
+        return { nameInputEvidence, projectSelectionEvidence, saveModalProfile, saveModalAfterFillProfile };
       }),
       45000,
       "SAVE_REPORT_FLOW_TIMEOUT"
@@ -7033,7 +7537,8 @@ const saveReport = async (options: CliOptions, page: Page, startedAt: string): P
           dialogChain: uiProfileAfterDialog
         },
         network: { requests: observed.requests, responses: observed.responses },
-        nameInput: observed.result.nameInputEvidence
+        nameInput: observed.result.nameInputEvidence,
+        projectSelection: observed.result.projectSelectionEvidence
       },
       {},
       ["NATIVE_DIALOG_CHAIN_BLOCKED", "UNKNOWN_NATIVE_DIALOG_NO_RECOVERY_HANDLER"]
@@ -7087,7 +7592,8 @@ const saveReport = async (options: CliOptions, page: Page, startedAt: string): P
       reportName,
       reportListEvidence,
       network: { requests: observed.requests, responses: observed.responses },
-      nameInput: observed.result.nameInputEvidence
+      nameInput: observed.result.nameInputEvidence,
+      projectSelection: observed.result.projectSelectionEvidence
     },
     shot ? { screenshot: shot } : {},
     shot ? [] : ["SCREENSHOT_UNAVAILABLE"]

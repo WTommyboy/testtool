@@ -77,6 +77,7 @@ Short-term bridge implementation note:
 - On official collage editor pages, `configureMetric`, date variants, formula base-field setup, and all-zero inspection first try visible source-report + field row controls and emit `metric-rows-evidence.json`.
 - Preview execute precondition now counts official UI selected metric rows, not only legacy remove-field buttons.
 - Result evidence gate now ignores Tool Bridge prose in `測試目的` / `設定條件` / `預期行為`; it only requires Tool Bridge response when actual execution/evidence text claims native dialog, authorization, or irreversible action was reached.
+- A-06 hardening adds display-query variants for official field search, including spaced offline mall labels such as `線下商城 GASH 總營收` and `線下商城 CODAPAY 總營收`; large select-all flows add row buffer before opening pickers so dropdown options stay visible; final select-all count uses verified row evidence instead of only currently visible rows in the scroll viewport.
 
 Gen1c contract hardening note:
 
@@ -263,6 +264,7 @@ Short-term dev fixes should be shaped like the future contract:
    - `FIELD_PICKER_STALE_AFTER_SOURCE_CHANGE`
    - `FIELD_PICKER_SOURCE_MISMATCH`
    - field list signature before/after source switch
+   - distinguish true empty search results from hidden/off-viewport picker options.
 
 4. Fix result evidence gate false positives:
    - do not trigger Tool Bridge response checks from `測試目的`, `設定條件`, or `預期行為`.
@@ -298,3 +300,6 @@ Based on run `67990303-2c1b-4559-924a-297a089b5949`:
 
 6. frontend observation routing guard
    Until Gen 3 has declarative observation templates, no-hints frontend observation cases must not fall back to generic preview helpers. Project/sidebar/list observations may use `openProject` as a prelude; editor initial-state observations may use `openProject + createReport`; all case-specific assertions require Codex visible UI or a future domain template. This prevents false `EXECUTE_PRECONDITION_NO_SELECTED_FIELDS` blockers like run `4bf277d7-6193-4943-9770-fc317a11ee1f` J/I cases.
+
+7. official display-name drift bridge
+   Gen1 bridge now keeps metadata identity matching strict while allowing search-query variants for official display labels. Example: metadata `線下商城GASH總營收` verifies against official `線下商城 GASH 總營收`; metadata `線下商城Coda總營收` searches official `線下商城 CODAPAY 總營收`. This should later move into the domain contract locator/display-name registry rather than staying hardcoded in helper runtime.

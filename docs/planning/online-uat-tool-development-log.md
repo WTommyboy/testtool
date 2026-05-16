@@ -1449,3 +1449,12 @@ Tommy 曾討論是否改成腳本。最後決策是採「半腳本化 / helper �
 - 保留：metadata dropdown、explicit helper templates、後端 preview/data case、CSV/download/save/reopen/formula case 不受此 guard 影響,仍走既有專用 helper path。
 - 回歸：`scripts/verify-capability-gate.ts` 加入 `BIUI_COLLAGE_R001-J-12` no-hints fixture,鎖定 `supportStatus=degraded`、`supportedHelperTemplates=[collage.openProject]`、helper plan 不含 `createReport/configureMetric/runPreview`。另以 run 4bf 的實際 `input/current-case.json` 重產 plan,確認 J-12 actions 只剩 `collage.openProject`。
 - 驗證：已跑 `npm run verify:capability-gate`、`npm run typecheck`、`npm run build --prefix agent`。`npm run verify:helper-hints` 未執行成功,原因是 dev repo layout 下 fixture 仍找 `/Users/tommy/Downloads/codex_galaxy_dev/outputs/generate_current_case_prompt.mjs`,該腳本不在此路徑；與本次 routing guard 無關。
+
+### 2026-05-16 - BI official UI A-06 select-all smoke hardening
+
+- 背景：Tommy 要求在放行前用 live smoke 證明 `BIUI_COLLAGE_R001-A-06 / B-04 / E-04 / F-01 / G-01` 都可走完。A-06 初始仍會在 official editor 欄位 picker 中段 blocked,包含 `平台總營收` / `線下商城GASH總營收` 等 metadata 名稱與 official UI display label 不一致、picker 在 viewport 底部、以及 final count 用可見 rows 誤判的問題。
+- Helper 修正：`bi-ui-helper-executor` 的 field alias 搜尋改為保留 display-query 變體,支援 `線下商城 GASH/CODAPAY/樂豆點` 這類 official UI spacing；大量 row-scoped `setMetricRows` 會先補 buffer rows,避免目前列在 scroll container 底部導致 picker 選項不可見；final select-all gate 改採 `metric-rows-evidence.selections[].verified` 數量,可見 rows 只留診斷,避免 scroll viewport 只顯示 13 列時誤判 expected 32 不符。
+- Fixture：`scripts/verify-helper-field-aliases.ts` 新增 offline mall search-query regression,鎖住 `線下商城GASH總營收 -> 線下商城 GASH 總營收` 與 `線下商城Coda總營收 -> 線下商城 CODAPAY 總營收`。
+- Live smoke：A-06 run `/Users/tommy/.uat-agent-dev/runs/live-smoke-a06-rerun20-20260516195045` 通過 `openProject -> createReport -> inspectAllZeroFields`; preview request 送出 32 個 field code,包含 `TOTAL_REVENUE_WEBSHOP_GASH`, `PAYMENT_ACCOUNTS_WEBSHOP_GASH`, `TOTAL_REVENUE_WEBSHOP_CODAPAY`, `TOTAL_REVENUE_WEBSHOP_BEANPOINT`, `TOTAL_REVENUE_WEBSHOP_BEANPOINTHK` 等,狀態 `ok`,僅保留 `DATE_UI_CONTROL_TEXT_NOT_FOUND` warning。
+- Regression smoke：run `/Users/tommy/.uat-agent-dev/runs/live-smoke-regression-befg-20260516195912` 通過 `BIUI_COLLAGE_R001-B-04`、`E-04`、`F-01`、`G-01`。B-04 warnings 為既有 date UI 文案：`DATE_UI_REPRESENTED_RANGE_NOT_VISIBLE` / `DATE_UI_CONTROL_TEXT_NOT_FOUND`; E-04 warning 為 `DATE_UI_CONTROL_TEXT_NOT_FOUND`; F-01 preview/save 與 G-01 createProject 均 `ok` 且無 warnings。
+- 驗證：已跑 `npm run typecheck --prefix agent`、`npm run build --prefix agent`、`npm run verify:helper-field-aliases`、`git diff --check`。本批仍只推 dev,不推 prod。
