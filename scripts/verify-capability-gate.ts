@@ -618,6 +618,41 @@ const main = (): void => {
       "neutral dateRange must not be passed to helper as a clickable date preset"
     );
 
+    const staticDateNegativeScopeCase = {
+      ...collageSaveReopenCase,
+      caseNo: "BIUI_COLLAGE_R001-B-09",
+      caseTitle: "靜態區間 — 2026/03/01 ~ 2026/03/15",
+      testTarget: "前後端整合",
+      riskLevel: "🟢 觀察",
+      cleanupChecklist: "欄位=新增帳號數;篩選=0組;分組=不影響;時間=2026/03/01~2026/03/15;顯示=每天",
+      stepsSummary: "1. 加欄位「新增帳號數」\n2. 點時間區間 button\n3. 點靜態時間 tab\n4. 設定 2026/03/01~2026/03/15\n5. 按執行",
+      expected: "request body dateRange = 2026-03-01~2026-03-15；本題不測項目: 儲存、CSV、reopen",
+      validationMethod: "DOM read static tab + network request body"
+    };
+    const staticDateNegativeScopeHints: HelperHints = {
+      ...previewOnlyHints,
+      caseId: "BIUI_COLLAGE_R001-B-09",
+      operationTemplate: "collage_build_preview_save_reopen",
+      params: {
+        mode: "拼貼",
+        field: "新增帳號數",
+        sourceReport: "每日報表",
+        dateRange: "2026/03/01~2026/03/15",
+        display: "每天"
+      }
+    };
+    const staticDateNegativeScopeGate = evaluateCapabilityGate(staticDateNegativeScopeCase, staticDateNegativeScopeHints);
+    assert.equal(staticDateNegativeScopeGate.caseScope.testIntent, "preview_execution", "negative CSV text must not turn B-09 into download_execution scope");
+    assert.ok(!staticDateNegativeScopeGate.supportedHelperTemplates.includes("collage.saveReport"), "本題不測項目: 儲存 must suppress saveReport");
+    assert.ok(!staticDateNegativeScopeGate.supportedHelperTemplates.includes("collage.reopenReport"), "本題不測項目: reopen must suppress reopenReport");
+    assert.ok(!staticDateNegativeScopeGate.supportedHelperTemplates.includes("collage.downloadCsvAndComparePreview"), "本題不測項目: CSV must suppress download helper");
+    const staticDateNegativeScopePlan = buildHelperExecutionPlan({ runDir, currentCase: staticDateNegativeScopeCase, helperHints: staticDateNegativeScopeHints });
+    assert.deepEqual(
+      staticDateNegativeScopePlan.actions.map((item) => item.template),
+      ["collage.openProject", "collage.createReport", "collage.configureMetric", "collage.runPreviewAndCollectEvidence"],
+      "B-09 negative scope should preview only; no save/reopen/download helper actions"
+    );
+
     const manualAiCase = {
       ...collageSaveReopenCase,
       caseNo: "OTTEST004-B-03",
@@ -1158,6 +1193,7 @@ const main = (): void => {
           "G-01 dotted createProject helper stays on project creation path",
           "simple project-page report-name/back flows use dedicated helpers",
           "preview-only helper hints suppress save/reopen and neutral dateRange",
+          "negative scope text suppresses save/reopen/download and does not misclassify B-09 as download execution",
           "collage metadata compare is not misclassified as record/detail mode",
           "collage metadata compare is helper-assisted by dedicated dropdown extraction",
           "metadata source-scope helper params are forwarded to dropdown extraction",

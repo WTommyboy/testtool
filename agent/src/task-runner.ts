@@ -5,7 +5,7 @@ import { CodexRunner, type CodexJsonEvent, type CodexTurnResult } from "./codex-
 import type { AgentConfig, AgentMessage } from "./types";
 import type { AgentConnection } from "./connection";
 import { readFirstInputCase, writeAgentResultXlsx } from "./result-writer";
-import { validateResultWorkbookContract } from "./result-contract";
+import { containPassContradictionsAsBlocked, validateResultWorkbookContract } from "./result-contract";
 import { ensureBlockedResultCurrentRunEvidence } from "./result-evidence-enricher";
 import { normalizeCodexResultWorkbook } from "./result-workbook-normalizer";
 import { repairSingleCaseResultWorkbook } from "./result-workbook-repair";
@@ -2701,8 +2701,28 @@ const uploadRunArtifacts = async (options: UploadArtifactsOptions): Promise<Uplo
         );
       }
     }
-    const contractReport = await validateResultWorkbookContract(resultXlsxPath, undefined, { runDir });
+    let contractReport = await validateResultWorkbookContract(resultXlsxPath, undefined, { runDir });
     writeJson(path.join(runDir, "output", "result-xlsx-self-check.json"), contractReport);
+    if (contractReport.status === "error") {
+      const containmentReport = await containPassContradictionsAsBlocked(resultXlsxPath, contractReport);
+      if (containmentReport.status === "updated") {
+        writeJson(path.join(runDir, "output", "result-xlsx-self-check-before-containment.json"), contractReport);
+        writeJson(path.join(runDir, "output", "result-xlsx-self-check-containment.json"), containmentReport);
+        sendBestEffort(
+          connection,
+          "run.stdout",
+          {
+            run_id: runId,
+            text: `uat-agent contained PASS/helper-evidence contradiction as BLOCKED_NEEDS_REJUDGMENT for ${containmentReport.updatedCaseNos.join(", ")}; continuing upload.`
+          },
+          false
+        );
+        contractReport = await validateResultWorkbookContract(resultXlsxPath, undefined, { runDir });
+        writeJson(path.join(runDir, "output", "result-xlsx-self-check.json"), contractReport);
+      } else {
+        writeJson(path.join(runDir, "output", "result-xlsx-self-check-containment.json"), containmentReport);
+      }
+    }
     if (contractReport.status === "error") {
       const errorCodes = contractReport.issues.filter((item) => item.severity === "error").map((item) => item.code).join(",");
       const message = `RESULT_XLSX_SELF_CHECK_FAILED ${errorCodes}`;

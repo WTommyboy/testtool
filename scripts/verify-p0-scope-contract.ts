@@ -123,6 +123,22 @@ const b04 = caseFixture({
   validationMethod: "DOM read 時間按鈕 / network request body dateRange / Chart.js datasets 筆數"
 });
 
+const b09 = caseFixture({
+  order: 15,
+  rowNumber: 16,
+  groupId: "B",
+  groupName: "B:日期區間邏輯",
+  caseNo: "BIUI_COLLAGE_R001-B-09",
+  caseTitle: "靜態區間 — 2026/03/01 ~ 2026/03/15",
+  testType: "功能流程",
+  testTarget: "前後端整合",
+  cleanupChecklist: "欄位=新增帳號數;篩選=0組;分組=不影響;時間=2026/03/01~2026/03/15;顯示=每天",
+  preconditions: "起始頁面: 拼貼模式新增報表設定頁\n來源報表: 每日報表\n固定欄位: 新增帳號數",
+  stepsSummary: "1. 加欄位「新增帳號數」\n2. 點時間區間 button\n3. 點靜態時間 tab\n4. 設定 2026/03/01~2026/03/15\n5. 按執行",
+  expected: "request body dateRange = 2026-03-01~2026-03-15；本題不測項目: 儲存、CSV、reopen",
+  validationMethod: "DOM read static tab + network request body"
+});
+
 const n03 = caseFixture({
   order: 102,
   rowNumber: 103,
@@ -235,10 +251,12 @@ const prototypeDeriveCaseScope = (item: CaseManifestCase): PrototypeCaseScope =>
   const text = joinedCaseText(item);
   const isFrontendTarget = /前端呈現/.test(`${item.testTarget ?? ""}\n${item.testType ?? ""}`);
   const hasDownloadTerms = /CSV|下載|download/i.test(text);
+  const downloadExplicitlyDisabled =
+    /(?:本題不測項目|本題不做|本題不測|本題不驗|不測|不做|不驗).{0,40}(?:CSV|下載|download)|(?:CSV|下載|download).{0,20}(?:屬於|屬|不是|非|不測|不做|不驗)/i.test(text);
   const hasDownloadEvidence =
     /csv\.(?:rows|aggregate)|Playwright\s+download|download\s+API|downloaded\s*CSV|下載檔|CSV\s*檔可取得/i.test(text);
   const requiresCsvOrDownload =
-    hasDownloadTerms && (!isFrontendTarget || /前後端整合/.test(item.testTarget ?? "") || hasDownloadEvidence);
+    hasDownloadTerms && !downloadExplicitlyDisabled && (!isFrontendTarget || /前後端整合/.test(item.testTarget ?? "") || hasDownloadEvidence);
   const requiresPreview =
     /network\.requestBody|request body|Chart\.js|chart\.datasets|preview|預覽|執行計算|按執行|點計算|點擊.*下載|觸發下載/i.test(text) ||
     /前後端整合/.test(item.testTarget ?? "");
@@ -330,20 +348,22 @@ const main = (): void => {
   const observationPlans = Object.fromEntries(observationCases.map((item) => [item.caseNo, actionTemplates(item)]));
   const previewPlans = {
     [b04.caseNo]: actionTemplates(b04),
+    [b09.caseNo]: actionTemplates(b09),
     [n03.caseNo]: actionTemplates(n03)
   };
   const runtimeScopes = Object.fromEntries(
-    [...observationCases, b04, n03].map((item) => [item.caseNo, inferCaseScope(item, null)])
+    [...observationCases, b04, b09, n03].map((item) => [item.caseNo, inferCaseScope(item, null)])
   );
 
   if (prototypeMode) {
     const prototypeScopes = Object.fromEntries(
-      [...observationCases, b04, n03].map((item) => [item.caseNo, prototypeDeriveCaseScope(item)])
+      [...observationCases, b04, b09, n03].map((item) => [item.caseNo, prototypeDeriveCaseScope(item)])
     );
     for (const item of observationCases) {
       assert.equal(prototypeScopes[item.caseNo]?.previewRequired, false, `${item.caseNo} prototype scope should not require preview.`);
     }
     assert.equal(prototypeScopes[b04.caseNo]?.previewRequired, true, "B-04 prototype scope should require preview.");
+    assert.equal(prototypeScopes[b09.caseNo]?.testIntent, "preview_execution", "B-09 prototype scope should be preview execution, not download execution.");
     assert.equal(prototypeScopes[n03.caseNo]?.testIntent, "download_execution", "N-03 prototype scope should be download execution.");
     assert.equal(
       prototypeRejectsOutOfScopeSelectedFieldBlocker(),
@@ -382,6 +402,7 @@ const main = (): void => {
     assert.equal(runtimeScopes[item.caseNo]?.previewRequired, false, `${item.caseNo} runtime scope should not require preview.`);
   }
   assert.equal(runtimeScopes[b04.caseNo]?.previewRequired, true, "B-04 runtime scope should require preview.");
+  assert.equal(runtimeScopes[b09.caseNo]?.testIntent, "preview_execution", "B-09 runtime scope should be preview execution, not download execution.");
   assert.equal(runtimeScopes[n03.caseNo]?.testIntent, "download_execution", "N-03 runtime scope should be download execution.");
   assert.equal(
     runtimeScopes[l02.caseNo]?.missingActionTemplate,
@@ -389,6 +410,11 @@ const main = (): void => {
     "L-02 runtime scope should require a date-panel observation action template."
   );
   assert.equal(hasPreviewAction(previewPlans[b04.caseNo] ?? []), true, "B-04 control case must still route to preview evidence.");
+  assert.equal(hasPreviewAction(previewPlans[b09.caseNo] ?? []), true, "B-09 control case must still route to preview evidence.");
+  assert.ok(
+    !(previewPlans[b09.caseNo] ?? []).includes("collage.downloadCsvAndComparePreview"),
+    "B-09 negative CSV scope must not route to CSV download evidence."
+  );
   assert.ok(
     (previewPlans[n03.caseNo] ?? []).includes("collage.downloadCsvAndComparePreview"),
     "N-03 control case must still route to CSV download evidence."

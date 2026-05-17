@@ -152,10 +152,10 @@ const helperRequestsNoDownload = (params: Record<string, unknown>): boolean =>
     : helperRequestsPreviewOnly(params) || helperExplicitlyDisablesDownload(params);
 
 const textExplicitlyDisablesSave = (text: string): boolean =>
-  /(?:本題禁止|禁止|絕不|不要|不用|不需|不應|不點|不離開.*不點).{0,16}(?:save|儲存)|(?:不|勿)\s*(?:save|儲存)|不儲存/i.test(text);
+  /(?:本題不測項目|本題不做|本題不測|本題不驗|不測|不做|不驗|本題禁止|禁止|絕不|不要|不用|不需|不應|不點|不離開.*不點).{0,40}(?:save|儲存|保存)|(?:不|勿)\s*(?:save|儲存|保存)|不儲存/i.test(text);
 
 const textExplicitlyDisablesReopen = (text: string): boolean =>
-  /(?:本題禁止|禁止|絕不|不要|不用|不需|不應|不點).{0,20}(?:reopen|重開|報表名稱)|(?:不|勿)\s*(?:reopen|重開)|不點報表名稱|不進入\s*editor\s*reopen/i.test(text);
+  /(?:本題不測項目|本題不做|本題不測|本題不驗|不測|不做|不驗|本題禁止|禁止|絕不|不要|不用|不需|不應|不點).{0,40}(?:reopen|重開|報表名稱)|(?:不|勿)\s*(?:reopen|重開)|不點報表名稱|不進入\s*editor\s*reopen/i.test(text);
 
 const textRequestsEditorSessionDownload = (text: string): boolean =>
   /同\s*(?:一個\s*)?editor\s*session|editor[-_ ]session|不離開\s*editor|直接點\s*editor\s*內.{0,16}(?:下載|download)|editor\s*內的?「?下載報表/i.test(text);
@@ -931,6 +931,7 @@ const buildActions = (currentCase: CaseManifestCase | null, helperHints: HelperH
   const explicitlyNoReopen =
     helperRequestsNoReopen({ ...params, ...helperParams }) ||
     helperRequestsSaveOnly({ ...params, ...helperParams }) ||
+    textExplicitlyDisablesReopen(text) ||
     /不(?:需|要|應)?重開|不要重開|無需重開|不用重開|不重開\s*editor|不應產生\s*reopen/i.test(text);
   const needsReopen =
     !explicitlyNoReopen &&

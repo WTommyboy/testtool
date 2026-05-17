@@ -34,6 +34,15 @@ export type ResultContractReport = {
   issues: ResultContractIssue[];
 };
 
+export type ResultContractContainmentReport = {
+  schemaVersion: "result-contract-containment-v1";
+  generatedAt: string;
+  status: "updated" | "skipped";
+  reason: string;
+  updatedCaseNos: string[];
+  backupPath?: string;
+};
+
 export type ResultContractOptions = {
   runDir?: string;
 };
@@ -187,7 +196,42 @@ const configureMetricDateRangeVerified = (parsed: Record<string, unknown>): bool
   const evidence = record(parsed.evidence);
   const dateRangeEvidence = record(evidence?.dateRangeEvidence);
   if (dateRangeEvidence?.ok === false) return false;
+  if (!staticDateRangeFlowVerified(dateRangeEvidence)) return false;
   return dateUiEvidenceMatchesRequested(dateRangeEvidence?.dateUiEvidence) || dateUiEvidenceMatchesRequested(evidence?.dateUiEvidence);
+};
+
+const outcomeSucceeded = (value: unknown): boolean =>
+  record(value)?.actualOutcome === "succeeded" || record(value)?.outcome === "succeeded";
+
+const staticDateRangeFlowVerified = (dateRangeEvidence: Record<string, unknown> | null): boolean => {
+  if (!dateRangeEvidence) return true;
+  const dateUiEvidence = record(dateRangeEvidence.dateUiEvidence);
+  const requestedRange = record(dateUiEvidence?.requestedRange);
+  const checks = record(dateUiEvidence?.checks);
+  const isStaticRequestedRange = requestedRange?.basis === "static_range" || checks?.staticRequestedRangeObserved === true;
+  if (!isStaticRequestedRange) return true;
+
+  const interactionLog = record(dateRangeEvidence.interactionLog);
+  const actions = record(interactionLog?.actions);
+  const setStaticDateRange = record(actions?.setStaticDateRange);
+  const steps = record(setStaticDateRange?.steps);
+  if (outcomeSucceeded(setStaticDateRange) || outcomeSucceeded(steps?.openStaticTab)) return true;
+
+  const inputs = record(dateRangeEvidence.inputs);
+  const startResult = record(inputs?.startResult);
+  const endResult = record(inputs?.endResult);
+  if (
+    startResult?.type === "static" &&
+    endResult?.type === "static" &&
+    startResult?.tabClicked === true &&
+    endResult?.tabClicked === true &&
+    startResult?.verified === true &&
+    endResult?.verified === true
+  ) {
+    return true;
+  }
+
+  return false;
 };
 
 const configureMetricFalseChecksForPass = (parsed: Record<string, unknown>): string[] => {
@@ -341,5 +385,133 @@ export const validateResultWorkbookContract = async (
     status: issues.some((item) => item.severity === "error") ? "error" : "ok",
     adapterVersion: adapter.adapterVersion,
     issues
+  };
+};
+
+export const containPassContradictionsAsBlocked = async (
+  filePath: string,
+  contractReport: ResultContractReport,
+  adapter = loadResultParserAdapter()
+): Promise<ResultContractContainmentReport> => {
+  const errorIssues = contractReport.issues.filter((item) => item.severity === "error");
+  if (errorIssues.length === 0) {
+    return {
+      schemaVersion: "result-contract-containment-v1",
+      generatedAt: new Date().toISOString(),
+      status: "skipped",
+      reason: "NO_SELF_CHECK_ERRORS",
+      updatedCaseNos: []
+    };
+  }
+  if (errorIssues.some((item) => item.code !== "RESULT_PASS_CONTRADICTS_HELPER_EVIDENCE")) {
+    return {
+      schemaVersion: "result-contract-containment-v1",
+      generatedAt: new Date().toISOString(),
+      status: "skipped",
+      reason: "SELF_CHECK_HAS_NON_CONTAINABLE_ERRORS",
+      updatedCaseNos: []
+    };
+  }
+
+  const targetCaseNos = [...new Set(errorIssues.flatMap((item) => {
+    const caseNo = item.context?.caseNo;
+    return typeof caseNo === "string" && caseNo.trim() ? [caseNo.trim()] : [];
+  }))];
+  if (targetCaseNos.length === 0) {
+    return {
+      schemaVersion: "result-contract-containment-v1",
+      generatedAt: new Date().toISOString(),
+      status: "skipped",
+      reason: "SELF_CHECK_CONTRADICTION_CASE_NO_MISSING",
+      updatedCaseNos: []
+    };
+  }
+
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.readFile(filePath);
+  const caseSheet = workbook.getWorksheet(adapter.sheets.cases);
+  if (!caseSheet) {
+    return {
+      schemaVersion: "result-contract-containment-v1",
+      generatedAt: new Date().toISOString(),
+      status: "skipped",
+      reason: "CASE_SHEET_MISSING",
+      updatedCaseNos: []
+    };
+  }
+
+  const headers = headerValues(caseSheet.getRow(1));
+  const caseNoIdx = findHeaderIndex(headers, "編號");
+  const statusIdx = findHeaderIndex(headers, "結果");
+  const failCategoryIdx = findHeaderIndex(headers, "失敗分類");
+  const detailIdx = findHeaderIndex(headers, "詳細紀錄JSON");
+  if (caseNoIdx === -1 || statusIdx === -1 || failCategoryIdx === -1 || detailIdx === -1) {
+    return {
+      schemaVersion: "result-contract-containment-v1",
+      generatedAt: new Date().toISOString(),
+      status: "skipped",
+      reason: "CASE_REQUIRED_HEADERS_MISSING",
+      updatedCaseNos: []
+    };
+  }
+
+  const targetSet = new Set(targetCaseNos.map(normalizeCaseNo));
+  const issueByCase = new Map<string, ResultContractIssue[]>();
+  for (const issue of errorIssues) {
+    const caseNo = typeof issue.context?.caseNo === "string" ? issue.context.caseNo : "";
+    const key = normalizeCaseNo(caseNo);
+    if (!key) continue;
+    issueByCase.set(key, [...(issueByCase.get(key) ?? []), issue]);
+  }
+
+  const updatedCaseNos: string[] = [];
+  for (let rowNo = 2; rowNo <= caseSheet.rowCount; rowNo += 1) {
+    const row = caseSheet.getRow(rowNo);
+    const caseNo = text(row.getCell(caseNoIdx + 1).value);
+    const key = normalizeCaseNo(caseNo);
+    if (!targetSet.has(key)) continue;
+    const status = text(row.getCell(statusIdx + 1).value).toUpperCase();
+    if (status !== "PASS") continue;
+    const previousDetail = parseDetail(text(row.getCell(detailIdx + 1).value)) ?? {};
+    const issueSummaries = (issueByCase.get(key) ?? []).map((item) => ({
+      code: item.code,
+      message: item.message,
+      context: item.context ?? {}
+    }));
+    row.getCell(statusIdx + 1).value = "BLOCKED";
+    row.getCell(failCategoryIdx + 1).value = "BLOCKED_NEEDS_REJUDGMENT";
+    row.getCell(detailIdx + 1).value = JSON.stringify({
+      測試目的: previousDetail["測試目的"] ?? "Agent self-check containment for PASS/helper evidence contradiction.",
+      設定條件: previousDetail["設定條件"] ?? "See original Codex detail_json before containment.",
+      預期行為: previousDetail["預期行為"] ?? "PASS requires helper/evidence checks to support the required case scope.",
+      實際行為: `${text(previousDetail["實際行為"]) || "Codex wrote PASS."} Agent self-check found PASS contradicts helper evidence, so this case was contained as BLOCKED_NEEDS_REJUDGMENT instead of failing the whole run.`,
+      blocked_reason: "BLOCKED_NEEDS_REJUDGMENT:RESULT_PASS_CONTRADICTS_HELPER_EVIDENCE",
+      original_result_before_agent_containment: "PASS",
+      self_check_issues: issueSummaries,
+      previous_detail_json: previousDetail
+    });
+    updatedCaseNos.push(caseNo);
+  }
+
+  if (updatedCaseNos.length === 0) {
+    return {
+      schemaVersion: "result-contract-containment-v1",
+      generatedAt: new Date().toISOString(),
+      status: "skipped",
+      reason: "NO_PASS_ROWS_MATCHED",
+      updatedCaseNos: []
+    };
+  }
+
+  const backupPath = `${filePath}.pre-self-check-containment-${new Date().toISOString().replace(/[:.]/g, "-")}.bak`;
+  fs.copyFileSync(filePath, backupPath);
+  await workbook.xlsx.writeFile(filePath);
+  return {
+    schemaVersion: "result-contract-containment-v1",
+    generatedAt: new Date().toISOString(),
+    status: "updated",
+    reason: "PASS_CONTRADICTION_CONTAINED_AS_BLOCKED_NEEDS_REJUDGMENT",
+    updatedCaseNos,
+    backupPath
   };
 };

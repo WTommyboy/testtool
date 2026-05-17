@@ -1858,7 +1858,32 @@ const clickCalendarDay = async (page: Page, side: CalendarSide, day: number): Pr
   return true;
 };
 
-type DateRangeUiResult = { ok: boolean; warning?: string; observedAfter?: string; inputs?: unknown; uiProfiles?: UiDomProfileRef[] };
+type DateRangeUiResult = {
+  ok: boolean;
+  warning?: string;
+  observedAfter?: string;
+  inputs?: unknown;
+  uiProfiles?: UiDomProfileRef[];
+  interactionLog?: Record<string, unknown>;
+};
+
+const staticDateRangeInteractionLog = (actualOutcome: string, extra: Record<string, unknown> = {}): Record<string, unknown> => ({
+  schemaVersion: "interaction-log-v1",
+  actions: {
+    setStaticDateRange: {
+      role: "under_test",
+      expectedOutcome: "succeeded",
+      actualOutcome,
+      steps: {
+        openStaticTab: {
+          expectedOutcome: "succeeded",
+          actualOutcome
+        }
+      },
+      ...extra
+    }
+  }
+});
 
 const setStaticDateRangeByCalendar = async (
   options: CliOptions,
@@ -2075,7 +2100,6 @@ const setDateRange = async (options: CliOptions, page: Page, dateRange: string):
   const uiProfiles: UiDomProfileRef[] = [];
   const parsed = parseDateRange(dateRange);
   if (!parsed) return setDatePreset(options, page, dateRange);
-  if (await bodyContainsDateRange(page, parsed.display)) return { ok: true, observedAfter: parsed.display, uiProfiles };
 
   if (!(await isDatePickerOpen(page))) {
     const opened = await clickFirstVisible([
@@ -2088,9 +2112,18 @@ const setDateRange = async (options: CliOptions, page: Page, dateRange: string):
   }
   uiProfiles.push(await captureUiDomProfile(options, page, "dateRange.popupOpened"));
 
-  await clickFirstVisible([page.getByText("靜態時間", { exact: true }), page.locator("button").filter({ hasText: "靜態時間" })], 5000);
+  const staticTabClicked = await clickFirstVisible([page.getByText("靜態時間", { exact: true }), page.locator("button").filter({ hasText: "靜態時間" })], 5000);
   await page.waitForTimeout(400);
   uiProfiles.push(await captureUiDomProfile(options, page, "dateRange.staticTabRequested"));
+  if (!staticTabClicked) {
+    return {
+      ok: false,
+      warning: "DATE_RANGE_STATIC_TAB_NOT_CLICKABLE",
+      observedAfter: (await page.locator("body").innerText({ timeout: 5000 }).catch(() => "")).slice(0, 1200),
+      uiProfiles,
+      interactionLog: staticDateRangeInteractionLog("target_not_found_timeout")
+    };
+  }
 
   const inputs = await visibleInputIndexes(page);
   const dateInputs = inputs.filter((item) => item.type === "date");
@@ -2100,8 +2133,14 @@ const setDateRange = async (options: CliOptions, page: Page, dateRange: string):
     const calendarResult = await setStaticDateRangeByCalendar(options, page, parsed);
     const combinedProfiles = [...uiProfiles, ...(calendarResult.uiProfiles ?? [])];
     return calendarResult.ok
-      ? { ...calendarResult, inputs, uiProfiles: combinedProfiles }
-      : { ...calendarResult, inputs, uiProfiles: combinedProfiles, warning: `${calendarResult.warning ?? "DATE_RANGE_CALENDAR_FAILED"};DATE_RANGE_INPUTS_NOT_FOUND` };
+      ? { ...calendarResult, inputs, uiProfiles: combinedProfiles, interactionLog: staticDateRangeInteractionLog("succeeded", { calendarFallback: true }) }
+      : {
+          ...calendarResult,
+          inputs,
+          uiProfiles: combinedProfiles,
+          warning: `${calendarResult.warning ?? "DATE_RANGE_CALENDAR_FAILED"};DATE_RANGE_INPUTS_NOT_FOUND`,
+          interactionLog: staticDateRangeInteractionLog("succeeded", { calendarFallback: true, calendarWarning: calendarResult.warning ?? null })
+        };
   }
 
   const values = targets[0].type === "date"
@@ -2119,7 +2158,8 @@ const setDateRange = async (options: CliOptions, page: Page, dateRange: string):
     warning: ok ? undefined : "DATE_RANGE_VERIFY_FAILED_AFTER_UI_INPUT",
     observedAfter: (await page.locator("body").innerText({ timeout: 5000 }).catch(() => "")).slice(0, 1000),
     inputs,
-    uiProfiles: [...uiProfiles, await captureUiDomProfile(options, page, "dateRange.afterInputConfirm")]
+    uiProfiles: [...uiProfiles, await captureUiDomProfile(options, page, "dateRange.afterInputConfirm")],
+    interactionLog: staticDateRangeInteractionLog(ok ? "succeeded" : "wrong_state_change")
   };
 };
 

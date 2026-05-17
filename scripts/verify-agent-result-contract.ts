@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import ExcelJS from "exceljs";
 import { writeResultTemplate } from "../agent/src/result-template";
-import { validateResultWorkbookContract } from "../agent/src/result-contract";
+import { containPassContradictionsAsBlocked, validateResultWorkbookContract } from "../agent/src/result-contract";
 import { ensureBlockedResultCurrentRunEvidence } from "../agent/src/result-evidence-enricher";
 import { normalizeCodexResultWorkbook } from "../agent/src/result-workbook-normalizer";
 import { repairSingleCaseResultWorkbook } from "../agent/src/result-workbook-repair";
@@ -350,10 +350,18 @@ const main = async (): Promise<void> => {
     assert.equal(configureMetricContradictoryReport.status, "error");
     assert.ok(configureMetricContradictoryReport.issues.some((item) => item.code === "RESULT_PASS_CONTRADICTS_HELPER_EVIDENCE"));
 
-    const normalizedDateRangePass = path.join(tempRoot, "pass-configure-metric-normalized-date-evidence.xlsx");
-    await writePassWorkbook(normalizedDateRangePass, "OTTEST004-B-09");
+    const containmentReport = await containPassContradictionsAsBlocked(configureMetricContradictoryPass, configureMetricContradictoryReport);
+    assert.equal(containmentReport.status, "updated", JSON.stringify(containmentReport));
+    const containedContradictoryReport = await validateResultWorkbookContract(configureMetricContradictoryPass, undefined, { runDir: tempRoot });
+    assert.equal(containedContradictoryReport.status, "ok", JSON.stringify(containedContradictoryReport.issues));
+    const containedParsed = await parseResultXlsx(configureMetricContradictoryPass);
+    assert.equal(containedParsed.cases[0]?.status, "BLOCKED");
+    assert.equal(containedParsed.cases[0]?.verdictReason, "BLOCKED_NEEDS_REJUDGMENT");
+
+    const normalizedDateRangeWithoutFlowPass = path.join(tempRoot, "pass-configure-metric-normalized-date-evidence-without-flow.xlsx");
+    await writePassWorkbook(normalizedDateRangeWithoutFlowPass, "OTTEST004-B-09");
     fs.mkdirSync(path.join(tempRoot, "output", "helper-artifacts", "OTTEST004-B-09"), { recursive: true });
-    fs.writeFileSync(path.join(tempRoot, "output", "helper-artifacts", "OTTEST004-B-09", "collage.configureMetric-latest.json"), JSON.stringify({
+    const staticDateRangeHelperEvidence = {
       schemaVersion: "bi-ui-helper-report-v1",
       caseId: "OTTEST004-B-09",
       action: "collage.configureMetric",
@@ -389,6 +397,41 @@ const main = async (): Promise<void> => {
           }
         }
       }
+    };
+    fs.writeFileSync(path.join(tempRoot, "output", "helper-artifacts", "OTTEST004-B-09", "collage.configureMetric-latest.json"), JSON.stringify(staticDateRangeHelperEvidence, null, 2));
+    const normalizedDateRangeWithoutFlowReport = await validateResultWorkbookContract(normalizedDateRangeWithoutFlowPass, undefined, { runDir: tempRoot });
+    assert.equal(normalizedDateRangeWithoutFlowReport.status, "error");
+    assert.ok(
+      normalizedDateRangeWithoutFlowReport.issues.some((item) => item.code === "RESULT_PASS_CONTRADICTS_HELPER_EVIDENCE"),
+      "static date range PASS must require flow interaction evidence, not only final represented range"
+    );
+
+    const normalizedDateRangePass = path.join(tempRoot, "pass-configure-metric-normalized-date-evidence.xlsx");
+    await writePassWorkbook(normalizedDateRangePass, "OTTEST004-B-09");
+    fs.writeFileSync(path.join(tempRoot, "output", "helper-artifacts", "OTTEST004-B-09", "collage.configureMetric-latest.json"), JSON.stringify({
+      ...staticDateRangeHelperEvidence,
+      evidence: {
+        ...(staticDateRangeHelperEvidence.evidence as Record<string, unknown>),
+        dateRangeEvidence: {
+          ...((staticDateRangeHelperEvidence.evidence as Record<string, unknown>).dateRangeEvidence as Record<string, unknown>),
+          interactionLog: {
+            schemaVersion: "interaction-log-v1",
+            actions: {
+              setStaticDateRange: {
+                role: "under_test",
+                expectedOutcome: "succeeded",
+                actualOutcome: "succeeded",
+                steps: {
+                  openStaticTab: {
+                    expectedOutcome: "succeeded",
+                    actualOutcome: "succeeded"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
     }, null, 2));
     const normalizedDateRangeReport = await validateResultWorkbookContract(normalizedDateRangePass, undefined, { runDir: tempRoot });
     assert.equal(normalizedDateRangeReport.status, "ok", JSON.stringify(normalizedDateRangeReport.issues));
@@ -405,8 +448,10 @@ const main = async (): Promise<void> => {
         "testcase-style Codex output is normalized to one current-case result-contract row before self-check",
         "BLOCKED detail_json with core fields but without current-run evidence is enriched before upload",
         "PASS result contradicting helper false checks is rejected before upload",
+        "PASS/helper contradiction can be contained as BLOCKED_NEEDS_REJUDGMENT without failing workbook validation",
         "configureMetric dateRange=false still blocks without normalized date evidence",
-        "configureMetric dateRange=false is allowed when date-ui-evidence proves the represented range"
+        "static dateRange PASS requires flow interaction evidence, not only final represented range",
+        "configureMetric dateRange=false is allowed when date-ui-evidence proves the represented range and flow evidence exists"
       ]
     }, null, 2));
   } finally {

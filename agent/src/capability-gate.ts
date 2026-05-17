@@ -85,8 +85,11 @@ const helperExplicitlyDisablesDownload = (params: Record<string, unknown>): bool
 const textExplicitlyDisablesDownload = (text: string): boolean =>
   /本題不測項目[^\n]*(?:CSV|下載)|(?:不測|不做|不驗).{0,12}(?:CSV|下載)|(?:CSV|下載).{0,8}[\(（]屬/i.test(text);
 
+const textExplicitlyDisablesSave = (text: string): boolean =>
+  /(?:本題不測項目|本題不做|本題不測|本題不驗|不測|不做|不驗|禁止|絕不|不要|不用|不需|不應|不點).{0,40}(?:save|儲存|保存)|(?:不|勿)\s*(?:save|儲存|保存)/i.test(text);
+
 const textExplicitlyDisablesReopen = (text: string): boolean =>
-  /(?:本題禁止|禁止|絕不|不要|不用|不需|不應|不點).{0,20}(?:reopen|重開|報表名稱)|(?:不|勿)\s*(?:reopen|重開)|不點報表名稱|不進入\s*editor\s*reopen/i.test(text);
+  /(?:本題不測項目|本題不做|本題不測|本題不驗|不測|不做|不驗|本題禁止|禁止|絕不|不要|不用|不需|不應|不點).{0,40}(?:reopen|重開|報表名稱)|(?:不|勿)\s*(?:reopen|重開)|不點報表名稱|不進入\s*editor\s*reopen/i.test(text);
 
 const paramsRequestReportListDownload = (params: Record<string, unknown>): boolean => {
   const entry = stringParam(params, ["downloadEntry", "downloadTarget", "downloadSource", "csvEntry"]) ?? "";
@@ -305,7 +308,7 @@ export const evaluateCapabilityGate = (
   const unsupportedFeatures: string[] = [];
   const supportedHelperTemplates: string[] = [];
   const params = paramsObject(helperHints);
-  const noSave = helperRequestsNoSave(params);
+  const noSave = helperRequestsNoSave(params) || textExplicitlyDisablesSave(text);
   const noDownload =
     helperRequestsSaveOnly(params) ||
     textExplicitlyDisablesDownload(text) ||
@@ -313,6 +316,7 @@ export const evaluateCapabilityGate = (
   const explicitlyNoReopen =
     helperRequestsNoReopen(params) ||
     helperRequestsSaveOnly(params) ||
+    textExplicitlyDisablesReopen(text) ||
     /不(?:需|要|應)?重開|不要重開|無需重開|不用重開|不重開\s*editor|不應產生\s*reopen/i.test(text);
   const manualAiRequested = automationLevel === "manual_ai" || operationTemplate === "manual_ai";
   const dateNeedsCodexVisibleUi = dateRequiresCodexVisibleUi(currentCase, helperHints);

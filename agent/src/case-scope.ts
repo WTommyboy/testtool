@@ -41,6 +41,9 @@ const isOfficialUiCase = (caseNo: string | null | undefined): boolean =>
 const isDatePanelObservation = (text: string): boolean =>
   /時間區間工具|時間\s*button|時間面板|preset\s*清單|動態\/靜態\s*tab|點擊時間區間\s*button|取消\/確定按鈕/i.test(text);
 
+const textExplicitlyDisablesDownload = (text: string): boolean =>
+  /(?:本題不測項目|本題不做|本題不測|本題不驗|不測|不做|不驗).{0,40}(?:CSV|下載|download)|(?:CSV|下載|download).{0,20}(?:屬於|屬|不是|非|不測|不做|不驗)/i.test(text);
+
 export const inferCaseScope = (
   currentCase: CaseManifestCase | null,
   helperHints: HelperHints | null
@@ -48,10 +51,13 @@ export const inferCaseScope = (
   const text = textBlob(currentCase, helperHints);
   const isFrontendTarget = /前端呈現/.test(`${currentCase?.testTarget ?? ""}\n${currentCase?.testType ?? ""}`);
   const hasDownloadTerms = /CSV|下載|download/i.test(text);
+  const downloadExplicitlyDisabled = textExplicitlyDisablesDownload(text);
   const hasDownloadEvidence =
     /csv\.(?:rows|aggregate)|Playwright\s+download|download\s+API|downloaded\s*CSV|下載檔|CSV\s*檔可取得/i.test(text);
   const requiresDownload =
-    hasDownloadTerms && (!isFrontendTarget || /前後端整合/.test(currentCase?.testTarget ?? "") || hasDownloadEvidence);
+    hasDownloadTerms &&
+    !downloadExplicitlyDisabled &&
+    (!isFrontendTarget || /前後端整合/.test(currentCase?.testTarget ?? "") || hasDownloadEvidence);
   const requiresPreview =
     /network\.requestBody|request\s*body|Chart\.js|chart\.datasets|preview|預覽|執行計算|按執行|點計算|觸發下載/i.test(text) ||
     /前後端整合/.test(currentCase?.testTarget ?? "");
