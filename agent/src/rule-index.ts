@@ -264,6 +264,13 @@ export const writeRuleIndex = (runDir: string, domain: string): string => {
     summary: "Official collage row-scoped metric setup contract. Requires metrics[].sourceReport and metrics[].field."
   });
   addIfExists(entries, runDir, {
+    id: "domain-action-observe-frontend-state",
+    scope: "domain",
+    filePath: path.join(runDir, "input", "domain_action_observe_frontend_state.json"),
+    loadWhen: ["official collage frontend observation", "UI state assertion", "I/J/K/L/M/N observation cases"],
+    summary: "Official collage frontend observation contract. Defines user button, toolbar, radio, date panel, and validation evidence objects."
+  });
+  addIfExists(entries, runDir, {
     id: "domain-evidence-schema",
     scope: "domain",
     filePath: path.join(runDir, "input", "domain_evidence_schema.json"),

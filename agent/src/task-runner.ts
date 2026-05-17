@@ -238,6 +238,7 @@ const writeRunBrief = (
   const domainLocatorRegistry = inputs.domain_locator_registry ?? null;
   const domainUiContract = inputs.domain_ui_contract ?? null;
   const domainActionSetMetricRows = inputs.domain_action_set_metric_rows ?? null;
+  const domainActionObserveFrontendState = inputs.domain_action_observe_frontend_state ?? null;
   const domainEvidenceSchema = inputs.domain_evidence_schema ?? null;
   const domainLintRules = inputs.domain_lint_rules ?? null;
   const domainDiscoveryPageMap = inputs.domain_discovery_page_map ?? null;
@@ -289,6 +290,7 @@ const writeRunBrief = (
     `- domain_locator_registry: ${domainLocatorRegistry ?? "(not downloaded; use visible UI exploration)"}`,
     `- domain_ui_contract: ${domainUiContract ?? "(not downloaded; use visible UI exploration)"}`,
     `- domain_action_set_metric_rows: ${domainActionSetMetricRows ?? "(not downloaded; no domain action contract)"}`,
+    `- domain_action_observe_frontend_state: ${domainActionObserveFrontendState ?? "(not downloaded; no observation action contract)"}`,
     `- domain_evidence_schema: ${domainEvidenceSchema ?? "(not downloaded; use generic evidence policy)"}`,
     `- domain_lint_rules: ${domainLintRules ?? "(not downloaded; use package consistency only)"}`,
     `- domain_discovery_page_map: ${domainDiscoveryPageMap ?? "(not downloaded; discover pages from visible UI)"}`,
@@ -443,6 +445,7 @@ const inputFileNameByKey: Record<string, string> = {
   domain_locator_registry: "domain_locator_registry.json",
   domain_ui_contract: "domain_ui_contract.json",
   domain_action_set_metric_rows: "domain_action_set_metric_rows.json",
+  domain_action_observe_frontend_state: "domain_action_observe_frontend_state.json",
   domain_evidence_schema: "domain_evidence_schema.json",
   domain_lint_rules: "domain_lint_rules.json",
   domain_discovery_page_map: "domain_discovery_page_map.json",
@@ -1259,6 +1262,7 @@ const buildPrompt = (
   const domainLocatorRegistry = inputs.domain_locator_registry ?? null;
   const domainUiContract = inputs.domain_ui_contract ?? null;
   const domainActionSetMetricRows = inputs.domain_action_set_metric_rows ?? null;
+  const domainActionObserveFrontendState = inputs.domain_action_observe_frontend_state ?? null;
   const domainEvidenceSchema = inputs.domain_evidence_schema ?? null;
   const domainLintRules = inputs.domain_lint_rules ?? null;
   const domainDiscoveryPageMap = inputs.domain_discovery_page_map ?? null;
@@ -1300,6 +1304,9 @@ const buildPrompt = (
     domainActionSetMetricRows
       ? `- For official collage metric row setup contract, use: ${domainActionSetMetricRows}`
       : "- Domain setMetricRows action contract was not downloaded.",
+    domainActionObserveFrontendState
+      ? `- For official collage frontend observation contract, use: ${domainActionObserveFrontendState}`
+      : "- Domain observeFrontendState action contract was not downloaded.",
     domainEvidenceSchema
       ? `- For domain evidence requirements, use: ${domainEvidenceSchema}`
       : "- Domain evidence schema was not downloaded; use generic current-run evidence policy.",
@@ -1352,6 +1359,7 @@ const buildPrompt = (
     "- Metadata compare policy: use `input/reference-index.json` to find `bi_metadata_csv`, normally `rules/BI_DATA/metadata.csv`, and confirm the testcase source filename when specified; do not search all uploaded CSV files or call BI APIs to fill the expected list. If `collage.extractMetadataDropdownFields` ran, use its helper artifact as current-run DOM extraction evidence, but still judge the testcase yourself.",
     "- Helper report is usable only if the Agent hard gate accepted its runId/caseId/action/timestamp/currentRunEvidence metadata.",
     "- If `output/helper-pre-run-summary.json` exists, inspect it before repeating UI steps. Reuse successful helper evidence when it satisfies current-run evidence needs; only repeat actions when evidence is incomplete or state is not aligned. Lack of Codex-side browser tools is not a blocker when helper evidence is complete for the current case.",
+    "- For official UI frontend observation cases, check whether helper pre-run produced `collage.observeFrontendState` and `frontend-observation-evidence.json`. If that evidence satisfies the case assertion, judge PASS/FAIL from it instead of writing generic EVIDENCE_INSUFFICIENT or TOOL_EXECUTION_UNAVAILABLE.",
     "- If `output/helper-continuation-summary.json` exists, inspect it before judging. It is Agent-owned current-run evidence produced after Tool Bridge approval or Mac Agent auto-approval for pending helper actions.",
     "- Helper executor is Agent-owned. Do not run `bi-ui-helper-executor` or any helper executor through Codex shell command_execution.",
     "- If remaining helper actions need Tool Bridge authorization, emit the required Tool Bridge request and stop. After Mac Agent auto-approval, the Agent may run approved helper continuation outside Codex and provide `output/helper-continuation-summary.json`; inspect those reports before judging.",
@@ -1404,6 +1412,7 @@ const buildPrompt = (
     `BI locator registry: ${domainLocatorRegistry ?? "(not downloaded; use visible UI exploration)"}`,
     `Domain UI contract: ${domainUiContract ?? "(not downloaded)"}`,
     `Domain setMetricRows action contract: ${domainActionSetMetricRows ?? "(not downloaded)"}`,
+    `Domain observeFrontendState action contract: ${domainActionObserveFrontendState ?? "(not downloaded)"}`,
     `Domain evidence schema: ${domainEvidenceSchema ?? "(not downloaded)"}`,
     `Domain lint rules: ${domainLintRules ?? "(not downloaded)"}`,
     `Domain discovery page map: ${domainDiscoveryPageMap ?? "(not downloaded)"}`,
@@ -1421,6 +1430,7 @@ const buildPrompt = (
     `- domain locator registry: ${domainLocatorRegistry ?? "(none)"}`,
     `- domain UI contract: ${domainUiContract ?? "(none)"}`,
     `- domain setMetricRows action contract: ${domainActionSetMetricRows ?? "(none)"}`,
+    `- domain observeFrontendState action contract: ${domainActionObserveFrontendState ?? "(none)"}`,
     `- domain evidence schema: ${domainEvidenceSchema ?? "(none)"}`,
     `- domain lint rules: ${domainLintRules ?? "(none)"}`,
     `- domain discovery page map: ${domainDiscoveryPageMap ?? "(none)"}`,
@@ -2148,7 +2158,29 @@ const createCodexRunner = (
   });
 };
 
+const summarizeMcpToolCalls = (events: CodexJsonEvent[]): {
+  mcpToolCallCount: number;
+  toolNames: string[];
+  browserTabsAttempted: boolean;
+} => {
+  const toolNames: string[] = [];
+  for (const event of events) {
+    const eventType = textFromUnknown(event.type);
+    const item = objectFromUnknown(event.item);
+    const itemType = item ? textFromUnknown(item.type) : null;
+    if (eventType !== "item.started" || itemType !== "mcp_tool_call") continue;
+    const toolName = textFromUnknown(item?.name) ?? textFromUnknown(item?.tool_name) ?? "";
+    toolNames.push(toolName);
+  }
+  return {
+    mcpToolCallCount: toolNames.length,
+    toolNames,
+    browserTabsAttempted: toolNames.some((name) => /browser_tabs/i.test(name))
+  };
+};
+
 const persistCodexResult = (runDir: string, result: CodexTurnResult, label: string): void => {
+  const mcpSummary = summarizeMcpToolCalls(result.events);
   fs.writeFileSync(path.join(runDir, `${label}.log`), result.rawStdout);
   fs.writeFileSync(path.join(runDir, `${label}.stderr.log`), result.stderr);
   writeJson(path.join(runDir, "output", `${label}-result.json`), {
@@ -2161,7 +2193,15 @@ const persistCodexResult = (runDir: string, result: CodexTurnResult, label: stri
     durationMs: result.durationMs,
     stderr: result.stderr,
     parseErrors: result.parseErrors,
-    eventCount: result.events.length
+    eventCount: result.events.length,
+    ...mcpSummary,
+    browserMcp: {
+      preflight: {
+        attempted: mcpSummary.browserTabsAttempted,
+        tool: "browser_tabs",
+        status: mcpSummary.browserTabsAttempted ? "attempted" : "not_attempted"
+      }
+    }
   });
 };
 

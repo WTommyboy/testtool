@@ -6,6 +6,7 @@ const recommendedFiles = ["README.md", "locators/README.md", "locators/demo001-l
 const contractFiles = [
   "ui-contract.json",
   "action-contracts/setMetricRows.json",
+  "action-contracts/observeFrontendState.json",
   "evidence-schema.json",
   "lint-rules.json",
   "discovery/page-map.json",
@@ -124,6 +125,28 @@ const validateSetMetricRowsContract = (relPath: string, json: Record<string, unk
   }
 };
 
+const validateObserveFrontendStateContract = (relPath: string, json: Record<string, unknown>, findings: Finding[]): void => {
+  requireString(findings, relPath, json, "schemaVersion");
+  requireString(findings, relPath, json, "domain");
+  if (json.action !== "observeFrontendState") {
+    findings.push({ level: "error", message: `${relPath} action must be observeFrontendState` });
+  }
+  const paramsSchema = requireRecord(findings, relPath, json, "paramsSchema");
+  if (paramsSchema && !stringArray(paramsSchema.required).includes("observationType")) {
+    findings.push({ level: "error", message: `${relPath} paramsSchema.required must include observationType` });
+  }
+  const observationTypes = requireRecord(findings, relPath, json, "observationTypes");
+  if (observationTypes) {
+    for (const expected of ["userButton", "projectToolbar", "reportModeRadio", "datePanel", "validationMessage"]) {
+      if (!asRecord(observationTypes[expected])) {
+        findings.push({ level: "error", message: `${relPath} observationTypes must include ${expected}` });
+      }
+    }
+  }
+  requireRecordArray(findings, relPath, json, "declarativePlan");
+  requireStringArray(findings, relPath, json, "requiredEvidence");
+};
+
 const validateEvidenceSchema = (relPath: string, json: Record<string, unknown>, findings: Finding[]): void => {
   requireString(findings, relPath, json, "schemaVersion");
   requireString(findings, relPath, json, "domain");
@@ -176,6 +199,7 @@ const validateDiscoveryComponentInventory = (relPath: string, json: Record<strin
 const validateContractFile = (relPath: string, json: Record<string, unknown>, findings: Finding[]): void => {
   if (relPath.endsWith("ui-contract.json")) validateUiContract(relPath, json, findings);
   if (relPath.endsWith("action-contracts/setMetricRows.json")) validateSetMetricRowsContract(relPath, json, findings);
+  if (relPath.endsWith("action-contracts/observeFrontendState.json")) validateObserveFrontendStateContract(relPath, json, findings);
   if (relPath.endsWith("evidence-schema.json")) validateEvidenceSchema(relPath, json, findings);
   if (relPath.endsWith("lint-rules.json")) validateLintRules(relPath, json, findings);
   if (relPath.endsWith("discovery/page-map.json")) validateDiscoveryPageMap(relPath, json, findings);

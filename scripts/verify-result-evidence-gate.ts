@@ -492,6 +492,75 @@ const main = async (): Promise<void> => {
     });
     assert.equal(externalToolBridgeReport.status, "ok", `external Tool Bridge evidence should satisfy response gate; issues=${JSON.stringify(externalToolBridgeReport.issues)}`);
 
+    const toolUnavailableWithoutPreflight = path.join(tempRoot, "tool-unavailable-without-preflight-result.xlsx");
+    await writeWorkbook(toolUnavailableWithoutPreflight, [
+      {
+        caseNo: "BIUI_COLLAGE_R001-I-07",
+        status: "BLOCKED",
+        testType: "前端呈現",
+        failCategory: "TOOL_EXECUTION_UNAVAILABLE",
+        detailJson: JSON.stringify({
+          測試目的: "確認右上使用者按鈕顯示登入者名稱。",
+          設定條件: "已進入 BI official UI。",
+          預期行為: "應讀取右上使用者按鈕文字。",
+          實際行為: "Codex claimed TOOL_EXECUTION_UNAVAILABLE without attempting browser_tabs.",
+          blocked_reason: "TOOL_EXECUTION_UNAVAILABLE",
+          currentRunEvidence: {
+            capabilityGate: "degraded frontend observation"
+          }
+        })
+      }
+    ]);
+    const toolUnavailableParsed = await parseResultXlsx(toolUnavailableWithoutPreflight);
+    const toolUnavailableReport = evaluateResultEvidenceGate({
+      parsed: toolUnavailableParsed,
+      currentCaseNo: "BIUI_COLLAGE_R001-I-07",
+      expectedCaseNos: ["BIUI_COLLAGE_R001-I-07"],
+      resultSource: "codex_generated",
+      requireSingleCase: true
+    });
+    assert.equal(toolUnavailableReport.status, "error");
+    assert.ok(hasIssue(toolUnavailableReport, "RESULT_TOOL_EXECUTION_UNAVAILABLE_WITHOUT_PREFLIGHT"));
+    const toolUnavailableContainmentReport = containCaseLevelResultEvidenceGateIssues(toolUnavailableParsed, toolUnavailableReport);
+    assert.equal(toolUnavailableContainmentReport.status, "updated");
+    assert.equal(toolUnavailableContainmentReport.reason, "RESULT_EVIDENCE_GATE_CONTAINED_AS_BLOCKED_NEEDS_REJUDGMENT_TOOL_PREFLIGHT");
+
+    const toolUnavailableWithPreflight = path.join(tempRoot, "tool-unavailable-with-preflight-result.xlsx");
+    await writeWorkbook(toolUnavailableWithPreflight, [
+      {
+        caseNo: "BIUI_COLLAGE_R001-I-07",
+        status: "BLOCKED",
+        testType: "前端呈現",
+        failCategory: "TOOL_EXECUTION_UNAVAILABLE",
+        detailJson: JSON.stringify({
+          測試目的: "確認右上使用者按鈕顯示登入者名稱。",
+          設定條件: "已進入 BI official UI。",
+          預期行為: "應讀取右上使用者按鈕文字。",
+          實際行為: "browser_tabs preflight failed before UI evidence could be collected.",
+          blocked_reason: "TOOL_EXECUTION_UNAVAILABLE",
+          currentRunEvidence: {
+            browserMcp: {
+              preflight: {
+                attempted: true,
+                tool: "browser_tabs",
+                status: "failed",
+                timestamp: new Date().toISOString()
+              }
+            }
+          }
+        })
+      }
+    ]);
+    const toolUnavailableWithPreflightReport = await runGate(toolUnavailableWithPreflight, {
+      currentCaseNo: "BIUI_COLLAGE_R001-I-07",
+      expectedCaseNos: ["BIUI_COLLAGE_R001-I-07"]
+    });
+    assert.equal(
+      toolUnavailableWithPreflightReport.status,
+      "ok",
+      `TOOL_EXECUTION_UNAVAILABLE with browserMcp.preflight should be accepted; issues=${JSON.stringify(toolUnavailableWithPreflightReport.issues)}`
+    );
+
     const invalidJson = path.join(tempRoot, "invalid-json-result.xlsx");
     await writeWorkbook(invalidJson, [
       {
@@ -522,6 +591,7 @@ const main = async (): Promise<void> => {
             "non-destructive selected-field validation alert does not require Tool Bridge response",
             "out-of-scope preview blocker can be contained as case-level rejudgment",
             "frontend observation screenshot evidence requires explicit visual fallback and can be contained",
+            "TOOL_EXECUTION_UNAVAILABLE requires browserMcp preflight and can be contained when missing",
             "negative or insufficient native-confirm prose does not require Tool Bridge response",
             "formula modal blocked prose does not require Tool Bridge response",
             "Tool Bridge prose in purpose/setup/expected fields does not trigger response gate",

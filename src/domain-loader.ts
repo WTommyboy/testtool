@@ -6,6 +6,7 @@ const optionalFiles = [
   "locators/demo001-locator-registry.json",
   "ui-contract.json",
   "action-contracts/setMetricRows.json",
+  "action-contracts/observeFrontendState.json",
   "evidence-schema.json",
   "lint-rules.json",
   "discovery/page-map.json",

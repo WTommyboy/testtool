@@ -256,6 +256,46 @@ const isFrontendObservationPreludeCase = (
   return { matched: true, needsEditor: editorObservation };
 };
 
+type FrontendObservationType = "userButton" | "projectToolbar" | "reportModeRadio" | "datePanel" | "validationMessage" | null;
+
+const inferFrontendObservationType = (currentCase: CaseManifestCase | null): FrontendObservationType => {
+  const text = [
+    currentCase?.caseNo,
+    currentCase?.groupName,
+    currentCase?.caseTitle,
+    currentCase?.stepsSummary,
+    currentCase?.expected,
+    currentCase?.validationMethod
+  ]
+    .filter(Boolean)
+    .join("\n");
+  if (/使用者按鈕|登入者名稱|user\s*button|account\s*button/i.test(text)) return "userButton";
+  if (/下載\/刪除\s*icon|下載\s*icon|刪除\s*icon|toolbar|工具列|勾選.*下載|未勾選.*下載|disabled|enabled/i.test(text)) {
+    return "projectToolbar";
+  }
+  if (/建構方式\s*radio|拼貼模式|報表模式|report[-_\s]*mode|radio/i.test(text)) return "reportModeRadio";
+  if (/時間面板|時間區間\s*button|時間設置|動態|靜態|date\s*panel|date\s*range/i.test(text)) return "datePanel";
+  if (/空設定|未完成設定|防呆|欄位未設置完成|點.{0,8}計算|計算.{0,8}按鈕|validation/i.test(text)) return "validationMessage";
+  return null;
+};
+
+const observationRequiredEvidence = (observationType: FrontendObservationType): string[] => {
+  switch (observationType) {
+    case "userButton":
+      return ["topbar.userButton.state", "dom.state", "screenshot"];
+    case "projectToolbar":
+      return ["projectToolbar.buttons.state", "dom.state", "screenshot"];
+    case "reportModeRadio":
+      return ["reportMode.radio.state", "dom.state", "screenshot"];
+    case "datePanel":
+      return ["dateRange.panel.state", "dom.state", "screenshot"];
+    case "validationMessage":
+      return ["validation.message.state", "dom.state", "screenshot"];
+    default:
+      return ["dom.state", "screenshot"];
+  }
+};
+
 const dateRequiresCodexVisibleUi = (currentCase: CaseManifestCase | null, helperHints: HelperHints | null): boolean => {
   const params = paramsObject(helperHints);
   const cleanup = parseCleanupTargets(currentCase?.cleanupChecklist);
@@ -722,6 +762,7 @@ const buildActions = (currentCase: CaseManifestCase | null, helperHints: HelperH
       ? { matched: true, needsEditor: needsReportEditorPrelude(currentCase) }
       : frontendObservationPrelude;
   if (scopeFrontendObservationPrelude.matched) {
+    const observationType = inferFrontendObservationType(currentCase);
     const actions: HelperPlanAction[] = [
       action("H1", "collage.openProject", "開啟指定拼貼專案（前端觀察題前置導航）", params, {
         requiredEvidence: ["dom.url", "dom.pageTitle", "dom.state", "screenshot"],
@@ -738,6 +779,23 @@ const buildActions = (currentCase: CaseManifestCase | null, helperHints: HelperH
           notes: [
             "只到達 editor 初始狀態，不選欄位、不設定日期、不按計算。",
             "K/L/M/N 類 editor UI assertion 需要專用 helper template 或 Codex visible UI 接手。"
+          ]
+        })
+      );
+    }
+    if (observationType) {
+      actions.push(
+        action(`H${actions.length + 1}`, "collage.observeFrontendState", "收集前端觀察狀態 evidence", {
+          ...params,
+          observationType
+        }, {
+          mutatesUi: observationType === "datePanel" || observationType === "validationMessage",
+          requiredEvidence: observationRequiredEvidence(observationType),
+          screenshotPolicy: "required_if_possible",
+          notes: [
+            "只收集 observation evidence，不判 PASS/FAIL。",
+            "若 observationType 需要點擊，僅允許 visible UI click；不可用 evaluate 觸發互動。",
+            "Codex 必須用 helper evidence 與 testcase scope 自行判定。"
           ]
         })
       );

@@ -1079,14 +1079,14 @@ const main = (): void => {
     assert.equal(emptyCalculateGuardGate.supportStatus, "degraded", "K-10 frontend observation should stay Codex visible UI with helper navigation only");
     assert.deepEqual(
       emptyCalculateGuardGate.supportedHelperTemplates,
-      ["collage.openProject", "collage.createReport"],
-      "K-10 previewRequired=false must not advertise configureMetric/runPreview helpers"
+      ["collage.openProject", "collage.createReport", "collage.observeFrontendState"],
+      "K-10 previewRequired=false may advertise observation evidence, but not configureMetric/runPreview helpers"
     );
     const emptyCalculateGuardPlan = buildHelperExecutionPlan({ runDir, currentCase: emptyCalculateGuardCase, helperHints: null });
     assert.deepEqual(
       emptyCalculateGuardPlan.actions.map((item) => item.template),
-      ["collage.openProject", "collage.createReport"],
-      "K-10 previewRequired=false must not execute generic configureMetric/runPreview helpers"
+      ["collage.openProject", "collage.createReport", "collage.observeFrontendState"],
+      "K-10 previewRequired=false must execute observation evidence, not generic configureMetric/runPreview helpers"
     );
 
     const selectAllCase = {

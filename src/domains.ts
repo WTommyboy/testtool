@@ -73,6 +73,10 @@ router.get("/:name/action-contracts/setMetricRows", (req, res) => {
   return sendOptionalJsonFile(req.params.name, "action-contracts/setMetricRows.json", "DOMAIN_ACTION_SET_METRIC_ROWS_MISSING", res);
 });
 
+router.get("/:name/action-contracts/observeFrontendState", (req, res) => {
+  return sendOptionalJsonFile(req.params.name, "action-contracts/observeFrontendState.json", "DOMAIN_ACTION_OBSERVE_FRONTEND_STATE_MISSING", res);
+});
+
 router.get("/:name/evidence-schema", (req, res) => {
   return sendOptionalJsonFile(req.params.name, "evidence-schema.json", "DOMAIN_EVIDENCE_SCHEMA_MISSING", res);
 });

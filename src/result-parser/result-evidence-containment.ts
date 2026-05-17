@@ -13,11 +13,13 @@ export type CaseLevelResultEvidenceContainmentReport = {
 
 const CONTAINABLE_ERROR_CODES = new Set([
   "RESULT_SCOPE_OUT_OF_SCOPE_PREVIEW_BLOCKER",
-  "RESULT_FRONTEND_OBSERVATION_VISUAL_FALLBACK_REQUIRED"
+  "RESULT_FRONTEND_OBSERVATION_VISUAL_FALLBACK_REQUIRED",
+  "RESULT_TOOL_EXECUTION_UNAVAILABLE_WITHOUT_PREFLIGHT"
 ]);
 
 const VISUAL_FALLBACK_REQUIRED_CODE = "RESULT_FRONTEND_OBSERVATION_VISUAL_FALLBACK_REQUIRED";
 const OUT_OF_SCOPE_PREVIEW_BLOCKER_CODE = "RESULT_SCOPE_OUT_OF_SCOPE_PREVIEW_BLOCKER";
+const TOOL_UNAVAILABLE_WITHOUT_PREFLIGHT_CODE = "RESULT_TOOL_EXECUTION_UNAVAILABLE_WITHOUT_PREFLIGHT";
 
 const normalizeCaseNo = (value: string | null | undefined): string => (value ?? "").trim().toUpperCase();
 
@@ -144,9 +146,40 @@ const containVisualFallbackRequired = (item: ParsedResultCase, issues: ResultEvi
   item.detailParseError = null;
 };
 
+const containToolUnavailableWithoutPreflight = (item: ParsedResultCase, issues: ResultEvidenceGateIssue[]): void => {
+  const previousDetail = item.detailJson ?? {};
+  const previousFailCategory = item.verdictReason;
+  item.status = "BLOCKED";
+  item.verdictReason = "BLOCKED_NEEDS_REJUDGMENT";
+  item.detailJson = {
+    測試目的: coreText(previousDetail["測試目的"], "Browser MCP preflight containment."),
+    設定條件: coreText(previousDetail["設定條件"], "See current-run browser MCP preflight gate metadata."),
+    預期行為: coreText(previousDetail["預期行為"] ?? previousDetail["預期結果"], "Tool unavailable blockers must include browserMcp.preflight evidence."),
+    實際行為:
+      "Server result evidence gate detected a TOOL_EXECUTION_UNAVAILABLE blocker without browserMcp.preflight/browser_tabs evidence. The case was contained for rejudgment instead of accepting an unverified tool-unavailable classification.",
+    blocked_reason: `BLOCKED_NEEDS_REJUDGMENT:${TOOL_UNAVAILABLE_WITHOUT_PREFLIGHT_CODE}`,
+    original_result_before_server_containment: "BLOCKED",
+    original_fail_category_kind_before_server_containment: previousFailCategory ? "tool_unavailable_without_preflight" : null,
+    evidence_gate_issues: issues.map(safeIssueSummary),
+    currentRunEvidence: {
+      source: "server_result_evidence_gate",
+      containment: true,
+      caseNo: item.caseNo,
+      resultGateCode: TOOL_UNAVAILABLE_WITHOUT_PREFLIGHT_CODE,
+      requiredEvidence: "browserMcp.preflight attempted with browser_tabs before TOOL_EXECUTION_UNAVAILABLE can be accepted"
+    }
+  };
+  item.detailJsonRaw = JSON.stringify(item.detailJson);
+  item.detailParseError = null;
+};
+
 const containCase = (item: ParsedResultCase, issues: ResultEvidenceGateIssue[]): void => {
   if (issues.some((issue) => issue.code === VISUAL_FALLBACK_REQUIRED_CODE)) {
     containVisualFallbackRequired(item, issues);
+    return;
+  }
+  if (issues.some((issue) => issue.code === TOOL_UNAVAILABLE_WITHOUT_PREFLIGHT_CODE)) {
+    containToolUnavailableWithoutPreflight(item, issues);
     return;
   }
   containOutOfScopePreviewBlocker(item, issues);
@@ -216,6 +249,8 @@ export const containCaseLevelResultEvidenceGateIssues = (
     status: "updated",
     reason: errorIssues.some((issue) => issue.code === VISUAL_FALLBACK_REQUIRED_CODE)
       ? "RESULT_EVIDENCE_GATE_CONTAINED_AS_BLOCKED_NEEDS_VISUAL_REVIEW"
+      : errorIssues.some((issue) => issue.code === TOOL_UNAVAILABLE_WITHOUT_PREFLIGHT_CODE)
+        ? "RESULT_EVIDENCE_GATE_CONTAINED_AS_BLOCKED_NEEDS_REJUDGMENT_TOOL_PREFLIGHT"
       : "RESULT_EVIDENCE_GATE_CONTAINED_AS_BLOCKED_NEEDS_REJUDGMENT",
     updatedCaseNos
   };

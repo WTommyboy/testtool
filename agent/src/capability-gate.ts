@@ -292,6 +292,29 @@ const isFrontendObservationPreludeCase = (
   return { matched: true, needsEditor: editorObservation };
 };
 
+const inferFrontendObservationTemplate = (currentCase: CaseManifestCase | null): string | null => {
+  const text = [
+    currentCase?.caseNo,
+    currentCase?.groupName,
+    currentCase?.caseTitle,
+    currentCase?.stepsSummary,
+    currentCase?.expected,
+    currentCase?.validationMethod
+  ]
+    .filter(Boolean)
+    .join("\n");
+  if (/使用者按鈕|登入者名稱|user\s*button|account\s*button/i.test(text)) return "collage.observeFrontendState";
+  if (/下載\/刪除\s*icon|下載\s*icon|刪除\s*icon|toolbar|工具列|勾選.*下載|未勾選.*下載|disabled|enabled/i.test(text)) {
+    return "collage.observeFrontendState";
+  }
+  if (/建構方式\s*radio|拼貼模式|報表模式|report[-_\s]*mode|radio/i.test(text)) return "collage.observeFrontendState";
+  if (/時間面板|時間區間\s*button|時間設置|動態|靜態|date\s*panel|date\s*range/i.test(text)) return "collage.observeFrontendState";
+  if (/空設定|未完成設定|防呆|欄位未設置完成|點.{0,8}計算|計算.{0,8}按鈕|validation/i.test(text)) {
+    return "collage.observeFrontendState";
+  }
+  return null;
+};
+
 const isDeleteReportFlow = (currentCase: CaseManifestCase | null, helperHints: HelperHints | null): boolean => {
   const operationTemplate = helperHints?.operationTemplate ?? "";
   const text = detectCaseFeatures(currentCase, helperHints).text;
@@ -336,6 +359,7 @@ export const evaluateCapabilityGate = (
   const frontendObservationPrelude = isFrontendObservationPreludeCase(currentCase, helperHints);
   const caseScope = inferCaseScope(currentCase, helperHints);
   const helperContractBlocker = missingActionTemplateBlocker(caseScope);
+  const frontendObservationTemplate = inferFrontendObservationTemplate(currentCase);
   const scopeFrontendObservationPrelude =
     caseScope.testIntent === "frontend_observation" &&
     !caseScope.previewRequired &&
@@ -409,7 +433,8 @@ export const evaluateCapabilityGate = (
   } else if (scopeFrontendObservationPrelude.matched && !helperContractBlocker) {
     supportedHelperTemplates.push(
       "collage.openProject",
-      ...(scopeFrontendObservationPrelude.needsEditor ? ["collage.createReport"] : [])
+      ...(scopeFrontendObservationPrelude.needsEditor ? ["collage.createReport"] : []),
+      ...(frontendObservationTemplate ? [frontendObservationTemplate] : [])
     );
   } else if (mode === "collage" && !hasFilter && !hasGroup) {
     supportedHelperTemplates.push(
@@ -495,7 +520,7 @@ export const evaluateCapabilityGate = (
       : navigationPreludeAllowed
         ? datePreviewEvidenceAllowed
           ? "Helper pre-run may perform safe collage navigation/setup plus implemented date preview evidence collection for preset/static date cases. Codex must judge PASS/FAIL/BLOCKED from per-variant UI, request body, and preview evidence; do not treat helper output alone as final testcase proof."
-          : "Helper pre-run may perform only safe collage navigation/setup (open project and, when needed, enter the new-report settings page). Codex must execute the case-specific UI assertions, field/date/preview/CSV steps, and judge PASS/FAIL/BLOCKED. Do not treat navigation helper output alone as final testcase proof."
+          : "Helper pre-run may perform safe collage navigation/setup and implemented observeFrontendState evidence collection. Codex must judge PASS/FAIL/BLOCKED from the case scope and observation evidence; do not treat helper output alone as final testcase proof."
         : "Do not run helper pre-run. Codex may perform visible UI/read-only evidence collection one case at a time. If browser automation is unavailable or the UI path is not reachable, write a single-case BLOCKED result with fail_category=TOOL_EXECUTION_UNAVAILABLE and cite this capability gate/helper skipped state as current-run evidence.";
 
   return {

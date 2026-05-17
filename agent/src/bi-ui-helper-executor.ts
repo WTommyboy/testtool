@@ -335,6 +335,7 @@ const calculatedFieldEvidencePath = (options: CliOptions): string => path.join(a
 const createProjectEvidencePath = (options: CliOptions): string => path.join(artifactRoot(options), "create-project-evidence.json");
 const createdProjectStatePath = (options: CliOptions): string => path.join(artifactRoot(options), "created-project.json");
 const metricRowsEvidencePath = (options: CliOptions): string => path.join(artifactRoot(options), "metric-rows-evidence.json");
+const frontendObservationEvidencePath = (options: CliOptions): string => path.join(artifactRoot(options), "frontend-observation-evidence.json");
 const dateUiEvidencePath = (options: CliOptions, suffix: string | null = null): string =>
   path.join(artifactRoot(options), suffix ? `date-ui-evidence-${sanitize(suffix)}.json` : "date-ui-evidence.json");
 
@@ -985,6 +986,26 @@ const readUiDomProfile = async (options: CliOptions, page: Page, context: string
       const className = typeof (element as HTMLElement).className === "string" ? (element as HTMLElement).className : "";
       return className.split(/\s+/).filter(Boolean).slice(0, 8);
     };
+    const nearestLabelFor = (element: HTMLElement): string | null => {
+      if (element instanceof HTMLInputElement && element.id) {
+        const explicit = document.querySelector(`label[for="${CSS.escape(element.id)}"]`);
+        if (explicit?.textContent?.trim()) return truncate(explicit.textContent, 120);
+      }
+      const wrapped = element.closest("label");
+      if (wrapped?.textContent?.trim()) return truncate(wrapped.textContent, 120);
+      const parent = element.parentElement;
+      if (parent?.textContent?.trim()) return truncate(parent.textContent, 160);
+      return null;
+    };
+    const computedStateFor = (element: HTMLElement): Record<string, unknown> => {
+      const style = window.getComputedStyle(element);
+      return {
+        pointerEvents: style.pointerEvents,
+        opacity: style.opacity,
+        display: style.display,
+        visibility: style.visibility
+      };
+    };
     const elementSummary = (element: HTMLElement, index: number): Record<string, unknown> => ({
       index,
       selector: selectorFor(element),
@@ -992,11 +1013,18 @@ const readUiDomProfile = async (options: CliOptions, page: Page, context: string
       id: element.id || null,
       role: element.getAttribute("role"),
       ariaLabel: element.getAttribute("aria-label"),
+      ariaDisabled: element.getAttribute("aria-disabled"),
+      ariaChecked: element.getAttribute("aria-checked"),
+      ariaExpanded: element.getAttribute("aria-expanded"),
       name: element.getAttribute("name"),
       text: truncate(element.innerText || element.textContent, 120),
+      title: truncate(element.getAttribute("title"), 120),
+      nearestLabel: nearestLabelFor(element),
       classTokens: classTokensFor(element),
       onclick: truncate(element.getAttribute("onclick"), 140),
       disabled: "disabled" in element ? Boolean((element as HTMLButtonElement).disabled) : element.getAttribute("aria-disabled") === "true",
+      checked: element instanceof HTMLInputElement ? element.checked : element.getAttribute("aria-checked") === "true",
+      computedStyle: computedStateFor(element),
       rect: rectFor(element)
     });
     const visibleButtons = Array.from(document.querySelectorAll("button"))
@@ -8147,6 +8175,334 @@ const clickBackToProjectList = async (options: CliOptions, page: Page, startedAt
   );
 };
 
+type FrontendObservationType = "userButton" | "projectToolbar" | "reportModeRadio" | "datePanel" | "validationMessage";
+
+const frontendObservationType = (options: CliOptions): FrontendObservationType | null => {
+  const value = firstStringParam(options.params, ["observationType", "type"]);
+  if (
+    value === "userButton" ||
+    value === "projectToolbar" ||
+    value === "reportModeRadio" ||
+    value === "datePanel" ||
+    value === "validationMessage"
+  ) {
+    return value;
+  }
+  return null;
+};
+
+const readUiRequestCount = async (page: Page): Promise<number> => {
+  return page.evaluate(() =>
+    performance
+      .getEntriesByType("resource")
+      .filter((entry) => {
+        const item = entry as PerformanceResourceTiming;
+        return /^(fetch|xmlhttprequest)$/i.test(item.initiatorType || "");
+      })
+      .length
+  );
+};
+
+const readFrontendObservationState = async (
+  page: Page,
+  observationType: FrontendObservationType,
+  requestBefore: number | null = null,
+  params: Record<string, unknown> = {}
+): Promise<Record<string, unknown>> => {
+  const requestAfter = await readUiRequestCount(page).catch(() => null);
+  return page.evaluate(({ type, before, after, expectedTextContains }) => {
+    const truncate = (value: string | null | undefined, length = 180): string | null => {
+      const normalized = (value ?? "").trim().replace(/\s+/g, " ");
+      if (!normalized) return null;
+      return normalized.length > length ? `${normalized.slice(0, length)}...` : normalized;
+    };
+    const isVisible = (element: Element): boolean => {
+      const rect = element.getBoundingClientRect();
+      const style = window.getComputedStyle(element);
+      return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden" && style.opacity !== "0";
+    };
+    const rectFor = (element: Element) => {
+      const rect = element.getBoundingClientRect();
+      return {
+        x: Math.round(rect.x),
+        y: Math.round(rect.y),
+        width: Math.round(rect.width),
+        height: Math.round(rect.height)
+      };
+    };
+    const nearestLabelFor = (element: HTMLElement): string | null => {
+      if (element instanceof HTMLInputElement && element.id) {
+        const explicit = document.querySelector(`label[for="${CSS.escape(element.id)}"]`);
+        if (explicit?.textContent?.trim()) return truncate(explicit.textContent, 140);
+      }
+      const wrapped = element.closest("label");
+      if (wrapped?.textContent?.trim()) return truncate(wrapped.textContent, 140);
+      if (element.parentElement?.textContent?.trim()) return truncate(element.parentElement.textContent, 160);
+      return null;
+    };
+    const computedState = (element: HTMLElement) => {
+      const style = window.getComputedStyle(element);
+      return {
+        pointerEvents: style.pointerEvents,
+        opacity: style.opacity,
+        visibility: style.visibility,
+        display: style.display
+      };
+    };
+    const buttonSummary = (button: HTMLButtonElement, index: number) => ({
+      index,
+      text: truncate(button.innerText || button.textContent, 160),
+      ariaLabel: button.getAttribute("aria-label"),
+      title: truncate(button.getAttribute("title"), 120),
+      disabled: button.disabled || button.getAttribute("aria-disabled") === "true",
+      ariaDisabled: button.getAttribute("aria-disabled"),
+      className: truncate(button.className, 160),
+      computedStyle: computedState(button),
+      rect: rectFor(button)
+    });
+    const visibleButtons = Array.from(document.querySelectorAll("button"))
+      .filter((button): button is HTMLButtonElement => button instanceof HTMLButtonElement && isVisible(button))
+      .map(buttonSummary);
+    const requestDelta = before === null || after === null ? null : Math.max(0, after - before);
+    const bodyText = document.body.innerText || "";
+    const forbiddenTopRightButtonText = /新增|下載|刪除|儲存|保存|返回|計算|執行|取消|確定|套用|搜尋|清除/i;
+
+    if (type === "userButton") {
+      const expectedTexts = Array.isArray(expectedTextContains)
+        ? expectedTextContains.filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+        : [];
+      const textFor = (button: { text: string | null; ariaLabel: string | null; title: string | null }) =>
+        `${button.text ?? ""}\n${button.ariaLabel ?? ""}\n${button.title ?? ""}`;
+      const expectedMatches = expectedTexts.length > 0
+        ? visibleButtons.filter((button) => expectedTexts.every((expected) => textFor(button).includes(expected)))
+        : [];
+      const accountPatternMatches = visibleButtons.filter((button) =>
+        /使用者|登入者|帳號|會員|profile|user|account|avatar/i.test(textFor(button))
+      );
+      const topRightTextButtons = visibleButtons
+        .filter((button) =>
+          Boolean(button.text) &&
+          button.rect.y <= Math.max(140, window.innerHeight * 0.18) &&
+          button.rect.x >= window.innerWidth * 0.45 &&
+          !forbiddenTopRightButtonText.test(button.text ?? "")
+        )
+        .sort((a, b) => b.rect.x - a.rect.x || a.rect.y - b.rect.y);
+      const candidates = expectedMatches.length > 0
+        ? expectedMatches
+        : accountPatternMatches.length > 0
+          ? accountPatternMatches
+          : topRightTextButtons;
+      const bodyLines = bodyText.split(/\n+/).map((line) => line.trim()).filter(Boolean);
+      const reportNavIndex = bodyLines.findIndex((line) => /^報表$/.test(line));
+      const bodyLineCandidates = reportNavIndex > 0
+        ? bodyLines
+            .slice(0, reportNavIndex)
+            .filter((line) => !/^(數據統計中心|BI Dashboard|橘子星球|Galaxy)$/i.test(line))
+        : [];
+      const expectedBodyLine = expectedTexts.length > 0
+        ? bodyLines.find((line) => expectedTexts.every((expected) => line.includes(expected))) ?? null
+        : null;
+      const fallbackVisibleText = expectedBodyLine ?? bodyLineCandidates.at(-1) ?? null;
+      const visibleText = candidates[0]?.text ?? fallbackVisibleText;
+      const visible = candidates.length > 0 || Boolean(fallbackVisibleText);
+      return {
+        evidenceObject: "topbar.userButton.state",
+        visible,
+        visibleText,
+        expectedTextContains: expectedTexts,
+        fallbackSource: candidates.length > 0 ? "visibleButton" : fallbackVisibleText ? "bodyTextTopbarLine" : null,
+        candidates: candidates.slice(0, 6),
+        asserted: visible && (expectedTexts.length === 0 || expectedTexts.every((expected) => (visibleText ?? "").includes(expected)))
+      };
+    }
+
+    if (type === "projectToolbar") {
+      const buttonsByRow = new Map<number, typeof visibleButtons>();
+      for (const button of visibleButtons) {
+        const rowKey = Math.round(button.rect.y / 12) * 12;
+        buttonsByRow.set(rowKey, [...(buttonsByRow.get(rowKey) ?? []), button]);
+      }
+      let toolbarCandidate = visibleButtons.slice(0, 8);
+      let toolbarCandidateFound = false;
+      for (const row of [...buttonsByRow.values()].map((items) => items.sort((a, b) => a.rect.x - b.rect.x))) {
+        if (row.length < 3) continue;
+        for (let index = 0; index <= row.length - 3; index += 1) {
+          const triplet = row.slice(index, index + 3);
+          const statePattern = [triplet[0]?.disabled, triplet[1]?.disabled, triplet[2]?.disabled];
+          const hasExpectedNoSelectionPattern = statePattern[0] === true && statePattern[1] === true && statePattern[2] === false;
+          const hasToolbarSize = triplet.every((button) => button.rect.width <= 96 && button.rect.height <= 72);
+          if (hasExpectedNoSelectionPattern && hasToolbarSize) {
+            toolbarCandidate = triplet;
+            toolbarCandidateFound = true;
+            break;
+          }
+        }
+        if (toolbarCandidateFound) break;
+      }
+      const toolbarButtons = toolbarCandidate.slice(0, 8).map((button, index) => ({
+        ...button,
+        semanticIndex: index,
+        semanticAction: index === 0 ? "download" : index === 1 ? "delete" : index === 2 ? "create" : "unknown"
+      }));
+      const downloadDisabled = toolbarButtons[0]?.disabled === true;
+      const deleteDisabled = toolbarButtons[1]?.disabled === true;
+      const createEnabled = toolbarButtons[2] ? toolbarButtons[2].disabled === false : false;
+      return {
+        evidenceObject: "projectToolbar.buttons.state",
+        semanticMap: "projectToolbar.buttonOrder",
+        buttons: toolbarButtons,
+        assertions: {
+          downloadDisabledWhenNoSelection: downloadDisabled,
+          deleteDisabledWhenNoSelection: deleteDisabled,
+          createEnabledWhenNoSelection: createEnabled
+        },
+        asserted: downloadDisabled && deleteDisabled && createEnabled
+      };
+    }
+
+    if (type === "reportModeRadio") {
+      const options = Array.from(document.querySelectorAll('input[name="report-mode"]'))
+        .filter((input): input is HTMLInputElement => input instanceof HTMLInputElement)
+        .map((input) => ({
+          value: input.value,
+          checked: input.checked,
+          ariaChecked: input.getAttribute("aria-checked"),
+          disabled: input.disabled,
+          label: nearestLabelFor(input),
+          rect: rectFor(input)
+        }));
+      const selected = options.find((option) => option.checked || option.ariaChecked === "true") ?? null;
+      return {
+        evidenceObject: "reportMode.radio.state",
+        inputName: "report-mode",
+        options,
+        selectedValue: selected?.value ?? null,
+        selectedLabel: selected?.label ?? null,
+        asserted: selected?.value === "1" && /拼貼模式/.test(selected?.label ?? "")
+      };
+    }
+
+    if (type === "datePanel") {
+      const requiredTexts = [
+        "昨日",
+        "今日",
+        "上週",
+        "本週",
+        "上月",
+        "本月",
+        "過去 7 天",
+        "最近 7 天",
+        "過去 30 天",
+        "最近 30 天",
+        "動態",
+        "靜態",
+        "取消",
+        "確定"
+      ];
+      const visibleTexts = requiredTexts.filter((text) => bodyText.includes(text));
+      return {
+        evidenceObject: "dateRange.panel.state",
+        openedByVisibleUi: bodyText.includes("動態") && bodyText.includes("靜態"),
+        visibleTexts,
+        missingTexts: requiredTexts.filter((text) => !bodyText.includes(text)),
+        requestDelta,
+        asserted: requiredTexts.every((text) => bodyText.includes(text)) && requestDelta === 0
+      };
+    }
+
+    const knownMessage = "欄位未設置完成";
+    return {
+      evidenceObject: "validation.message.state",
+      triggeredByVisibleUi: true,
+      visibleText: bodyText.includes(knownMessage) ? knownMessage : truncate(bodyText, 500),
+      requestDelta,
+      asserted: bodyText.includes(knownMessage) && requestDelta === 0
+    };
+  }, { type: observationType, before: requestBefore, after: requestAfter, expectedTextContains: stringArrayParam(params, "expectedTextContains") });
+};
+
+const waitForFrontendObservationReadiness = async (
+  page: Page,
+  observationType: FrontendObservationType,
+  warnings: string[]
+): Promise<void> => {
+  const markerByType: Record<FrontendObservationType, RegExp> = {
+    userButton: /報表|使用者|登入者|帳號|profile|user|account/i,
+    projectToolbar: /我的自訂|拼貼報表|新增|下載|刪除/i,
+    reportModeRadio: /拼貼模式|建構方式|報表設定|欄位選擇/i,
+    datePanel: /時間|時間區間|欄位選擇|報表設定/i,
+    validationMessage: /計算|執行|欄位選擇|報表設定/i
+  };
+  const marker = markerByType[observationType];
+  try {
+    await page.waitForFunction(
+      (patternSource) => {
+        const pattern = new RegExp(patternSource, "i");
+        return pattern.test(document.body?.innerText ?? "");
+      },
+      marker.source,
+      { timeout: 8000 }
+    );
+  } catch {
+    warnings.push(`FRONTEND_OBSERVATION_READINESS_TIMEOUT:${observationType}`);
+  }
+};
+
+const observeFrontendState = async (options: CliOptions, page: Page, startedAt: string): Promise<HelperReport> => {
+  const observationType = frontendObservationType(options);
+  if (!observationType) {
+    throw new HelperBlockedError("OBSERVATION_TYPE_MISSING_OR_UNSUPPORTED");
+  }
+  const uiProfileBefore = await captureUiDomProfile(options, page, `observe.${observationType}.before`);
+  const requestBefore = await readUiRequestCount(page).catch(() => null);
+  const warnings: string[] = [];
+  let visibleUiAction: Record<string, unknown> | null = null;
+  await waitForFrontendObservationReadiness(page, observationType, warnings);
+
+  if (observationType === "datePanel") {
+    const trigger = page.locator('button[aria-label="時間設置"]').first();
+    await trigger.click({ timeout: 5000 });
+    visibleUiAction = { action: "click", target: "button[aria-label=\"時間設置\"]" };
+    await page.waitForTimeout(500);
+  }
+
+  if (observationType === "validationMessage") {
+    const calculate = page.getByRole("button", { name: /計算|執行/ }).first();
+    await calculate.click({ timeout: 5000 });
+    visibleUiAction = { action: "click", target: "button[name~=計算|執行]" };
+    await page.waitForTimeout(800);
+  }
+
+  const observationState = await readFrontendObservationState(page, observationType, requestBefore, options.params);
+  const uiProfileAfter = await captureUiDomProfile(options, page, `observe.${observationType}.after`);
+  const shot = await screenshot(options, page, `observe-${observationType}`);
+  if (!shot) warnings.push("SCREENSHOT_UNAVAILABLE");
+  const evidence = {
+    schemaVersion: "frontend-observation-evidence-v1",
+    generatedAt: new Date().toISOString(),
+    observationType,
+    visibleUiAction,
+    requestBefore,
+    observationState,
+    uiProfiles: { before: uiProfileBefore, after: uiProfileAfter },
+    domState: await readDomState(page)
+  };
+  const evidencePath = frontendObservationEvidencePath(options);
+  ensureDir(path.dirname(evidencePath));
+  fs.writeFileSync(evidencePath, `${JSON.stringify(evidence, null, 2)}\n`);
+  return createReport(
+    options,
+    observationState.asserted === false ? "blocked" : "ok",
+    startedAt,
+    {
+      frontendObservationEvidence: evidence,
+      [String(observationState.evidenceObject ?? "observation.state")]: observationState
+    },
+    { frontendObservationEvidence: evidencePath, ...(shot ? { screenshot: shot } : {}) },
+    observationState.asserted === false ? [...warnings, "FRONTEND_OBSERVATION_ASSERTION_INCOMPLETE"] : warnings
+  );
+};
+
 const notImplemented = async (options: CliOptions, page: Page, reason: string, startedAt: string): Promise<HelperReport> => {
   const shot = await screenshot(options, page, sanitize(options.action));
   const uiProfile = await captureUiDomProfile(options, page, `${sanitize(options.action)}.notImplemented`);
@@ -8258,6 +8614,9 @@ const run = async (): Promise<void> => {
         break;
       case "collage.clickBackToProjectList":
         report = await clickBackToProjectList(options, page, startedAt);
+        break;
+      case "collage.observeFrontendState":
+        report = await observeFrontendState(options, page, startedAt);
         break;
       case "collage.downloadCsvAndComparePreview":
         report = await downloadCsvAndComparePreview(options, page, startedAt);

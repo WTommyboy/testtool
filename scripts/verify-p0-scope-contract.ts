@@ -286,8 +286,8 @@ const prototypeDeriveCaseScope = (item: CaseManifestCase): PrototypeCaseScope =>
     testIntent: "frontend_observation",
     previewRequired: false,
     executionRequired: false,
-    requiredEvidence: isDatePanelInteraction ? ["dom.state", "dom.list", "screenshot"] : ["dom.state"],
-    missingActionTemplate: isDatePanelInteraction ? "collage.datePanelObservation" : null
+    requiredEvidence: isDatePanelInteraction ? ["dateRange.panel.state", "dom.state", "screenshot"] : ["dom.state"],
+    missingActionTemplate: null
   };
 };
 
@@ -371,11 +371,7 @@ const main = (): void => {
       "Prototype result gate should reject observation BLOCKED caused only by selectedMetricFields=0."
     );
     assert.equal(prototypeMissingInstructionSeverity(k01), "error", "Prototype lint should promote K-01 missing section to error.");
-    assert.equal(
-      prototypeScopes[l02.caseNo]?.missingActionTemplate,
-      "collage.datePanelObservation",
-      "Prototype planner should classify L-02 as missing a date-panel observation action template."
-    );
+    assert.equal(prototypeScopes[l02.caseNo]?.missingActionTemplate, null, "Prototype planner should recognize the date-panel observation contract.");
     console.log(
       JSON.stringify(
         {
@@ -404,11 +400,7 @@ const main = (): void => {
   assert.equal(runtimeScopes[b04.caseNo]?.previewRequired, true, "B-04 runtime scope should require preview.");
   assert.equal(runtimeScopes[b09.caseNo]?.testIntent, "preview_execution", "B-09 runtime scope should be preview execution, not download execution.");
   assert.equal(runtimeScopes[n03.caseNo]?.testIntent, "download_execution", "N-03 runtime scope should be download execution.");
-  assert.equal(
-    runtimeScopes[l02.caseNo]?.missingActionTemplate,
-    "collage.datePanelObservation",
-    "L-02 runtime scope should require a date-panel observation action template."
-  );
+  assert.equal(runtimeScopes[l02.caseNo]?.missingActionTemplate, null, "L-02 runtime scope should recognize observeFrontendState/datePanel.");
   assert.equal(hasPreviewAction(previewPlans[b04.caseNo] ?? []), true, "B-04 control case must still route to preview evidence.");
   assert.equal(hasPreviewAction(previewPlans[b09.caseNo] ?? []), true, "B-09 control case must still route to preview evidence.");
   assert.ok(
@@ -421,10 +413,10 @@ const main = (): void => {
   );
 
   const l02Gate = evaluateCapabilityGate(l02, null);
-  const l02SoftPreludeWithoutContractMissing =
+  const l02HasObservationContract =
     l02Gate.supportStatus === "degraded" &&
     l02Gate.blockingReason === null &&
-    JSON.stringify(observationPlans[l02.caseNo]) === JSON.stringify(["collage.openProject", "collage.createReport"]);
+    JSON.stringify(observationPlans[l02.caseNo]) === JSON.stringify(["collage.openProject", "collage.createReport", "collage.observeFrontendState"]);
   const resultGateCurrentlyAcceptsInvalidBlocker = resultGateAcceptsOutOfScopePreviewBlocker();
   const resultGateCurrentlyAcceptsInvalidBlockerWithoutScope = resultGateAcceptsOutOfScopePreviewBlocker(false);
   const k01MissingSectionSeverity = missingInstructionSectionIssueSeverity(k01);
@@ -446,9 +438,9 @@ const main = (): void => {
       "P0 fixed mode expects missing official UI case sections to be an error/requires-review gate, not a warning."
     );
     assert.equal(
-      l02SoftPreludeWithoutContractMissing,
-      false,
-      "P0 fixed mode expects L-02 date-panel interaction to be explicitly classified as missing action template / contract, not only soft prelude."
+      l02HasObservationContract,
+      true,
+      "P0 fixed mode expects L-02 date-panel interaction to use the observeFrontendState contract, not only soft prelude."
     );
   } else {
     assert.equal(
@@ -467,9 +459,9 @@ const main = (): void => {
       "Current-failure mode expects missing official UI case section to still be warning-only before P0 lint fix."
     );
     assert.equal(
-      l02SoftPreludeWithoutContractMissing,
+      l02HasObservationContract,
       true,
-      "Current-failure mode expects L-02 to be only soft prelude without explicit HELPER_CONTRACT_MISSING classification."
+      "Current-failure mode expects L-02 to have the observation contract in this runtime branch."
     );
   }
 
@@ -489,7 +481,7 @@ const main = (): void => {
           resultGateAcceptsOutOfScopePreviewBlockerWithoutCaseScope:
             resultGateCurrentlyAcceptsInvalidBlockerWithoutScope,
           missingOfficialUiCaseSectionSeverity: k01MissingSectionSeverity,
-          l02SoftPreludeWithoutContractMissing
+          l02HasObservationContract
         }
       },
       null,

@@ -79,17 +79,13 @@ export const inferCaseScope = (
       missingActionTemplate: null
     };
   }
-  const missingDatePanelTemplate =
-    isOfficialUiCase(currentCase?.caseNo) &&
-    isFrontendTarget &&
-    isDatePanelObservation(text) &&
-    !isExplicitHelperTemplate(helperHints);
+  const isDatePanel = isDatePanelObservation(text);
   return {
     testIntent: isFrontendTarget || isOfficialUiCase(currentCase?.caseNo) ? "frontend_observation" : "unknown",
     previewRequired: false,
     executionRequired: false,
-    requiredEvidence: missingDatePanelTemplate ? ["dom.state", "dom.list", "screenshot"] : ["dom.state"],
-    missingActionTemplate: missingDatePanelTemplate ? "collage.datePanelObservation" : null
+    requiredEvidence: isDatePanel ? ["dateRange.panel.state", "dom.state", "screenshot"] : ["dom.state"],
+    missingActionTemplate: null
   };
 };
 

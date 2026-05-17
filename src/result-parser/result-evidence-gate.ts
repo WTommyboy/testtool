@@ -258,6 +258,8 @@ const SCREENSHOT_EVIDENCE_PATTERN =
   /(?:\.png\b|\.jpe?g\b|\.webp\b|artifactType["']?\s*[:=]\s*["']?screenshot|截圖(?:路徑|檔案)?["']?\s*[:=]\s*["']?[^"'\s]+\.(?:png|jpe?g|webp)|screenshot(?:Path|File|Artifact|Url)?["']?\s*[:=]\s*["']?[^"'\s]+\.(?:png|jpe?g|webp))/i;
 const VISUAL_FALLBACK_MARKER_PATTERN =
   /(?:screenshotVisual|visual_screenshot|visualObservation|visual_observation|domEvidenceGap|dom_evidence_gap|BLOCKED_NEEDS_VISUAL_REVIEW|PASS_VISUAL_EVIDENCE)/i;
+const TOOL_EXECUTION_UNAVAILABLE_PATTERN =
+  /(?:TOOL_EXECUTION_UNAVAILABLE|browser\s*tool(?:ing)?\s*unavailable|Playwright\s*MCP.{0,40}unavailable|瀏覽器.{0,16}(?:工具|自動化).{0,16}(?:不可用|無法使用)|工具.{0,16}(?:不可用|無法使用))/i;
 
 const isFalseLike = (value: unknown): boolean =>
   value === false || (typeof value === "string" && value.trim().toLowerCase() === "false");
@@ -321,6 +323,45 @@ const hasFrontendObservationVisualFallbackGap = (item: ParsedResultCase, normali
     .filter(Boolean)
     .join("\n");
   return /EVIDENCE_INSUFFICIENT/i.test(text);
+};
+
+const hasBrowserMcpPreflightEvidence = (detail: Record<string, unknown>): boolean => {
+  let found = false;
+  walkDetail(detail, ({ key, value, path }) => {
+    if (found) return;
+    const normalizedPath = path.replace(/\[\d+\]/g, "").replace(/\s+/g, "").toLowerCase();
+    const normalizedKey = key?.replace(/\s+/g, "").toLowerCase() ?? "";
+    if (normalizedPath.includes("browsermcp.preflight") || normalizedPath.includes("browser_mcp.preflight")) {
+      if (typeof value === "string" && /browser_tabs|attempted|failed|ok|success|unavailable/i.test(value)) found = true;
+      if (typeof value === "boolean" || typeof value === "number") found = true;
+      if (value && typeof value === "object" && !Array.isArray(value)) {
+        const record = value as Record<string, unknown>;
+        if (
+          record.attempted === true ||
+          /browser_tabs/i.test(String(record.tool ?? "")) ||
+          /ok|success|failed|unavailable|error/i.test(String(record.status ?? ""))
+        ) {
+          found = true;
+        }
+      }
+    }
+    if ((normalizedKey === "mcptoolcallcount" || normalizedKey === "browsermcptoolcallcount") && typeof value === "number" && value > 0) {
+      found = true;
+    }
+    if (typeof value === "string" && /browser_tabs.{0,80}(?:attempted|called|failed|ok|success|成功|失敗|嘗試)/i.test(value)) {
+      found = true;
+    }
+  });
+  return found;
+};
+
+const hasToolExecutionUnavailableWithoutPreflight = (item: ParsedResultCase, normalizedStatus: string): boolean => {
+  if (normalizedStatus !== "BLOCKED" || !item.detailJson) return false;
+  const text = [item.verdictReason, item.detailJsonRaw, flattenedDetailText(item.detailJson)]
+    .filter(Boolean)
+    .join("\n");
+  if (!TOOL_EXECUTION_UNAVAILABLE_PATTERN.test(text)) return false;
+  return !hasBrowserMcpPreflightEvidence(item.detailJson);
 };
 
 const TOOL_BRIDGE_CONTEXT_EXCLUDED_PATH_PATTERNS = [
@@ -587,6 +628,18 @@ export const evaluateResultEvidenceGate = (input: ResultEvidenceGateInput): Resu
         message: "A frontend-observation result with screenshot evidence but insufficient DOM/ARIA/URL evidence must use an explicit visual fallback contract.",
         context: {
           rule: "Use BLOCKED_NEEDS_VISUAL_REVIEW or PASS_VISUAL_EVIDENCE with evidenceSource=screenshotVisual, screenshotPath, visualObservation, and domEvidenceGap."
+        }
+      });
+    }
+
+    if (hasToolExecutionUnavailableWithoutPreflight(item, status)) {
+      issues.push({
+        severity: "error",
+        code: "RESULT_TOOL_EXECUTION_UNAVAILABLE_WITHOUT_PREFLIGHT",
+        caseNo: item.caseNo,
+        message: "A BLOCKED result cannot use TOOL_EXECUTION_UNAVAILABLE unless browserMcp.preflight/browser_tabs was attempted or equivalent current-run helper browser evidence is cited.",
+        context: {
+          rule: "Before writing TOOL_EXECUTION_UNAVAILABLE, record browserMcp.preflight with attempted=true, tool=browser_tabs, and status."
         }
       });
     }
