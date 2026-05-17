@@ -187,6 +187,8 @@
       "candidateSignals": [
         "visible body text delta after clicking 計算",
         "message contains 欄位未設置完成",
+        "message follows 第 N 欄位，欄位未設置完成",
+        "multiple incomplete rows produce multiple stacked messages",
         "no preview request emitted for invalid setup"
       ],
       "assertAfterAction": [
@@ -228,6 +230,142 @@
       "assertAfterAction": [
         "report list row visible after save or explicit save failure evidence"
       ]
+    },
+    {
+      "id": "projectToolbar.downloadButton",
+      "page": "collageProjectList",
+      "type": "iconButton",
+      "purpose": "Domain semantic child object for toolbar download state.",
+      "candidateSignals": ["toolbar ordered button index 0", "download icon near project list toolbar"],
+      "assertAfterAction": ["disabled/enabled state can be interpreted through projectToolbar semantic map"]
+    },
+    {
+      "id": "projectToolbar.deleteButton",
+      "page": "collageProjectList",
+      "type": "iconButton",
+      "purpose": "Domain semantic child object for toolbar delete state.",
+      "candidateSignals": ["toolbar ordered button index 1", "delete icon near project list toolbar"],
+      "assertAfterAction": ["disabled/enabled state can be interpreted through projectToolbar semantic map"]
+    },
+    {
+      "id": "projectToolbar.createButton",
+      "page": "collageProjectList",
+      "type": "iconButton",
+      "purpose": "Domain semantic child object for toolbar create action.",
+      "candidateSignals": ["toolbar ordered button index 2", "add/create icon near project list toolbar"],
+      "assertAfterAction": ["enabled state or project-limit toast can be observed"]
+    },
+    {
+      "id": "projectLimit.toast",
+      "page": "collageProjectList",
+      "type": "toast",
+      "purpose": "Observe project limit notification after create action.",
+      "candidateSignals": ["toast/status body text after create click", "text contains 已達最高 or 專案"],
+      "assertAfterAction": ["project-limit message visible"]
+    },
+    {
+      "id": "projectList.rowDeleteAction",
+      "page": "collageProjectList",
+      "type": "rowActionText",
+      "purpose": "Row-local delete action for an individual report.",
+      "candidateSignals": ["row operation column", "visible row text 刪除", "appears next to row-local 下載"],
+      "assertAfterAction": ["hover/click target can be identified separately from toolbar delete"]
+    },
+    {
+      "id": "projectList.rowDeleteTooltip",
+      "page": "collageProjectList",
+      "type": "tooltip",
+      "purpose": "Tooltip layer expected by testcase after hovering the row-local delete action.",
+      "candidateSignals": ["tooltip/popover visible after hovering row delete action"],
+      "assertAfterAction": ["tooltip appears, or absence is captured as frontend product gap after real hover"]
+    },
+    {
+      "id": "sourceReportPicker.searchInput",
+      "page": "collageEditor",
+      "type": "searchInput",
+      "purpose": "Search inside opened source report picker.",
+      "candidateSignals": ["input inside source report picker", "search field visible after picker open"],
+      "assertAfterAction": ["typed search value filters visible options"]
+    },
+    {
+      "id": "sourceReportPicker.option",
+      "page": "collageEditor",
+      "type": "pickerOption",
+      "purpose": "Source report picker option selected by visible text.",
+      "candidateSignals": ["option text inside opened source report picker"],
+      "assertAfterAction": ["picker closes and row source text updates after selection"]
+    },
+    {
+      "id": "dateRange.button",
+      "page": "collageEditor",
+      "type": "button",
+      "purpose": "Open official date range panel.",
+      "candidateSignals": ["button aria-label=時間設置", "button showing current date range"],
+      "assertAfterAction": ["date range panel visible", "preview request delta remains zero"]
+    },
+    {
+      "id": "dateRange.timeTypeTab.dynamic",
+      "page": "collageEditor",
+      "type": "tabOrSegment",
+      "purpose": "Dynamic time control inside date range panel.",
+      "candidateSignals": ["visible text 動態 or 動態時間 inside opened date panel"],
+      "assertAfterAction": ["dynamic state can be selected or read"]
+    },
+    {
+      "id": "dateRange.timeTypeTab.static",
+      "page": "collageEditor",
+      "type": "tabOrSegment",
+      "purpose": "Static time control inside date range panel.",
+      "candidateSignals": ["visible text 靜態 or 靜態時間 inside opened date panel"],
+      "assertAfterAction": ["static state can be selected or failed click is captured"]
+    },
+    {
+      "id": "dateRange.preset",
+      "page": "collageEditor",
+      "type": "presetButton",
+      "purpose": "Date preset button inside date range panel.",
+      "candidateSignals": ["visible preset text such as 昨日, 過去 30 天, 最近 30 天"],
+      "assertAfterAction": ["selected preset updates date range state or payload after confirmation/execution"]
+    },
+    {
+      "id": "dateRange.staticDateInput",
+      "page": "collageEditor",
+      "type": "dateInput",
+      "purpose": "Static start/end date inputs inside date range panel.",
+      "candidateSignals": ["date input visible after static time mode is selected"],
+      "assertAfterAction": ["input value matches scripted static date after visible UI entry"]
+    },
+    {
+      "id": "dateRange.action.cancel",
+      "page": "collageEditor",
+      "type": "button",
+      "purpose": "Cancel button inside date range panel.",
+      "candidateSignals": ["visible text 取消 in date panel footer"],
+      "assertAfterAction": ["panel closes and date state remains unchanged"]
+    },
+    {
+      "id": "dateRange.action.confirm",
+      "page": "collageEditor",
+      "type": "button",
+      "purpose": "Confirm button inside date range panel.",
+      "candidateSignals": ["visible text 確定 in date panel footer"],
+      "assertAfterAction": ["date state changes according to selection"]
+    },
+    {
+      "id": "editorToolbar.downloadButton",
+      "page": "collageEditor",
+      "type": "iconButton",
+      "purpose": "Editor download/export action after valid calculation.",
+      "candidateSignals": ["top-right editor download icon", "download action in editor toolbar"],
+      "assertAfterAction": ["download event and toast are associated with same click"]
+    },
+    {
+      "id": "download.toast",
+      "page": "collageEditor",
+      "type": "toast",
+      "purpose": "Download-started notification.",
+      "candidateSignals": ["toast/status text contains 數據已開始下載"],
+      "assertAfterAction": ["download-started toast visible after editor download click"]
     }
   ]
 }

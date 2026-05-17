@@ -9,7 +9,14 @@
     "collage.observation.projectToolbar",
     "collage.observation.reportModeRadio",
     "collage.observation.datePanel",
-    "collage.observation.validationMessage"
+    "collage.observation.validationMessage",
+    "collage.observation.sidebarCompanySharedGroup",
+    "collage.observation.projectLimitToast",
+    "collage.observation.rowActionTooltip",
+    "collage.observation.sourceReportPicker",
+    "collage.observation.dateTimeTypeTab",
+    "collage.observation.datePanelCancel",
+    "collage.observation.editorDownload"
   ],
   "paramsSchema": {
     "type": "object",
@@ -24,7 +31,14 @@
           "projectToolbar",
           "reportModeRadio",
           "datePanel",
-          "validationMessage"
+          "validationMessage",
+          "sidebarCompanySharedGroup",
+          "projectLimitToast",
+          "rowActionTooltip",
+          "sourceReportPicker",
+          "dateTimeTypeTab",
+          "datePanelCancel",
+          "editorDownload"
         ]
       },
       "expectedTextContains": {
@@ -112,7 +126,101 @@
       ],
       "successState": {
         "expectedValidationVisible": true,
+        "expectedMessagePattern": "第 {rowIndex} 欄位，欄位未設置完成",
+        "multipleIncompleteRowsProduceMultipleMessages": true,
         "previewRequestDelta": 0
+      }
+    },
+    "sidebarCompanySharedGroup": {
+      "component": "sidebar.companySharedGroup",
+      "objectIds": [
+        "sidebar.companySharedGroup"
+      ],
+      "requiredEvidence": [
+        "sidebar.companySharedGroup.state"
+      ],
+      "successState": {
+        "expandedAndCollapsedByVisibleUi": true
+      }
+    },
+    "projectLimitToast": {
+      "component": "projectToolbar.actionButtons",
+      "objectIds": [
+        "projectToolbar.createButton",
+        "projectLimit.toast"
+      ],
+      "requiredEvidence": [
+        "projectLimit.toast.state"
+      ],
+      "successState": {
+        "limitToastVisible": true
+      }
+    },
+    "rowActionTooltip": {
+      "component": "projectList.rowDeleteAction",
+      "objectIds": [
+        "projectList.rowDeleteAction",
+        "projectList.rowDeleteTooltip"
+      ],
+      "requiredEvidence": [
+        "projectList.rowActionTooltip.state"
+      ],
+      "successState": {
+        "tooltipLifecycleCaptured": true
+      }
+    },
+    "sourceReportPicker": {
+      "component": "metricRows.sourceReportControl",
+      "objectIds": [
+        "metricRows.sourceReportControl",
+        "sourceReportPicker.searchInput",
+        "sourceReportPicker.option.dailyReport"
+      ],
+      "requiredEvidence": [
+        "sourceReportPicker.state"
+      ],
+      "successState": {
+        "openedSearchedSelectedByVisibleUi": true
+      }
+    },
+    "dateTimeTypeTab": {
+      "component": "dateRange.panel",
+      "objectIds": [
+        "dateRange.timeTypeTab.dynamic",
+        "dateRange.timeTypeTab.static"
+      ],
+      "requiredEvidence": [
+        "dateRange.timeTypeTab.state"
+      ],
+      "successState": {
+        "targetTabStateCaptured": true
+      }
+    },
+    "datePanelCancel": {
+      "component": "dateRange.panel",
+      "objectIds": [
+        "dateRange.panel",
+        "dateRange.action.cancel"
+      ],
+      "requiredEvidence": [
+        "dateRange.cancelFlow.state"
+      ],
+      "successState": {
+        "cancelClosedPanelAndPreservedState": true
+      }
+    },
+    "editorDownload": {
+      "component": "editorToolbar.downloadButton",
+      "objectIds": [
+        "editorToolbar.downloadButton",
+        "download.toast"
+      ],
+      "requiredEvidence": [
+        "editorToolbar.download.state",
+        "download.toast.state"
+      ],
+      "successState": {
+        "downloadStartedAndToastVisible": true
       }
     }
   },

@@ -5,12 +5,14 @@ const requiredFiles = ["AGENTS.md", "xlsx_schema.json", "result_parser_adapter.j
 const recommendedFiles = ["README.md", "locators/README.md", "locators/demo001-locator-registry.json"] as const;
 const contractFiles = [
   "ui-contract.json",
+  "ui-object-vocabulary.json",
   "action-contracts/setMetricRows.json",
   "action-contracts/observeFrontendState.json",
   "evidence-schema.json",
   "lint-rules.json",
   "discovery/page-map.json",
-  "discovery/component-inventory.json"
+  "discovery/component-inventory.json",
+  "discovery/visual-alignment.json"
 ] as const;
 
 type Finding = {
@@ -105,6 +107,28 @@ const validateUiContract = (relPath: string, json: Record<string, unknown>, find
   }
 };
 
+const validateUiObjectVocabulary = (relPath: string, json: Record<string, unknown>, findings: Finding[]): void => {
+  requireString(findings, relPath, json, "schemaVersion");
+  requireString(findings, relPath, json, "domain");
+  const objects = requireRecordArray(findings, relPath, json, "objects");
+  const seenIds = new Set<string>();
+  for (const [index, object] of objects.entries()) {
+    const scopedPath = `${relPath} objects[${index}]`;
+    requireString(findings, scopedPath, object, "id");
+    requireString(findings, scopedPath, object, "page");
+    requireString(findings, scopedPath, object, "component");
+    requireString(findings, scopedPath, object, "objectType");
+    requireStringArray(findings, scopedPath, object, "aliases");
+    requireStringArray(findings, scopedPath, object, "supportedActions");
+    requireStringArray(findings, scopedPath, object, "evidenceObjects");
+    const id = typeof object.id === "string" ? object.id : null;
+    if (id) {
+      if (seenIds.has(id)) findings.push({ level: "error", message: `${relPath} duplicate object id: ${id}` });
+      seenIds.add(id);
+    }
+  }
+};
+
 const validateSetMetricRowsContract = (relPath: string, json: Record<string, unknown>, findings: Finding[]): void => {
   requireString(findings, relPath, json, "schemaVersion");
   requireString(findings, relPath, json, "domain");
@@ -196,14 +220,48 @@ const validateDiscoveryComponentInventory = (relPath: string, json: Record<strin
   }
 };
 
+const validateDiscoveryVisualAlignment = (relPath: string, json: Record<string, unknown>, findings: Finding[]): void => {
+  requireString(findings, relPath, json, "schemaVersion");
+  requireString(findings, relPath, json, "domain");
+  const sources = requireRecordArray(findings, relPath, json, "sources");
+  const objectEvidence = requireRecord(findings, relPath, json, "objectEvidence");
+  const sourceIds = new Set<string>();
+  for (const [index, source] of sources.entries()) {
+    requireString(findings, `${relPath} sources[${index}]`, source, "id");
+    requireString(findings, `${relPath} sources[${index}]`, source, "path");
+    requireStringArray(findings, `${relPath} sources[${index}]`, source, "observedObjects");
+    if (typeof source.id === "string") sourceIds.add(source.id);
+  }
+  if (objectEvidence) {
+    for (const [objectId, evidence] of Object.entries(objectEvidence)) {
+      const scopedPath = `${relPath} objectEvidence.${objectId}`;
+      const evidenceRecord = asRecord(evidence);
+      if (!evidenceRecord) {
+        findings.push({ level: "error", message: `${scopedPath} must be an object` });
+        continue;
+      }
+      requireString(findings, scopedPath, evidenceRecord, "status");
+      requireString(findings, scopedPath, evidenceRecord, "screenContext");
+      requireStringArray(findings, scopedPath, evidenceRecord, "visualCues");
+      for (const sourceId of stringArray(evidenceRecord.sourceIds)) {
+        if (!sourceIds.has(sourceId)) {
+          findings.push({ level: "error", message: `${scopedPath} references unknown sourceId ${sourceId}` });
+        }
+      }
+    }
+  }
+};
+
 const validateContractFile = (relPath: string, json: Record<string, unknown>, findings: Finding[]): void => {
   if (relPath.endsWith("ui-contract.json")) validateUiContract(relPath, json, findings);
+  if (relPath.endsWith("ui-object-vocabulary.json")) validateUiObjectVocabulary(relPath, json, findings);
   if (relPath.endsWith("action-contracts/setMetricRows.json")) validateSetMetricRowsContract(relPath, json, findings);
   if (relPath.endsWith("action-contracts/observeFrontendState.json")) validateObserveFrontendStateContract(relPath, json, findings);
   if (relPath.endsWith("evidence-schema.json")) validateEvidenceSchema(relPath, json, findings);
   if (relPath.endsWith("lint-rules.json")) validateLintRules(relPath, json, findings);
   if (relPath.endsWith("discovery/page-map.json")) validateDiscoveryPageMap(relPath, json, findings);
   if (relPath.endsWith("discovery/component-inventory.json")) validateDiscoveryComponentInventory(relPath, json, findings);
+  if (relPath.endsWith("discovery/visual-alignment.json")) validateDiscoveryVisualAlignment(relPath, json, findings);
 };
 
 const verifyPack = (packDir: string): Finding[] => {

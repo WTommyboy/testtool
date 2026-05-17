@@ -1,0 +1,112 @@
+{
+  "schemaVersion": "ui-object-coverage-fixture-v1",
+  "domain": "BI_OFFICIAL_UI_COLLAGE",
+  "source": {
+    "purpose": "Fixture-only coverage map for the current BI official collage reduced smoke. This is not part of the shared platform action vocabulary.",
+    "oracleFixture": "fixtures/p0-scope-smoke-20260517/oracle.json",
+    "actionFixture": "fixtures/action-vocabulary/biui-collage-r001-v1-6-candidates.json"
+  },
+  "requiredObjectsByCase": [
+    {
+      "caseNo": "BIUI_COLLAGE_R001-B-06",
+      "objectIds": [
+        "metricRows.sourceReportControl",
+        "metricRows.fieldControl",
+        "dateRange.button",
+        "dateRange.panel",
+        "dateRange.preset.past30Days",
+        "dateRange.preset.recent30Days",
+        "preview.calculateButton"
+      ]
+    },
+    {
+      "caseNo": "BIUI_COLLAGE_R001-B-08",
+      "objectIds": [
+        "metricRows.sourceReportControl",
+        "metricRows.fieldControl",
+        "dateRange.button",
+        "dateRange.panel",
+        "dateRange.timeTypeTab.static",
+        "dateRange.staticStartInput",
+        "dateRange.timeTypeTab.dynamic",
+        "preview.calculateButton"
+      ]
+    },
+    {
+      "caseNo": "BIUI_COLLAGE_R001-B-09",
+      "objectIds": [
+        "metricRows.sourceReportControl",
+        "metricRows.fieldControl",
+        "dateRange.button",
+        "dateRange.panel",
+        "dateRange.timeTypeTab.static",
+        "dateRange.staticStartInput",
+        "dateRange.staticEndInput",
+        "preview.calculateButton"
+      ]
+    },
+    {
+      "caseNo": "BIUI_COLLAGE_R001-I-01",
+      "objectIds": ["sidebar.companySharedGroup"]
+    },
+    {
+      "caseNo": "BIUI_COLLAGE_R001-I-07",
+      "objectIds": ["topbar.userButton"]
+    },
+    {
+      "caseNo": "BIUI_COLLAGE_R001-J-02",
+      "objectIds": ["projectToolbar.downloadButton", "projectToolbar.deleteButton", "projectToolbar.createButton"]
+    },
+    {
+      "caseNo": "BIUI_COLLAGE_R001-J-07",
+      "objectIds": ["projectList.rowDeleteAction", "projectList.rowDeleteTooltip"]
+    },
+    {
+      "caseNo": "BIUI_COLLAGE_R001-J-12",
+      "objectIds": ["projectToolbar.createButton", "projectLimit.toast"]
+    },
+    {
+      "caseNo": "BIUI_COLLAGE_R001-K-01",
+      "objectIds": ["reportMode.radioGroup", "reportMode.option.collage"]
+    },
+    {
+      "caseNo": "BIUI_COLLAGE_R001-K-08",
+      "objectIds": [
+        "metricRows.sourceReportControl",
+        "sourceReportPicker.searchInput",
+        "sourceReportPicker.option.dailyReport"
+      ]
+    },
+    {
+      "caseNo": "BIUI_COLLAGE_R001-K-10",
+      "objectIds": ["preview.calculateButton", "validation.toast"]
+    },
+    {
+      "caseNo": "BIUI_COLLAGE_R001-L-02",
+      "objectIds": ["dateRange.button", "dateRange.panel", "dateRange.action.cancel"]
+    },
+    {
+      "caseNo": "BIUI_COLLAGE_R001-L-03",
+      "objectIds": ["dateRange.button", "dateRange.panel", "dateRange.preset.yesterday", "dateRange.action.cancel"]
+    },
+    {
+      "caseNo": "BIUI_COLLAGE_R001-L-09",
+      "objectIds": [
+        "dateRange.button",
+        "dateRange.panel",
+        "dateRange.timeTypeTab.dynamic",
+        "dateRange.timeTypeTab.static"
+      ]
+    },
+    {
+      "caseNo": "BIUI_COLLAGE_R001-N-03",
+      "objectIds": [
+        "metricRows.sourceReportControl",
+        "metricRows.fieldControl",
+        "preview.calculateButton",
+        "editorToolbar.downloadButton",
+        "download.toast"
+      ]
+    }
+  ]
+}

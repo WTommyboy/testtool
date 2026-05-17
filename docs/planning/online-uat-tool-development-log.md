@@ -56,6 +56,18 @@ P0.14 implementation:
 - Design note: xlsx and md should be generated from the same action/object definitions going forward. The xlsx remains the structured testcase source, while md should not invent alternate action wording that drifts from canonical ids.
 - Boundary correction: BI/P0 source provenance and testcase-specific mappings must remain in fixture/dev-log files, not in the shared platform contract or reference document.
 
+P0.15 implementation:
+
+- Added BI official UI object vocabulary: `domain-packs/BI_OFFICIAL_UI_COLLAGE/ui-object-vocabulary.json`
+- Added reduced-scope object coverage fixture: `fixtures/ui-object-vocabulary/biui-collage-r001-p0-required-objects.json`
+- Added screenshot-backed visual alignment discovery: `domain-packs/BI_OFFICIAL_UI_COLLAGE/discovery/visual-alignment.json`
+- Added verifier: `scripts/verify-bi-official-ui-object-vocabulary.ts`
+- Added npm script: `npm run verify:bi-official-ui-object-vocabulary`
+- Updated domain pack files: `ui-contract.json`, `evidence-schema.json`, `discovery/component-inventory.json`, `action-contracts/observeFrontendState.json`
+- Verification result: 29 domain UI objects, 15 fixture cases covered, 28 platform action refs checked, 26 screenshot-confirmed objects, 3 known product gaps, 0 visual review items.
+- Boundary note: this is domain pack data, not platform action data and not a per-domain executable helper. P0 fixture case mappings remain in `fixtures/`, not in `ui-object-vocabulary.json`.
+- P0.15b visual finding after Tommy confirmation: row-local report actions are visible text actions `下載` / `刪除`, so the object id is `projectList.rowDeleteAction`. The row delete tooltip and static date inputs are known product gaps because the tooltip is not implemented and `靜態時間` cannot be clicked. Tommy-provided screenshots confirm `projectLimit.toast` text `已達最高5個專案`, `download.toast` text `數據已開始下載`, and `validation.toast` pattern `第 {rowIndex} 欄位，欄位未設置完成`; multiple incomplete rows produce multiple stacked validation messages.
+
 ## 1. 範圍
 
 本文件涵蓋線上工具端：

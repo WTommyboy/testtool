@@ -276,10 +276,24 @@
         "collage.observation.projectToolbar",
         "collage.observation.reportModeRadio",
         "collage.observation.datePanel",
-        "collage.observation.validationMessage"
+        "collage.observation.validationMessage",
+        "collage.observation.sidebarCompanySharedGroup",
+        "collage.observation.projectLimitToast",
+        "collage.observation.rowActionTooltip",
+        "collage.observation.sourceReportPicker",
+        "collage.observation.dateTimeTypeTab",
+        "collage.observation.datePanelCancel",
+        "collage.observation.editorDownload"
       ]
     }
   ],
+  "uiObjectVocabulary": {
+    "file": "ui-object-vocabulary.json",
+    "policy": [
+      "Platform action ids are generic and shared.",
+      "Official BI UI object ids, locator hints, aliases, and object-level evidence bindings live in this domain pack file."
+    ]
+  },
   "semanticMaps": {
     "topbarUserButton": {
       "component": "topbar.userButton",

@@ -123,7 +123,95 @@
         "requestDelta",
         "asserted"
       ],
+      "optionalFields": [
+        "visibleMessages",
+        "messagePattern",
+        "rowIndexes"
+      ],
       "purpose": "Frontend observation evidence for invalid-operation validation messages."
+    },
+    "sidebar.companySharedGroup.state": {
+      "type": "object",
+      "requiredFields": [
+        "triggeredByVisibleUi",
+        "beforeExpanded",
+        "afterExpanded",
+        "nestedItemsVisible",
+        "asserted"
+      ],
+      "purpose": "Frontend observation evidence for company shared sidebar expand/collapse behavior."
+    },
+    "projectLimit.toast.state": {
+      "type": "object",
+      "requiredFields": [
+        "triggeredByVisibleUi",
+        "visibleText",
+        "asserted"
+      ],
+      "purpose": "Frontend observation evidence for project-limit blocking notification."
+    },
+    "projectList.rowActionTooltip.state": {
+      "type": "object",
+      "requiredFields": [
+        "hoveredTarget",
+        "tooltipVisible",
+        "visibleText",
+        "asserted"
+      ],
+      "purpose": "Frontend observation evidence for row-local action icon tooltip lifecycle."
+    },
+    "sourceReportPicker.state": {
+      "type": "object",
+      "requiredFields": [
+        "openedByVisibleUi",
+        "searchValue",
+        "visibleOptions",
+        "selectedText",
+        "asserted"
+      ],
+      "purpose": "Frontend observation evidence for source-report picker open/search/select behavior."
+    },
+    "dateRange.timeTypeTab.state": {
+      "type": "object",
+      "requiredFields": [
+        "openedByVisibleUi",
+        "targetTab",
+        "beforeSelected",
+        "afterSelected",
+        "asserted"
+      ],
+      "purpose": "Frontend observation evidence for dynamic/static time type tab selection."
+    },
+    "dateRange.cancelFlow.state": {
+      "type": "object",
+      "requiredFields": [
+        "openedByVisibleUi",
+        "temporaryAction",
+        "cancelClicked",
+        "panelClosed",
+        "stateUnchanged",
+        "asserted"
+      ],
+      "purpose": "Frontend observation evidence for date-panel cancel behavior."
+    },
+    "editorToolbar.download.state": {
+      "type": "object",
+      "requiredFields": [
+        "triggeredByVisibleUi",
+        "enabledBeforeClick",
+        "downloadEventObserved",
+        "asserted"
+      ],
+      "purpose": "Frontend/integration evidence for editor toolbar download trigger."
+    },
+    "download.toast.state": {
+      "type": "object",
+      "requiredFields": [
+        "visibleText",
+        "appearedAfterDownloadClick",
+        "asserted"
+      ],
+      "purpose": "Frontend observation evidence for download-started toast."
     },
     "preview.result": {
       "type": "object",

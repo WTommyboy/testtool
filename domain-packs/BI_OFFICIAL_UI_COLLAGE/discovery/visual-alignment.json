@@ -1,0 +1,390 @@
+{
+  "schemaVersion": "domain-ui-object-visual-alignment-v0.1",
+  "domain": "BI_OFFICIAL_UI_COLLAGE",
+  "status": "draft_visual_pass",
+  "purpose": "Screenshot-backed alignment between BI official collage UI objects and the real visible UI. This is domain discovery data, not testcase oracle data and not executable helper code.",
+  "policy": [
+    "Confirmed means the object is visible in the referenced screenshots and its semantics match the domain object id.",
+    "Inferred from same surface means the surrounding component is captured but the exact state or child control is not directly visible.",
+    "Not captured means the object may exist, but the current screenshot set does not prove it.",
+    "Visual mismatch needs review means Codex found a likely naming or semantic mismatch; do not delete or rename without Tommy confirmation.",
+    "Known product gap means Tommy confirmed the expected UI object or interaction is currently missing or broken in the product; runtime should treat real interaction evidence as product FAIL when the testcase targets that frontend behavior."
+  ],
+  "sources": [
+    {
+      "id": "live.homeLoggedIn",
+      "path": "other/bi_v1/live_preflight_screenshots/bi_ui_home_logged_in.png",
+      "screen": "officialHome",
+      "observedObjects": ["topbar.userButton", "sidebar.companySharedGroup"]
+    },
+    {
+      "id": "live.projectList",
+      "path": "other/bi_v1/live_preflight_screenshots/bi_ui_tile_project_page.png",
+      "screen": "collageProjectList",
+      "observedObjects": [
+        "topbar.userButton",
+        "sidebar.companySharedGroup",
+        "projectToolbar.downloadButton",
+        "projectToolbar.deleteButton",
+        "projectToolbar.createButton",
+        "projectList.rowDeleteAction"
+      ]
+    },
+    {
+      "id": "live.editorBlank",
+      "path": "other/bi_v1/live_preflight_screenshots/bi_ui_new_tile_report_editor.png",
+      "screen": "collageEditor",
+      "observedObjects": [
+        "reportMode.radioGroup",
+        "reportMode.option.collage",
+        "metricRows.sourceReportControl",
+        "metricRows.fieldControl",
+        "preview.calculateButton",
+        "dateRange.button",
+        "editorToolbar.downloadButton"
+      ]
+    },
+    {
+      "id": "live.datePanelOpen",
+      "path": "other/bi_v1/live_preflight_screenshots/bi_ui_date_picker_open.png",
+      "screen": "collageEditor.dateRangePanel",
+      "observedObjects": [
+        "dateRange.button",
+        "dateRange.panel",
+        "dateRange.timeTypeTab.dynamic",
+        "dateRange.timeTypeTab.static",
+        "dateRange.preset.yesterday",
+        "dateRange.preset.past30Days",
+        "dateRange.preset.recent30Days",
+        "dateRange.action.cancel"
+      ]
+    },
+    {
+      "id": "live.editorSaved",
+      "path": "other/bi_v1/live_preflight_screenshots/bi_ui_saved_tile_report.png",
+      "screen": "collageEditor.previewResult",
+      "observedObjects": [
+        "metricRows.sourceReportControl",
+        "metricRows.fieldControl",
+        "preview.calculateButton",
+        "dateRange.button",
+        "editorToolbar.downloadButton"
+      ]
+    },
+    {
+      "id": "ui.sourceReportPicker",
+      "path": "other/bi_v1/ui_screenshot/截圖 2026-05-14 晚上9.15.21.png",
+      "screen": "collageEditor.sourceReportPicker",
+      "observedObjects": [
+        "metricRows.sourceReportControl",
+        "sourceReportPicker.searchInput",
+        "sourceReportPicker.option.dailyReport"
+      ]
+    },
+    {
+      "id": "ui.fieldPicker",
+      "path": "other/bi_v1/ui_screenshot/截圖 2026-05-14 晚上9.15.49.png",
+      "screen": "collageEditor.fieldPicker",
+      "observedObjects": ["metricRows.fieldControl"]
+    },
+    {
+      "id": "ui.datePanelOpen",
+      "path": "other/bi_v1/ui_screenshot/截圖 2026-05-14 晚上9.14.50.png",
+      "screen": "collageEditor.dateRangePanel",
+      "observedObjects": [
+        "dateRange.button",
+        "dateRange.panel",
+        "dateRange.timeTypeTab.dynamic",
+        "dateRange.timeTypeTab.static",
+        "dateRange.preset.yesterday",
+        "dateRange.preset.past30Days",
+        "dateRange.preset.recent30Days",
+        "dateRange.action.cancel",
+        "dateRange.action.confirm"
+      ]
+    },
+    {
+      "id": "ui.projectListSelectedRows",
+      "path": "other/bi_v1/ui_screenshot/截圖 2026-05-14 晚上9.21.22.png",
+      "screen": "collageProjectList.selectedRows",
+      "observedObjects": [
+        "projectToolbar.downloadButton",
+        "projectToolbar.deleteButton",
+        "projectToolbar.createButton",
+        "projectList.rowDeleteAction"
+      ]
+    },
+    {
+      "id": "ui.deleteConfirm",
+      "path": "other/bi_v1/ui_screenshot/截圖 2026-05-14 晚上9.20.52.png",
+      "screen": "collageProjectList.deleteConfirm",
+      "observedObjects": ["projectToolbar.deleteButton", "projectList.rowDeleteAction"]
+    },
+    {
+      "id": "tommy.projectLimitToast",
+      "path": "/Users/tommy/Desktop/screenshot/截圖 2026-05-18 清晨5.09.25.png",
+      "screen": "collageProjectList.projectLimitToast",
+      "observedObjects": ["projectLimit.toast"]
+    },
+    {
+      "id": "tommy.downloadToast",
+      "path": "/Users/tommy/Desktop/screenshot/截圖 2026-05-18 清晨5.10.51.png",
+      "screen": "collageEditor.downloadToast",
+      "observedObjects": ["download.toast"]
+    },
+    {
+      "id": "tommy.validationToastSingle",
+      "path": "/Users/tommy/Desktop/screenshot/截圖 2026-05-18 清晨5.20.17.png",
+      "screen": "collageEditor.validationToast.singleMissingColumn",
+      "observedObjects": ["validation.toast"]
+    },
+    {
+      "id": "tommy.validationToastMultiple",
+      "path": "/Users/tommy/Desktop/screenshot/截圖 2026-05-18 清晨5.21.23.png",
+      "screen": "collageEditor.validationToast.multipleMissingColumns",
+      "observedObjects": ["validation.toast"]
+    }
+  ],
+  "objectEvidence": {
+    "topbar.userButton": {
+      "status": "confirmed",
+      "sourceIds": ["live.homeLoggedIn", "live.projectList", "live.editorBlank"],
+      "screenContext": "Top-right app shell user/account button.",
+      "visibleText": ["logged-in user display name"],
+      "visualCues": ["user icon", "outlined header button"],
+      "alignmentNotes": "Matches testcase language for user button/login display observation."
+    },
+    "sidebar.companySharedGroup": {
+      "status": "confirmed",
+      "sourceIds": ["live.homeLoggedIn", "live.projectList"],
+      "screenContext": "Left navigation under the report section.",
+      "visibleText": ["公司共享"],
+      "visualCues": ["expand/collapse chevron", "nested report items"],
+      "alignmentNotes": "The captured UI shows expandable/collapsible company shared navigation."
+    },
+    "projectToolbar.downloadButton": {
+      "status": "confirmed",
+      "sourceIds": ["live.projectList", "ui.projectListSelectedRows"],
+      "screenContext": "Top-right toolbar above the project/report list.",
+      "visibleText": [],
+      "visualCues": ["download icon button", "disabled when no selected rows", "enabled when rows selected"],
+      "alignmentNotes": "Icon-only toolbar button; text assertions should use icon/position/state rather than visible label."
+    },
+    "projectToolbar.deleteButton": {
+      "status": "confirmed",
+      "sourceIds": ["live.projectList", "ui.projectListSelectedRows", "ui.deleteConfirm"],
+      "screenContext": "Top-right toolbar above the project/report list.",
+      "visibleText": [],
+      "visualCues": ["trash icon button", "disabled when no selected rows", "enabled when rows selected"],
+      "alignmentNotes": "Toolbar delete is distinct from row-local delete text action."
+    },
+    "projectToolbar.createButton": {
+      "status": "confirmed",
+      "sourceIds": ["live.projectList", "ui.projectListSelectedRows"],
+      "screenContext": "Top-right toolbar above the project/report list.",
+      "visibleText": [],
+      "visualCues": ["plus icon button"],
+      "alignmentNotes": "Create is icon-only in the project list toolbar."
+    },
+    "projectLimit.toast": {
+      "status": "confirmed",
+      "sourceIds": ["tommy.projectLimitToast"],
+      "screenContext": "Expected transient message after project limit create attempt.",
+      "visibleText": ["已達最高5個專案"],
+      "visualCues": ["black floating tooltip/toast anchored near the collage report create control"],
+      "alignmentNotes": "Confirmed by Tommy screenshot on 2026-05-18."
+    },
+    "projectList.rowDeleteAction": {
+      "status": "confirmed",
+      "sourceIds": ["live.projectList", "ui.projectListSelectedRows", "ui.deleteConfirm"],
+      "screenContext": "Right-side row operation column in the project/report list.",
+      "visibleText": ["刪除"],
+      "visualCues": ["row-local text action", "appears next to row-local 下載"],
+      "alignmentNotes": "Tommy confirmed row-local 下載 and 刪除 are clickable per-report actions, not toolbar icons."
+    },
+    "projectList.rowDeleteTooltip": {
+      "status": "knownProductGap",
+      "sourceIds": ["live.projectList", "ui.projectListSelectedRows"],
+      "screenContext": "Tooltip/popover after hovering the row-local delete action.",
+      "visibleText": ["刪除"],
+      "visualCues": ["hover tooltip"],
+      "alignmentNotes": "Tommy confirmed the frontend currently does not implement this tooltip; this remains a product FAIL target for the tooltip testcase."
+    },
+    "reportMode.radioGroup": {
+      "status": "confirmed",
+      "sourceIds": ["live.editorBlank"],
+      "screenContext": "Left editor panel, 建構方式 section.",
+      "visibleText": ["建構方式", "拼貼模式", "精算模式 / 指標趨勢", "精算模式 / 明細檢視"],
+      "visualCues": ["radio inputs", "selected collage radio by default"],
+      "alignmentNotes": "Matches the default mode observation needed by K-01."
+    },
+    "reportMode.option.collage": {
+      "status": "confirmed",
+      "sourceIds": ["live.editorBlank"],
+      "screenContext": "Left editor panel, first report mode radio option.",
+      "visibleText": ["拼貼模式"],
+      "visualCues": ["checked radio"],
+      "alignmentNotes": "Visible text is 拼貼模式, not only a programmatic value."
+    },
+    "metricRows.sourceReportControl": {
+      "status": "confirmed",
+      "sourceIds": ["live.editorBlank", "live.editorSaved", "ui.sourceReportPicker"],
+      "screenContext": "Metric row formula area, first dropdown after the row label.",
+      "visibleText": ["請選擇報表", "每日報表"],
+      "visualCues": ["row-scoped dropdown", "appears before 的"],
+      "alignmentNotes": "The source report control is row-scoped; locator should not pick sidebar report names."
+    },
+    "sourceReportPicker.searchInput": {
+      "status": "confirmed",
+      "sourceIds": ["ui.sourceReportPicker"],
+      "screenContext": "Opened source report picker popover.",
+      "visibleText": ["請輸入搜尋"],
+      "visualCues": ["search input at top of picker"],
+      "alignmentNotes": "Picker search is visible only after opening the source report dropdown."
+    },
+    "sourceReportPicker.option.dailyReport": {
+      "status": "confirmed",
+      "sourceIds": ["ui.sourceReportPicker"],
+      "screenContext": "Opened source report picker popover.",
+      "visibleText": ["每日報表"],
+      "visualCues": ["option under 共享報表 group"],
+      "alignmentNotes": "Daily report option is visible in the picker list."
+    },
+    "metricRows.fieldControl": {
+      "status": "confirmed",
+      "sourceIds": ["live.editorBlank", "live.editorSaved", "ui.fieldPicker"],
+      "screenContext": "Metric row formula area, field dropdown after 的.",
+      "visibleText": ["--", "新增帳號數", "MAU(帳號)"],
+      "visualCues": ["row-scoped dropdown", "field picker popover"],
+      "alignmentNotes": "Field control depends on selected source report and can be stale after source changes."
+    },
+    "preview.calculateButton": {
+      "status": "confirmed",
+      "sourceIds": ["live.editorBlank", "live.editorSaved"],
+      "screenContext": "Bottom of the editor left panel.",
+      "visibleText": ["計算"],
+      "visualCues": ["dark primary button"],
+      "alignmentNotes": "Visible UI text is 計算; testcase wording 執行 should map to this object."
+    },
+    "dateRange.button": {
+      "status": "confirmed",
+      "sourceIds": ["live.editorBlank", "live.datePanelOpen", "live.editorSaved", "ui.datePanelOpen"],
+      "screenContext": "Top of editor result/preview area.",
+      "visibleText": ["過去 7 天", "2026-03-01 ~ 2026-03-31", "2026-05-07 ~ 2026-05-14"],
+      "visualCues": ["calendar icon", "date range text button"],
+      "alignmentNotes": "Testcase terms 時間設置/時間區間 should map to this button."
+    },
+    "dateRange.panel": {
+      "status": "confirmed",
+      "sourceIds": ["live.datePanelOpen", "ui.datePanelOpen"],
+      "screenContext": "Popover below date range button.",
+      "visibleText": ["日期範圍", "昨日", "今日", "上週", "本週", "上月", "本月", "動態時間", "靜態時間", "取消", "確定"],
+      "visualCues": ["preset column", "two date panes", "footer actions"],
+      "alignmentNotes": "Panel contains dynamic/static controls and does not use a modal dialog layout."
+    },
+    "dateRange.timeTypeTab.dynamic": {
+      "status": "confirmed",
+      "sourceIds": ["live.datePanelOpen", "ui.datePanelOpen"],
+      "screenContext": "Date range panel, top of each date input area.",
+      "visibleText": ["動態時間"],
+      "visualCues": ["selected dark segment", "left and right date panes each have one"],
+      "alignmentNotes": "UI text is 動態時間. The object represents the time type segment, not a browser tab."
+    },
+    "dateRange.timeTypeTab.static": {
+      "status": "confirmed",
+      "sourceIds": ["live.datePanelOpen", "ui.datePanelOpen"],
+      "screenContext": "Date range panel, next to 動態時間.",
+      "visibleText": ["靜態時間"],
+      "visualCues": ["unselected light segment", "left and right date panes each have one"],
+      "alignmentNotes": "Static time segment is visible, but Tommy confirmed the frontend currently does not make it clickable."
+    },
+    "dateRange.preset.yesterday": {
+      "status": "confirmed",
+      "sourceIds": ["live.datePanelOpen", "ui.datePanelOpen"],
+      "screenContext": "Date range panel preset column.",
+      "visibleText": ["昨日"],
+      "visualCues": ["preset button"],
+      "alignmentNotes": "Visible preset text is 昨日."
+    },
+    "dateRange.preset.past30Days": {
+      "status": "confirmed",
+      "sourceIds": ["live.datePanelOpen", "ui.datePanelOpen"],
+      "screenContext": "Date range panel preset column.",
+      "visibleText": ["過去 30 天"],
+      "visualCues": ["preset button"],
+      "alignmentNotes": "Visible text includes spaces: 過去 30 天."
+    },
+    "dateRange.preset.recent30Days": {
+      "status": "confirmed",
+      "sourceIds": ["live.datePanelOpen", "ui.datePanelOpen"],
+      "screenContext": "Date range panel preset column.",
+      "visibleText": ["最近 30 天"],
+      "visualCues": ["preset button"],
+      "alignmentNotes": "Visible text includes spaces: 最近 30 天."
+    },
+    "dateRange.staticStartInput": {
+      "status": "knownProductGap",
+      "sourceIds": ["live.datePanelOpen", "ui.datePanelOpen"],
+      "screenContext": "Date range panel after selecting 靜態時間 for the start side.",
+      "visibleText": [],
+      "visualCues": ["static date input expected inside date panel"],
+      "alignmentNotes": "Tommy confirmed 靜態時間 currently cannot be clicked, so the static start input is unreachable in the current product state."
+    },
+    "dateRange.staticEndInput": {
+      "status": "knownProductGap",
+      "sourceIds": ["live.datePanelOpen", "ui.datePanelOpen"],
+      "screenContext": "Date range panel after selecting 靜態時間 for the end side.",
+      "visibleText": [],
+      "visualCues": ["static date input expected inside date panel"],
+      "alignmentNotes": "Tommy confirmed 靜態時間 currently cannot be clicked, so the static end input is unreachable in the current product state."
+    },
+    "dateRange.action.cancel": {
+      "status": "confirmed",
+      "sourceIds": ["live.datePanelOpen", "ui.datePanelOpen"],
+      "screenContext": "Date range panel footer, lower right.",
+      "visibleText": ["取消"],
+      "visualCues": ["secondary footer button"],
+      "alignmentNotes": "Cancel is directly visible in the panel footer."
+    },
+    "dateRange.action.confirm": {
+      "status": "confirmed",
+      "sourceIds": ["ui.datePanelOpen"],
+      "screenContext": "Date range panel footer, lower right.",
+      "visibleText": ["確定"],
+      "visualCues": ["primary footer button"],
+      "alignmentNotes": "Confirm is visible in the full-width screenshot; some cropped screenshots only show cancel."
+    },
+    "validation.toast": {
+      "status": "confirmed",
+      "sourceIds": ["tommy.validationToastSingle", "tommy.validationToastMultiple"],
+      "screenContext": "Expected validation message after clicking 計算 with incomplete setup.",
+      "visibleText": [
+        "第 1 欄位，欄位未設置完成",
+        "第 2 欄位，欄位未設置完成",
+        "第 3 欄位，欄位未設置完成",
+        "第 4 欄位，欄位未設置完成"
+      ],
+      "textPattern": "第 {rowIndex} 欄位，欄位未設置完成",
+      "multiMessageBehavior": "One toast is shown for each incomplete metric row; the row number changes with the missing row index.",
+      "visualCues": ["white floating toast", "red error icon", "stacked messages when multiple rows are incomplete"],
+      "alignmentNotes": "Confirmed by Tommy screenshots on 2026-05-18. Runtime must match the row-indexed message pattern, not one fixed literal."
+    },
+    "editorToolbar.downloadButton": {
+      "status": "confirmed",
+      "sourceIds": ["live.editorBlank", "live.editorSaved"],
+      "screenContext": "Top-right of editor header.",
+      "visibleText": [],
+      "visualCues": ["download icon button", "disabled in blank editor", "enabled after preview result"],
+      "alignmentNotes": "Icon-only editor download/export control."
+    },
+    "download.toast": {
+      "status": "confirmed",
+      "sourceIds": ["tommy.downloadToast"],
+      "screenContext": "Expected transient message after editor download click.",
+      "visibleText": ["數據已開始下載"],
+      "visualCues": ["white floating toast with green check icon"],
+      "alignmentNotes": "Confirmed by Tommy screenshot on 2026-05-18."
+    }
+  },
+  "needsHumanConfirmation": []
+}

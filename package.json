@@ -35,6 +35,7 @@
     "verify:p0-scope-oracle": "tsx scripts/verify-p0-scope-oracle.ts",
     "verify:platform-action-vocabulary": "tsx scripts/verify-platform-action-vocabulary.ts",
     "verify:action-vocabulary-fixtures": "tsx scripts/verify-action-vocabulary-fixtures.ts",
+    "verify:bi-official-ui-object-vocabulary": "tsx scripts/verify-bi-official-ui-object-vocabulary.ts",
     "verify:official-observation-contract": "tsx scripts/verify-official-observation-contract.ts",
     "verify:all": "npm run typecheck && npm run build --prefix agent && npm run build --prefix web && npm run verify:date-ui-evidence && npm run verify:date-ui-dom-smoke && npm run verify:helper-report-gate && npm run verify:capability-gate && npm run verify:case-advance-policy && npm run verify:tool-bridge && npm run verify:agent-connection-resilience && npm run verify:agent-roundtrip",
     "verify:tool-bridge": "tsx scripts/verify-tool-bridge.ts",
