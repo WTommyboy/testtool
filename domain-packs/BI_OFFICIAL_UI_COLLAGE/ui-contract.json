@@ -4,7 +4,8 @@
   "status": "draft_discovery_seed",
   "purpose": "Define the official BI collage UI pages, components, actions, evidence, and safety boundaries shared by testcase generation, package lint, helper planning, and result gates.",
   "sourceRunIds": [
-    "67990303-2c1b-4559-924a-297a089b5949"
+    "67990303-2c1b-4559-924a-297a089b5949",
+    "ecc53283-18c4-4b29-a405-e7681626e28b"
   ],
   "pages": [
     {
@@ -19,6 +20,8 @@
       ],
       "components": [
         "sidebar.navigation",
+        "sidebar.companySharedGroup",
+        "topbar.userButton",
         "projectList.container"
       ],
       "stateAssertions": [
@@ -38,7 +41,8 @@
       "components": [
         "projectList.container",
         "projectList.emptyState",
-        "projectList.row"
+        "projectList.row",
+        "projectToolbar.actionButtons"
       ],
       "stateAssertions": [
         "projectList.loadedOrEmpty",
@@ -62,9 +66,12 @@
         "metricRows.fieldControl",
         "fieldPicker.popover",
         "dateRange.control",
+        "dateRange.panel",
         "display.control",
+        "reportMode.radioGroup",
         "preview.button",
         "preview.result",
+        "validation.messageArea",
         "save.modal",
         "download.control"
       ],
@@ -88,6 +95,38 @@
       "interactionHazards": [
         "collapsed parent menu",
         "same text reused across navigation levels"
+      ]
+    },
+    {
+      "id": "sidebar.companySharedGroup",
+      "type": "navigationTreeGroup",
+      "purpose": "Observe and toggle the company shared report group in the official sidebar.",
+      "locatorStrategies": [
+        "visible text: 公司共享",
+        "role=button or role=treeitem with expanded/aria-expanded state",
+        "nearest nested report/project links after toggle"
+      ],
+      "stateAssertions": [
+        "expanded state changes after visible UI toggle",
+        "nested shared items become visible or hidden"
+      ],
+      "interactionHazards": [
+        "same group label may appear in multiple sidebar sections",
+        "sidebar rerenders after expansion"
+      ]
+    },
+    {
+      "id": "topbar.userButton",
+      "type": "button",
+      "purpose": "Observe the logged-in user display in the top-right header.",
+      "locatorStrategies": [
+        "topbar/right-side button text containing the user display name",
+        "button with disabled state near user/account region",
+        "visible text pattern from signed-in account"
+      ],
+      "stateAssertions": [
+        "visibleTextMatchesExpectedUser",
+        "buttonVisible"
       ]
     },
     {
@@ -145,6 +184,74 @@
         "field picker can keep stale options after source report switch",
         "same field names can exist under different source reports"
       ]
+    },
+    {
+      "id": "projectToolbar.actionButtons",
+      "type": "iconToolbar",
+      "purpose": "Observe project/report list toolbar actions and disabled states.",
+      "locatorStrategies": [
+        "toolbar region above project/report list",
+        "ordered icon buttons in the toolbar",
+        "button disabled/aria-disabled/computed pointer-events state"
+      ],
+      "stateAssertions": [
+        "download button disabled when no row is selected",
+        "delete button disabled when no row is selected",
+        "create button enabled when the list page is usable"
+      ],
+      "interactionHazards": [
+        "icon buttons may have no accessible name",
+        "tooltip text may only appear after hover",
+        "button order must be interpreted through the domain semantic map"
+      ]
+    },
+    {
+      "id": "reportMode.radioGroup",
+      "type": "radioGroup",
+      "purpose": "Observe the report mode selector on the new report/editor page.",
+      "locatorStrategies": [
+        "input name=report-mode",
+        "radio input value mapped through semanticMaps.reportModeRadio.values",
+        "nearest label text around each radio"
+      ],
+      "stateAssertions": [
+        "collage mode radio is checked by default",
+        "record-centric and metric-centric radios are not checked by default"
+      ]
+    },
+    {
+      "id": "dateRange.panel",
+      "type": "popoverPanel",
+      "purpose": "Observe the official date range panel without requiring preview execution.",
+      "locatorStrategies": [
+        "button aria-label=時間設置",
+        "panel containing preset buttons and dynamic/static tabs",
+        "panel footer containing 取消 and 確定"
+      ],
+      "stateAssertions": [
+        "panel opens after visible UI click",
+        "dynamic/static controls are visible",
+        "expected preset labels are visible",
+        "opening the panel does not trigger preview request"
+      ],
+      "interactionHazards": [
+        "panel may overlay other controls until closed",
+        "dynamic/static controls may be implemented as buttons rather than semantic tabs"
+      ]
+    },
+    {
+      "id": "validation.messageArea",
+      "type": "messageRegion",
+      "purpose": "Observe inline validation messages after invalid frontend operations.",
+      "locatorStrategies": [
+        "visible validation text near metric rows",
+        "toast/alert/status region",
+        "body text delta after invalid click"
+      ],
+      "stateAssertions": [
+        "expected validation message visible",
+        "invalid operation does not trigger preview request"
+      ]
     }
   ],
   "actions": [
@@ -159,8 +266,131 @@
         "collage.metricRows.field",
         "collage.metricRows.stalePickerDetection"
       ]
+    },
+    {
+      "id": "observeFrontendState",
+      "contractFile": "action-contracts/observeFrontendState.json",
+      "purpose": "Read official UI state for frontend presentation and flow cases without requiring preview execution.",
+      "capabilities": [
+        "collage.observation.userButton",
+        "collage.observation.projectToolbar",
+        "collage.observation.reportModeRadio",
+        "collage.observation.datePanel",
+        "collage.observation.validationMessage"
+      ]
     }
   ],
+  "semanticMaps": {
+    "topbarUserButton": {
+      "component": "topbar.userButton",
+      "expectedTextSources": [
+        "case.expectedUserDisplayName",
+        "session.userDisplayName",
+        "testcase.expectedResultText"
+      ],
+      "stateAttributes": [
+        "innerText",
+        "visible",
+        "disabled",
+        "aria-disabled"
+      ],
+      "evidenceObject": "topbar.userButton.state"
+    },
+    "projectToolbar": {
+      "component": "projectToolbar.actionButtons",
+      "buttonOrder": [
+        {
+          "index": 0,
+          "action": "download",
+          "expectedWhenNoSelection": "disabled"
+        },
+        {
+          "index": 1,
+          "action": "delete",
+          "expectedWhenNoSelection": "disabled"
+        },
+        {
+          "index": 2,
+          "action": "create",
+          "expectedWhenNoSelection": "enabled"
+        }
+      ],
+      "stateAttributes": [
+        "disabled",
+        "aria-disabled",
+        "className",
+        "computedStyle.pointerEvents",
+        "computedStyle.opacity"
+      ],
+      "evidenceObject": "projectToolbar.buttons.state"
+    },
+    "reportModeRadio": {
+      "component": "reportMode.radioGroup",
+      "inputName": "report-mode",
+      "values": [
+        {
+          "value": "1",
+          "label": "拼貼模式",
+          "meaning": "collage",
+          "defaultChecked": true
+        },
+        {
+          "value": "2",
+          "label": "明細模式",
+          "meaning": "recordCentric",
+          "defaultChecked": false
+        },
+        {
+          "value": "3",
+          "label": "指標趨勢模式",
+          "meaning": "metricCentric",
+          "defaultChecked": false
+        }
+      ],
+      "stateAttributes": [
+        "checked",
+        "aria-checked",
+        "value",
+        "nearestLabel"
+      ],
+      "evidenceObject": "reportMode.radio.state"
+    },
+    "dateRangePanel": {
+      "component": "dateRange.panel",
+      "trigger": {
+        "ariaLabel": "時間設置"
+      },
+      "requiredVisibleTexts": [
+        "昨日",
+        "今日",
+        "上週",
+        "本週",
+        "上月",
+        "本月",
+        "過去 7 天",
+        "最近 7 天",
+        "過去 30 天",
+        "最近 30 天",
+        "動態",
+        "靜態",
+        "取消",
+        "確定"
+      ],
+      "openingRequestPolicy": "noPreviewRequestDelta",
+      "evidenceObject": "dateRange.panel.state"
+    },
+    "validationMessages": {
+      "component": "validation.messageArea",
+      "knownMessages": [
+        {
+          "id": "metricRowFieldIncomplete",
+          "contains": "欄位未設置完成",
+          "expectedRequestPolicy": "noPreviewRequestDelta"
+        }
+      ],
+      "evidenceObject": "validation.message.state"
+    }
+  },
   "evidenceContract": {
     "file": "evidence-schema.json",
     "policy": [

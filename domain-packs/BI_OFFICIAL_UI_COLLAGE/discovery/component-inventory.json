@@ -31,6 +31,36 @@
       ]
     },
     {
+      "id": "sidebar.companySharedGroup",
+      "page": "officialHome",
+      "type": "navigationGroup",
+      "purpose": "Observe company shared report group expand/collapse behavior.",
+      "candidateSignals": [
+        "visible text: 公司共享",
+        "aria-expanded or expanded class on sidebar group button",
+        "nested shared items appear after toggle"
+      ],
+      "assertAfterAction": [
+        "expanded/collapsed state changes",
+        "nested shared items visibility changes"
+      ]
+    },
+    {
+      "id": "topbar.userButton",
+      "page": "officialHome",
+      "type": "accountButton",
+      "purpose": "Observe the logged-in account display in the header.",
+      "candidateSignals": [
+        "top-right button text contains account display name",
+        "visible text contains Tommy or 劉徐融",
+        "button visible in the app shell after login"
+      ],
+      "assertAfterAction": [
+        "user display text is visible",
+        "button state can be read from disabled/aria-disabled attributes"
+      ]
+    },
+    {
       "id": "projectList.row",
       "page": "collageProjectList",
       "type": "listRow",
@@ -55,6 +85,23 @@
       ],
       "assertAfterAction": [
         "case should become BLOCKED with no-project reason unless testcase is for creation"
+      ]
+    },
+    {
+      "id": "projectToolbar.actionButtons",
+      "page": "collageProjectList",
+      "type": "iconToolbar",
+      "purpose": "Read toolbar button enabled/disabled state without relying on icon-only accessible names.",
+      "candidateSignals": [
+        "ordered icon buttons above project/report list",
+        "first toolbar button maps to download",
+        "second toolbar button maps to delete",
+        "third toolbar button maps to create",
+        "disabled, aria-disabled, pointer-events, opacity state"
+      ],
+      "assertAfterAction": [
+        "download/delete disabled when no report row is selected",
+        "create enabled when page is usable"
       ]
     },
     {
@@ -97,6 +144,54 @@
       "assertAfterAction": [
         "same row displays selected field",
         "field picker signature matches selected source report"
+      ]
+    },
+    {
+      "id": "reportMode.radioGroup",
+      "page": "collageEditor",
+      "type": "radioGroup",
+      "purpose": "Read default report mode selection.",
+      "candidateSignals": [
+        "input name=report-mode",
+        "radio values 1, 2, 3",
+        "nearest labels: 拼貼模式, 明細模式, 指標趨勢模式",
+        "checked or aria-checked state"
+      ],
+      "assertAfterAction": [
+        "value 1 / 拼貼模式 is checked by default",
+        "other report modes are not checked by default"
+      ]
+    },
+    {
+      "id": "dateRange.panel",
+      "page": "collageEditor",
+      "type": "popoverPanel",
+      "purpose": "Observe official date panel composition and open behavior.",
+      "candidateSignals": [
+        "trigger button aria-label=時間設置",
+        "visible preset labels: 昨日, 今日, 上週, 本週, 上月, 本月",
+        "visible range labels: 過去 7 天, 最近 7 天, 過去 30 天, 最近 30 天",
+        "dynamic/static controls: 動態, 靜態",
+        "footer actions: 取消, 確定"
+      ],
+      "assertAfterAction": [
+        "panel opens after visible UI click",
+        "opening panel does not emit preview request"
+      ]
+    },
+    {
+      "id": "validation.messageArea",
+      "page": "collageEditor",
+      "type": "validationRegion",
+      "purpose": "Observe inline validation after invalid frontend interactions.",
+      "candidateSignals": [
+        "visible body text delta after clicking 計算",
+        "message contains 欄位未設置完成",
+        "no preview request emitted for invalid setup"
+      ],
+      "assertAfterAction": [
+        "expected validation text is visible",
+        "request delta remains zero for blocked invalid operation"
       ]
     },
     {

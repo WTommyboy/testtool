@@ -1,0 +1,151 @@
+{
+  "schemaVersion": "domain-action-contract-v0.1",
+  "domain": "BI_OFFICIAL_UI_COLLAGE",
+  "action": "observeFrontendState",
+  "status": "draft_contract",
+  "purpose": "Collect structured frontend observation evidence for official collage UI cases without requiring preview execution.",
+  "capabilities": [
+    "collage.observation.userButton",
+    "collage.observation.projectToolbar",
+    "collage.observation.reportModeRadio",
+    "collage.observation.datePanel",
+    "collage.observation.validationMessage"
+  ],
+  "paramsSchema": {
+    "type": "object",
+    "required": [
+      "observationType"
+    ],
+    "properties": {
+      "observationType": {
+        "type": "string",
+        "enum": [
+          "userButton",
+          "projectToolbar",
+          "reportModeRadio",
+          "datePanel",
+          "validationMessage"
+        ]
+      },
+      "expectedTextContains": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "expectedValidationMessageId": {
+        "type": "string",
+        "minLength": 1
+      },
+      "clickTarget": {
+        "type": "string",
+        "description": "Visible UI target to click before observing, such as dateRange.trigger or preview.calculate."
+      }
+    },
+    "additionalProperties": false
+  },
+  "declarativePlan": [
+    {
+      "op": "browserMcpPreflight",
+      "saveAs": "browserMcp.preflight"
+    },
+    {
+      "op": "ensurePage",
+      "pageFrom": "caseScope.targetPage"
+    },
+    {
+      "op": "observeBySemanticMap",
+      "semanticMapFrom": "params.observationType",
+      "saveAsFrom": "semanticMap.evidenceObject"
+    }
+  ],
+  "observationTypes": {
+    "userButton": {
+      "component": "topbar.userButton",
+      "semanticMap": "topbarUserButton",
+      "requiredEvidence": [
+        "topbar.userButton.state"
+      ],
+      "successState": {
+        "visible": true,
+        "visibleTextMatchesExpected": true
+      }
+    },
+    "projectToolbar": {
+      "component": "projectToolbar.actionButtons",
+      "semanticMap": "projectToolbar",
+      "requiredEvidence": [
+        "projectToolbar.buttons.state"
+      ],
+      "successState": {
+        "semanticButtonStatesMatch": true
+      }
+    },
+    "reportModeRadio": {
+      "component": "reportMode.radioGroup",
+      "semanticMap": "reportModeRadio",
+      "requiredEvidence": [
+        "reportMode.radio.state"
+      ],
+      "successState": {
+        "defaultCollageChecked": true
+      }
+    },
+    "datePanel": {
+      "component": "dateRange.panel",
+      "semanticMap": "dateRangePanel",
+      "requiredEvidence": [
+        "dateRange.panel.state"
+      ],
+      "successState": {
+        "openedByVisibleUi": true,
+        "requiredTextsVisible": true,
+        "previewRequestDelta": 0
+      }
+    },
+    "validationMessage": {
+      "component": "validation.messageArea",
+      "semanticMap": "validationMessages",
+      "requiredEvidence": [
+        "validation.message.state"
+      ],
+      "successState": {
+        "expectedValidationVisible": true,
+        "previewRequestDelta": 0
+      }
+    }
+  },
+  "locatorPolicy": {
+    "readOnlyDomAllowedFor": [
+      "text",
+      "visible state",
+      "disabled state",
+      "checked state",
+      "aria state",
+      "computed style",
+      "nearest label",
+      "request count delta"
+    ],
+    "visibleUiRequiredFor": [
+      "date panel opening",
+      "invalid operation validation trigger"
+    ],
+    "forbidden": [
+      "direct product API setup",
+      "internal JavaScript setters",
+      "DOM mutation",
+      "programmatic click through evaluate"
+    ]
+  },
+  "requiredEvidence": [
+    "browserMcp.preflight",
+    "one observationTypes.*.requiredEvidence object"
+  ],
+  "blockerCodes": [
+    "TOOL_EXECUTION_UNAVAILABLE_WITHOUT_PREFLIGHT",
+    "OBSERVATION_SEMANTIC_MAP_MISSING",
+    "EVIDENCE_INSUFFICIENT",
+    "BLOCKED_NEEDS_VISUAL_REVIEW"
+  ]
+}

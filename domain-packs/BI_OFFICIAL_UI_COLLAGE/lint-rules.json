@@ -65,6 +65,30 @@
         "steps that assume a globally visible field option is enough"
       ],
       "message": "Official collage field selection is row-scoped and source-dependent; testcase steps must not assume global field text is sufficient."
+    },
+    {
+      "id": "BI_OFFICIAL_COLLAGE_FRONTEND_OBSERVATION_TEMPLATE_REQUIRED",
+      "severity": "warning_until_gen3_gate",
+      "appliesWhen": {
+        "domain": "BI_OFFICIAL_UI_COLLAGE",
+        "testTarget": [
+          "前端呈現",
+          "功能流程"
+        ],
+        "caseGroups": [
+          "I",
+          "J",
+          "K",
+          "L",
+          "M",
+          "N"
+        ]
+      },
+      "require": [
+        "caseScope.testIntent=frontend_observation or actionContract=observeFrontendState",
+        "requiredEvidence references a frontend observation evidence object"
+      ],
+      "message": "Official UI observation cases must declare which UI state is under test. They should not fall back to preview-only selected-field or network evidence."
     }
   ]
 }

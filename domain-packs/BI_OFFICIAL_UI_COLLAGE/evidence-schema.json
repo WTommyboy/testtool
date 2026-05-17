@@ -66,6 +66,65 @@
         "status"
       ]
     },
+    "browserMcp.preflight": {
+      "type": "object",
+      "requiredFields": [
+        "attempted",
+        "tool",
+        "status",
+        "timestamp"
+      ],
+      "purpose": "Prove whether browser MCP was actually attempted before a case records TOOL_EXECUTION_UNAVAILABLE."
+    },
+    "topbar.userButton.state": {
+      "type": "object",
+      "requiredFields": [
+        "visible",
+        "visibleText",
+        "asserted"
+      ],
+      "purpose": "Frontend observation evidence for logged-in user button text and visibility."
+    },
+    "projectToolbar.buttons.state": {
+      "type": "object",
+      "requiredFields": [
+        "buttons",
+        "semanticMap",
+        "asserted"
+      ],
+      "purpose": "Frontend observation evidence for icon-only toolbar enabled/disabled states."
+    },
+    "reportMode.radio.state": {
+      "type": "object",
+      "requiredFields": [
+        "inputName",
+        "options",
+        "selectedValue",
+        "selectedLabel",
+        "asserted"
+      ],
+      "purpose": "Frontend observation evidence for default report mode selection."
+    },
+    "dateRange.panel.state": {
+      "type": "object",
+      "requiredFields": [
+        "openedByVisibleUi",
+        "visibleTexts",
+        "requestDelta",
+        "asserted"
+      ],
+      "purpose": "Frontend observation evidence for date panel composition without preview execution."
+    },
+    "validation.message.state": {
+      "type": "object",
+      "requiredFields": [
+        "triggeredByVisibleUi",
+        "visibleText",
+        "requestDelta",
+        "asserted"
+      ],
+      "purpose": "Frontend observation evidence for invalid-operation validation messages."
+    },
     "preview.result": {
       "type": "object",
       "requiredFields": [
@@ -132,6 +191,9 @@
     "FIELD_PICKER_STALE_AFTER_SOURCE_CHANGE": "Field picker options did not refresh after changing the source report.",
     "FIELD_PICKER_SOURCE_MISMATCH": "Field picker options appear to belong to a different source report than the row source.",
     "EXECUTE_PRECONDITION_NO_SELECTED_FIELDS": "Preview execute was blocked because no metric field was selected.",
-    "EVIDENCE_INSUFFICIENT": "Required current-run evidence was not collected."
+    "EVIDENCE_INSUFFICIENT": "Required current-run evidence was not collected.",
+    "TOOL_EXECUTION_UNAVAILABLE_WITHOUT_PREFLIGHT": "A case claimed browser tool execution was unavailable without browserMcp.preflight evidence.",
+    "OBSERVATION_SEMANTIC_MAP_MISSING": "The DOM state was readable, but the domain pack lacked a semantic map to interpret it.",
+    "BLOCKED_NEEDS_VISUAL_REVIEW": "Structured observation evidence was insufficient and current-run screenshot review is required."
   }
 }
