@@ -1,0 +1,108 @@
+{
+  "schemaVersion": "p0-scope-smoke-oracle-v1",
+  "fixtureId": "P0_SCOPE_SMOKE_BIUI_COLLAGE_R001_20260517_TOMMY_ORACLE",
+  "domain": "BI_OFFICIAL_UI_COLLAGE",
+  "source": {
+    "kind": "manual_human_oracle",
+    "author": "Tommy",
+    "sourcePath": "/Users/tommy/Downloads/codex_galaxy/BI_UAT_ROUNDS/p0_scope_smoke_20260517/P0_SCOPE_SMOKE_測試案例_BIUI_COLLAGE_R001_20260517_tommy_checkreport copy.md",
+    "capturedAt": "2026-05-18 Asia/Taipei"
+  },
+  "scope": {
+    "testcaseRound": "P0_SCOPE_SMOKE_測試案例_BIUI_COLLAGE_R001_20260517",
+    "caseCount": 15,
+    "purpose": "Temporary calibration and regression fixture for P0 route/judgment quality.",
+    "nonGoals": [
+      "Not platform source of truth.",
+      "Not BI domain-pack permanent truth.",
+      "Not required input for normal future UAT testcase authoring."
+    ]
+  },
+  "knownBaseline": {
+    "runId": "1762c1b2-bc42-47f0-80b6-d1ef10a0f713",
+    "expectedMatchCount": 3,
+    "expectedMismatchCount": 12,
+    "expectedMatchingCaseNos": [
+      "BIUI_COLLAGE_R001-I-07",
+      "BIUI_COLLAGE_R001-J-02",
+      "BIUI_COLLAGE_R001-K-01"
+    ]
+  },
+  "cases": [
+    {
+      "caseNo": "BIUI_COLLAGE_R001-B-06",
+      "expectedStatus": "PASS",
+      "manualObservation": "過去30天與最近30天兩者的起迄日期有相差一天。"
+    },
+    {
+      "caseNo": "BIUI_COLLAGE_R001-B-08",
+      "expectedStatus": "FAIL",
+      "manualObservation": "靜態時間頁籤無法點擊，無法設置符合腳本的指定時間型態。"
+    },
+    {
+      "caseNo": "BIUI_COLLAGE_R001-B-09",
+      "expectedStatus": "FAIL",
+      "manualObservation": "靜態時間頁籤無法點擊，無法設置符合腳本的指定時間型態。"
+    },
+    {
+      "caseNo": "BIUI_COLLAGE_R001-I-01",
+      "expectedStatus": "PASS",
+      "manualObservation": "公司共享側欄可以順利展開與收合。"
+    },
+    {
+      "caseNo": "BIUI_COLLAGE_R001-I-07",
+      "expectedStatus": "PASS",
+      "manualObservation": "右上使用者按鈕正常顯示 Tommy LH(劉徐融)。"
+    },
+    {
+      "caseNo": "BIUI_COLLAGE_R001-J-02",
+      "expectedStatus": "PASS",
+      "manualObservation": "未勾選下下載/刪除 icon disabled。"
+    },
+    {
+      "caseNo": "BIUI_COLLAGE_R001-J-07",
+      "expectedStatus": "FAIL",
+      "manualObservation": "hover 刪除 icon 未出現 tooltip。"
+    },
+    {
+      "caseNo": "BIUI_COLLAGE_R001-J-12",
+      "expectedStatus": "PASS",
+      "manualObservation": "專案數達到 5 個時，新增按鈕點擊後出現已達最高5個專案提示。"
+    },
+    {
+      "caseNo": "BIUI_COLLAGE_R001-K-01",
+      "expectedStatus": "PASS",
+      "manualObservation": "進入頁面後直接選擇拼貼模式。"
+    },
+    {
+      "caseNo": "BIUI_COLLAGE_R001-K-08",
+      "expectedStatus": "PASS",
+      "manualObservation": "主欄位的報表選擇可開啟、搜尋、選取。"
+    },
+    {
+      "caseNo": "BIUI_COLLAGE_R001-K-10",
+      "expectedStatus": "PASS",
+      "manualObservation": "只有一列且該列未設置時點擊計算，會跳出第 1 欄位，欄位未設置完成。"
+    },
+    {
+      "caseNo": "BIUI_COLLAGE_R001-L-02",
+      "expectedStatus": "PASS",
+      "manualObservation": "日期面板可正常展開與關閉。"
+    },
+    {
+      "caseNo": "BIUI_COLLAGE_R001-L-03",
+      "expectedStatus": "PASS",
+      "manualObservation": "日期面板點擊取消可正常關閉收合。"
+    },
+    {
+      "caseNo": "BIUI_COLLAGE_R001-L-09",
+      "expectedStatus": "FAIL",
+      "manualObservation": "靜態時間無法點擊與切換。"
+    },
+    {
+      "caseNo": "BIUI_COLLAGE_R001-N-03",
+      "expectedStatus": "PASS",
+      "manualObservation": "設置欄位並計算後，下載按鈕可點擊、可下載，並出現數據已開始下載提示。"
+    }
+  ]
+}

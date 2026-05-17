@@ -1,12 +1,60 @@
 # 線上 UAT Tool 開發與規劃日誌
 
-最後更新：2026-05-17
+最後更新：2026-05-18
 
 本文件記錄「UAT Tool 線上派工 + Mac Agent」這條路徑的歷史決策、設計理由、目前架構與後續待辦。它的用途是跨聊天室、跨 session 交接，不取代 `AGENTS.md`、Layer rules、authoring spec 或實作 spec。
 
 每次修改線上工具的 run packet、Mac Agent、Tool Bridge、rule index、current case pack、result pipeline、evidence gate、部署分支或 production 架構時，請同步更新本文件。
 
 ---
+
+## 2026-05-18 - P0 scope oracle and vocabulary-first reset
+
+Latest reduced dev run:
+
+- Run ID: `1762c1b2-bc42-47f0-80b6-d1ef10a0f713`
+- Result: the run completed and no longer collapsed into all BLOCKED, but only the simplest direct-observation cases matched Tommy's manual check (`I-07`, `J-02`, `K-01`). The next problem is judgment/routing quality, not only run containment.
+- Manual oracle: `/Users/tommy/Downloads/codex_galaxy/BI_UAT_ROUNDS/p0_scope_smoke_20260517/P0_SCOPE_SMOKE_測試案例_BIUI_COLLAGE_R001_20260517_tommy_checkreport copy.md`
+
+Decision:
+
+- The 15-case oracle is a temporary calibration/regression artifact for this reduced testcase and product state. It must not be promoted into the platform layer or the `BI_OFFICIAL_UI_COLLAGE` domain pack as permanent truth.
+- Normal future UAT must not require a manual oracle. The oracle is used here because P0 is calibrating route selection and result judgment after several failed reduced runs.
+- The next P0 work is vocabulary-first: define stable platform action names, define official BI UI object names in the domain pack, route cases through `action + target + role + expectedOutcome + evidenceRequirements`, and then regenerate the reduced testcase from those definitions.
+
+Planned order:
+
+1. Freeze the 15-case oracle and add an offline comparator.
+2. Add platform action vocabulary/schema.
+3. Add official BI collage UI object vocabulary for the reduced smoke scope.
+4. Wire planner/capability gate/helper plan/result gate to structured action/object references.
+5. Run Codex offline route/judgment smoke.
+6. Generate the next reduced xlsx/md from the vocabulary.
+7. Repair remaining case templates under the new structure.
+8. Run a small live smoke before asking Tommy for another dev UAT.
+
+This preserves the long-term architecture: Domain UI Discovery -> UI Contract -> Case Scope -> Action Template -> Evidence Contract -> Result Contract. It does not add per-domain small agents or arbitrary BI-only helpers.
+
+P0.13 implementation:
+
+- Added oracle fixture: `fixtures/p0-scope-smoke-20260517/oracle.json`
+- Added 1762 actual baseline fixture: `fixtures/p0-scope-smoke-20260517/run-1762-results.json`
+- Added comparator: `scripts/verify-p0-scope-oracle.ts`
+- Added npm script: `npm run verify:p0-scope-oracle`
+- Verification result: bundled baseline and parsed archive `/Users/tommy/Downloads/UAT_archive_1762c1b2-bc42-47f0-80b6-d1ef10a0f713.md` both produce 3 matches / 12 mismatches, matching cases `BIUI_COLLAGE_R001-I-07`, `BIUI_COLLAGE_R001-J-02`, and `BIUI_COLLAGE_R001-K-01`.
+
+P0.14 implementation:
+
+- Added platform action vocabulary contract: `contracts/platform-action-vocabulary.v1.json`
+- Added reference doc: `docs/refactor/platform-action-vocabulary-v1.md`
+- Added extracted candidate fixture from 108+15 testcase sources: `fixtures/action-vocabulary/biui-collage-r001-v1-6-candidates.json`
+- Added generic verifier: `scripts/verify-platform-action-vocabulary.ts`
+- Added fixture coverage verifier: `scripts/verify-action-vocabulary-fixtures.ts`
+- Added npm script: `npm run verify:platform-action-vocabulary`
+- Added npm script: `npm run verify:action-vocabulary-fixtures`
+- Verification result: platform verifier validates 42 generic actions total, including 19 primitives, 17 assertions, 6 composites; fixture verifier covers all 23 extracted candidate action ids and all 15 P0 reduced-smoke required action mappings.
+- Design note: xlsx and md should be generated from the same action/object definitions going forward. The xlsx remains the structured testcase source, while md should not invent alternate action wording that drifts from canonical ids.
+- Boundary correction: BI/P0 source provenance and testcase-specific mappings must remain in fixture/dev-log files, not in the shared platform contract or reference document.
 
 ## 1. 範圍
 

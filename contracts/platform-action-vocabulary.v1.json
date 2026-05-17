@@ -1,0 +1,477 @@
+{
+  "schemaVersion": "platform-action-vocabulary-v1",
+  "status": "draft",
+  "updatedAt": "2026-05-18",
+  "purpose": "Stable platform-level action names for testcase authoring, planner routing, helper execution plans, interaction logs, and result-gate evidence checks.",
+  "boundaries": {
+    "platformOwns": [
+      "generic action ids",
+      "action kind taxonomy",
+      "lifecycle roles",
+      "expected outcome names",
+      "interaction logging vocabulary",
+      "assertion semantics that are not domain-specific"
+    ],
+    "domainPackOwns": [
+      "UI object ids",
+      "domain aliases and locator maps",
+      "domain-specific action templates",
+      "allowed evidence sources per object",
+      "domain hazards and cleanup semantics"
+    ],
+    "testcaseOwns": [
+      "case-specific values",
+      "target UI object ids",
+      "testTarget",
+      "judgmentPolicy",
+      "requiredActions",
+      "expectedOutcome per action"
+    ]
+  },
+  "roles": [
+    "precondition",
+    "under_test",
+    "verification",
+    "cleanup"
+  ],
+  "expectedOutcomes": [
+    "succeeded",
+    "disabled_or_no_change",
+    "visible",
+    "hidden",
+    "text_matches",
+    "value_matches",
+    "selected",
+    "checked",
+    "unchecked",
+    "state_changed",
+    "state_unchanged",
+    "request_sent",
+    "request_not_sent",
+    "download_started",
+    "toast_visible",
+    "tooltip_visible"
+  ],
+  "actions": [
+    {
+      "id": "navigate",
+      "kind": "primitive",
+      "stability": "v1_supported",
+      "summary": "Move to a page, route, tab, or workflow entry point through allowed UI/navigation mechanisms.",
+      "aliases": ["進入", "前往", "導航", "開啟頁面"],
+      "requiresUserInteraction": false,
+      "allowedRoles": ["precondition", "cleanup"],
+      "defaultEvidence": ["url", "domSnapshot"]
+    },
+    {
+      "id": "open",
+      "kind": "primitive",
+      "stability": "v1_supported",
+      "summary": "Open a panel, picker, menu, modal, project, report, or expandable region.",
+      "aliases": ["開啟", "打開", "展開"],
+      "requiresUserInteraction": true,
+      "allowedRoles": ["precondition", "under_test", "verification", "cleanup"],
+      "defaultEvidence": ["interactionLog", "domSnapshot", "screenshot"]
+    },
+    {
+      "id": "close",
+      "kind": "primitive",
+      "stability": "v1_supported",
+      "summary": "Close or collapse a panel, menu, modal, picker, or expandable region.",
+      "aliases": ["關閉", "收合", "關掉"],
+      "requiresUserInteraction": true,
+      "allowedRoles": ["under_test", "verification", "cleanup"],
+      "defaultEvidence": ["interactionLog", "domSnapshot"]
+    },
+    {
+      "id": "click",
+      "kind": "primitive",
+      "stability": "v1_supported",
+      "summary": "Click a target UI object using real user interaction.",
+      "aliases": ["點擊", "點選", "按下", "點按"],
+      "requiresUserInteraction": true,
+      "allowedRoles": ["precondition", "under_test", "verification", "cleanup"],
+      "defaultEvidence": ["interactionLog", "domSnapshot"]
+    },
+    {
+      "id": "hover",
+      "kind": "primitive",
+      "stability": "v1_supported",
+      "summary": "Move pointer over a target UI object and observe hover state.",
+      "aliases": ["hover", "滑鼠移入", "游標移入"],
+      "requiresUserInteraction": true,
+      "allowedRoles": ["under_test", "verification"],
+      "defaultEvidence": ["interactionLog", "domSnapshot", "screenshot"]
+    },
+    {
+      "id": "type",
+      "kind": "primitive",
+      "stability": "v1_supported",
+      "summary": "Type text into an input-like UI object.",
+      "aliases": ["輸入", "填入", "鍵入"],
+      "requiresUserInteraction": true,
+      "allowedRoles": ["precondition", "under_test"],
+      "defaultEvidence": ["interactionLog", "domSnapshot"]
+    },
+    {
+      "id": "clear",
+      "kind": "primitive",
+      "stability": "v1_supported",
+      "summary": "Clear an input, selection, row, filter, or temporary value through UI.",
+      "aliases": ["清空", "清除"],
+      "requiresUserInteraction": true,
+      "allowedRoles": ["precondition", "under_test", "cleanup"],
+      "defaultEvidence": ["interactionLog", "domSnapshot"]
+    },
+    {
+      "id": "select",
+      "kind": "primitive",
+      "stability": "v1_supported",
+      "summary": "Select an option, radio, tab, checkbox, list item, row, field, or menu item.",
+      "aliases": ["選取", "選擇", "勾選", "切換", "設為"],
+      "requiresUserInteraction": true,
+      "allowedRoles": ["precondition", "under_test", "cleanup"],
+      "defaultEvidence": ["interactionLog", "domSnapshot"]
+    },
+    {
+      "id": "confirm",
+      "kind": "primitive",
+      "stability": "v1_supported",
+      "summary": "Confirm, submit, apply, save, or accept a UI operation.",
+      "aliases": ["確認", "確定", "套用", "送出", "儲存"],
+      "requiresUserInteraction": true,
+      "allowedRoles": ["under_test", "verification", "cleanup"],
+      "defaultEvidence": ["interactionLog", "domSnapshot", "networkRequest"]
+    },
+    {
+      "id": "cancel",
+      "kind": "primitive",
+      "stability": "v1_supported",
+      "summary": "Cancel an in-progress panel/modal/form operation without applying changes.",
+      "aliases": ["取消", "不儲存", "放棄"],
+      "requiresUserInteraction": true,
+      "allowedRoles": ["under_test", "verification", "cleanup"],
+      "defaultEvidence": ["interactionLog", "domSnapshot"]
+    },
+    {
+      "id": "search",
+      "kind": "primitive",
+      "stability": "v1_supported",
+      "summary": "Enter a search term and observe filtered choices/results.",
+      "aliases": ["搜尋", "查找", "過濾"],
+      "requiresUserInteraction": true,
+      "allowedRoles": ["precondition", "under_test"],
+      "defaultEvidence": ["interactionLog", "domSnapshot"]
+    },
+    {
+      "id": "execute",
+      "kind": "primitive",
+      "stability": "v1_supported",
+      "summary": "Trigger a calculation, preview, run, query, or processing command.",
+      "aliases": ["執行", "計算", "預覽"],
+      "requiresUserInteraction": true,
+      "allowedRoles": ["under_test", "verification"],
+      "defaultEvidence": ["interactionLog", "networkRequest", "domSnapshot"]
+    },
+    {
+      "id": "create",
+      "kind": "primitive",
+      "stability": "v1_supported",
+      "summary": "Create or add a new item, row, field, filter, project, or report.",
+      "aliases": ["新增", "建立", "加入"],
+      "requiresUserInteraction": true,
+      "allowedRoles": ["precondition", "under_test", "cleanup"],
+      "defaultEvidence": ["interactionLog", "domSnapshot"]
+    },
+    {
+      "id": "delete",
+      "kind": "primitive",
+      "stability": "v1_supported",
+      "summary": "Delete or remove a target item through UI, subject to irreversible-operation policy.",
+      "aliases": ["刪除", "移除"],
+      "requiresUserInteraction": true,
+      "allowedRoles": ["under_test", "cleanup"],
+      "defaultEvidence": ["interactionLog", "domSnapshot", "toolBridge"]
+    },
+    {
+      "id": "download",
+      "kind": "primitive",
+      "stability": "v1_supported",
+      "summary": "Trigger or verify a download/export action.",
+      "aliases": ["下載", "匯出", "CSV"],
+      "requiresUserInteraction": true,
+      "allowedRoles": ["under_test", "verification"],
+      "defaultEvidence": ["interactionLog", "downloadArtifact", "toast"]
+    },
+    {
+      "id": "pressKey",
+      "kind": "primitive",
+      "stability": "v1_planned",
+      "summary": "Press a keyboard key such as Escape, Enter, Tab, or Arrow keys.",
+      "aliases": ["按鍵", "Escape", "Enter"],
+      "requiresUserInteraction": true,
+      "allowedRoles": ["under_test", "cleanup"],
+      "defaultEvidence": ["interactionLog", "domSnapshot"]
+    },
+    {
+      "id": "scroll",
+      "kind": "primitive",
+      "stability": "v1_planned",
+      "summary": "Scroll a page, container, dropdown, or virtualized list to reveal targets.",
+      "aliases": ["滾動", "捲動"],
+      "requiresUserInteraction": true,
+      "allowedRoles": ["precondition", "under_test"],
+      "defaultEvidence": ["interactionLog", "domSnapshot"]
+    },
+    {
+      "id": "upload",
+      "kind": "primitive",
+      "stability": "v1_planned",
+      "summary": "Upload a local file through a file picker or drag/drop surface.",
+      "aliases": ["上傳"],
+      "requiresUserInteraction": true,
+      "allowedRoles": ["under_test"],
+      "defaultEvidence": ["interactionLog", "domSnapshot"]
+    },
+    {
+      "id": "drag",
+      "kind": "primitive",
+      "stability": "v1_planned",
+      "summary": "Drag and drop or reorder UI objects.",
+      "aliases": ["拖曳", "拖拉", "排序"],
+      "requiresUserInteraction": true,
+      "allowedRoles": ["under_test"],
+      "defaultEvidence": ["interactionLog", "domSnapshot"]
+    },
+    {
+      "id": "read",
+      "kind": "assertion",
+      "stability": "v1_supported",
+      "summary": "Read current UI, DOM, URL, network, chart, artifact, or state evidence without changing page state.",
+      "aliases": ["讀取", "觀察", "取得", "檢查"],
+      "requiresUserInteraction": false,
+      "allowedRoles": ["precondition", "verification"],
+      "defaultEvidence": ["domSnapshot", "url", "networkRequest", "artifact"]
+    },
+    {
+      "id": "assertVisible",
+      "kind": "assertion",
+      "stability": "v1_supported",
+      "summary": "Assert that a target is visible or present.",
+      "aliases": ["可見", "出現", "存在"],
+      "requiresUserInteraction": false,
+      "allowedRoles": ["verification"],
+      "defaultEvidence": ["domSnapshot", "screenshot"]
+    },
+    {
+      "id": "assertHidden",
+      "kind": "assertion",
+      "stability": "v1_supported",
+      "summary": "Assert that a target is hidden, absent, collapsed, or removed.",
+      "aliases": ["消失", "隱藏", "不出現"],
+      "requiresUserInteraction": false,
+      "allowedRoles": ["verification"],
+      "defaultEvidence": ["domSnapshot", "screenshot"]
+    },
+    {
+      "id": "assertText",
+      "kind": "assertion",
+      "stability": "v1_supported",
+      "summary": "Assert visible text, label, message, title, toast, tooltip, or other copy.",
+      "aliases": ["顯示文字", "文案", "提示", "文字"],
+      "requiresUserInteraction": false,
+      "allowedRoles": ["verification"],
+      "defaultEvidence": ["domSnapshot", "screenshot"]
+    },
+    {
+      "id": "assertValue",
+      "kind": "assertion",
+      "stability": "v1_supported",
+      "summary": "Assert an input value, selected option value, field value, count, or payload value.",
+      "aliases": ["值為", "數值", "欄位值"],
+      "requiresUserInteraction": false,
+      "allowedRoles": ["verification"],
+      "defaultEvidence": ["domSnapshot", "networkRequest", "artifact"]
+    },
+    {
+      "id": "assertEnabled",
+      "kind": "assertion",
+      "stability": "v1_supported",
+      "summary": "Assert that a target control is enabled or clickable.",
+      "aliases": ["可點擊", "enabled", "啟用"],
+      "requiresUserInteraction": false,
+      "allowedRoles": ["verification"],
+      "defaultEvidence": ["domSnapshot"]
+    },
+    {
+      "id": "assertDisabled",
+      "kind": "assertion",
+      "stability": "v1_supported",
+      "summary": "Assert that a target control is disabled, blocked, or not clickable.",
+      "aliases": ["disabled", "反灰", "不可點", "禁用", "阻擋"],
+      "requiresUserInteraction": false,
+      "allowedRoles": ["verification"],
+      "defaultEvidence": ["domSnapshot", "screenshot"]
+    },
+    {
+      "id": "assertSelected",
+      "kind": "assertion",
+      "stability": "v1_supported",
+      "summary": "Assert selected/active tab, option, radio, row, or mode state.",
+      "aliases": ["已選取", "被選中", "active", "selected"],
+      "requiresUserInteraction": false,
+      "allowedRoles": ["verification"],
+      "defaultEvidence": ["domSnapshot"]
+    },
+    {
+      "id": "assertChecked",
+      "kind": "assertion",
+      "stability": "v1_supported",
+      "summary": "Assert checkbox/radio checked or unchecked state.",
+      "aliases": ["checked", "勾選狀態"],
+      "requiresUserInteraction": false,
+      "allowedRoles": ["verification"],
+      "defaultEvidence": ["domSnapshot"]
+    },
+    {
+      "id": "assertRequest",
+      "kind": "assertion",
+      "stability": "v1_supported",
+      "summary": "Assert that a UI action triggered an expected network request and payload.",
+      "aliases": ["request", "network", "payload", "body"],
+      "requiresUserInteraction": false,
+      "allowedRoles": ["verification"],
+      "defaultEvidence": ["networkRequest"]
+    },
+    {
+      "id": "assertNoRequest",
+      "kind": "assertion",
+      "stability": "v1_supported",
+      "summary": "Assert that an action did not trigger a network request.",
+      "aliases": ["未送 request", "不觸發 request", "requestDelta=0"],
+      "requiresUserInteraction": false,
+      "allowedRoles": ["verification"],
+      "defaultEvidence": ["networkRequest", "interactionLog"]
+    },
+    {
+      "id": "assertDownload",
+      "kind": "assertion",
+      "stability": "v1_supported",
+      "summary": "Assert that a download started and, when required, that the downloaded artifact is present or parseable.",
+      "aliases": ["下載成功", "取得檔案"],
+      "requiresUserInteraction": false,
+      "allowedRoles": ["verification"],
+      "defaultEvidence": ["downloadArtifact"]
+    },
+    {
+      "id": "assertToast",
+      "kind": "assertion",
+      "stability": "v1_supported",
+      "summary": "Assert a toast or transient notification message.",
+      "aliases": ["toast", "提示訊息", "提示文案"],
+      "requiresUserInteraction": false,
+      "allowedRoles": ["verification"],
+      "defaultEvidence": ["domSnapshot", "screenshot"]
+    },
+    {
+      "id": "assertTooltip",
+      "kind": "assertion",
+      "stability": "v1_supported",
+      "summary": "Assert tooltip appears or disappears around hover/focus lifecycle.",
+      "aliases": ["tooltip", "浮層提示"],
+      "requiresUserInteraction": false,
+      "allowedRoles": ["verification"],
+      "defaultEvidence": ["domSnapshot", "screenshot"]
+    },
+    {
+      "id": "assertStateChanged",
+      "kind": "assertion",
+      "stability": "v1_supported",
+      "summary": "Assert that state changed after an action.",
+      "aliases": ["狀態改變", "生效", "更新"],
+      "requiresUserInteraction": false,
+      "allowedRoles": ["verification"],
+      "defaultEvidence": ["interactionLog", "domSnapshot", "networkRequest"]
+    },
+    {
+      "id": "assertStateUnchanged",
+      "kind": "assertion",
+      "stability": "v1_supported",
+      "summary": "Assert that state remains unchanged after cancel, disabled/no-op, or blocked actions.",
+      "aliases": ["狀態不變", "維持", "未改變"],
+      "requiresUserInteraction": false,
+      "allowedRoles": ["verification"],
+      "defaultEvidence": ["interactionLog", "domSnapshot"]
+    },
+    {
+      "id": "compare",
+      "kind": "assertion",
+      "stability": "v1_supported",
+      "summary": "Compare before/after values, two variants, UI vs request, or artifact vs preview.",
+      "aliases": ["比對", "一致", "相同", "差異"],
+      "requiresUserInteraction": false,
+      "allowedRoles": ["verification"],
+      "defaultEvidence": ["domSnapshot", "networkRequest", "artifact"]
+    },
+    {
+      "id": "openAndSearchPicker",
+      "kind": "composite",
+      "stability": "v1_supported",
+      "summary": "Open a picker, type a search term, verify filtered results, select an option, and verify closed/selected state.",
+      "aliases": ["picker 開啟搜尋選取"],
+      "requiresUserInteraction": true,
+      "allowedRoles": ["under_test"],
+      "composedOf": ["open", "search", "select", "assertText", "assertStateChanged"]
+    },
+    {
+      "id": "openPanelAndCancel",
+      "kind": "composite",
+      "stability": "v1_supported",
+      "summary": "Open a panel, optionally change a temporary value, cancel, and verify state is unchanged.",
+      "aliases": ["面板取消"],
+      "requiresUserInteraction": true,
+      "allowedRoles": ["under_test"],
+      "composedOf": ["open", "select", "cancel", "assertHidden", "assertStateUnchanged"]
+    },
+    {
+      "id": "clickAndAssertToast",
+      "kind": "composite",
+      "stability": "v1_supported",
+      "summary": "Click a target and assert a toast/notification message.",
+      "aliases": ["點擊後提示"],
+      "requiresUserInteraction": true,
+      "allowedRoles": ["under_test", "verification"],
+      "composedOf": ["click", "assertToast", "assertText"]
+    },
+    {
+      "id": "hoverAndAssertTooltip",
+      "kind": "composite",
+      "stability": "v1_supported",
+      "summary": "Hover a target, assert tooltip appears, move away, and assert tooltip disappears.",
+      "aliases": ["hover tooltip"],
+      "requiresUserInteraction": true,
+      "allowedRoles": ["under_test"],
+      "composedOf": ["hover", "assertTooltip", "assertHidden"]
+    },
+    {
+      "id": "executeAndCollectRequest",
+      "kind": "composite",
+      "stability": "v1_supported",
+      "summary": "Execute a command and collect/assert the network request and resulting UI state.",
+      "aliases": ["執行並讀 request"],
+      "requiresUserInteraction": true,
+      "allowedRoles": ["under_test", "verification"],
+      "composedOf": ["execute", "assertRequest", "assertValue", "compare"]
+    },
+    {
+      "id": "downloadAndAssertArtifact",
+      "kind": "composite",
+      "stability": "v1_supported",
+      "summary": "Trigger download and assert the download event/artifact and optional toast.",
+      "aliases": ["下載並驗證檔案"],
+      "requiresUserInteraction": true,
+      "allowedRoles": ["under_test", "verification"],
+      "composedOf": ["download", "assertDownload", "assertToast"]
+    }
+  ]
+}

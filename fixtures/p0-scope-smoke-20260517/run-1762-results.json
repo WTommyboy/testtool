@@ -1,0 +1,83 @@
+{
+  "schemaVersion": "p0-scope-smoke-actual-results-v1",
+  "runId": "1762c1b2-bc42-47f0-80b6-d1ef10a0f713",
+  "source": {
+    "kind": "uat_archive_case_state",
+    "reportPath": "/Users/tommy/Downloads/UAT_archive_1762c1b2-bc42-47f0-80b6-d1ef10a0f713.md",
+    "capturedAt": "2026-05-18 Asia/Taipei"
+  },
+  "cases": [
+    {
+      "caseNo": "BIUI_COLLAGE_R001-B-06",
+      "actualStatus": "BLOCKED",
+      "failCategory": "EVIDENCE_INSUFFICIENT"
+    },
+    {
+      "caseNo": "BIUI_COLLAGE_R001-B-08",
+      "actualStatus": "BLOCKED",
+      "failCategory": "EVIDENCE_INSUFFICIENT"
+    },
+    {
+      "caseNo": "BIUI_COLLAGE_R001-B-09",
+      "actualStatus": "BLOCKED",
+      "failCategory": "BLOCKED_NEEDS_REJUDGMENT"
+    },
+    {
+      "caseNo": "BIUI_COLLAGE_R001-I-01",
+      "actualStatus": "BLOCKED",
+      "failCategory": "BLOCKED_NEEDS_VISUAL_REVIEW"
+    },
+    {
+      "caseNo": "BIUI_COLLAGE_R001-I-07",
+      "actualStatus": "PASS"
+    },
+    {
+      "caseNo": "BIUI_COLLAGE_R001-J-02",
+      "actualStatus": "PASS"
+    },
+    {
+      "caseNo": "BIUI_COLLAGE_R001-J-07",
+      "actualStatus": "BLOCKED",
+      "failCategory": "BLOCKED_NEEDS_VISUAL_REVIEW"
+    },
+    {
+      "caseNo": "BIUI_COLLAGE_R001-J-12",
+      "actualStatus": "BLOCKED",
+      "failCategory": "BLOCKED_NEEDS_VISUAL_REVIEW"
+    },
+    {
+      "caseNo": "BIUI_COLLAGE_R001-K-01",
+      "actualStatus": "PASS"
+    },
+    {
+      "caseNo": "BIUI_COLLAGE_R001-K-08",
+      "actualStatus": "BLOCKED",
+      "failCategory": "EVIDENCE_INSUFFICIENT"
+    },
+    {
+      "caseNo": "BIUI_COLLAGE_R001-K-10",
+      "actualStatus": "BLOCKED",
+      "failCategory": "BLOCKED_NEEDS_VISUAL_REVIEW"
+    },
+    {
+      "caseNo": "BIUI_COLLAGE_R001-L-02",
+      "actualStatus": "BLOCKED",
+      "failCategory": "EVIDENCE_INSUFFICIENT"
+    },
+    {
+      "caseNo": "BIUI_COLLAGE_R001-L-03",
+      "actualStatus": "BLOCKED",
+      "failCategory": "EVIDENCE_INSUFFICIENT"
+    },
+    {
+      "caseNo": "BIUI_COLLAGE_R001-L-09",
+      "actualStatus": "BLOCKED",
+      "failCategory": "EVIDENCE_INSUFFICIENT"
+    },
+    {
+      "caseNo": "BIUI_COLLAGE_R001-N-03",
+      "actualStatus": "BLOCKED",
+      "failCategory": "EVIDENCE_INSUFFICIENT"
+    }
+  ]
+}

@@ -1,0 +1,234 @@
+{
+  "schemaVersion": "action-candidate-extraction-v1",
+  "generatedAt": "2026-05-18",
+  "sources": [
+    {
+      "label": "108",
+      "type": "xlsx",
+      "path": "/Users/tommy/Downloads/codex_galaxy/BI_UAT_ROUNDS/new_ui_test001/BI正式UI拼貼_測試案例_BIUI_COLLAGE_R001_v1_6.xlsx",
+      "caseCount": 108,
+      "columns": ["前置條件", "步驟", "預期結果", "驗證方法"]
+    },
+    {
+      "label": "15",
+      "type": "xlsx",
+      "path": "/Users/tommy/Downloads/codex_galaxy/BI_UAT_ROUNDS/p0_scope_smoke_20260517/P0_SCOPE_SMOKE_測試案例_BIUI_COLLAGE_R001_20260517.xlsx",
+      "caseCount": 15,
+      "columns": ["前置條件", "步驟", "預期結果", "驗證方法"]
+    },
+    {
+      "label": "108-instructions",
+      "type": "md",
+      "path": "/Users/tommy/Downloads/codex_galaxy/BI_UAT_ROUNDS/new_ui_test001/測試執行說明_BIUI_COLLAGE_R001_v1_6.md"
+    },
+    {
+      "label": "108-assignment",
+      "type": "md",
+      "path": "/Users/tommy/Downloads/codex_galaxy/BI_UAT_ROUNDS/new_ui_test001/Codex_指派文字_BIUI_COLLAGE_R001_v1_6.md"
+    },
+    {
+      "label": "15-instructions",
+      "type": "md",
+      "path": "/Users/tommy/Downloads/codex_galaxy/BI_UAT_ROUNDS/p0_scope_smoke_20260517/P0_SCOPE_SMOKE_測試執行說明_BIUI_COLLAGE_R001_20260517.md"
+    },
+    {
+      "label": "15-assignment",
+      "type": "md",
+      "path": "/Users/tommy/Downloads/codex_galaxy/BI_UAT_ROUNDS/p0_scope_smoke_20260517/P0_SCOPE_SMOKE_Codex_指派文字_BIUI_COLLAGE_R001_20260517.md"
+    }
+  ],
+  "extractedFromXlsx": [
+    {
+      "actionId": "read",
+      "hitCount": 120,
+      "exampleCaseNos": ["BIUI_COLLAGE_R001-A-01", "BIUI_COLLAGE_R001-A-02", "BIUI_COLLAGE_R001-A-03", "BIUI_COLLAGE_R001-A-04"]
+    },
+    {
+      "actionId": "click",
+      "hitCount": 116,
+      "exampleCaseNos": ["BIUI_COLLAGE_R001-A-01", "BIUI_COLLAGE_R001-A-02", "BIUI_COLLAGE_R001-A-03", "BIUI_COLLAGE_R001-A-04"]
+    },
+    {
+      "actionId": "open",
+      "hitCount": 108,
+      "exampleCaseNos": ["BIUI_COLLAGE_R001-A-01", "BIUI_COLLAGE_R001-A-02", "BIUI_COLLAGE_R001-A-03", "BIUI_COLLAGE_R001-A-04"]
+    },
+    {
+      "actionId": "create",
+      "hitCount": 104,
+      "exampleCaseNos": ["BIUI_COLLAGE_R001-A-01", "BIUI_COLLAGE_R001-A-02", "BIUI_COLLAGE_R001-A-03", "BIUI_COLLAGE_R001-A-04"]
+    },
+    {
+      "actionId": "select",
+      "hitCount": 97,
+      "exampleCaseNos": ["BIUI_COLLAGE_R001-A-01", "BIUI_COLLAGE_R001-A-02", "BIUI_COLLAGE_R001-A-03", "BIUI_COLLAGE_R001-A-04"]
+    },
+    {
+      "actionId": "assertText",
+      "hitCount": 90,
+      "exampleCaseNos": ["BIUI_COLLAGE_R001-A-02", "BIUI_COLLAGE_R001-A-03", "BIUI_COLLAGE_R001-A-06", "BIUI_COLLAGE_R001-B-01"]
+    },
+    {
+      "actionId": "confirm",
+      "hitCount": 73,
+      "exampleCaseNos": ["BIUI_COLLAGE_R001-A-01", "BIUI_COLLAGE_R001-A-02", "BIUI_COLLAGE_R001-A-03", "BIUI_COLLAGE_R001-A-04"]
+    },
+    {
+      "actionId": "execute",
+      "hitCount": 69,
+      "exampleCaseNos": ["BIUI_COLLAGE_R001-A-01", "BIUI_COLLAGE_R001-A-03", "BIUI_COLLAGE_R001-A-06", "BIUI_COLLAGE_R001-B-03"]
+    },
+    {
+      "actionId": "compare",
+      "hitCount": 68,
+      "exampleCaseNos": ["BIUI_COLLAGE_R001-A-01", "BIUI_COLLAGE_R001-A-04", "BIUI_COLLAGE_R001-A-05", "BIUI_COLLAGE_R001-B-02"]
+    },
+    {
+      "actionId": "assertVisible",
+      "hitCount": 56,
+      "exampleCaseNos": ["BIUI_COLLAGE_R001-A-02", "BIUI_COLLAGE_R001-A-04", "BIUI_COLLAGE_R001-B-10", "BIUI_COLLAGE_R001-D-02"]
+    },
+    {
+      "actionId": "download",
+      "hitCount": 55,
+      "exampleCaseNos": ["BIUI_COLLAGE_R001-A-01", "BIUI_COLLAGE_R001-A-04", "BIUI_COLLAGE_R001-A-05", "BIUI_COLLAGE_R001-A-06"]
+    },
+    {
+      "actionId": "close",
+      "hitCount": 45,
+      "exampleCaseNos": ["BIUI_COLLAGE_R001-B-12", "BIUI_COLLAGE_R001-E-01", "BIUI_COLLAGE_R001-E-02", "BIUI_COLLAGE_R001-E-03"]
+    },
+    {
+      "actionId": "assertRequest",
+      "hitCount": 44,
+      "exampleCaseNos": ["BIUI_COLLAGE_R001-A-06", "BIUI_COLLAGE_R001-B-03", "BIUI_COLLAGE_R001-B-04", "BIUI_COLLAGE_R001-B-05"]
+    },
+    {
+      "actionId": "assertDisabled",
+      "hitCount": 22,
+      "exampleCaseNos": ["BIUI_COLLAGE_R001-B-10", "BIUI_COLLAGE_R001-I-03", "BIUI_COLLAGE_R001-I-07", "BIUI_COLLAGE_R001-J-02"]
+    },
+    {
+      "actionId": "assertStateUnchanged",
+      "hitCount": 22,
+      "exampleCaseNos": ["BIUI_COLLAGE_R001-C-01", "BIUI_COLLAGE_R001-C-02", "BIUI_COLLAGE_R001-C-03", "BIUI_COLLAGE_R001-F-01"]
+    },
+    {
+      "actionId": "cancel",
+      "hitCount": 20,
+      "exampleCaseNos": ["BIUI_COLLAGE_R001-D-02", "BIUI_COLLAGE_R001-F-03", "BIUI_COLLAGE_R001-I-04", "BIUI_COLLAGE_R001-J-03"]
+    },
+    {
+      "actionId": "delete",
+      "hitCount": 20,
+      "exampleCaseNos": ["BIUI_COLLAGE_R001-G-02", "BIUI_COLLAGE_R001-G-03", "BIUI_COLLAGE_R001-I-03", "BIUI_COLLAGE_R001-J-01"]
+    },
+    {
+      "actionId": "type",
+      "hitCount": 18,
+      "exampleCaseNos": ["BIUI_COLLAGE_R001-E-01", "BIUI_COLLAGE_R001-E-02", "BIUI_COLLAGE_R001-E-03", "BIUI_COLLAGE_R001-E-04"]
+    },
+    {
+      "actionId": "hover",
+      "hitCount": 13,
+      "exampleCaseNos": ["BIUI_COLLAGE_R001-I-04", "BIUI_COLLAGE_R001-I-06", "BIUI_COLLAGE_R001-I-07", "BIUI_COLLAGE_R001-J-06"]
+    },
+    {
+      "actionId": "assertStateChanged",
+      "hitCount": 12,
+      "exampleCaseNos": ["BIUI_COLLAGE_R001-B-12", "BIUI_COLLAGE_R001-G-01", "BIUI_COLLAGE_R001-G-04", "BIUI_COLLAGE_R001-G-05"]
+    },
+    {
+      "actionId": "assertHidden",
+      "hitCount": 9,
+      "exampleCaseNos": ["BIUI_COLLAGE_R001-B-10", "BIUI_COLLAGE_R001-G-01", "BIUI_COLLAGE_R001-G-03", "BIUI_COLLAGE_R001-J-06"]
+    },
+    {
+      "actionId": "search",
+      "hitCount": 2,
+      "exampleCaseNos": ["BIUI_COLLAGE_R001-K-08"]
+    },
+    {
+      "actionId": "assertNoRequest",
+      "hitCount": 1,
+      "exampleCaseNos": ["BIUI_COLLAGE_R001-J-03"]
+    }
+  ],
+  "p0ScopeSmokeRequiredActions": [
+    {
+      "caseNo": "BIUI_COLLAGE_R001-B-06",
+      "actionIds": ["open", "select", "execute", "assertRequest", "compare"]
+    },
+    {
+      "caseNo": "BIUI_COLLAGE_R001-B-08",
+      "actionIds": ["open", "select", "click", "assertStateChanged", "assertRequest"]
+    },
+    {
+      "caseNo": "BIUI_COLLAGE_R001-B-09",
+      "actionIds": ["open", "select", "click", "assertStateChanged", "assertRequest"]
+    },
+    {
+      "caseNo": "BIUI_COLLAGE_R001-I-01",
+      "actionIds": ["open", "click", "assertVisible", "assertHidden", "assertStateChanged"]
+    },
+    {
+      "caseNo": "BIUI_COLLAGE_R001-I-07",
+      "actionIds": ["read", "assertText", "assertVisible"]
+    },
+    {
+      "caseNo": "BIUI_COLLAGE_R001-J-02",
+      "actionIds": ["read", "assertDisabled", "assertEnabled"]
+    },
+    {
+      "caseNo": "BIUI_COLLAGE_R001-J-07",
+      "actionIds": ["hover", "assertTooltip", "assertHidden"]
+    },
+    {
+      "caseNo": "BIUI_COLLAGE_R001-J-12",
+      "actionIds": ["click", "assertToast", "assertText"]
+    },
+    {
+      "caseNo": "BIUI_COLLAGE_R001-K-01",
+      "actionIds": ["read", "assertSelected", "assertText"]
+    },
+    {
+      "caseNo": "BIUI_COLLAGE_R001-K-08",
+      "actionIds": ["openAndSearchPicker", "open", "search", "select", "assertText", "assertStateChanged"]
+    },
+    {
+      "caseNo": "BIUI_COLLAGE_R001-K-10",
+      "actionIds": ["click", "assertToast", "assertNoRequest"]
+    },
+    {
+      "caseNo": "BIUI_COLLAGE_R001-L-02",
+      "actionIds": ["open", "click", "assertVisible", "close"]
+    },
+    {
+      "caseNo": "BIUI_COLLAGE_R001-L-03",
+      "actionIds": ["openPanelAndCancel", "open", "select", "cancel", "assertHidden", "assertStateUnchanged"]
+    },
+    {
+      "caseNo": "BIUI_COLLAGE_R001-L-09",
+      "actionIds": ["open", "click", "assertStateChanged", "assertSelected"]
+    },
+    {
+      "caseNo": "BIUI_COLLAGE_R001-N-03",
+      "actionIds": ["select", "execute", "downloadAndAssertArtifact", "download", "assertDownload", "assertToast"]
+    }
+  ],
+  "saasGenericBackfill": [
+    "navigate",
+    "clear",
+    "assertValue",
+    "assertEnabled",
+    "assertSelected",
+    "assertChecked",
+    "assertDownload",
+    "assertToast",
+    "assertTooltip",
+    "pressKey",
+    "scroll",
+    "upload",
+    "drag"
+  ]
+}

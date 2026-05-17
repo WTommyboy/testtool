@@ -1,8 +1,8 @@
 # Domain UI Contract / Helper Gen3-Gen4 Plan
 
 Date: 2026-05-16 Asia/Taipei
-Status: planned, dev-tracked; Gen1a/Gen1b contract wiring and short-term bridge are in dev; Gen1c contract hardening added before next live UAT; scope-aware contract refinement recorded after run `81455108-f612-4024-9d71-4f1995e08d7a`; P0 scope runtime guards added in dev
-Primary triggers: BIUI_COLLAGE_R001 runs `67990303-2c1b-4559-924a-297a089b5949` and `81455108-f612-4024-9d71-4f1995e08d7a`
+Status: planned, dev-tracked; Gen1a/Gen1b contract wiring and short-term bridge are in dev; Gen1c contract hardening added before next live UAT; scope-aware contract refinement recorded after run `81455108-f612-4024-9d71-4f1995e08d7a`; P0 scope runtime guards and observation bridge are in dev; P0 vocabulary-first reset recorded after run `1762c1b2-bc42-47f0-80b6-d1ef10a0f713`
+Primary triggers: BIUI_COLLAGE_R001 runs `67990303-2c1b-4559-924a-297a089b5949`, `81455108-f612-4024-9d71-4f1995e08d7a`, `ecc53283-18c4-4b29-a405-e7681626e28b`, and `1762c1b2-bc42-47f0-80b6-d1ef10a0f713`
 
 ## 1. Why This Exists
 
@@ -514,3 +514,49 @@ Based on runs `67990303-2c1b-4559-924a-297a089b5949` and `81455108-f612-4024-9d7
 
 8. case scope / judgment contract
    Run `81455108-f612-4024-9d71-4f1995e08d7a` completed end-to-end, but Tommy's manual checkreport showed many invalid BLOCKED and judgment errors. The major class was not a single helper bug: agent planning, helper fallback, and result gate all failed to understand case scope. K/I/J/L/M/N-style UI observation cases must not be judged by preview-only evidence such as `selectedMetricFields=0`; B/L divergence must be classified by missing template/hints versus real UI reachability, not by assuming L could not expand the UI. This priority turns those lessons into contract/lint/gate rules before the next broad UAT report is treated as product defects.
+
+## 10. P0 Scope Oracle and Vocabulary-First Reset
+
+Trigger evidence:
+
+- Dev run `1762c1b2-bc42-47f0-80b6-d1ef10a0f713` completed the reduced P0 scope smoke, but matched Tommy's manual oracle on only the obvious direct cases (`I-07`, `J-02`, `K-01`). The run proved containment and partial observation evidence are improving, but it did not prove result judgment correctness.
+- Tommy's oracle file is `/Users/tommy/Downloads/codex_galaxy/BI_UAT_ROUNDS/p0_scope_smoke_20260517/P0_SCOPE_SMOKE_測試案例_BIUI_COLLAGE_R001_20260517_tommy_checkreport copy.md`.
+- The oracle is a time-bound calibration artifact for this 15-case reduced smoke. It is not platform source of truth, not BI domain-pack source of truth, and not a mandatory artifact for every future testcase. It records what the product did for this authored testcase at the time Tommy manually verified it.
+
+This resets P0 from "can the run continue?" to "can the tool route and judge authored UI cases correctly?". The next P0 work should be vocabulary-first:
+
+1. Freeze the 15-case oracle as a regression fixture.
+   The fixture compares tool judgment against Tommy's manual answers, but must not teach the runtime permanent product truth such as "B-09 always fails." B-09 is FAIL in this reduced testcase because the authored scope includes static-tab clickability. A future B-09-style testcase authored as preview date-range outcome only may still PASS when request/preview evidence is correct.
+
+2. Add a platform action vocabulary.
+   Generic verbs should be stable across domains: `click`, `hover`, `type`, `select`, `open`, `close`, `confirm`, `cancel`, `assertVisible`, `assertHidden`, `assertText`, `assertDisabled`, `assertEnabled`, `assertNoRequest`, `assertRequest`, `assertStateChanged`, and `assertStateUnchanged`.
+
+3. Add a domain UI object vocabulary for official BI collage.
+   The BI pack should name UI objects such as `dateRange.button`, `dateRange.panel`, `dateRange.timeTypeTab.dynamic`, `dateRange.timeTypeTab.static`, `dateRange.preset.past30Days`, `dateRange.preset.last30Days`, `reportPicker.searchInput`, `reportPicker.option.dailyReport`, `projectToolbar.downloadButton`, `projectToolbar.deleteButton`, `projectToolbar.createButton`, `rowDeleteIcon.tooltip`, `validation.toast`, and `editorToolbar.downloadButton`.
+
+4. Wire the planner and gates through structured action references.
+   Testcases may keep Chinese prose, but the execution package should carry structured steps with `action`, `target`, `role`, `expectedOutcome`, and `evidenceRequirements`. Planner routing, capability gate, helper execution plan, interaction log, and result gate should all cite the same action/object identifiers. Route diagnostics must show, for example, that `K-10` targets `validation.toast`, `J-07` targets a hover tooltip, and `B-08/B-09/L-09` target `dateRange.timeTypeTab.static`.
+
+5. Smoke before dev UAT.
+   Codex must run offline routing/judgment fixtures and a small live smoke before asking Tommy for another dev run. The live smoke should prove at least one representative case for disabled toolbar state, default report mode, validation toast, date-panel open/cancel, hover tooltip, static-tab failure, source-report picker selection, and calculate/download/toast flow.
+
+6. Regenerate the reduced testcase from the vocabulary.
+   The next `P0_SCOPE_SMOKE_測試案例_BIUI_COLLAGE_R001_20260517` version should be generated from the action/object definitions, not hand-reworded only in prose. The Chinese step text can remain human-readable, but the structured execution hints should use canonical verbs and UI object IDs.
+
+Layer ownership:
+
+- Platform layer owns the generic action vocabulary, action lifecycle roles, interaction outcome taxonomy, MCP/browser preflight, DOM/ARIA/accessibility extractor, screenshot fallback, result gate, and oracle fixture runner.
+- Domain pack layer owns official BI UI object IDs, aliases, locators, allowed evidence sources, domain action templates, and BI-specific state semantics.
+- Testcase/run layer owns case-specific values, expected outcomes, `testTarget`, `judgmentPolicy`, risk level, cleanup policy, and optional structured action steps.
+- Oracle fixtures own temporary human-verified expected results for calibration. They must be versioned with run/testcase context and must never be treated as required authoring input for normal UAT.
+
+Recommended continuation of P0:
+
+- P0.13: freeze the 15-case oracle fixture and compare current run output against it. Status 2026-05-18: implemented as `fixtures/p0-scope-smoke-20260517/oracle.json`, `fixtures/p0-scope-smoke-20260517/run-1762-results.json`, and `npm run verify:p0-scope-oracle`. Baseline comparison locks `1762c1b2-bc42-47f0-80b6-d1ef10a0f713` at 3 matches / 12 mismatches, with matching cases `I-07`, `J-02`, and `K-01`.
+- P0.14: create platform action vocabulary and schema validation. Status 2026-05-18: implemented as `contracts/platform-action-vocabulary.v1.json`, `docs/refactor/platform-action-vocabulary-v1.md`, `fixtures/action-vocabulary/biui-collage-r001-v1-6-candidates.json`, `npm run verify:platform-action-vocabulary`, and `npm run verify:action-vocabulary-fixtures`. The shared platform contract now contains only generic action vocabulary. The BI/P0 extraction provenance and 15-case reduced-smoke mappings live only in fixture data and the fixture verifier. Platform verifier covers 42 generic actions; fixture verifier covers 23 extracted candidates and all 15 P0 reduced-smoke required action mappings.
+- P0.15: complete official BI UI object map only for the 15-case scope first.
+- P0.16: connect planner/capability gate/helper plan/result gate to structured `action + target + expectedOutcome`.
+- P0.17: run Codex offline route/judgment smoke against the oracle.
+- P0.18: generate the next reduced xlsx/md from the canonical vocabulary.
+- P0.19: repair remaining action templates under the new structure.
+- P0.20: run a small live smoke, then ask Tommy for the next dev live UAT only after local evidence is clean.
