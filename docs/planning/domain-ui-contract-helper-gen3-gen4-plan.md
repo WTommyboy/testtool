@@ -156,6 +156,45 @@ Dev status 2026-05-17:
 - `case-feature-detection` treats `拼貼報表` as collage, so project/report-row observation cases are not forced to mention `拼貼模式` exactly to avoid generic preview fallback.
 - This is still Phase 0 containment. The authored `caseScope` schema, domain action-template interpreter, and full feedback loop remain Phase 1+ work.
 
+Dev status 2026-05-17 after reduced run `ecc53283-18c4-4b29-a405-e7681626e28b`:
+
+- P0.5 visual fallback is working as containment only. It classifies screenshot-only frontend observation gaps as `BLOCKED_NEEDS_VISUAL_REVIEW`; it does not convert screenshots into automatic PASS evidence.
+- The run completed 15 cases but all were `BLOCKED`. This exposed a different gap: frontend observation cases still lack structured observation evidence and domain semantic mapping, so judgeable UI states were not converted into PASS/FAIL assertions.
+- The archive repeatedly recorded `mcpToolCallCount=0` / `TOOL_EXECUTION_UNAVAILABLE`, but an independent smoke with the same Playwright MCP/CDP config successfully called `browser_tabs` and saw the logged-in BI page. Runtime must therefore add an MCP preflight/guard before accepting tool-unavailable results.
+- Existing DOM/CDP evidence shows the direction is feasible: I-07 user button text and disabled state, K-01 `report-mode` checked state, L-02 date panel contents, and K-10 validation text can be observed without BI API bypass. J-02 also exposes toolbar disabled-state patterns, but needs a BI domain semantic map to assign icon meaning.
+- P0.6-P0.12 sequence is now part of Phase 0: browser MCP availability guard, BI official UI semantic contract enrichment, generic DOM extractor upgrade, declarative observation action templates, observation result gate, B-09 outcome-vs-flow scope split, then reduced smoke.
+- Do not start another full/reduced Tommy UAT run until the domain data, runtime observation path, and local smoke have all passed.
+
+P0.7 data completion status 2026-05-17:
+
+- `BI_OFFICIAL_UI_COLLAGE/ui-contract.json` now has observation semantic maps for topbar user button, project toolbar icon order, report-mode radio values, date panel required texts, and known validation messages.
+- `discovery/component-inventory.json` now records the corresponding components: `topbar.userButton`, `projectToolbar.actionButtons`, `reportMode.radioGroup`, `dateRange.panel`, `validation.messageArea`, and `sidebar.companySharedGroup`.
+- `evidence-schema.json` now defines `browserMcp.preflight` plus structured observation evidence objects for those components.
+- `action-contracts/observeFrontendState.json` is a declarative contract seed, not executable helper code. It names the supported observation types and the evidence each one must emit.
+- Smoke `npm run verify:official-observation-contract` passes for representative I-07, J-02, K-01, L-02, and K-10 semantics. Runtime DOM extractor and result gate wiring are still pending.
+
+P0.6/P0.8/P0.9/P0.10 runtime bridge status 2026-05-17:
+
+- Domain optional inputs now include `action-contracts/observeFrontendState.json`, downloaded as `input/domain_action_observe_frontend_state.json` and listed in run brief/reference/rule indexes.
+- Capability gate and helper execution plan can schedule `collage.observeFrontendState` for frontend observation cases after safe navigation/create-report prelude. The plan must not include `collage.configureMetric` or `collage.runPreviewAndCollectEvidence` for those observation-only cases.
+- The BI helper executor now has a compatibility implementation for `collage.observeFrontendState`. It emits `frontend-observation-evidence.json` and action reports for user button, project toolbar, report-mode radio, date panel, and validation-message observations. It still cannot judge testcase PASS/FAIL.
+- Generic DOM profile extraction now captures checked/aria-checked, aria-disabled, aria-expanded, nearest label, title, and computed style so UI state is not limited to text-only evidence.
+- Result evidence gate rejects `TOOL_EXECUTION_UNAVAILABLE` without browser MCP preflight evidence. Case-level containment converts that conflict to `BLOCKED_NEEDS_REJUDGMENT`, preserving run continuity while refusing to accept an unverified tool-unavailable judgment.
+- This bridge makes the next reduced UAT materially different from `ecc53283`: I-07/J-02/K-01/L-02/K-10 should have structured helper observation evidence available before Codex writes the result. Full Gen4 interpreter and authored `caseScopeContract.v1` remain later phases.
+
+P0.11 scope split status 2026-05-17:
+
+- B-09-style static date range correctness remains a preview/outcome case when the testing target is request body and preview date correctness. It must not silently inherit save/reopen/download actions, but it should still collect preview/network/chart evidence.
+- Static-tab clickability is a separate frontend/flow assertion. It should be authored as an L/date-panel observation case or later as an explicit date-panel action contract, then judged from `dateRange.panel.state` / interaction evidence rather than preview outcome.
+- `verify:official-observation-contract` now covers both paths: B-09 preview correctness and representative `BIUI_COLLAGE_R001-L-STATIC-TAB` frontend observation. This prevents future fixes from collapsing outcome evidence and flow evidence into one ambiguous judgment.
+
+P0.12 local smoke status 2026-05-17:
+
+- Local fixture/build validation was not enough; the live dev Chrome helper smoke caught a real user-button timing/extractor gap and forced a runtime fix before Tommy re-ran UAT.
+- The bridge now waits for observation-specific UI readiness markers before reading DOM, and user-button observation can fall back to the BI topbar body-text line when official UI does not expose a stable visible button rect immediately.
+- Live dev Agent Chrome smokes passed for I-07, J-02, K-01, L-02, and K-10. These cover the exact false-BLOCKED cluster from `ecc53283`: logged-in user text, icon-only toolbar disabled state, default collage radio, date panel expansion, and empty setup validation.
+- P0.12 still requires operational closeout: push the dev branch, rebuild/restart `com.tommy.uat-agent-dev`, and record dist mtime + process start time before Tommy runs the next dev UAT.
+
 Phase 1: Scope schema and package lint
 
 - Add `caseScope`, `testIntent`, `previewRequired`, `saveRequired`, `executionRequired`, `allowedActions`, `forbiddenActions`, `requiredEvidence`, and `judgmentPolicy` to the authored contract/testcase path.

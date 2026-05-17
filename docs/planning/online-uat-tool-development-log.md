@@ -1520,3 +1520,49 @@ P0a v1 範圍釐清：containment 只處理唯一 self-check error 為 `RESULT_P
 - Containment：server ingest 對唯一此類 case-level gate error 會轉為 `BLOCKED / BLOCKED_NEEDS_VISUAL_REVIEW`，保留 screenshotPath、visualObservation、domEvidenceGap、原始 gate issue 與 current-run containment metadata，再重新跑 gate，避免整輪 run 因「需要人工視覺 review」而 FAILED。
 - Agent prompt/guidance：新增規則要求 Codex 在 frontend observation + previewRequired=false + DOM/ARIA/URL 不足但有 screenshot 時，不可寫普通 `EVIDENCE_INSUFFICIENT`；應寫 `BLOCKED_NEEDS_VISUAL_REVIEW`。只有實際檢視截圖並明確描述可見 assertion 時，才可用 `PASS_VISUAL_EVIDENCE`。
 - 邊界：這不是通用 AI 看圖自動 PASS 機制，也不讓截圖取代能取得的結構化 DOM/network/chart evidence；它是 P0.5 compatibility contract，讓截圖 evidence 被分類、可 review、不中斷。
+
+### 2026-05-17 - ecc53283 frontend observation evidence gap and P0.6-P0.12 plan
+
+- 背景：Tommy 在 dev 跑 reduced set `ecc53283-18c4-4b29-a405-e7681626e28b` 後，15 題全部 `BLOCKED`。這輪證明 P0.5 只做到 containment / review classification，還沒有把可觀察 UI 狀態轉成機器可判的 observation evidence。
+- 主要問題 1：archive 中多次出現 `mcpToolCallCount=0` 與 `TOOL_EXECUTION_UNAVAILABLE`，但獨立 smoke 用同一套 Playwright MCP/CDP config 成功呼叫 `browser_tabs`，且看得到登入後 BI 頁。結論：不是 MCP 必然不可用，而是 runtime/prompt/gate 沒有強制 browser MCP preflight 就接受 tool-unavailable 結果。
+- 主要問題 2：既有 artifact 已含有部分可用 evidence，但 extractor / semantic map 不夠。I-07 DOM 已有 `Tommy LH(劉徐融)` 使用者按鈕；K-01 live DOM 可讀 `report-mode value=1` checked 且 label 為 `拼貼模式`；L-02 可打開日期面板並讀到 presets / 動態 / 靜態 / 取消 / 確定；K-10 可觀察空設定點 `計算` 後 request delta 為 0 且頁面出現「欄位未設置完成」驗證文字。J-02 toolbar disabled pattern 可讀，但需 BI semantic map 才能把 icon order 對到下載/刪除/建立等語意。
+- 主要問題 3：`domain_ui_contract.json`、`domain_discovery_component_inventory.json`、`domain_evidence_schema.json` 等檔案已被下載到 run workspace，但內容偏粗且尚未接上 observation planner/result gate。需要先補 domain pack 資料，再改 runtime，而不是直接加任意 BI 小 helper。
+- P0.6-P0.12 順序：P0.6 加 Browser MCP availability guard；P0.7 補 BI official UI semantic contract data；P0.8 升級通用 DOM/ARIA/accessibility extractor；P0.9 加 declarative observation action templates；P0.10 讓 result gate 依 observation assertion 判 PASS/FAIL/BLOCKED；P0.11 釐清 B-09 outcome correctness 與 static-tab flow clickability；P0.12 跑 local small smoke 後才請 Tommy 再跑 dev UAT。
+- 架構邊界：BI 客製資料放 domain pack 層，例如 toolbar/icon/radio/date panel/picker semantic map；tool core 維持通用，負責 MCP preflight、DOM extractor、artifact、observation gate、action-template interpreter 邊界。這仍符合 Domain UI Discovery -> UI Contract -> Action Template -> Evidence Contract -> Result/Judgment Contract -> Gen4 interpreter 的長期方向。
+
+### 2026-05-17 - P0.7 official observation semantic data smoke
+
+- Domain pack：`BI_OFFICIAL_UI_COLLAGE` 補齊 observation semantic data。`ui-contract.json` 新增 topbar user button、project toolbar icon order、report-mode radio value map、date panel required texts、validation messages；`discovery/component-inventory.json` 新增對應 component；`evidence-schema.json` 新增 `browserMcp.preflight` 與 frontend observation evidence objects。
+- Action contract：新增 `action-contracts/observeFrontendState.json`，定義 `userButton`、`projectToolbar`、`reportModeRadio`、`datePanel`、`validationMessage` 五種 declarative observation type。這是 domain data/action contract seed，不是可執行小 helper。
+- Lint：`lint-rules.json` 新增 frontend observation template rule，提醒 I/J/K/L/M/N 前端呈現或功能流程 case 必須宣告 UI state under test，不可 fallback 到 preview-only selected-field/network evidence。
+- Smoke：新增 `npm run verify:official-observation-contract`。fixture 用 `ecc53283` 代表情境驗證 I-07、J-02、K-01、L-02、K-10 的 semantic data 足以支撐後續 structured observation 判定。
+- 驗證：已跑 `npm run verify:official-observation-contract`、`npm run verify:domain-pack -- --name BI_OFFICIAL_UI_COLLAGE`、`git diff --check` 通過。下一段才進 runtime：MCP preflight guard、DOM extractor、observation result gate wiring。
+
+### 2026-05-17 - P0 runtime observation bridge
+
+- Input wiring：domain pack optional inputs 新增 `action-contracts/observeFrontendState.json`，API 會提供 `/api/domains/:name/action-contracts/observeFrontendState`，Agent 下載成 `input/domain_action_observe_frontend_state.json`，並寫入 run brief / reference-index / rule-index。
+- Helper planning：`capability-gate` 與 `helper-execution-plan` 對 I/J/K/L/M/N observation-only case 可排 `collage.observeFrontendState`。代表 fixture I-07/J-02/K-01/L-02/K-10 現在是 `openProject` / `createReport` / `observeFrontendState`，不再 fallback 到 `configureMetric/runPreview`。
+- Helper executor：`bi-ui-helper-executor` 新增 `collage.observeFrontendState` compatibility action，產生 `frontend-observation-evidence.json`。支援 `userButton`、`projectToolbar`、`reportModeRadio`、`datePanel`、`validationMessage` 五種 observation type；datePanel/validationMessage 只用 visible UI click，不用 evaluate 觸發互動。
+- DOM extractor：`ui-dom-profile` 補 `checked`、`ariaChecked`、`ariaDisabled`、`ariaExpanded`、`nearestLabel`、`title`、`computedStyle`，讓 radio、disabled icon、pointer-events/opacity 類狀態能變成 structured evidence。
+- Result gate：`result-evidence-gate` 新增 `RESULT_TOOL_EXECUTION_UNAVAILABLE_WITHOUT_PREFLIGHT`。任何 `TOOL_EXECUTION_UNAVAILABLE` BLOCKED 必須有 `browserMcp.preflight` / `browser_tabs` evidence；若沒有，server containment 改成 `BLOCKED_NEEDS_REJUDGMENT`，不接受未 preflight 的工具不可用判斷。
+- 驗證：已跑 `npm run verify:official-observation-contract`、`npm run verify:domain-pack -- --name BI_OFFICIAL_UI_COLLAGE`、`npm run verify:capability-gate`、`npm run verify:p0-scope-contract`、`npm run verify:p0-scope-contract -- --prototype`、`npm run verify:result-evidence-gate`、`npm run verify:agent-result-contract`、`npm run verify:helper-report-gate`、`npm run typecheck --prefix agent`、`npm run typecheck`、`npm run build --prefix agent`、`npm run build`、`git diff --check`。
+
+### 2026-05-17 - P0.11 B-09 outcome-vs-flow scope smoke
+
+- 釐清：B-09 若測試目的是 `前後端整合 / request + preview 首日正確性`，則 preview request body 與 preview 首日是核心 outcome evidence；靜態 tab 本身可點性不應在同一 case 裡被偷塞成產品 FAIL。若 PM 要驗證靜態 tab 可見/可展開/可切換，應拆成 L 類 `前端呈現` 或 `功能流程` case，走 date-panel observation/flow evidence。
+- Fixture：`verify:official-observation-contract` 新增兩個 P0.11 guard。`BIUI_COLLAGE_R001-B-09` 必須仍是 `openProject -> createReport -> configureMetric -> runPreviewAndCollectEvidence`，且負向 scope 不得產生 save/reopen/download；`BIUI_COLLAGE_R001-L-STATIC-TAB` 代表拆分後的 static-tab flow，必須走 `openProject -> createReport -> observeFrontendState`，不得落回 preview helper。
+- Runtime 小修：`observeFrontendState.userButton` 不再硬抓 Tommy/劉徐融；改成可由 `expectedTextContains` 提供期望文字，否則使用 account/top-right button heuristic。`projectToolbar` 也優先找同列 `disabled, disabled, enabled` 的 toolbar triplet，避免把頁面其他 button 當下載/刪除/新增。
+- 驗證：已跑 `npm run verify:official-observation-contract` 與 `npm run typecheck --prefix agent` 通過。P0.12 還需跑 local small smoke / rebuild / dev Agent restart metadata 後，才請 Tommy 再跑 dev UAT。
+
+### 2026-05-17 - P0.12 local small live helper smoke
+
+- 背景：Claude review 建議 P0.12 不只跑 fixture，而要在請 Tommy 重跑 dev UAT 前，用 dev Agent Chrome profile 做小型 live smoke，避免再次消耗 20+ 分鐘才發現基本 observation bridge 無效。
+- Smoke 環境：使用 `/Users/tommy/.uat-agent-dev/config.json`、dev Chrome profile、DEV URL `https://galaxy.games.gamania.com/bi-dev/zh-TW/home`。只做觀察/導航/新增報表頁，不儲存、不下載、不刪除。
+- 第一輪 I-07 smoke 抓到真 gap：頁面後續 `domState.bodyTextExcerpt` 有 `Tommy LH(劉徐融)`，但 observation 讀取太早且 button rect 尚不可見，導致 `visible=false`。修正後 `observeFrontendState` 會先等各 observation type 的目標 UI marker 出現，再讀 DOM；user button 也可從 topbar body-text line fallback。
+- 通過 smoke：
+  - I-07 run `/Users/tommy/.uat-agent-dev/runs/p0-12-observe-i07-20260517232442`：`observe=ok`、`visibleText=Tommy LH(劉徐融)`、`evidenceObject=topbar.userButton.state`。
+  - J-02 run `/Users/tommy/.uat-agent-dev/runs/p0-12-observe-j02-20260517232725`：`openProject=ok`、`observe=ok`、download/delete disabled、create enabled，三顆 icon-only buttons 皆從實際 DOM rect/state 擷取。
+  - K-01 run `/Users/tommy/.uat-agent-dev/runs/p0-12-observe-k01-20260517232516`：`openProject=ok`、`createReport=ok`、`observe=ok`、`selectedValue=1`、`selectedLabel=拼貼模式`。
+  - L-02 run `/Users/tommy/.uat-agent-dev/runs/p0-12-observe-l02-20260517232559`：`openProject=ok`、`createReport=ok`、`observe=ok`、`openedByVisibleUi=true`、`requestDelta=0`、`missingTexts=[]`。
+  - K-10 run `/Users/tommy/.uat-agent-dev/runs/p0-12-observe-k10-20260517232642`：`openProject=ok`、`createReport=ok`、`observe=ok`、`visibleText=欄位未設置完成`、`requestDelta=0`。
+- 結論：P0.12 proves the observation bridge is no longer merely a stricter blocker. It can collect structured evidence for the exact I/J/K/L cases that became false BLOCKED in `ecc53283`. Before Tommy runs dev UAT, final step is commit/push dev and restart `com.tommy.uat-agent-dev`, then record dist mtime + process start time to avoid stale-code confusion.
