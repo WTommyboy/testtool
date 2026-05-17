@@ -284,7 +284,20 @@ const main = (): void => {
   }
 
   const observationTypes = Object.keys(observationAction.observationTypes ?? {});
-  for (const type of ["userButton", "projectToolbar", "reportModeRadio", "datePanel", "validationMessage"]) {
+  for (const type of [
+    "userButton",
+    "projectToolbar",
+    "reportModeRadio",
+    "datePanel",
+    "validationMessage",
+    "sidebarGroup",
+    "rowDeleteTooltip",
+    "projectLimitToast",
+    "sourceReportPicker",
+    "dateTimeTypeTab",
+    "datePanelCancel",
+    "downloadToast"
+  ]) {
     assert(observationTypes.includes(type), `observeFrontendState missing observationType ${type}`);
   }
 

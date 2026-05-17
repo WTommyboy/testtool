@@ -32,12 +32,15 @@
           "reportModeRadio",
           "datePanel",
           "validationMessage",
+          "sidebarGroup",
           "sidebarCompanySharedGroup",
           "projectLimitToast",
+          "rowDeleteTooltip",
           "rowActionTooltip",
           "sourceReportPicker",
           "dateTimeTypeTab",
           "datePanelCancel",
+          "downloadToast",
           "editorDownload"
         ]
       },
@@ -143,6 +146,18 @@
         "expandedAndCollapsedByVisibleUi": true
       }
     },
+    "sidebarGroup": {
+      "component": "sidebar.companySharedGroup",
+      "objectIds": [
+        "sidebar.companySharedGroup"
+      ],
+      "requiredEvidence": [
+        "sidebar.companySharedGroup.state"
+      ],
+      "successState": {
+        "expandedAndCollapsedByVisibleUi": true
+      }
+    },
     "projectLimitToast": {
       "component": "projectToolbar.actionButtons",
       "objectIds": [
@@ -157,6 +172,19 @@
       }
     },
     "rowActionTooltip": {
+      "component": "projectList.rowDeleteAction",
+      "objectIds": [
+        "projectList.rowDeleteAction",
+        "projectList.rowDeleteTooltip"
+      ],
+      "requiredEvidence": [
+        "projectList.rowActionTooltip.state"
+      ],
+      "successState": {
+        "tooltipLifecycleCaptured": true
+      }
+    },
+    "rowDeleteTooltip": {
       "component": "projectList.rowDeleteAction",
       "objectIds": [
         "projectList.rowDeleteAction",
@@ -210,6 +238,20 @@
       }
     },
     "editorDownload": {
+      "component": "editorToolbar.downloadButton",
+      "objectIds": [
+        "editorToolbar.downloadButton",
+        "download.toast"
+      ],
+      "requiredEvidence": [
+        "editorToolbar.download.state",
+        "download.toast.state"
+      ],
+      "successState": {
+        "downloadStartedAndToastVisible": true
+      }
+    },
+    "downloadToast": {
       "component": "editorToolbar.downloadButton",
       "objectIds": [
         "editorToolbar.downloadButton",

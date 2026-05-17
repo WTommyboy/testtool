@@ -1050,13 +1050,13 @@ const main = (): void => {
     assert.equal(projectLimitGate.supportStatus, "degraded", "J-12 no-hints frontend observation should not be advertised as fully helper-supported");
     assert.deepEqual(
       projectLimitGate.supportedHelperTemplates,
-      ["collage.openProject"],
-      "J-12 no-hints frontend observation should only advertise openProject prelude"
+      ["collage.openProject", "collage.observeFrontendState"],
+      "J-12 no-hints frontend observation should advertise structured observation after the safe openProject prelude"
     );
     const projectLimitPlan = buildHelperExecutionPlan({ runDir, currentCase: projectLimitObservationCase, helperHints: null });
     assert.deepEqual(
       projectLimitPlan.actions.map((item) => item.template),
-      ["collage.openProject"],
+      ["collage.openProject", "collage.observeFrontendState"],
       "J-12 no-hints frontend observation must not fall through to createReport/configureMetric/runPreview"
     );
 
@@ -1239,7 +1239,7 @@ const main = (): void => {
           "manual hybrid D0 CSV baseline cases chain date preview, save, and report-list download",
           "relative D0 CSV baseline cases create unique reports and defer D+1 comparison",
           "delete temporary report cases create a pending Tool Bridge helper action",
-          "no-hints frontend project/list observations run only a safe openProject prelude",
+          "no-hints frontend project/list observations route to structured observation after a safe openProject prelude",
           "selectAllFields helper hints preserve sourceReports/expected count and avoid synthetic field text",
           "actual D-02 expectedSources/expectedTotalFieldCount infer select-all 4-source/72-field helper params",
           "A-06 all-zero field inspection uses a dedicated select-all preview evidence helper",

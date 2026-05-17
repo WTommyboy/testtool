@@ -263,7 +263,20 @@ const isFrontendObservationPreludeCase = (
   return { matched: true, needsEditor: editorObservation };
 };
 
-type FrontendObservationType = "userButton" | "projectToolbar" | "reportModeRadio" | "datePanel" | "validationMessage" | null;
+type FrontendObservationType =
+  | "userButton"
+  | "projectToolbar"
+  | "reportModeRadio"
+  | "datePanel"
+  | "validationMessage"
+  | "sidebarGroup"
+  | "rowDeleteTooltip"
+  | "projectLimitToast"
+  | "sourceReportPicker"
+  | "dateTimeTypeTab"
+  | "datePanelCancel"
+  | "downloadToast"
+  | null;
 
 const inferFrontendObservationType = (currentCase: CaseManifestCase | null): FrontendObservationType => {
   const text = [
@@ -277,12 +290,17 @@ const inferFrontendObservationType = (currentCase: CaseManifestCase | null): Fro
     .filter(Boolean)
     .join("\n");
   if (/使用者按鈕|登入者名稱|user\s*button|account\s*button/i.test(text)) return "userButton";
+  if (/側欄|公司共享|sidebar/i.test(text)) return "sidebarGroup";
+  if (/hover|tooltip|列內.*刪除|row.*delete/i.test(text)) return "rowDeleteTooltip";
+  if (/5\s*個上限|最高\s*5\s*個專案|上限阻擋|project.*limit/i.test(text)) return "projectLimitToast";
+  if (/報表\s*picker|來源報表|source\s*report|搜尋.*每日|每日報表/i.test(text)) return "sourceReportPicker";
   if (/下載\/刪除\s*icon|下載\s*icon|刪除\s*icon|toolbar|工具列|勾選.*下載|未勾選.*下載|disabled|enabled/i.test(text)) {
     return "projectToolbar";
   }
   if (/建構方式\s*radio|拼貼模式|報表模式|report[-_\s]*mode|radio/i.test(text)) return "reportModeRadio";
   if (/時間面板|時間區間\s*button|時間設置|動態|靜態|date\s*panel|date\s*range/i.test(text)) return "datePanel";
   if (/空設定|未完成設定|防呆|欄位未設置完成|點.{0,8}計算|計算.{0,8}按鈕|validation/i.test(text)) return "validationMessage";
+  if (/下載.*toast|數據已開始下載|editor.*下載|右上下載/i.test(text)) return "downloadToast";
   return null;
 };
 
@@ -298,6 +316,20 @@ const observationRequiredEvidence = (observationType: FrontendObservationType): 
       return ["dateRange.panel.state", "dom.state", "screenshot"];
     case "validationMessage":
       return ["validation.message.state", "dom.state", "screenshot"];
+    case "sidebarGroup":
+      return ["sidebar.companySharedGroup.state", "interactionLog", "screenshot"];
+    case "rowDeleteTooltip":
+      return ["projectList.rowActionTooltip.state", "interactionLog", "screenshot"];
+    case "projectLimitToast":
+      return ["projectLimit.toast.state", "interactionLog", "screenshot"];
+    case "sourceReportPicker":
+      return ["sourceReportPicker.state", "sourceControl.after", "interactionLog", "screenshot"];
+    case "dateTimeTypeTab":
+      return ["dateRange.timeTypeTab.state", "interactionLog", "screenshot"];
+    case "datePanelCancel":
+      return ["dateRange.cancelFlow.state", "interactionLog", "screenshot"];
+    case "downloadToast":
+      return ["editorToolbar.download.state", "download.toast.state", "interactionLog", "screenshot"];
     default:
       return ["dom.state", "screenshot"];
   }
@@ -315,6 +347,23 @@ const fallbackObservationType = (value: string | null): FrontendObservationType 
       return "datePanel";
     case "validationMessage":
       return "validationMessage";
+    case "sidebarGroup":
+    case "sidebarCompanySharedGroup":
+      return "sidebarGroup";
+    case "rowDeleteTooltip":
+    case "rowActionTooltip":
+      return "rowDeleteTooltip";
+    case "projectLimitToast":
+      return "projectLimitToast";
+    case "sourceReportPicker":
+      return "sourceReportPicker";
+    case "dateTimeTypeTab":
+      return "dateTimeTypeTab";
+    case "datePanelCancel":
+      return "datePanelCancel";
+    case "downloadToast":
+    case "editorDownload":
+      return "downloadToast";
     default:
       return null;
   }
@@ -848,7 +897,7 @@ const buildActions = (currentCase: CaseManifestCase | null, helperHints: HelperH
               }
             : {})
         }, {
-          mutatesUi: observationType === "datePanel" || observationType === "validationMessage",
+          mutatesUi: !["userButton", "projectToolbar", "reportModeRadio"].includes(observationType),
           requiredEvidence: structuredEvidence.length > 0 ? structuredEvidence : observationRequiredEvidence(observationType),
           screenshotPolicy: "required_if_possible",
           notes: [

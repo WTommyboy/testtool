@@ -320,7 +320,17 @@ const helperSupportsStructuredObservationType = (value: string | null | undefine
   value === "projectToolbar" ||
   value === "reportModeRadio" ||
   value === "datePanel" ||
-  value === "validationMessage";
+  value === "validationMessage" ||
+  value === "sidebarGroup" ||
+  value === "sidebarCompanySharedGroup" ||
+  value === "rowDeleteTooltip" ||
+  value === "rowActionTooltip" ||
+  value === "projectLimitToast" ||
+  value === "sourceReportPicker" ||
+  value === "dateTimeTypeTab" ||
+  value === "datePanelCancel" ||
+  value === "downloadToast" ||
+  value === "editorDownload";
 
 const isDeleteReportFlow = (currentCase: CaseManifestCase | null, helperHints: HelperHints | null): boolean => {
   const operationTemplate = helperHints?.operationTemplate ?? "";

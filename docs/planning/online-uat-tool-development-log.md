@@ -99,6 +99,16 @@ P0.18 implementation:
 - Verification result: generated package has 15 cases and 38 structured step rows. Every step action exists in `platform-action-vocabulary.v1.json`, every target exists in `BI_OFFICIAL_UI_COLLAGE/ui-object-vocabulary.json`, every xlsx `測試標的` aligns with the runtime case-scope contract, and the current parser imports the structured `步驟` sheet as 38 steps.
 - Boundary note: the generated package deliberately does not embed Tommy's oracle or any previous run result. It is a testcase authoring artifact, while the oracle remains only a time-bound calibration fixture.
 
+P0.19 implementation:
+
+- Added live-template verifier: `scripts/verify-p0-live-action-templates.ts`
+- Added npm script: `npm run verify:p0-live-action-templates`
+- Expanded `collage.observeFrontendState` routing/support from the first five observation types to the full reduced-smoke set: `sidebarGroup`, `rowDeleteTooltip`, `projectLimitToast`, `sourceReportPicker`, plus date-panel static/cancel flows and download-toast evidence.
+- Updated helper executor behavior so frontend observation helpers return current-run evidence with status `ok` even when `asserted=false`; the warning `FRONTEND_OBSERVATION_ASSERTION_FALSE_REQUIRES_CODEX_JUDGMENT` tells Codex/result-gate to judge from the case contract instead of treating the helper as a tool-level BLOCKED.
+- Added visible UI action coverage for sidebar company-shared toggle, row delete hover, project-limit create click/toast, source-report picker open/search/select, date-panel static tab and cancel flow, validation toast/no-preview-request, and editor icon-only download/download toast.
+- Adjusted `configureMetric` date-range failure handling: static/date UI failures with current-run interaction/date evidence no longer force helper status `blocked`; they remain evidence for downstream FAIL/BLOCKED judgment.
+- Boundary note: P0.19 is still a live-template wiring and local smoke milestone. It improves the agent's ability to collect evidence, but P0.20 remains the first small live smoke using the dev Agent profile before asking Tommy for another dev UAT run.
+
 ## 1. 範圍
 
 本文件涵蓋線上工具端：

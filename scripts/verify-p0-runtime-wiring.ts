@@ -97,7 +97,20 @@ const assertVocabularyCoverage = (contracts: StructuredCaseScopeContract[]): voi
   }
 };
 
-const supportedObservationTypes = new Set(["userButton", "projectToolbar", "reportModeRadio", "datePanel", "validationMessage"]);
+const supportedObservationTypes = new Set([
+  "userButton",
+  "projectToolbar",
+  "reportModeRadio",
+  "datePanel",
+  "validationMessage",
+  "sidebarGroup",
+  "rowDeleteTooltip",
+  "projectLimitToast",
+  "sourceReportPicker",
+  "dateTimeTypeTab",
+  "datePanelCancel",
+  "downloadToast"
+]);
 
 const assertRuntimeRouting = (contracts: StructuredCaseScopeContract[]): void => {
   for (const contract of contracts) {
@@ -136,7 +149,6 @@ const assertRuntimeRouting = (contracts: StructuredCaseScopeContract[]): void =>
       );
     }
     for (const target of new Set(contract.requiredActions.map((item) => item.target))) {
-      if (contract.routeIntent === "frontend_observation" && !supportedObservationTypes.has(contract.observationType ?? "")) continue;
       assert.ok(
         flattenedActions.some((item) => item.target === target) || plan.caseScopeContract.requiredActions.some((item) => item.target === target),
         `${contract.caseNo} helper plan lost structured target ${target}`

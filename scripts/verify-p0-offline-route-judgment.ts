@@ -239,7 +239,20 @@ const judgeCase = (
   return { status: "PASS", decisions };
 };
 
-const supportedObservationTypes = new Set(["userButton", "projectToolbar", "reportModeRadio", "datePanel", "validationMessage"]);
+const supportedObservationTypes = new Set([
+  "userButton",
+  "projectToolbar",
+  "reportModeRadio",
+  "datePanel",
+  "validationMessage",
+  "sidebarGroup",
+  "rowDeleteTooltip",
+  "projectLimitToast",
+  "sourceReportPicker",
+  "dateTimeTypeTab",
+  "datePanelCancel",
+  "downloadToast"
+]);
 const previewTemplates = new Set(["collage.runPreviewAndCollectEvidence", "collage.runDateVariantsPreviewEvidence"]);
 
 const assertRoute = (contract: StructuredCaseScopeContract): string[] => {
@@ -262,8 +275,6 @@ const assertRoute = (contract: StructuredCaseScopeContract): string[] => {
     assert.ok(!templates.some((item) => previewTemplates.has(item)), `${contract.caseNo} frontend observation must not route to preview helpers`);
     if (supportedObservationTypes.has(contract.observationType ?? "")) {
       assert.ok(templates.includes("collage.observeFrontendState"), `${contract.caseNo} supported observation must include observeFrontendState`);
-    } else {
-      assert.ok(!templates.includes("collage.observeFrontendState"), `${contract.caseNo} unsupported observation should wait for P0.19 template repair, not regex fallback`);
     }
   }
 
