@@ -22,6 +22,8 @@ export type ChromeDebugSessionDiagnostics = {
   endpoint: string;
   available: boolean;
   dedicatedPids: number[];
+  profileMatched: boolean;
+  profileMismatch: boolean;
   targetCount: number;
   targets: CdpTarget[];
   profileDir: string;
@@ -222,8 +224,18 @@ const waitForCdp = async (endpoint: string, timeoutMs: number): Promise<boolean>
   return false;
 };
 
-export const getChromeCdpEndpoint = (): string => {
-  const port = Number(process.env.UAT_AGENT_CHROME_DEBUG_PORT || defaultDebugPort);
+const normalizeChromeDebugPort = (value: unknown): number => {
+  const port = Number(value);
+  return Number.isInteger(port) && port > 0 ? port : defaultDebugPort;
+};
+
+const getChromeDebugPort = (config?: AgentConfig): string => {
+  const port = normalizeChromeDebugPort(process.env.UAT_AGENT_CHROME_DEBUG_PORT ?? config?.chrome_debug_port ?? defaultDebugPort);
+  return String(port);
+};
+
+export const getChromeCdpEndpoint = (config?: AgentConfig): string => {
+  const port = normalizeChromeDebugPort(process.env.UAT_AGENT_CHROME_DEBUG_PORT ?? config?.chrome_debug_port ?? defaultDebugPort);
   return `http://127.0.0.1:${Number.isFinite(port) ? port : defaultDebugPort}`;
 };
 
@@ -357,11 +369,6 @@ const markBrowserSessionTarget = async (endpoint: string, lease: BrowserSessionL
   }
 };
 
-const getChromeDebugPort = (): string => {
-  const port = Number(process.env.UAT_AGENT_CHROME_DEBUG_PORT || defaultDebugPort);
-  return String(Number.isFinite(port) ? port : defaultDebugPort);
-};
-
 const processExists = (pid: number): boolean => {
   try {
     process.kill(pid, 0);
@@ -382,7 +389,7 @@ const waitForProcessesToExit = async (pids: number[], timeoutMs: number): Promis
 
 const listDedicatedChromePids = async (config: AgentConfig): Promise<number[]> => {
   const profileDir = path.resolve(config.chrome_profile_dir);
-  const port = getChromeDebugPort();
+  const port = getChromeDebugPort(config);
   try {
     const { stdout } = await execFileAsync("ps", ["-axo", "pid=,command="], { timeout: 1500 });
     return stdout
@@ -401,13 +408,13 @@ const listDedicatedChromePids = async (config: AgentConfig): Promise<number[]> =
 };
 
 export const closeChromeDebugSession = async (config: AgentConfig): Promise<void> => {
-  const endpoint = getChromeCdpEndpoint();
+  const endpoint = getChromeCdpEndpoint(config);
+  const pids = await listDedicatedChromePids(config);
+  if (pids.length === 0) return;
+
   if (await isCdpAvailable(endpoint)) {
     await closeExistingPageTabs(endpoint);
   }
-
-  const pids = await listDedicatedChromePids(config);
-  if (pids.length === 0) return;
 
   for (const pid of pids) {
     try {
@@ -430,17 +437,22 @@ export const closeChromeDebugSession = async (config: AgentConfig): Promise<void
 };
 
 export const diagnoseChromeDebugSession = async (config: AgentConfig): Promise<ChromeDebugSessionDiagnostics> => {
-  const endpoint = getChromeCdpEndpoint();
+  const endpoint = getChromeCdpEndpoint(config);
   try {
     const targets = await listCdpTargets(endpoint);
+    const available = await isCdpAvailable(endpoint);
+    const dedicatedPids = await listDedicatedChromePids(config);
+    const profileMatched = !available || dedicatedPids.length > 0;
     return {
       endpoint,
-      available: await isCdpAvailable(endpoint),
-      dedicatedPids: await listDedicatedChromePids(config),
+      available,
+      dedicatedPids,
+      profileMatched,
+      profileMismatch: available && !profileMatched,
       targetCount: targets.length,
       targets: targets.slice(0, 20),
       profileDir: path.resolve(config.chrome_profile_dir),
-      debugPort: getChromeDebugPort(),
+      debugPort: getChromeDebugPort(config),
       chromeExecutableFound: Boolean(findChromeExecutable()),
       error: null
     };
@@ -449,10 +461,12 @@ export const diagnoseChromeDebugSession = async (config: AgentConfig): Promise<C
       endpoint,
       available: false,
       dedicatedPids: [],
+      profileMatched: false,
+      profileMismatch: false,
       targetCount: 0,
       targets: [],
       profileDir: path.resolve(config.chrome_profile_dir),
-      debugPort: getChromeDebugPort(),
+      debugPort: getChromeDebugPort(config),
       chromeExecutableFound: Boolean(findChromeExecutable()),
       error: error instanceof Error ? error.message : String(error)
     };
@@ -464,9 +478,15 @@ export const ensureChromeDebugSession = async (
   initialUrl?: string | null,
   options: ChromeSessionOptions = {}
 ): Promise<string | null> => {
-  const endpoint = getChromeCdpEndpoint();
+  const endpoint = getChromeCdpEndpoint(config);
   const openInitialUrl = options.openInitialUrl ?? true;
   if (await isCdpAvailable(endpoint)) {
+    const dedicatedPids = await listDedicatedChromePids(config);
+    if (dedicatedPids.length === 0) {
+      throw new Error(
+        `CHROME_CDP_PROFILE_MISMATCH:${endpoint}:expected_profile=${path.resolve(config.chrome_profile_dir)}`
+      );
+    }
     if (options.resetTabs) await closeExistingPageTabs(endpoint);
     if (initialUrl && openInitialUrl) {
       const target = await openCdpTab(endpoint, initialUrl);
@@ -554,8 +574,14 @@ export const openUrlInDedicatedChrome = async (
   });
   const profileDir = path.resolve(config.chrome_profile_dir);
   if (!endpoint) {
-    const fallbackEndpoint = getChromeCdpEndpoint();
+    const fallbackEndpoint = getChromeCdpEndpoint(config);
     if (await waitForCdp(fallbackEndpoint, chromeLaunchCdpTimeoutMs)) {
+      const dedicatedPids = await listDedicatedChromePids(config);
+      if (dedicatedPids.length === 0) {
+        throw new Error(
+          `CHROME_CDP_PROFILE_MISMATCH:${fallbackEndpoint}:expected_profile=${path.resolve(config.chrome_profile_dir)}`
+        );
+      }
       endpoint = fallbackEndpoint;
     }
   }

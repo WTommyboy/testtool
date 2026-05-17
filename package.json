@@ -22,6 +22,7 @@
     "verify:package-consistency": "tsx scripts/verify-package-consistency-fixture.ts",
     "verify:result-evidence-gate": "tsx scripts/verify-result-evidence-gate.ts",
     "verify:agent-resume": "tsx scripts/verify-agent-resume.ts",
+    "verify:agent-browser-session-isolation": "tsx scripts/verify-agent-browser-session-isolation.ts",
     "verify:agent-connection-resilience": "tsx scripts/verify-agent-connection-resilience.ts",
     "verify:agent-result-contract": "tsx scripts/verify-agent-result-contract.ts",
     "verify:fail-bug-fallback": "tsx scripts/verify-fail-bug-fallback.ts",

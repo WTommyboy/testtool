@@ -73,6 +73,8 @@ const buildPlist = (config: AgentConfig, options: LaunchdOptions = {}): string =
     <string>${escapeXml(config.workdir_root)}</string>
     <key>UAT_AGENT_CONFIG_PATH</key>
     <string>${escapeXml(resolvedConfigPath)}</string>
+    <key>UAT_AGENT_CHROME_DEBUG_PORT</key>
+    <string>${escapeXml(String(config.chrome_debug_port))}</string>
   </dict>
 </dict>
 </plist>

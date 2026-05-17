@@ -221,6 +221,7 @@ const main = async (): Promise<void> => {
       codex_reasoning_effort: config.codex_reasoning_effort,
       auto_approve_tool_requests: config.auto_approve_tool_requests,
       keep_chrome_warm: config.keep_chrome_warm,
+      chrome_debug_port: config.chrome_debug_port,
       codex_workspace_root: config.codex_workspace_root,
       codex_workspace_agents_exists: fs.existsSync(`${config.codex_workspace_root}/AGENTS.md`),
       workdir_root: config.workdir_root,

@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
+import { diagnoseChromeDebugSession } from "./browser-session";
 import type { AgentCapability, AgentConfig, DoctorCheck } from "./types";
 
 const check = (name: string, condition: boolean, details?: Record<string, unknown>): DoctorCheck => ({
@@ -67,6 +68,7 @@ export const runDoctor = async (config: AgentConfig): Promise<DoctorCheck[]> => 
   const nodeMajor = Number(process.versions.node.split(".")[0]);
   const codexVersion = await run(config.codex_bin, ["--version"]);
   const codexMcpList = await run(config.codex_bin, ["mcp", "list"], 20_000);
+  const chromeDiagnostics = await diagnoseChromeDebugSession(config);
   const playwrightMcpConfigured = codexMcpList.exitCode === 0 && hasEnabledMcpServer(codexMcpList.stdout, "playwright");
   const checks: DoctorCheck[] = [
     check("node-version", nodeMajor >= 20, { version: process.version }),
@@ -80,9 +82,23 @@ export const runDoctor = async (config: AgentConfig): Promise<DoctorCheck[]> => 
     check("chrome-profile-writable", ensureWritableDir(config.chrome_profile_dir), { dir: config.chrome_profile_dir }),
     check("chrome-session-policy", true, {
       keep_chrome_warm: config.keep_chrome_warm,
+      chrome_debug_port: config.chrome_debug_port,
       policy: config.keep_chrome_warm
         ? "warm_process_reset_tabs_per_case"
         : "run_scoped_process_reset_tabs_per_case"
+    }),
+    check("chrome-cdp-profile-isolation", !chromeDiagnostics.profileMismatch, {
+      endpoint: chromeDiagnostics.endpoint,
+      available: chromeDiagnostics.available,
+      dedicatedPids: chromeDiagnostics.dedicatedPids,
+      profileMatched: chromeDiagnostics.profileMatched,
+      profileDir: chromeDiagnostics.profileDir,
+      debugPort: chromeDiagnostics.debugPort,
+      reason: chromeDiagnostics.profileMismatch
+        ? "CDP port is already occupied by a Chrome process that is not using this Agent profile."
+        : chromeDiagnostics.available
+          ? "CDP belongs to this Agent profile."
+          : "CDP is not currently running; Agent will launch it on demand."
     }),
     os.platform() === "darwin"
       ? skipped("macos-ui-automation-permissions", {

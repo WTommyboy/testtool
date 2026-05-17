@@ -14,6 +14,11 @@ const envPath = (name: string): string | null => {
   return value ? resolveUserPath(value) : null;
 };
 
+const envNumber = (name: string, fallback: number): number => {
+  const value = Number(process.env[name]?.trim());
+  return Number.isInteger(value) && value > 0 ? value : fallback;
+};
+
 const envConfigPath = envPath("UAT_AGENT_CONFIG_PATH");
 
 export const defaultAgentHome = envPath("UAT_AGENT_HOME")
@@ -58,6 +63,7 @@ export const defaultAgentConfig = (
       : "low",
     auto_approve_tool_requests: process.env.UAT_AGENT_AUTO_APPROVE_TOOL_REQUESTS !== "false",
     keep_chrome_warm: process.env.UAT_AGENT_KEEP_CHROME_WARM !== "false",
+    chrome_debug_port: envNumber("UAT_AGENT_CHROME_DEBUG_PORT", 9222),
     codex_workspace_root: detectWorkspaceRoot(),
     workdir_root: envPath("UAT_AGENT_WORKDIR_ROOT") ?? path.join(agentHome, "runs"),
     chrome_profile_dir: envPath("UAT_AGENT_CHROME_PROFILE_DIR") ?? path.join(agentHome, "chrome-profile"),

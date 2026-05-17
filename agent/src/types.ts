@@ -8,6 +8,7 @@ export type AgentConfig = {
   codex_reasoning_effort: "low" | "medium" | "high" | "xhigh";
   auto_approve_tool_requests: boolean;
   keep_chrome_warm: boolean;
+  chrome_debug_port: number;
   codex_workspace_root: string;
   workdir_root: string;
   chrome_profile_dir: string;
