@@ -1512,3 +1512,11 @@ P0a v1 範圍釐清：containment 只處理唯一 self-check error 為 `RESULT_P
 - 邊界：raw result evidence gate 仍會拒絕 out-of-scope selected-field preview blocker；containment 只負責不讓這類 case-level judgment conflict 把整輪 run 打死。這不等於接受原本錯誤 BLOCKED 判斷，也不放寬 invalid JSON、缺 detail、FAIL 無 bug row、Tool Bridge response 缺失等結構問題。
 - Fixture：`verify:capability-gate` 新增 K-10 fixture，鎖定 `previewRequired=false` 時 supported templates / helper plan 不含 `collage.configureMetric` 與 `collage.runPreviewAndCollectEvidence`。`verify:result-evidence-gate` 新增 containment fixture，確認 raw gate 會擋、containment 後可供 ingest 繼續。
 - 驗證：已跑 `npm run verify:capability-gate`、`npm run verify:result-evidence-gate`、`npm run verify:agent-result-contract`、`npm run verify:p0-scope-contract`、`npm run verify:package-consistency`、`npm run typecheck`、`npm run build`、`npm run build --prefix agent`、`git diff --check`。
+
+### 2026-05-17 - P0.5 frontend observation visual fallback contract
+
+- 背景：Tommy 指出 K-01 類「是否預設選拼貼模式」其實畫面截圖一眼可判，但目前工具只把 screenshot 當輔助 artifact，若 DOM/ARIA/URL selected state 讀不到就容易落成一般 `EVIDENCE_INSUFFICIENT`。這對資安或前端寫法造成 DOM evidence 不完整的頁面不夠實用。
+- Runtime：`result-evidence-gate` 新增 `RESULT_FRONTEND_OBSERVATION_VISUAL_FALLBACK_REQUIRED`。若 `BIUI_COLLAGE_R001` I/J/K/L/M/N 前端呈現 observation case 是 `BLOCKED / EVIDENCE_INSUFFICIENT`，且 detail_json 有 current-run screenshot artifact，但沒有 `evidenceSource=screenshotVisual` / `visualObservation` / `domEvidenceGap` / `BLOCKED_NEEDS_VISUAL_REVIEW` 等明確 visual fallback contract，raw gate 會拒絕一般 blocker。
+- Containment：server ingest 對唯一此類 case-level gate error 會轉為 `BLOCKED / BLOCKED_NEEDS_VISUAL_REVIEW`，保留 screenshotPath、visualObservation、domEvidenceGap、原始 gate issue 與 current-run containment metadata，再重新跑 gate，避免整輪 run 因「需要人工視覺 review」而 FAILED。
+- Agent prompt/guidance：新增規則要求 Codex 在 frontend observation + previewRequired=false + DOM/ARIA/URL 不足但有 screenshot 時，不可寫普通 `EVIDENCE_INSUFFICIENT`；應寫 `BLOCKED_NEEDS_VISUAL_REVIEW`。只有實際檢視截圖並明確描述可見 assertion 時，才可用 `PASS_VISUAL_EVIDENCE`。
+- 邊界：這不是通用 AI 看圖自動 PASS 機制，也不讓截圖取代能取得的結構化 DOM/network/chart evidence；它是 P0.5 compatibility contract，讓截圖 evidence 被分類、可 review、不中斷。

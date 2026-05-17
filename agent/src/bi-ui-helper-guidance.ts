@@ -150,6 +150,7 @@ export const writeBiUiHelperGuidance = (runDir: string, options: WriteBiUiHelper
     "- Helper report 應包含 browserSession / targetBinding / foregroundPolicy evidence；若 marker 缺失或不一致，回 `BROWSER_SESSION_*` blocker，不可猜測其他 tab。",
     "- Helper executor 只能由 Mac Agent 執行；Codex 不可透過 shell command_execution 自行呼叫 helper executor 或連 CDP。",
     "- Screenshot 用於 Tool Bridge、FAIL/bug、重大狀態轉換、final evidence；bug 若無 screenshot 必須寫明原因。",
+    "- Frontend observation 若 DOM/ARIA/URL 讀不到但已有 current-run screenshot artifact，結果不得寫成一般 EVIDENCE_INSUFFICIENT；需採 visual fallback contract：`BLOCKED_NEEDS_VISUAL_REVIEW`、`evidenceSource=screenshotVisual`、`screenshotPath`、`visualObservation`、`domEvidenceGap`。只有實際檢視截圖並能明確描述可見 assertion 時才可用 `PASS_VISUAL_EVIDENCE`。",
     "- 若 DOM/network evidence 已足以支撐 PASS/FAIL，但 screenshot timeout，不可反覆重試 full-page screenshot；最多改試一次較小 viewport/element screenshot。仍失敗就記 `screenshot_unavailable_reason` 並繼續寫結構化 evidence。",
     "",
     "## 常見操作節奏",

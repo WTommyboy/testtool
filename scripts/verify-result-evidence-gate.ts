@@ -290,6 +290,61 @@ const main = async (): Promise<void> => {
       `case-level containment should pass evidence gate for ingest continuation; issues=${JSON.stringify(containedOutOfScopeReport.issues)}`
     );
 
+    const frontendObservationScreenshotGap = path.join(tempRoot, "frontend-observation-screenshot-gap-result.xlsx");
+    await writeWorkbook(frontendObservationScreenshotGap, [
+      {
+        caseNo: "BIUI_COLLAGE_R001-K-01",
+        status: "BLOCKED",
+        testType: "前端呈現",
+        failCategory: "EVIDENCE_INSUFFICIENT",
+        detailJson: JSON.stringify({
+          測試目的: "確認新增報表預設為拼貼模式。",
+          設定條件: "已進入新增報表頁，previewRequired=false。",
+          預期行為: "畫面應可見拼貼模式為預設選項。",
+          實際行為: "已取得本次新增報表頁截圖，但缺少 radio checked / aria-checked / URL mode segment 結構化 evidence，暫無法自動判 PASS。",
+          blocked_reason: "EVIDENCE_INSUFFICIENT: 缺少 mode selected structured state。",
+          previewRequired: false,
+          currentRunEvidence: {
+            screenshotPath:
+              "output/helper-artifacts/BIUI_COLLAGE_R001-K-01/BIUI_COLLAGE_R001-K-01-create-report.png",
+            dom: {
+              visibleText: ["拼貼模式", "精算模式 / 指標趨勢", "精算模式 / 明細檢視"],
+              checkedState: null
+            }
+          }
+        })
+      }
+    ]);
+    const visualGapParsed = await parseResultXlsx(frontendObservationScreenshotGap);
+    const visualGapReport = evaluateResultEvidenceGate({
+      parsed: visualGapParsed,
+      currentCaseNo: "BIUI_COLLAGE_R001-K-01",
+      expectedCaseNos: ["BIUI_COLLAGE_R001-K-01"],
+      resultSource: "codex_generated",
+      requireSingleCase: true
+    });
+    assert.equal(visualGapReport.status, "error");
+    assert.ok(hasIssue(visualGapReport, "RESULT_FRONTEND_OBSERVATION_VISUAL_FALLBACK_REQUIRED"));
+    const visualContainmentReport = containCaseLevelResultEvidenceGateIssues(visualGapParsed, visualGapReport);
+    assert.equal(visualContainmentReport.status, "updated");
+    assert.equal(visualContainmentReport.reason, "RESULT_EVIDENCE_GATE_CONTAINED_AS_BLOCKED_NEEDS_VISUAL_REVIEW");
+    assert.deepEqual(visualContainmentReport.updatedCaseNos, ["BIUI_COLLAGE_R001-K-01"]);
+    assert.equal(visualGapParsed.cases[0]?.status, "BLOCKED");
+    assert.equal(visualGapParsed.cases[0]?.verdictReason, "BLOCKED_NEEDS_VISUAL_REVIEW");
+    assert.equal(visualGapParsed.cases[0]?.detailJson?.["evidenceSource"], "screenshotVisual");
+    const containedVisualGapReport = evaluateResultEvidenceGate({
+      parsed: visualGapParsed,
+      currentCaseNo: "BIUI_COLLAGE_R001-K-01",
+      expectedCaseNos: ["BIUI_COLLAGE_R001-K-01"],
+      resultSource: "codex_generated",
+      requireSingleCase: true
+    });
+    assert.equal(
+      containedVisualGapReport.status,
+      "ok",
+      `visual fallback containment should pass evidence gate for ingest continuation; issues=${JSON.stringify(containedVisualGapReport.issues)}`
+    );
+
     const blockedNoNativeConfirm = path.join(tempRoot, "blocked-no-native-confirm-result.xlsx");
     await writeWorkbook(blockedNoNativeConfirm, [
       {
@@ -466,6 +521,7 @@ const main = async (): Promise<void> => {
             "Tool Bridge action claim without response evidence is blocked",
             "non-destructive selected-field validation alert does not require Tool Bridge response",
             "out-of-scope preview blocker can be contained as case-level rejudgment",
+            "frontend observation screenshot evidence requires explicit visual fallback and can be contained",
             "negative or insufficient native-confirm prose does not require Tool Bridge response",
             "formula modal blocked prose does not require Tool Bridge response",
             "Tool Bridge prose in purpose/setup/expected fields does not trigger response gate",

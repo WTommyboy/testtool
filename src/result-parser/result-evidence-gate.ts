@@ -254,6 +254,10 @@ const flattenedDetailText = (detail: Record<string, unknown>): string => {
 
 const SELECTED_FIELD_PREVIEW_PRECONDITION_PATTERN =
   /EXECUTE_PRECONDITION_NO_SELECTED_FIELDS|selected\s*(?:metric\s*)?fields?\s*(?:=|:|is)?\s*(?:0|\[\])|selectedMetricFields[\s\S]{0,80}(?:\[\]|0)/i;
+const SCREENSHOT_EVIDENCE_PATTERN =
+  /(?:\.png\b|\.jpe?g\b|\.webp\b|artifactType["']?\s*[:=]\s*["']?screenshot|截圖(?:路徑|檔案)?["']?\s*[:=]\s*["']?[^"'\s]+\.(?:png|jpe?g|webp)|screenshot(?:Path|File|Artifact|Url)?["']?\s*[:=]\s*["']?[^"'\s]+\.(?:png|jpe?g|webp))/i;
+const VISUAL_FALLBACK_MARKER_PATTERN =
+  /(?:screenshotVisual|visual_screenshot|visualObservation|visual_observation|domEvidenceGap|dom_evidence_gap|BLOCKED_NEEDS_VISUAL_REVIEW|PASS_VISUAL_EVIDENCE)/i;
 
 const isFalseLike = (value: unknown): boolean =>
   value === false || (typeof value === "string" && value.trim().toLowerCase() === "false");
@@ -284,6 +288,39 @@ const hasOutOfScopeSelectedFieldPreviewBlocker = (item: ParsedResultCase, normal
     .filter(Boolean)
     .join("\n");
   return SELECTED_FIELD_PREVIEW_PRECONDITION_PATTERN.test(text);
+};
+
+const hasScreenshotEvidence = (detail: Record<string, unknown>): boolean => {
+  let found = false;
+  walkDetail(detail, ({ key, value, path }) => {
+    if (found) return;
+    const text = [
+      key ?? "",
+      path,
+      typeof value === "string" || typeof value === "number" || typeof value === "boolean" ? String(value) : ""
+    ].join("\n");
+    if (SCREENSHOT_EVIDENCE_PATTERN.test(text)) found = true;
+  });
+  return found;
+};
+
+const hasVisualFallbackContract = (item: ParsedResultCase): boolean => {
+  if (!item.detailJson) return false;
+  const text = [item.verdictReason, item.detailJsonRaw, flattenedDetailText(item.detailJson)]
+    .filter(Boolean)
+    .join("\n");
+  return VISUAL_FALLBACK_MARKER_PATTERN.test(text) && hasScreenshotEvidence(item.detailJson);
+};
+
+const hasFrontendObservationVisualFallbackGap = (item: ParsedResultCase, normalizedStatus: string): boolean => {
+  if (normalizedStatus !== "BLOCKED" || !item.detailJson) return false;
+  if (!parsedCaseImpliesPreviewNotRequired(item)) return false;
+  if (!hasScreenshotEvidence(item.detailJson)) return false;
+  if (hasVisualFallbackContract(item)) return false;
+  const text = [item.verdictReason, item.detailJsonRaw, flattenedDetailText(item.detailJson)]
+    .filter(Boolean)
+    .join("\n");
+  return /EVIDENCE_INSUFFICIENT/i.test(text);
 };
 
 const TOOL_BRIDGE_CONTEXT_EXCLUDED_PATH_PATTERNS = [
@@ -538,6 +575,18 @@ export const evaluateResultEvidenceGate = (input: ResultEvidenceGateInput): Resu
         message: "A frontend-observation result with previewRequired=false cannot be blocked by selected-field preview precondition evidence.",
         context: {
           rule: "selectedMetricFields=0 / EXECUTE_PRECONDITION_NO_SELECTED_FIELDS is only valid for preview/download execution scopes"
+        }
+      });
+    }
+
+    if (hasFrontendObservationVisualFallbackGap(item, status)) {
+      issues.push({
+        severity: "error",
+        code: "RESULT_FRONTEND_OBSERVATION_VISUAL_FALLBACK_REQUIRED",
+        caseNo: item.caseNo,
+        message: "A frontend-observation result with screenshot evidence but insufficient DOM/ARIA/URL evidence must use an explicit visual fallback contract.",
+        context: {
+          rule: "Use BLOCKED_NEEDS_VISUAL_REVIEW or PASS_VISUAL_EVIDENCE with evidenceSource=screenshotVisual, screenshotPath, visualObservation, and domEvidenceGap."
         }
       });
     }
