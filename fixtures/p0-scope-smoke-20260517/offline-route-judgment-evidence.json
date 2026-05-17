@@ -1,0 +1,126 @@
+{
+  "schemaVersion": "p0-offline-route-judgment-evidence-v1",
+  "fixtureId": "P0_SCOPE_SMOKE_BIUI_COLLAGE_R001_20260517_OFFLINE_ROUTE_JUDGMENT",
+  "domain": "BI_OFFICIAL_UI_COLLAGE",
+  "source": {
+    "purpose": "Synthetic current-evidence fixture for P0.17 offline route/judgment smoke. This is not runtime product truth and is not required for normal UAT authoring.",
+    "oracleFixture": "fixtures/p0-scope-smoke-20260517/oracle.json",
+    "caseScopeContracts": "domain-packs/BI_OFFICIAL_UI_COLLAGE/case-scope-runtime-contracts.json",
+    "capturedAt": "2026-05-18 Asia/Taipei"
+  },
+  "cases": [
+    {
+      "caseNo": "BIUI_COLLAGE_R001-B-06",
+      "actionOutcomes": [
+        { "actionId": "selectPast30Days", "actualOutcome": "state_changed", "evidenceAvailable": true },
+        { "actionId": "executePast30DaysPreview", "actualOutcome": "request_sent", "evidenceAvailable": true },
+        { "actionId": "selectRecent30Days", "actualOutcome": "state_changed", "evidenceAvailable": true },
+        { "actionId": "compare30DayPayloads", "actualOutcome": "value_matches", "evidenceAvailable": true }
+      ]
+    },
+    {
+      "caseNo": "BIUI_COLLAGE_R001-B-08",
+      "actionOutcomes": [
+        { "actionId": "openDatePanel", "actualOutcome": "visible", "evidenceAvailable": true },
+        { "actionId": "selectStaticTimeType", "actualOutcome": "dispatched_no_change", "evidenceAvailable": true, "productObservation": "靜態時間頁籤無法點擊與切換。" },
+        { "actionId": "executeStaticPreview", "actualOutcome": "not_reached", "evidenceAvailable": false }
+      ]
+    },
+    {
+      "caseNo": "BIUI_COLLAGE_R001-B-09",
+      "actionOutcomes": [
+        { "actionId": "openDatePanel", "actualOutcome": "visible", "evidenceAvailable": true },
+        { "actionId": "selectStaticTimeType", "actualOutcome": "dispatched_no_change", "evidenceAvailable": true, "productObservation": "靜態時間頁籤無法點擊與切換。" },
+        { "actionId": "setStaticStartDate", "actualOutcome": "not_reached", "evidenceAvailable": false },
+        { "actionId": "setStaticEndDate", "actualOutcome": "not_reached", "evidenceAvailable": false },
+        { "actionId": "executeStaticPreview", "actualOutcome": "not_reached", "evidenceAvailable": false }
+      ]
+    },
+    {
+      "caseNo": "BIUI_COLLAGE_R001-I-01",
+      "actionOutcomes": [
+        { "actionId": "toggleCompanySharedGroup", "actualOutcome": "state_changed", "evidenceAvailable": true }
+      ]
+    },
+    {
+      "caseNo": "BIUI_COLLAGE_R001-I-07",
+      "actionOutcomes": [
+        { "actionId": "assertUserButtonText", "actualOutcome": "text_matches", "evidenceAvailable": true }
+      ]
+    },
+    {
+      "caseNo": "BIUI_COLLAGE_R001-J-02",
+      "actionOutcomes": [
+        { "actionId": "assertToolbarDownloadDisabled", "actualOutcome": "target_disabled_or_blocked", "evidenceAvailable": true },
+        { "actionId": "assertToolbarDeleteDisabled", "actualOutcome": "target_disabled_or_blocked", "evidenceAvailable": true },
+        { "actionId": "assertToolbarCreateEnabled", "actualOutcome": "succeeded", "evidenceAvailable": true }
+      ]
+    },
+    {
+      "caseNo": "BIUI_COLLAGE_R001-J-07",
+      "actionOutcomes": [
+        { "actionId": "hoverRowDeleteAction", "actualOutcome": "succeeded", "evidenceAvailable": true },
+        { "actionId": "assertRowDeleteTooltip", "actualOutcome": "target_absent_verified", "evidenceAvailable": true, "productObservation": "hover 刪除 action 後未出現 tooltip。" }
+      ]
+    },
+    {
+      "caseNo": "BIUI_COLLAGE_R001-J-12",
+      "actionOutcomes": [
+        { "actionId": "clickProjectCreateAtLimit", "actualOutcome": "toast_visible", "evidenceAvailable": true },
+        { "actionId": "assertProjectLimitToast", "actualOutcome": "toast_visible", "evidenceAvailable": true }
+      ]
+    },
+    {
+      "caseNo": "BIUI_COLLAGE_R001-K-01",
+      "actionOutcomes": [
+        { "actionId": "assertCollageModeDefault", "actualOutcome": "selected", "evidenceAvailable": true }
+      ]
+    },
+    {
+      "caseNo": "BIUI_COLLAGE_R001-K-08",
+      "actionOutcomes": [
+        { "actionId": "openSourceReportPicker", "actualOutcome": "visible", "evidenceAvailable": true },
+        { "actionId": "searchDailyReport", "actualOutcome": "value_matches", "evidenceAvailable": true },
+        { "actionId": "selectDailyReportOption", "actualOutcome": "state_changed", "evidenceAvailable": true }
+      ]
+    },
+    {
+      "caseNo": "BIUI_COLLAGE_R001-K-10",
+      "actionOutcomes": [
+        { "actionId": "clickCalculateWithIncompleteRow", "actualOutcome": "toast_visible", "evidenceAvailable": true },
+        { "actionId": "assertIncompleteFieldToast", "actualOutcome": "toast_visible", "evidenceAvailable": true },
+        { "actionId": "assertNoPreviewRequest", "actualOutcome": "request_not_sent", "evidenceAvailable": true }
+      ]
+    },
+    {
+      "caseNo": "BIUI_COLLAGE_R001-L-02",
+      "actionOutcomes": [
+        { "actionId": "openDatePanel", "actualOutcome": "visible", "evidenceAvailable": true },
+        { "actionId": "assertDatePanelVisible", "actualOutcome": "visible", "evidenceAvailable": true }
+      ]
+    },
+    {
+      "caseNo": "BIUI_COLLAGE_R001-L-03",
+      "actionOutcomes": [
+        { "actionId": "openDatePanel", "actualOutcome": "visible", "evidenceAvailable": true },
+        { "actionId": "selectYesterdayPreset", "actualOutcome": "state_changed", "evidenceAvailable": true },
+        { "actionId": "cancelDatePanel", "actualOutcome": "state_unchanged", "evidenceAvailable": true }
+      ]
+    },
+    {
+      "caseNo": "BIUI_COLLAGE_R001-L-09",
+      "actionOutcomes": [
+        { "actionId": "openDatePanel", "actualOutcome": "visible", "evidenceAvailable": true },
+        { "actionId": "selectStaticTimeType", "actualOutcome": "dispatched_no_change", "evidenceAvailable": true, "productObservation": "靜態時間無法點擊與切換。" }
+      ]
+    },
+    {
+      "caseNo": "BIUI_COLLAGE_R001-N-03",
+      "actionOutcomes": [
+        { "actionId": "executeValidPreview", "actualOutcome": "request_sent", "evidenceAvailable": true },
+        { "actionId": "clickEditorDownload", "actualOutcome": "download_started", "evidenceAvailable": true },
+        { "actionId": "assertDownloadToast", "actualOutcome": "toast_visible", "evidenceAvailable": true }
+      ]
+    }
+  ]
+}

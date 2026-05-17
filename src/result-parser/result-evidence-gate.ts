@@ -60,6 +60,25 @@ export class ResultEvidenceGateError extends Error {
 }
 
 const VALID_RESULT_STATUSES = new Set(["PASS", "FAIL", "BLOCKED", "PARTIAL"]);
+const VALID_CASE_SCOPE_ROLES = new Set(["precondition", "under_test", "verification", "cleanup"]);
+const VALID_CASE_SCOPE_EXPECTED_OUTCOMES = new Set([
+  "succeeded",
+  "disabled_or_no_change",
+  "visible",
+  "hidden",
+  "text_matches",
+  "value_matches",
+  "selected",
+  "checked",
+  "unchecked",
+  "state_changed",
+  "state_unchanged",
+  "request_sent",
+  "request_not_sent",
+  "download_started",
+  "toast_visible",
+  "tooltip_visible"
+]);
 
 const PASS_REQUIRED_FIELDS = [
   ["測試目的", "testPurpose", "purpose"],
@@ -238,6 +257,93 @@ const hasAnyField = (detail: Record<string, unknown>, aliases: string[]): boolea
     }
   });
   return found;
+};
+
+const validateStructuredCaseScopeContracts = (
+  item: ParsedResultCase,
+  issues: ResultEvidenceGateIssue[]
+): void => {
+  const detail = item.detailJson;
+  if (!detail) return;
+  const candidates: Array<{ value: unknown; path: string }> = [];
+  walkDetail(detail, ({ key, value, path }) => {
+    if (key === "caseScopeContract" && value && typeof value === "object" && !Array.isArray(value)) {
+      candidates.push({ value, path });
+    }
+  });
+  for (const candidate of candidates) {
+    const contract = candidate.value as Record<string, unknown>;
+    if (contract.version !== "v1") {
+      issues.push({
+        severity: "error",
+        code: "DETAIL_JSON_CASE_SCOPE_CONTRACT_INVALID",
+        caseNo: item.caseNo,
+        message: "caseScopeContract.version must be v1 when included in detail_json.",
+        context: { path: candidate.path }
+      });
+    }
+    const requiredActions = contract.requiredActions;
+    if (!Array.isArray(requiredActions) || requiredActions.length === 0) {
+      issues.push({
+        severity: "error",
+        code: "DETAIL_JSON_CASE_SCOPE_CONTRACT_INVALID",
+        caseNo: item.caseNo,
+        message: "caseScopeContract.requiredActions must be a non-empty array when included in detail_json.",
+        context: { path: candidate.path }
+      });
+      continue;
+    }
+    requiredActions.forEach((rawAction, index) => {
+      if (!rawAction || typeof rawAction !== "object" || Array.isArray(rawAction)) {
+        issues.push({
+          severity: "error",
+          code: "DETAIL_JSON_CASE_SCOPE_CONTRACT_INVALID",
+          caseNo: item.caseNo,
+          message: "caseScopeContract.requiredActions entries must be objects.",
+          context: { path: `${candidate.path}.requiredActions[${index}]` }
+        });
+        return;
+      }
+      const action = rawAction as Record<string, unknown>;
+      const missing = ["action", "target", "role", "expectedOutcome", "evidenceRequirements"].filter((key) => !isMeaningfulValue(action[key]));
+      if (missing.length > 0) {
+        issues.push({
+          severity: "error",
+          code: "DETAIL_JSON_CASE_SCOPE_CONTRACT_INVALID",
+          caseNo: item.caseNo,
+          message: "caseScopeContract.requiredActions entry is missing required action/target/role/expectedOutcome/evidenceRequirements fields.",
+          context: { path: `${candidate.path}.requiredActions[${index}]`, missing }
+        });
+      }
+      if (typeof action.role === "string" && !VALID_CASE_SCOPE_ROLES.has(action.role)) {
+        issues.push({
+          severity: "error",
+          code: "DETAIL_JSON_CASE_SCOPE_CONTRACT_INVALID",
+          caseNo: item.caseNo,
+          message: `Unknown caseScopeContract action role: ${action.role}`,
+          context: { path: `${candidate.path}.requiredActions[${index}].role` }
+        });
+      }
+      if (typeof action.expectedOutcome === "string" && !VALID_CASE_SCOPE_EXPECTED_OUTCOMES.has(action.expectedOutcome)) {
+        issues.push({
+          severity: "error",
+          code: "DETAIL_JSON_CASE_SCOPE_CONTRACT_INVALID",
+          caseNo: item.caseNo,
+          message: `Unknown caseScopeContract expectedOutcome: ${action.expectedOutcome}`,
+          context: { path: `${candidate.path}.requiredActions[${index}].expectedOutcome` }
+        });
+      }
+      if (!Array.isArray(action.evidenceRequirements) || action.evidenceRequirements.length === 0) {
+        issues.push({
+          severity: "error",
+          code: "DETAIL_JSON_CASE_SCOPE_CONTRACT_INVALID",
+          caseNo: item.caseNo,
+          message: "caseScopeContract action evidenceRequirements must be a non-empty array.",
+          context: { path: `${candidate.path}.requiredActions[${index}].evidenceRequirements` }
+        });
+      }
+    });
+  }
 };
 
 const flattenedDetailText = (detail: Record<string, unknown>): string => {
@@ -607,6 +713,8 @@ export const evaluateResultEvidenceGate = (input: ResultEvidenceGateInput): Resu
     } else if (status === "PARTIAL") {
       missingFieldIssues(item, "PARTIAL", PARTIAL_REQUIRED_FIELDS, issues);
     }
+
+    validateStructuredCaseScopeContracts(item, issues);
 
     if (hasOutOfScopeSelectedFieldPreviewBlocker(item, status)) {
       issues.push({

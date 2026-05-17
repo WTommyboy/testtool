@@ -271,6 +271,20 @@ export const writeRuleIndex = (runDir: string, domain: string): string => {
     summary: "Official collage frontend observation contract. Defines user button, toolbar, radio, date panel, and validation evidence objects."
   });
   addIfExists(entries, runDir, {
+    id: "domain-case-scope-contracts",
+    scope: "domain",
+    filePath: path.join(runDir, "input", "domain_case_scope_contracts.json"),
+    loadWhen: ["case scope", "action target expected outcome", "PASS/FAIL/BLOCKED judgment", "helper routing"],
+    summary: "Structured action/object case scope contracts for the current official BI UI bridge."
+  });
+  addIfExists(entries, runDir, {
+    id: "domain-ui-object-vocabulary",
+    scope: "domain",
+    filePath: path.join(runDir, "input", "domain_ui_object_vocabulary.json"),
+    loadWhen: ["UI object id", "locator semantics", "official BI UI action target", "visual alignment"],
+    summary: "Official BI UI object ids, supported platform actions, locator hints, and current known product gaps."
+  });
+  addIfExists(entries, runDir, {
     id: "domain-evidence-schema",
     scope: "domain",
     filePath: path.join(runDir, "input", "domain_evidence_schema.json"),

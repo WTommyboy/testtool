@@ -7,6 +7,8 @@ const optionalFiles = [
   "ui-contract.json",
   "action-contracts/setMetricRows.json",
   "action-contracts/observeFrontendState.json",
+  "case-scope-runtime-contracts.json",
+  "ui-object-vocabulary.json",
   "evidence-schema.json",
   "lint-rules.json",
   "discovery/page-map.json",

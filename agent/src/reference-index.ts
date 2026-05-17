@@ -44,6 +44,8 @@ const roleForInputKey = (key: string): string => {
     domain_ui_contract: "domain UI/action/evidence contract",
     domain_action_set_metric_rows: "domain action contract for official collage metric rows",
     domain_action_observe_frontend_state: "domain action contract for official collage frontend observation evidence",
+    domain_case_scope_contracts: "domain structured case action/object scope contracts",
+    domain_ui_object_vocabulary: "domain official UI object vocabulary",
     domain_evidence_schema: "domain current-run evidence schema",
     domain_lint_rules: "domain testcase lint rules",
     domain_discovery_page_map: "domain UI discovery page map",

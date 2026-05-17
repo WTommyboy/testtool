@@ -758,6 +758,8 @@ const getDomainInputUrls = (req: Request, domain: string): Record<string, string
     { key: "domain_ui_contract", fileName: "ui-contract.json", path: "ui-contract" },
     { key: "domain_action_set_metric_rows", fileName: "action-contracts/setMetricRows.json", path: "action-contracts/setMetricRows" },
     { key: "domain_action_observe_frontend_state", fileName: "action-contracts/observeFrontendState.json", path: "action-contracts/observeFrontendState" },
+    { key: "domain_case_scope_contracts", fileName: "case-scope-runtime-contracts.json", path: "case-scope-runtime-contracts" },
+    { key: "domain_ui_object_vocabulary", fileName: "ui-object-vocabulary.json", path: "ui-object-vocabulary" },
     { key: "domain_evidence_schema", fileName: "evidence-schema.json", path: "evidence-schema" },
     { key: "domain_lint_rules", fileName: "lint-rules.json", path: "lint-rules" },
     { key: "domain_discovery_page_map", fileName: "discovery/page-map.json", path: "discovery/page-map" },

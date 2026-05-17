@@ -68,6 +68,25 @@ P0.15 implementation:
 - Boundary note: this is domain pack data, not platform action data and not a per-domain executable helper. P0 fixture case mappings remain in `fixtures/`, not in `ui-object-vocabulary.json`.
 - P0.15b visual finding after Tommy confirmation: row-local report actions are visible text actions `下載` / `刪除`, so the object id is `projectList.rowDeleteAction`. The row delete tooltip and static date inputs are known product gaps because the tooltip is not implemented and `靜態時間` cannot be clicked. Tommy-provided screenshots confirm `projectLimit.toast` text `已達最高5個專案`, `download.toast` text `數據已開始下載`, and `validation.toast` pattern `第 {rowIndex} 欄位，欄位未設置完成`; multiple incomplete rows produce multiple stacked validation messages.
 
+P0.16 implementation:
+
+- Added structured case-scope runtime contracts: `domain-packs/BI_OFFICIAL_UI_COLLAGE/case-scope-runtime-contracts.json`
+- Added runtime loader and bridge: `agent/src/structured-case-scope.ts`
+- Wired the structured scope into `case-scope`, `current-case-pack`, `capability-gate`, and `helper-execution-plan`, so runtime diagnostics now carry the same `action + target + role + expectedOutcome + evidenceRequirements` contract.
+- Exposed `domain_case_scope_contracts` and `domain_ui_object_vocabulary` as optional domain inputs in run packets, plus run brief, prompt, rule-index, and reference-index entries.
+- Added result evidence gate structural validation for detail_json that cites `caseScopeContract`.
+- Added verifier: `scripts/verify-p0-runtime-wiring.ts`
+- Added npm script: `npm run verify:p0-runtime-wiring`
+- Verification result: the P0.16 smoke validates all 15 reduced-smoke contracts, checks action ids against the platform vocabulary, checks targets against the BI UI object vocabulary, confirms capability/helper routing carries the structured scope, and confirms result gate rejects malformed contract detail. This remains a runtime bridge and does not promote Tommy's oracle into permanent product truth.
+
+P0.17 implementation:
+
+- Added synthetic offline evidence fixture: `fixtures/p0-scope-smoke-20260517/offline-route-judgment-evidence.json`
+- Added route/judgment verifier: `scripts/verify-p0-offline-route-judgment.ts`
+- Added npm script: `npm run verify:p0-offline-route-judgment`
+- Verification result: 15/15 reduced-smoke cases match Tommy's oracle without running a browser. The verifier checks route boundaries first, then applies a contract-driven offline judgment pass. It specifically guards against two prior failure modes: frontend observation cases falling back to generic preview helpers, and unsupported observation types being incorrectly guessed into a wrong `observeFrontendState` subtype.
+- Boundary note: this is an offline smoke for route/judgment logic only. It does not prove the live templates can execute J-07 tooltip, J-12 project-limit toast, K-08 source-report picker, or N-03 download end to end; those remain P0.19/P0.20 work.
+
 ## 1. 範圍
 
 本文件涵蓋線上工具端：

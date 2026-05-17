@@ -77,6 +77,14 @@ router.get("/:name/action-contracts/observeFrontendState", (req, res) => {
   return sendOptionalJsonFile(req.params.name, "action-contracts/observeFrontendState.json", "DOMAIN_ACTION_OBSERVE_FRONTEND_STATE_MISSING", res);
 });
 
+router.get("/:name/case-scope-runtime-contracts", (req, res) => {
+  return sendOptionalJsonFile(req.params.name, "case-scope-runtime-contracts.json", "DOMAIN_CASE_SCOPE_CONTRACTS_MISSING", res);
+});
+
+router.get("/:name/ui-object-vocabulary", (req, res) => {
+  return sendOptionalJsonFile(req.params.name, "ui-object-vocabulary.json", "DOMAIN_UI_OBJECT_VOCABULARY_MISSING", res);
+});
+
 router.get("/:name/evidence-schema", (req, res) => {
   return sendOptionalJsonFile(req.params.name, "evidence-schema.json", "DOMAIN_EVIDENCE_SCHEMA_MISSING", res);
 });

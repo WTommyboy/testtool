@@ -239,6 +239,8 @@ const writeRunBrief = (
   const domainUiContract = inputs.domain_ui_contract ?? null;
   const domainActionSetMetricRows = inputs.domain_action_set_metric_rows ?? null;
   const domainActionObserveFrontendState = inputs.domain_action_observe_frontend_state ?? null;
+  const domainCaseScopeContracts = inputs.domain_case_scope_contracts ?? null;
+  const domainUiObjectVocabulary = inputs.domain_ui_object_vocabulary ?? null;
   const domainEvidenceSchema = inputs.domain_evidence_schema ?? null;
   const domainLintRules = inputs.domain_lint_rules ?? null;
   const domainDiscoveryPageMap = inputs.domain_discovery_page_map ?? null;
@@ -291,6 +293,8 @@ const writeRunBrief = (
     `- domain_ui_contract: ${domainUiContract ?? "(not downloaded; use visible UI exploration)"}`,
     `- domain_action_set_metric_rows: ${domainActionSetMetricRows ?? "(not downloaded; no domain action contract)"}`,
     `- domain_action_observe_frontend_state: ${domainActionObserveFrontendState ?? "(not downloaded; no observation action contract)"}`,
+    `- domain_case_scope_contracts: ${domainCaseScopeContracts ?? "(not downloaded; no structured action/object case scope contracts)"}`,
+    `- domain_ui_object_vocabulary: ${domainUiObjectVocabulary ?? "(not downloaded; use domain UI contract and visible UI exploration)"}`,
     `- domain_evidence_schema: ${domainEvidenceSchema ?? "(not downloaded; use generic evidence policy)"}`,
     `- domain_lint_rules: ${domainLintRules ?? "(not downloaded; use package consistency only)"}`,
     `- domain_discovery_page_map: ${domainDiscoveryPageMap ?? "(not downloaded; discover pages from visible UI)"}`,
@@ -446,6 +450,8 @@ const inputFileNameByKey: Record<string, string> = {
   domain_ui_contract: "domain_ui_contract.json",
   domain_action_set_metric_rows: "domain_action_set_metric_rows.json",
   domain_action_observe_frontend_state: "domain_action_observe_frontend_state.json",
+  domain_case_scope_contracts: "domain_case_scope_contracts.json",
+  domain_ui_object_vocabulary: "domain_ui_object_vocabulary.json",
   domain_evidence_schema: "domain_evidence_schema.json",
   domain_lint_rules: "domain_lint_rules.json",
   domain_discovery_page_map: "domain_discovery_page_map.json",
@@ -1263,6 +1269,8 @@ const buildPrompt = (
   const domainUiContract = inputs.domain_ui_contract ?? null;
   const domainActionSetMetricRows = inputs.domain_action_set_metric_rows ?? null;
   const domainActionObserveFrontendState = inputs.domain_action_observe_frontend_state ?? null;
+  const domainCaseScopeContracts = inputs.domain_case_scope_contracts ?? null;
+  const domainUiObjectVocabulary = inputs.domain_ui_object_vocabulary ?? null;
   const domainEvidenceSchema = inputs.domain_evidence_schema ?? null;
   const domainLintRules = inputs.domain_lint_rules ?? null;
   const domainDiscoveryPageMap = inputs.domain_discovery_page_map ?? null;
@@ -1307,6 +1315,12 @@ const buildPrompt = (
     domainActionObserveFrontendState
       ? `- For official collage frontend observation contract, use: ${domainActionObserveFrontendState}`
       : "- Domain observeFrontendState action contract was not downloaded.",
+    domainCaseScopeContracts
+      ? `- For structured case action/object scope contracts, use: ${domainCaseScopeContracts}`
+      : "- Domain case-scope runtime contracts were not downloaded; rely on current-case-pack and helper plan if present.",
+    domainUiObjectVocabulary
+      ? `- For official BI UI object ids and locator semantics, use: ${domainUiObjectVocabulary}`
+      : "- Domain UI object vocabulary was not downloaded; use domain UI contract and visible UI exploration.",
     domainEvidenceSchema
       ? `- For domain evidence requirements, use: ${domainEvidenceSchema}`
       : "- Domain evidence schema was not downloaded; use generic current-run evidence policy.",
@@ -1354,6 +1368,7 @@ const buildPrompt = (
     "- Existing page data or old reports are not evidence that this run performed the action.",
     "- `input/current-case-pack.*` is a plan card, not a result. It reduces reading, but it never proves PASS/FAIL/BLOCKED.",
     "- `input/helper-execution-plan.*` may provide UI helper actions. Helper evidence can support judgment, but helper `status=ok` is never PASS.",
+    "- If `input/current-case-pack.json.caseScope.caseScopeContract` or `input/helper-execution-plan.json.caseScopeContract` exists, treat its `requiredActions[].action`, `target`, `role`, `expectedOutcome`, and `evidenceRequirements` as the binding execution scope for this case.",
     "- Save/download + CSV flow policy: if a required earlier subcondition such as save, list-row visibility, state restoration, or current/pre-save preview fails, judge that failure directly and write CSV comparison as not reached. A missing CSV after an already-broken workflow must not hide a functional regression as BLOCKED. If helper plan still has save/download or save/reopen/download actions available, request Tool Bridge/continuation before judging the CSV path as not reached.",
     "- CSV verification policy: after a visible UI download succeeds, read the local downloaded CSV directly; do not use Google Sheets as the formal evidence path. If the testcase specifies project/report-list download, do not reopen the editor; compare the downloaded CSV with the pre-save preview evidence. If the browser download event does not fire but the same visible UI click produced a CSV/attachment network response, that UI-triggered response body may be saved as CSV evidence and must be labeled as such.",
     "- Metadata compare policy: use `input/reference-index.json` to find `bi_metadata_csv`, normally `rules/BI_DATA/metadata.csv`, and confirm the testcase source filename when specified; do not search all uploaded CSV files or call BI APIs to fill the expected list. If `collage.extractMetadataDropdownFields` ran, use its helper artifact as current-run DOM extraction evidence, but still judge the testcase yourself.",
@@ -1413,6 +1428,8 @@ const buildPrompt = (
     `Domain UI contract: ${domainUiContract ?? "(not downloaded)"}`,
     `Domain setMetricRows action contract: ${domainActionSetMetricRows ?? "(not downloaded)"}`,
     `Domain observeFrontendState action contract: ${domainActionObserveFrontendState ?? "(not downloaded)"}`,
+    `Domain case-scope runtime contracts: ${domainCaseScopeContracts ?? "(not downloaded)"}`,
+    `Domain UI object vocabulary: ${domainUiObjectVocabulary ?? "(not downloaded)"}`,
     `Domain evidence schema: ${domainEvidenceSchema ?? "(not downloaded)"}`,
     `Domain lint rules: ${domainLintRules ?? "(not downloaded)"}`,
     `Domain discovery page map: ${domainDiscoveryPageMap ?? "(not downloaded)"}`,
@@ -1431,6 +1448,8 @@ const buildPrompt = (
     `- domain UI contract: ${domainUiContract ?? "(none)"}`,
     `- domain setMetricRows action contract: ${domainActionSetMetricRows ?? "(none)"}`,
     `- domain observeFrontendState action contract: ${domainActionObserveFrontendState ?? "(none)"}`,
+    `- domain case-scope runtime contracts: ${domainCaseScopeContracts ?? "(none)"}`,
+    `- domain UI object vocabulary: ${domainUiObjectVocabulary ?? "(none)"}`,
     `- domain evidence schema: ${domainEvidenceSchema ?? "(none)"}`,
     `- domain lint rules: ${domainLintRules ?? "(none)"}`,
     `- domain discovery page map: ${domainDiscoveryPageMap ?? "(none)"}`,

@@ -4,6 +4,11 @@ import type { CaseManifestCase } from "./case-manifest";
 import type { HelperHints } from "./helper-hints";
 import { detectCaseFeatures, isNeutralCleanupTarget, parseCleanupTargets } from "./case-feature-detection";
 import { inferCaseScope, missingActionTemplateBlocker } from "./case-scope";
+import {
+  structuredEvidenceList,
+  type StructuredCaseScopeAction,
+  type StructuredCaseScopeContract
+} from "./structured-case-scope";
 
 export type HelperPlanAction = {
   id: string;
@@ -15,6 +20,7 @@ export type HelperPlanAction = {
   optional: boolean;
   canJudgeResult: false;
   requiredEvidence: string[];
+  caseScopeActions: StructuredCaseScopeAction[];
   screenshotPolicy: "major_step" | "required_if_possible" | "failure_only";
   notes: string[];
 };
@@ -46,6 +52,7 @@ export type HelperExecutionPlan = {
     automationLevel: string | null;
     aiDecisionRequired: boolean | null;
   };
+  caseScopeContract: StructuredCaseScopeContract | null;
   actions: HelperPlanAction[];
   availableTemplates: HelperPlanAction[];
 };
@@ -294,6 +301,46 @@ const observationRequiredEvidence = (observationType: FrontendObservationType): 
     default:
       return ["dom.state", "screenshot"];
   }
+};
+
+const fallbackObservationType = (value: string | null): FrontendObservationType => {
+  switch (value) {
+    case "userButton":
+      return "userButton";
+    case "projectToolbar":
+      return "projectToolbar";
+    case "reportModeRadio":
+      return "reportModeRadio";
+    case "datePanel":
+      return "datePanel";
+    case "validationMessage":
+      return "validationMessage";
+    default:
+      return null;
+  }
+};
+
+const actionsForTemplate = (
+  contract: StructuredCaseScopeContract | null,
+  template: string
+): StructuredCaseScopeAction[] => {
+  if (!contract) return [];
+  if (template === "collage.observeFrontendState") return contract.requiredActions;
+  if (template === "collage.configureMetric" || template === "collage.runDateVariantsPreviewEvidence") {
+    return contract.requiredActions.filter((item) =>
+      item.target.startsWith("metricRows.") ||
+      item.target.startsWith("sourceReportPicker.") ||
+      item.target.startsWith("dateRange.") ||
+      item.target.startsWith("reportMode.")
+    );
+  }
+  if (template === "collage.runPreviewAndCollectEvidence") {
+    return contract.requiredActions.filter((item) => item.target === "preview.calculateButton" || item.evidenceRequirements.some((evidence) => evidence.startsWith("network.") || evidence === "chart.datasets"));
+  }
+  if (template === "collage.downloadCsvAndComparePreview") {
+    return contract.requiredActions.filter((item) => item.target.startsWith("editorToolbar.") || item.target.startsWith("download.") || item.evidenceRequirements.includes("downloadArtifact"));
+  }
+  return [];
 };
 
 const dateRequiresCodexVisibleUi = (currentCase: CaseManifestCase | null, helperHints: HelperHints | null): boolean => {
@@ -645,6 +692,7 @@ const action = (
   optional: false,
   canJudgeResult: false,
   requiredEvidence: ["dom.state", "screenshot"],
+  caseScopeActions: [],
   screenshotPolicy: "major_step",
   notes: [],
   ...overrides
@@ -666,6 +714,7 @@ const buildActions = (currentCase: CaseManifestCase | null, helperHints: HelperH
   const metadataOnly = features.isMetadataDropdown;
   if (unsupportedHelperTarget) return [];
   const caseScope = inferCaseScope(currentCase, helperHints);
+  const caseScopeContract = caseScope.caseScopeContract;
   if (missingActionTemplateBlocker(caseScope)) return [];
   const createProjectFlow = isCreateProjectOnlyFlow(currentCase, helperHints);
   if (createProjectFlow) {
@@ -762,7 +811,10 @@ const buildActions = (currentCase: CaseManifestCase | null, helperHints: HelperH
       ? { matched: true, needsEditor: needsReportEditorPrelude(currentCase) }
       : frontendObservationPrelude;
   if (scopeFrontendObservationPrelude.matched) {
-    const observationType = inferFrontendObservationType(currentCase);
+    const observationType = caseScopeContract
+      ? fallbackObservationType(caseScopeContract.observationType)
+      : inferFrontendObservationType(currentCase);
+    const structuredEvidence = structuredEvidenceList(caseScopeContract);
     const actions: HelperPlanAction[] = [
       action("H1", "collage.openProject", "開啟指定拼貼專案（前端觀察題前置導航）", params, {
         requiredEvidence: ["dom.url", "dom.pageTitle", "dom.state", "screenshot"],
@@ -787,13 +839,21 @@ const buildActions = (currentCase: CaseManifestCase | null, helperHints: HelperH
       actions.push(
         action(`H${actions.length + 1}`, "collage.observeFrontendState", "收集前端觀察狀態 evidence", {
           ...params,
-          observationType
+          observationType,
+          ...(caseScopeContract
+            ? {
+                caseScopeContract,
+                targetObjectIds: [...new Set(caseScopeContract.requiredActions.map((item) => item.target))],
+                expectedOutcomes: [...new Set(caseScopeContract.requiredActions.map((item) => item.expectedOutcome))]
+              }
+            : {})
         }, {
           mutatesUi: observationType === "datePanel" || observationType === "validationMessage",
-          requiredEvidence: observationRequiredEvidence(observationType),
+          requiredEvidence: structuredEvidence.length > 0 ? structuredEvidence : observationRequiredEvidence(observationType),
           screenshotPolicy: "required_if_possible",
           notes: [
             "只收集 observation evidence，不判 PASS/FAIL。",
+            "本 action 帶有 caseScopeContract 的 action/target/role/expectedOutcome，Codex 判定時必須用同一份結構化 scope。",
             "若 observationType 需要點擊，僅允許 visible UI click；不可用 evaluate 觸發互動。",
             "Codex 必須用 helper evidence 與 testcase scope 自行判定。"
           ]
@@ -1119,6 +1179,25 @@ const buildAvailableTemplates = (currentCase: CaseManifestCase | null, helperHin
   return available;
 };
 
+const attachCaseScopeActions = (
+  actions: HelperPlanAction[],
+  contract: StructuredCaseScopeContract | null
+): HelperPlanAction[] =>
+  actions.map((item) => {
+    const caseScopeActions = actionsForTemplate(contract, item.template);
+    if (caseScopeActions.length === 0) return item;
+    return {
+      ...item,
+      caseScopeActions,
+      requiredEvidence: [...new Set([...item.requiredEvidence, ...caseScopeActions.flatMap((actionItem) => actionItem.evidenceRequirements)])],
+      params: {
+        ...item.params,
+        caseScopeActions,
+        caseScopeContract: contract
+      }
+    };
+  });
+
 export const helperExecutorPath = (): string => {
   const runtimeDir = path.basename(__dirname) === "src" ? path.resolve(__dirname, "../dist") : __dirname;
   return path.join(runtimeDir, "bi-ui-helper-executor.js");
@@ -1127,6 +1206,9 @@ export const helperExecutorPath = (): string => {
 export const buildHelperExecutionPlan = ({ runDir, currentCase, helperHints }: WriteHelperExecutionPlanOptions): HelperExecutionPlan => {
   const caseId = currentCase?.caseNo ?? helperHints?.caseId ?? null;
   const artifactRoot = path.join(runDir, "output", "helper-artifacts", caseId ?? "unknown-case");
+  const caseScopeContract = inferCaseScope(currentCase, helperHints).caseScopeContract;
+  const actions = attachCaseScopeActions(buildActions(currentCase, helperHints), caseScopeContract);
+  const availableTemplates = attachCaseScopeActions(buildAvailableTemplates(currentCase, helperHints), caseScopeContract);
   return {
     schemaVersion: "helper-execution-plan-v1",
     generatedAt: new Date().toISOString(),
@@ -1160,8 +1242,9 @@ export const buildHelperExecutionPlan = ({ runDir, currentCase, helperHints }: W
       automationLevel: helperHints?.automationLevel ?? null,
       aiDecisionRequired: helperHints?.aiDecisionRequired ?? null
     },
-    actions: buildActions(currentCase, helperHints),
-    availableTemplates: buildAvailableTemplates(currentCase, helperHints)
+    caseScopeContract,
+    actions,
+    availableTemplates
   };
 };
 
@@ -1192,6 +1275,13 @@ export const writeHelperExecutionPlan = (options: WriteHelperExecutionPlanOption
       "- helper 不可直接打 BI API 或用內部 JS setter 設狀態。",
       "- helper 不可使用 force: true click 或其他方式繞過 browser actionability check。",
       "- Codex 必須讀 helper evidence 後自行判斷與寫 detail_json。",
+      "- 若本計畫含 caseScopeContract / caseScopeActions，Codex 必須用其中的 action、target、role、expectedOutcome 與 evidenceRequirements 判斷，不可只靠中文 prose 推測。",
+      "",
+      "## Case Scope Contract",
+      "",
+      plan.caseScopeContract
+        ? `- source: ${plan.caseScopeContract.source}\n- routeIntent: ${plan.caseScopeContract.routeIntent}\n- testTarget: ${plan.caseScopeContract.testTarget}\n- observationType: ${plan.caseScopeContract.observationType ?? "none"}\n- targets: ${[...new Set(plan.caseScopeContract.requiredActions.map((item) => item.target))].join(", ")}`
+        : "(no structured case scope contract available for this case)",
       "",
       "## Planned Actions",
       "",
@@ -1199,7 +1289,7 @@ export const writeHelperExecutionPlan = (options: WriteHelperExecutionPlanOption
         ? plan.actions
             .map(
               (item) =>
-                `### ${item.id}. ${item.template}\n\n- title: ${item.title}\n- requiresToolBridge: ${item.requiresToolBridge}\n- optional: ${item.optional}\n- requiredEvidence: ${item.requiredEvidence.join(", ")}\n- screenshotPolicy: ${item.screenshotPolicy}\n\n\`\`\`json\n${JSON.stringify(item.params, null, 2)}\n\`\`\`\n`
+                `### ${item.id}. ${item.template}\n\n- title: ${item.title}\n- requiresToolBridge: ${item.requiresToolBridge}\n- optional: ${item.optional}\n- requiredEvidence: ${item.requiredEvidence.join(", ")}\n- caseScopeActions: ${item.caseScopeActions.length > 0 ? item.caseScopeActions.map((actionItem) => `${actionItem.action}:${actionItem.target}:${actionItem.expectedOutcome}`).join(", ") : "none"}\n- screenshotPolicy: ${item.screenshotPolicy}\n\n\`\`\`json\n${JSON.stringify(item.params, null, 2)}\n\`\`\`\n`
             )
             .join("\n")
         : "(no planned helper actions; use manual Codex UI execution with current-case-pack)",

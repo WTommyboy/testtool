@@ -1,0 +1,620 @@
+{
+  "schemaVersion": "bi-official-ui-collage-case-scope-runtime-contracts-v0.1",
+  "domain": "BI_OFFICIAL_UI_COLLAGE",
+  "status": "draft",
+  "purpose": "Runtime bridge for the reduced P0 official BI collage scope. It binds authored cases to platform actions and domain UI object ids without making the oracle a permanent product truth.",
+  "references": {
+    "platformActionVocabulary": "contracts/platform-action-vocabulary.v1.json",
+    "uiObjectVocabulary": "ui-object-vocabulary.json",
+    "oracleFixture": "fixtures/p0-scope-smoke-20260517/oracle.json",
+    "visualAlignment": "discovery/visual-alignment.json"
+  },
+  "policy": [
+    "This file is domain-pack runtime data, not platform action vocabulary.",
+    "It names the action/object/evidence scope needed to route and judge the current reduced P0 cases.",
+    "Case-specific values and final PASS/FAIL/BLOCKED decisions still belong to the testcase/run.",
+    "Known product gaps listed here are current official UI observations for this P0 scope and must be revalidated when the UI changes."
+  ],
+  "contracts": [
+    {
+      "caseNo": "BIUI_COLLAGE_R001-B-06",
+      "routeIntent": "preview_execution",
+      "testTarget": "frontend_backend_integration",
+      "requiresEditor": true,
+      "observationType": null,
+      "requiredActions": [
+        {
+          "actionId": "selectPast30Days",
+          "action": "select",
+          "target": "dateRange.preset.past30Days",
+          "role": "under_test",
+          "expectedOutcome": "state_changed",
+          "requiredForPass": true,
+          "evidenceRequirements": ["dateRange.panel.state", "interactionLog"]
+        },
+        {
+          "actionId": "executePast30DaysPreview",
+          "action": "execute",
+          "target": "preview.calculateButton",
+          "role": "verification",
+          "expectedOutcome": "request_sent",
+          "requiredForPass": true,
+          "evidenceRequirements": ["network.requestBody", "chart.datasets"]
+        },
+        {
+          "actionId": "selectRecent30Days",
+          "action": "select",
+          "target": "dateRange.preset.recent30Days",
+          "role": "under_test",
+          "expectedOutcome": "state_changed",
+          "requiredForPass": true,
+          "evidenceRequirements": ["dateRange.panel.state", "interactionLog"]
+        },
+        {
+          "actionId": "compare30DayPayloads",
+          "action": "compare",
+          "target": "preview.calculateButton",
+          "role": "verification",
+          "expectedOutcome": "value_matches",
+          "requiredForPass": true,
+          "evidenceRequirements": ["network.requestBody", "chart.datasets"]
+        }
+      ],
+      "evidenceRequirements": {
+        "flow": ["dateRange.panel.state", "interactionLog"],
+        "outcome": ["network.requestBody", "chart.datasets"]
+      },
+      "judgmentPolicy": {
+        "failWhen": ["request payload/date result contradicts expected preset semantics"],
+        "blockedWhen": ["browser/tool cannot reach the editor or collect any current-run evidence"]
+      }
+    },
+    {
+      "caseNo": "BIUI_COLLAGE_R001-B-08",
+      "routeIntent": "preview_execution",
+      "testTarget": "functional_flow",
+      "requiresEditor": true,
+      "observationType": "datePanel",
+      "requiredActions": [
+        {
+          "actionId": "openDatePanel",
+          "action": "open",
+          "target": "dateRange.button",
+          "role": "precondition",
+          "expectedOutcome": "visible",
+          "requiredForPass": true,
+          "evidenceRequirements": ["dateRange.panel.state"]
+        },
+        {
+          "actionId": "selectStaticTimeType",
+          "action": "click",
+          "target": "dateRange.timeTypeTab.static",
+          "role": "under_test",
+          "expectedOutcome": "state_changed",
+          "requiredForPass": true,
+          "knownProductGap": "static_time_tab_not_clickable",
+          "evidenceRequirements": ["interactionLog", "dateRange.timeTypeTab.state", "screenshot"]
+        },
+        {
+          "actionId": "executeStaticPreview",
+          "action": "execute",
+          "target": "preview.calculateButton",
+          "role": "verification",
+          "expectedOutcome": "request_sent",
+          "requiredForPass": true,
+          "evidenceRequirements": ["network.requestBody", "chart.datasets"]
+        }
+      ],
+      "evidenceRequirements": {
+        "flow": ["dateRange.timeTypeTab.state", "interactionLog", "screenshot"],
+        "outcome": ["network.requestBody", "chart.datasets"]
+      },
+      "judgmentPolicy": {
+        "failWhen": ["real UI click on the static time tab does not switch state"],
+        "blockedWhen": ["static tab was never reached due browser/tool/navigation failure"]
+      }
+    },
+    {
+      "caseNo": "BIUI_COLLAGE_R001-B-09",
+      "routeIntent": "preview_execution",
+      "testTarget": "functional_flow",
+      "requiresEditor": true,
+      "observationType": "datePanel",
+      "requiredActions": [
+        {
+          "actionId": "openDatePanel",
+          "action": "open",
+          "target": "dateRange.button",
+          "role": "precondition",
+          "expectedOutcome": "visible",
+          "requiredForPass": true,
+          "evidenceRequirements": ["dateRange.panel.state"]
+        },
+        {
+          "actionId": "selectStaticTimeType",
+          "action": "click",
+          "target": "dateRange.timeTypeTab.static",
+          "role": "under_test",
+          "expectedOutcome": "state_changed",
+          "requiredForPass": true,
+          "knownProductGap": "static_time_tab_not_clickable",
+          "evidenceRequirements": ["interactionLog", "dateRange.timeTypeTab.state", "screenshot"]
+        },
+        {
+          "actionId": "setStaticStartDate",
+          "action": "type",
+          "target": "dateRange.staticStartInput",
+          "role": "under_test",
+          "expectedOutcome": "value_matches",
+          "requiredForPass": true,
+          "evidenceRequirements": ["dateRange.panel.state", "domSnapshot"]
+        },
+        {
+          "actionId": "setStaticEndDate",
+          "action": "type",
+          "target": "dateRange.staticEndInput",
+          "role": "under_test",
+          "expectedOutcome": "value_matches",
+          "requiredForPass": true,
+          "evidenceRequirements": ["dateRange.panel.state", "domSnapshot"]
+        },
+        {
+          "actionId": "executeStaticPreview",
+          "action": "execute",
+          "target": "preview.calculateButton",
+          "role": "verification",
+          "expectedOutcome": "request_sent",
+          "requiredForPass": true,
+          "evidenceRequirements": ["network.requestBody", "chart.datasets"]
+        }
+      ],
+      "evidenceRequirements": {
+        "flow": ["dateRange.timeTypeTab.state", "dateRange.panel.state", "interactionLog", "screenshot"],
+        "outcome": ["network.requestBody", "chart.datasets"]
+      },
+      "judgmentPolicy": {
+        "failWhen": ["authored scope requires static-tab user flow and real UI click does not switch state"],
+        "blockedWhen": ["browser/tool cannot reach the date panel at all"]
+      }
+    },
+    {
+      "caseNo": "BIUI_COLLAGE_R001-I-01",
+      "routeIntent": "frontend_observation",
+      "testTarget": "functional_flow",
+      "requiresEditor": false,
+      "observationType": "sidebarGroup",
+      "requiredActions": [
+        {
+          "actionId": "toggleCompanySharedGroup",
+          "action": "click",
+          "target": "sidebar.companySharedGroup",
+          "role": "under_test",
+          "expectedOutcome": "state_changed",
+          "requiredForPass": true,
+          "evidenceRequirements": ["sidebar.companySharedGroup.state", "interactionLog", "screenshot"]
+        }
+      ],
+      "evidenceRequirements": {
+        "flow": ["sidebar.companySharedGroup.state", "interactionLog"],
+        "observation": ["screenshot"]
+      },
+      "judgmentPolicy": {
+        "failWhen": ["group is visible but real click does not expand/collapse"],
+        "blockedWhen": ["sidebar group cannot be located with current browser evidence"]
+      }
+    },
+    {
+      "caseNo": "BIUI_COLLAGE_R001-I-07",
+      "routeIntent": "frontend_observation",
+      "testTarget": "frontend_presentation",
+      "requiresEditor": false,
+      "observationType": "userButton",
+      "requiredActions": [
+        {
+          "actionId": "assertUserButtonText",
+          "action": "assertText",
+          "target": "topbar.userButton",
+          "role": "under_test",
+          "expectedOutcome": "text_matches",
+          "requiredForPass": true,
+          "evidenceRequirements": ["topbar.userButton.state", "domSnapshot", "screenshot"]
+        }
+      ],
+      "evidenceRequirements": {
+        "observation": ["topbar.userButton.state", "domSnapshot", "screenshot"]
+      },
+      "judgmentPolicy": {
+        "failWhen": ["user button is visible but text does not match the expected login display"],
+        "blockedWhen": ["topbar cannot be observed due browser/tool failure"]
+      }
+    },
+    {
+      "caseNo": "BIUI_COLLAGE_R001-J-02",
+      "routeIntent": "frontend_observation",
+      "testTarget": "frontend_presentation",
+      "requiresEditor": false,
+      "observationType": "projectToolbar",
+      "requiredActions": [
+        {
+          "actionId": "assertToolbarDownloadDisabled",
+          "action": "assertDisabled",
+          "target": "projectToolbar.downloadButton",
+          "role": "under_test",
+          "expectedOutcome": "disabled_or_no_change",
+          "requiredForPass": true,
+          "evidenceRequirements": ["projectToolbar.buttons.state", "domSnapshot", "screenshot"]
+        },
+        {
+          "actionId": "assertToolbarDeleteDisabled",
+          "action": "assertDisabled",
+          "target": "projectToolbar.deleteButton",
+          "role": "under_test",
+          "expectedOutcome": "disabled_or_no_change",
+          "requiredForPass": true,
+          "evidenceRequirements": ["projectToolbar.buttons.state", "domSnapshot", "screenshot"]
+        },
+        {
+          "actionId": "assertToolbarCreateEnabled",
+          "action": "assertEnabled",
+          "target": "projectToolbar.createButton",
+          "role": "verification",
+          "expectedOutcome": "succeeded",
+          "requiredForPass": true,
+          "evidenceRequirements": ["projectToolbar.buttons.state", "domSnapshot"]
+        }
+      ],
+      "evidenceRequirements": {
+        "observation": ["projectToolbar.buttons.state", "domSnapshot", "screenshot"]
+      },
+      "judgmentPolicy": {
+        "failWhen": ["download/delete controls are enabled while no row is selected"],
+        "blockedWhen": ["toolbar cannot be observed due browser/tool failure"]
+      }
+    },
+    {
+      "caseNo": "BIUI_COLLAGE_R001-J-07",
+      "routeIntent": "frontend_observation",
+      "testTarget": "frontend_presentation",
+      "requiresEditor": false,
+      "observationType": "rowDeleteTooltip",
+      "requiredActions": [
+        {
+          "actionId": "hoverRowDeleteAction",
+          "action": "hover",
+          "target": "projectList.rowDeleteAction",
+          "role": "under_test",
+          "expectedOutcome": "succeeded",
+          "requiredForPass": true,
+          "evidenceRequirements": ["interactionLog", "projectList.rowActionTooltip.state", "screenshot"]
+        },
+        {
+          "actionId": "assertRowDeleteTooltip",
+          "action": "assertTooltip",
+          "target": "projectList.rowDeleteTooltip",
+          "role": "verification",
+          "expectedOutcome": "tooltip_visible",
+          "requiredForPass": true,
+          "knownProductGap": "row_delete_tooltip_not_implemented",
+          "evidenceRequirements": ["projectList.rowActionTooltip.state", "screenshot"]
+        }
+      ],
+      "evidenceRequirements": {
+        "flow": ["interactionLog"],
+        "observation": ["projectList.rowActionTooltip.state", "screenshot"]
+      },
+      "judgmentPolicy": {
+        "failWhen": ["row delete action can be hovered but no tooltip appears"],
+        "blockedWhen": ["no report row/delete action is observable in the project list"]
+      }
+    },
+    {
+      "caseNo": "BIUI_COLLAGE_R001-J-12",
+      "routeIntent": "frontend_observation",
+      "testTarget": "frontend_presentation",
+      "requiresEditor": false,
+      "observationType": "projectLimitToast",
+      "requiredActions": [
+        {
+          "actionId": "clickProjectCreateAtLimit",
+          "action": "click",
+          "target": "projectToolbar.createButton",
+          "role": "under_test",
+          "expectedOutcome": "toast_visible",
+          "requiredForPass": true,
+          "evidenceRequirements": ["interactionLog", "projectLimit.toast.state", "screenshot"]
+        },
+        {
+          "actionId": "assertProjectLimitToast",
+          "action": "assertToast",
+          "target": "projectLimit.toast",
+          "role": "verification",
+          "expectedOutcome": "toast_visible",
+          "requiredForPass": true,
+          "evidenceRequirements": ["projectLimit.toast.state", "screenshot"]
+        }
+      ],
+      "evidenceRequirements": {
+        "flow": ["interactionLog"],
+        "observation": ["projectLimit.toast.state", "screenshot"]
+      },
+      "judgmentPolicy": {
+        "failWhen": ["create click at project limit does not show the project-limit toast"],
+        "blockedWhen": ["project limit precondition is not established or toolbar cannot be observed"]
+      }
+    },
+    {
+      "caseNo": "BIUI_COLLAGE_R001-K-01",
+      "routeIntent": "frontend_observation",
+      "testTarget": "frontend_presentation",
+      "requiresEditor": true,
+      "observationType": "reportModeRadio",
+      "requiredActions": [
+        {
+          "actionId": "assertCollageModeDefault",
+          "action": "assertSelected",
+          "target": "reportMode.option.collage",
+          "role": "under_test",
+          "expectedOutcome": "selected",
+          "requiredForPass": true,
+          "evidenceRequirements": ["reportMode.radio.state", "domSnapshot", "screenshot"]
+        }
+      ],
+      "evidenceRequirements": {
+        "observation": ["reportMode.radio.state", "domSnapshot", "screenshot"]
+      },
+      "judgmentPolicy": {
+        "failWhen": ["collage radio option is visible but not selected by default"],
+        "blockedWhen": ["editor cannot be reached or radio state cannot be observed"]
+      }
+    },
+    {
+      "caseNo": "BIUI_COLLAGE_R001-K-08",
+      "routeIntent": "frontend_observation",
+      "testTarget": "functional_flow",
+      "requiresEditor": true,
+      "observationType": "sourceReportPicker",
+      "requiredActions": [
+        {
+          "actionId": "openSourceReportPicker",
+          "action": "open",
+          "target": "metricRows.sourceReportControl",
+          "role": "under_test",
+          "expectedOutcome": "visible",
+          "requiredForPass": true,
+          "evidenceRequirements": ["sourceReportPicker.state", "interactionLog", "screenshot"]
+        },
+        {
+          "actionId": "searchDailyReport",
+          "action": "search",
+          "target": "sourceReportPicker.searchInput",
+          "role": "under_test",
+          "expectedOutcome": "value_matches",
+          "requiredForPass": true,
+          "evidenceRequirements": ["sourceReportPicker.state", "interactionLog"]
+        },
+        {
+          "actionId": "selectDailyReportOption",
+          "action": "select",
+          "target": "sourceReportPicker.option.dailyReport",
+          "role": "verification",
+          "expectedOutcome": "state_changed",
+          "requiredForPass": true,
+          "evidenceRequirements": ["sourceControl.after", "sourceReportPicker.state", "screenshot"]
+        }
+      ],
+      "evidenceRequirements": {
+        "flow": ["interactionLog", "sourceReportPicker.state", "sourceControl.after"],
+        "observation": ["screenshot"]
+      },
+      "judgmentPolicy": {
+        "failWhen": ["source report picker is reachable but search/select does not update the row control"],
+        "blockedWhen": ["editor or source control cannot be reached with current browser evidence"]
+      }
+    },
+    {
+      "caseNo": "BIUI_COLLAGE_R001-K-10",
+      "routeIntent": "frontend_observation",
+      "testTarget": "frontend_presentation",
+      "requiresEditor": true,
+      "observationType": "validationMessage",
+      "requiredActions": [
+        {
+          "actionId": "clickCalculateWithIncompleteRow",
+          "action": "click",
+          "target": "preview.calculateButton",
+          "role": "under_test",
+          "expectedOutcome": "toast_visible",
+          "requiredForPass": true,
+          "evidenceRequirements": ["interactionLog", "validation.message.state", "network.requestDelta", "screenshot"]
+        },
+        {
+          "actionId": "assertIncompleteFieldToast",
+          "action": "assertToast",
+          "target": "validation.toast",
+          "role": "verification",
+          "expectedOutcome": "toast_visible",
+          "requiredForPass": true,
+          "evidenceRequirements": ["validation.message.state", "screenshot"]
+        },
+        {
+          "actionId": "assertNoPreviewRequest",
+          "action": "assertNoRequest",
+          "target": "preview.calculateButton",
+          "role": "verification",
+          "expectedOutcome": "request_not_sent",
+          "requiredForPass": true,
+          "evidenceRequirements": ["network.requestDelta", "interactionLog"]
+        }
+      ],
+      "evidenceRequirements": {
+        "flow": ["interactionLog"],
+        "observation": ["validation.message.state", "screenshot"],
+        "network": ["network.requestDelta"]
+      },
+      "judgmentPolicy": {
+        "failWhen": ["invalid calculate click does not show the incomplete-field toast or sends a preview request"],
+        "blockedWhen": ["calculate button cannot be reached due browser/tool failure"]
+      }
+    },
+    {
+      "caseNo": "BIUI_COLLAGE_R001-L-02",
+      "routeIntent": "frontend_observation",
+      "testTarget": "functional_flow",
+      "requiresEditor": true,
+      "observationType": "datePanel",
+      "requiredActions": [
+        {
+          "actionId": "openDatePanel",
+          "action": "open",
+          "target": "dateRange.button",
+          "role": "under_test",
+          "expectedOutcome": "visible",
+          "requiredForPass": true,
+          "evidenceRequirements": ["dateRange.panel.state", "interactionLog", "screenshot"]
+        },
+        {
+          "actionId": "assertDatePanelVisible",
+          "action": "assertVisible",
+          "target": "dateRange.panel",
+          "role": "verification",
+          "expectedOutcome": "visible",
+          "requiredForPass": true,
+          "evidenceRequirements": ["dateRange.panel.state", "screenshot"]
+        }
+      ],
+      "evidenceRequirements": {
+        "flow": ["interactionLog"],
+        "observation": ["dateRange.panel.state", "screenshot"]
+      },
+      "judgmentPolicy": {
+        "failWhen": ["date range button is reachable but panel does not open"],
+        "blockedWhen": ["editor or date range button cannot be reached"]
+      }
+    },
+    {
+      "caseNo": "BIUI_COLLAGE_R001-L-03",
+      "routeIntent": "frontend_observation",
+      "testTarget": "functional_flow",
+      "requiresEditor": true,
+      "observationType": "datePanel",
+      "requiredActions": [
+        {
+          "actionId": "openDatePanel",
+          "action": "open",
+          "target": "dateRange.button",
+          "role": "precondition",
+          "expectedOutcome": "visible",
+          "requiredForPass": true,
+          "evidenceRequirements": ["dateRange.panel.state", "interactionLog"]
+        },
+        {
+          "actionId": "selectYesterdayPreset",
+          "action": "select",
+          "target": "dateRange.preset.yesterday",
+          "role": "under_test",
+          "expectedOutcome": "state_changed",
+          "requiredForPass": true,
+          "evidenceRequirements": ["dateRange.panel.state", "interactionLog"]
+        },
+        {
+          "actionId": "cancelDatePanel",
+          "action": "cancel",
+          "target": "dateRange.action.cancel",
+          "role": "under_test",
+          "expectedOutcome": "state_unchanged",
+          "requiredForPass": true,
+          "evidenceRequirements": ["dateRange.cancelFlow.state", "interactionLog", "screenshot"]
+        }
+      ],
+      "evidenceRequirements": {
+        "flow": ["interactionLog", "dateRange.cancelFlow.state"],
+        "observation": ["screenshot"]
+      },
+      "judgmentPolicy": {
+        "failWhen": ["cancel does not close the panel or applies the temporary preset"],
+        "blockedWhen": ["date panel cannot be opened or temporary preset cannot be selected"]
+      }
+    },
+    {
+      "caseNo": "BIUI_COLLAGE_R001-L-09",
+      "routeIntent": "frontend_observation",
+      "testTarget": "functional_flow",
+      "requiresEditor": true,
+      "observationType": "datePanel",
+      "requiredActions": [
+        {
+          "actionId": "openDatePanel",
+          "action": "open",
+          "target": "dateRange.button",
+          "role": "precondition",
+          "expectedOutcome": "visible",
+          "requiredForPass": true,
+          "evidenceRequirements": ["dateRange.panel.state", "interactionLog"]
+        },
+        {
+          "actionId": "selectStaticTimeType",
+          "action": "click",
+          "target": "dateRange.timeTypeTab.static",
+          "role": "under_test",
+          "expectedOutcome": "state_changed",
+          "requiredForPass": true,
+          "knownProductGap": "static_time_tab_not_clickable",
+          "evidenceRequirements": ["dateRange.timeTypeTab.state", "interactionLog", "screenshot"]
+        }
+      ],
+      "evidenceRequirements": {
+        "flow": ["dateRange.timeTypeTab.state", "interactionLog"],
+        "observation": ["screenshot"]
+      },
+      "judgmentPolicy": {
+        "failWhen": ["static tab is visible but real click does not switch selected state"],
+        "blockedWhen": ["date panel or static tab cannot be reached at all"]
+      }
+    },
+    {
+      "caseNo": "BIUI_COLLAGE_R001-N-03",
+      "routeIntent": "download_execution",
+      "testTarget": "frontend_backend_integration",
+      "requiresEditor": true,
+      "observationType": "downloadToast",
+      "requiredActions": [
+        {
+          "actionId": "executeValidPreview",
+          "action": "execute",
+          "target": "preview.calculateButton",
+          "role": "precondition",
+          "expectedOutcome": "request_sent",
+          "requiredForPass": true,
+          "evidenceRequirements": ["network.requestBody", "chart.datasets"]
+        },
+        {
+          "actionId": "clickEditorDownload",
+          "action": "download",
+          "target": "editorToolbar.downloadButton",
+          "role": "under_test",
+          "expectedOutcome": "download_started",
+          "requiredForPass": true,
+          "evidenceRequirements": ["downloadArtifact", "interactionLog", "download.toast.state", "screenshot"]
+        },
+        {
+          "actionId": "assertDownloadToast",
+          "action": "assertToast",
+          "target": "download.toast",
+          "role": "verification",
+          "expectedOutcome": "toast_visible",
+          "requiredForPass": true,
+          "evidenceRequirements": ["download.toast.state", "screenshot"]
+        }
+      ],
+      "evidenceRequirements": {
+        "outcome": ["network.requestBody", "chart.datasets"],
+        "artifact": ["downloadArtifact"],
+        "observation": ["download.toast.state", "screenshot"]
+      },
+      "judgmentPolicy": {
+        "failWhen": ["valid preview completes but editor download does not start or toast is absent"],
+        "blockedWhen": ["valid preview precondition cannot be established"]
+      }
+    }
+  ]
+}

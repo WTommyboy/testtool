@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import type { CaseManifestCase, CaseManifestResult } from "./case-manifest";
 import { findHelperHints, type HelperHints } from "./helper-hints";
+import { inferCaseScope } from "./case-scope";
 
 type EvidenceTemplateId =
   | "metadata-dropdown"
@@ -174,6 +175,11 @@ const inferMustReadRuleKeys = (
   if (requiredEvidence.some((item) => item.startsWith("network."))) {
     keys.add("network-observation-guidance");
   }
+  if (item && inferCaseScope(item, helperHints).caseScopeContract) {
+    keys.add("domain-case-scope-contracts");
+    keys.add("domain-ui-object-vocabulary");
+    keys.add("domain-action-observe-frontend-state");
+  }
   if (/儲存|覆寫|重開|重新檢視|刪除|confirm|alert/i.test(caseText) || requiredEvidence.includes("toolBridge.response")) {
     keys.add("tool-bridge");
   }
@@ -212,8 +218,9 @@ export const writeCurrentCasePack = (
     ? findHelperHints(helperHintSourcePaths, currentCase.caseNo, runDir)
     : { helperHints: null, searchedPaths: [], warnings: [] };
   const helperHints = helperSearch.helperHints;
+  const caseScope = currentCase ? inferCaseScope(currentCase, helperHints) : null;
   const explicitRequiredEvidence = helperHints?.requiredEvidence ?? [];
-  const requiredEvidence = unique([...inferredRequiredEvidence, ...explicitRequiredEvidence]);
+  const requiredEvidence = unique([...inferredRequiredEvidence, ...explicitRequiredEvidence, ...(caseScope?.requiredEvidence ?? [])]);
   const screenshotPolicy = currentCase ? inferScreenshotPolicy(templates, currentCase) : "unavailable";
   const recommendedRuleKeys = inferRuleKeys(currentCase, helperHints, requiredEvidence);
   const mustReadRuleKeys = inferMustReadRuleKeys(currentCase, helperHints, requiredEvidence, templates);
@@ -252,6 +259,15 @@ export const writeCurrentCasePack = (
     evidenceTemplates: templates,
     inferredRequiredEvidence,
     explicitRequiredEvidence,
+    caseScope: caseScope
+      ? {
+          testIntent: caseScope.testIntent,
+          previewRequired: caseScope.previewRequired,
+          executionRequired: caseScope.executionRequired,
+          requiredEvidence: caseScope.requiredEvidence,
+          caseScopeContract: caseScope.caseScopeContract
+        }
+      : null,
     requiredEvidence,
     screenshotPolicy,
     mustReadRuleKeys,

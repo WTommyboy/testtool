@@ -315,6 +315,13 @@ const inferFrontendObservationTemplate = (currentCase: CaseManifestCase | null):
   return null;
 };
 
+const helperSupportsStructuredObservationType = (value: string | null | undefined): boolean =>
+  value === "userButton" ||
+  value === "projectToolbar" ||
+  value === "reportModeRadio" ||
+  value === "datePanel" ||
+  value === "validationMessage";
+
 const isDeleteReportFlow = (currentCase: CaseManifestCase | null, helperHints: HelperHints | null): boolean => {
   const operationTemplate = helperHints?.operationTemplate ?? "";
   const text = detectCaseFeatures(currentCase, helperHints).text;
@@ -368,6 +375,14 @@ export const evaluateCapabilityGate = (
     /^BIUI_COLLAGE_R001-(?:I|J|K|L|M|N)-/i.test(currentCase?.caseNo ?? "")
       ? { matched: true, needsEditor: needsCollageNavigationPrelude(currentCase, helperHints) && needsReportEditorPrelude(currentCase) }
       : frontendObservationPrelude;
+  const structuredObservationTemplate =
+    caseScope.caseScopeContract?.routeIntent === "frontend_observation" &&
+    helperSupportsStructuredObservationType(caseScope.caseScopeContract.observationType)
+      ? "collage.observeFrontendState"
+      : null;
+  const effectiveFrontendObservationTemplate = caseScope.caseScopeContract
+    ? structuredObservationTemplate
+    : frontendObservationTemplate;
   const datePreviewEvidenceAllowed = mode === "collage" && !hasFilter && !hasGroup && canRunDatePreviewEvidenceHelper(params);
   const manualDateSaveAllowed =
     !noSave &&
@@ -434,7 +449,7 @@ export const evaluateCapabilityGate = (
     supportedHelperTemplates.push(
       "collage.openProject",
       ...(scopeFrontendObservationPrelude.needsEditor ? ["collage.createReport"] : []),
-      ...(frontendObservationTemplate ? [frontendObservationTemplate] : [])
+      ...(effectiveFrontendObservationTemplate ? [effectiveFrontendObservationTemplate] : [])
     );
   } else if (mode === "collage" && !hasFilter && !hasGroup) {
     supportedHelperTemplates.push(
@@ -562,6 +577,9 @@ const writeCapabilityGateMarkdown = (filePath: string, report: CapabilityGateRep
     `- supported_helper_templates: ${report.supportedHelperTemplates.length > 0 ? report.supportedHelperTemplates.join(", ") : "none"}`,
     `- case_scope: ${report.caseScope.testIntent}; preview_required=${report.caseScope.previewRequired}; execution_required=${report.caseScope.executionRequired}`,
     `- missing_action_template: ${report.caseScope.missingActionTemplate ?? "none"}`,
+    report.caseScope.caseScopeContract
+      ? `- structured_case_scope: ${report.caseScope.caseScopeContract.source}; targets=${report.caseScope.caseScopeContract.requiredActions.map((item) => item.target).join(", ")}`
+      : "- structured_case_scope: none",
     "",
     "## Codex Instruction",
     report.codexInstruction,

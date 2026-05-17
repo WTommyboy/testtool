@@ -1,5 +1,10 @@
 import type { CaseManifestCase } from "./case-manifest";
 import type { HelperHints } from "./helper-hints";
+import {
+  inferStructuredCaseScope,
+  structuredEvidenceList,
+  type StructuredCaseScopeContract
+} from "./structured-case-scope";
 
 export type CaseScopeIntent = "frontend_observation" | "preview_execution" | "download_execution" | "unknown";
 
@@ -9,6 +14,7 @@ export type InferredCaseScope = {
   executionRequired: boolean;
   requiredEvidence: string[];
   missingActionTemplate: string | null;
+  caseScopeContract: StructuredCaseScopeContract | null;
 };
 
 const textBlob = (item: CaseManifestCase | null, helperHints: HelperHints | null): string =>
@@ -48,6 +54,18 @@ export const inferCaseScope = (
   currentCase: CaseManifestCase | null,
   helperHints: HelperHints | null
 ): InferredCaseScope => {
+  const structured = inferStructuredCaseScope(currentCase, helperHints);
+  if (structured) {
+    return {
+      testIntent: structured.routeIntent,
+      previewRequired: structured.routeIntent === "preview_execution" || structured.routeIntent === "download_execution",
+      executionRequired: structured.routeIntent === "preview_execution" || structured.routeIntent === "download_execution",
+      requiredEvidence: structuredEvidenceList(structured),
+      missingActionTemplate: null,
+      caseScopeContract: structured
+    };
+  }
+
   const text = textBlob(currentCase, helperHints);
   const isFrontendTarget = /前端呈現/.test(`${currentCase?.testTarget ?? ""}\n${currentCase?.testType ?? ""}`);
   const hasDownloadTerms = /CSV|下載|download/i.test(text);
@@ -67,7 +85,8 @@ export const inferCaseScope = (
       previewRequired: true,
       executionRequired: true,
       requiredEvidence: ["dom.state", "csv.rows", "csv.aggregate"],
-      missingActionTemplate: null
+      missingActionTemplate: null,
+      caseScopeContract: null
     };
   }
   if (requiresPreview && !isFrontendTarget) {
@@ -76,7 +95,8 @@ export const inferCaseScope = (
       previewRequired: true,
       executionRequired: true,
       requiredEvidence: ["network.requestBody", "chart.datasets"],
-      missingActionTemplate: null
+      missingActionTemplate: null,
+      caseScopeContract: null
     };
   }
   const isDatePanel = isDatePanelObservation(text);
@@ -85,7 +105,8 @@ export const inferCaseScope = (
     previewRequired: false,
     executionRequired: false,
     requiredEvidence: isDatePanel ? ["dateRange.panel.state", "dom.state", "screenshot"] : ["dom.state"],
-    missingActionTemplate: null
+    missingActionTemplate: null,
+    caseScopeContract: null
   };
 };
 
