@@ -1060,6 +1060,35 @@ const main = (): void => {
       "J-12 no-hints frontend observation must not fall through to createReport/configureMetric/runPreview"
     );
 
+    const emptyCalculateGuardCase = {
+      ...collageSaveReopenCase,
+      caseNo: "BIUI_COLLAGE_R001-K-10",
+      caseTitle: "空設定/未完成設定點「計算」按鈕的防呆",
+      testType: "前端呈現",
+      riskLevel: "🟢 觀察",
+      testTarget: "前端呈現",
+      cleanupChecklist: "欄位=空;篩選=不影響;分組=不影響;時間=不影響;顯示=不影響",
+      preconditions: "起始頁面: 拼貼報表新增報表設定頁\n建構模式: 拼貼模式 radio 選中\n前置資源: 第一列為預設空狀態",
+      stepsSummary: "1. 進入新增報表設定頁,第一列空白\n2. 點擊「計算」按鈕\n3. 觀察是否有新的 preview request 觸發\n4. 讀取最終 UI 狀態",
+      expected: "空設定時按計算應有明確防呆；本題不測項目: 完整 preview 流程(屬 N 群)",
+      validationMethod: "DOM read alert/toast + network observation;evidence: dom.state, network.requestBody, screenshot"
+    };
+    const emptyCalculateGuardGate = evaluateCapabilityGate(emptyCalculateGuardCase, null);
+    assert.equal(emptyCalculateGuardGate.caseScope.testIntent, "frontend_observation");
+    assert.equal(emptyCalculateGuardGate.caseScope.previewRequired, false);
+    assert.equal(emptyCalculateGuardGate.supportStatus, "degraded", "K-10 frontend observation should stay Codex visible UI with helper navigation only");
+    assert.deepEqual(
+      emptyCalculateGuardGate.supportedHelperTemplates,
+      ["collage.openProject", "collage.createReport"],
+      "K-10 previewRequired=false must not advertise configureMetric/runPreview helpers"
+    );
+    const emptyCalculateGuardPlan = buildHelperExecutionPlan({ runDir, currentCase: emptyCalculateGuardCase, helperHints: null });
+    assert.deepEqual(
+      emptyCalculateGuardPlan.actions.map((item) => item.template),
+      ["collage.openProject", "collage.createReport"],
+      "K-10 previewRequired=false must not execute generic configureMetric/runPreview helpers"
+    );
+
     const selectAllCase = {
       ...collageSaveReopenCase,
       caseNo: "OTTEST004-D-02",

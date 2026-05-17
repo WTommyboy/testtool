@@ -24,6 +24,7 @@ import {
   type ExternalToolBridgeEvidence,
   type ResultEvidenceGateReport
 } from "./result-parser/result-evidence-gate";
+import { containCaseLevelResultEvidenceGateIssues } from "./result-parser/result-evidence-containment";
 import { buildMissingBugCandidates } from "./result-parser/fail-bug-fallback";
 import { getDomainPack, readOptionalDomainPackFile, type OptionalDomainPackFile } from "./domain-loader";
 import { writeFinalAggregateResultXlsx, type AggregateBug, type AggregateCase, type AggregateRun } from "./result-aggregate-writer";
@@ -1703,8 +1704,8 @@ const getDownloadResultXlsxPath = async (runId: string, run: RunOutputPaths): Pr
   return run.result_xlsx_path ?? null;
 };
 
-const writeResultEvidenceGateReport = (filePath: string, report: ResultEvidenceGateReport): string => {
-  const reportPath = `${filePath}.result-evidence-gate.json`;
+const writeResultEvidenceGateReport = (filePath: string, report: ResultEvidenceGateReport, suffix?: string): string => {
+  const reportPath = `${filePath}.result-evidence-gate${suffix ? `-${suffix}` : ""}.json`;
   fs.writeFileSync(reportPath, `${JSON.stringify(report, null, 2)}\n`);
   return reportPath;
 };
@@ -1733,7 +1734,7 @@ export const ingestResultXlsx = async (
       ...(options.expectedCaseNos ?? [])
     ])
   );
-  const report = evaluateResultEvidenceGate({
+  let report = evaluateResultEvidenceGate({
     parsed,
     resultSource: options.resultSource,
     currentCaseNo: options.currentCaseNo,
@@ -1741,7 +1742,7 @@ export const ingestResultXlsx = async (
     requireSingleCase: true,
     externalToolBridgeEvidenceByCase
   });
-  const reportPath = writeResultEvidenceGateReport(filePath, report);
+  let reportPath = writeResultEvidenceGateReport(filePath, report);
   insertRunEvent(runId, "result.evidence_gate_checked", {
     status: report.status,
     issueCount: report.issues.length,
@@ -1749,6 +1750,29 @@ export const ingestResultXlsx = async (
     warningCodes: report.issues.filter((item) => item.severity === "warning").map((item) => item.code),
     reportPath
   });
+  if (report.status === "error") {
+    const containmentReport = containCaseLevelResultEvidenceGateIssues(parsed, report);
+    insertRunEvent(runId, "result.evidence_gate_containment_checked", containmentReport);
+    if (containmentReport.status === "updated") {
+      report = evaluateResultEvidenceGate({
+        parsed,
+        resultSource: options.resultSource,
+        currentCaseNo: options.currentCaseNo,
+        expectedCaseNos,
+        requireSingleCase: true,
+        externalToolBridgeEvidenceByCase
+      });
+      reportPath = writeResultEvidenceGateReport(filePath, report, "after-containment");
+      insertRunEvent(runId, "result.evidence_gate_checked_after_containment", {
+        status: report.status,
+        issueCount: report.issues.length,
+        errorCodes: report.issues.filter((item) => item.severity === "error").map((item) => item.code),
+        warningCodes: report.issues.filter((item) => item.severity === "warning").map((item) => item.code),
+        reportPath,
+        containment: containmentReport
+      });
+    }
+  }
   if (report.status === "error") {
     insertRunEvent(runId, "result.evidence_gate_failed", {
       issueCount: report.issues.length,

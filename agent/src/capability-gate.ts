@@ -248,6 +248,18 @@ const needsCollageNavigationPrelude = (currentCase: CaseManifestCase | null, hel
   return /拼貼模式|專案頁|新增報表|報表設定|設定頁|\+\s*新增欄位|欄位選擇|時間區間|preview|預覽|執行/.test(text);
 };
 
+const needsReportEditorPrelude = (currentCase: CaseManifestCase | null): boolean => {
+  const titleAndSteps = [currentCase?.caseTitle, currentCase?.preconditions, currentCase?.stepsSummary]
+    .filter(Boolean)
+    .join("\n");
+  const explicitlyOpensEditor =
+    /新增報表頁|報表設定|設定頁|\+\s*新增欄位|欄位選擇|時間區間|dateRange|preview|預覽|按執行|點「?執行|點擊「?計算/.test(titleAndSteps) ||
+    /(點|按|點擊|開啟|進入).{0,12}(\+\s*)?新增報表/.test(titleAndSteps);
+  if (/專案頁/.test(titleAndSteps) && !explicitlyOpensEditor) return false;
+  const text = detectCaseFeatures(currentCase, null).text;
+  return explicitlyOpensEditor || /報表設定|設定頁|\+\s*新增欄位|欄位選擇|時間區間|dateRange|preview|預覽|按執行|點「?執行|點擊「?計算/.test(text);
+};
+
 const hasExplicitHelperTemplate = (helperHints: HelperHints | null): boolean => {
   const template = helperHints?.operationTemplate?.trim();
   return Boolean(template && template !== "manual_ai") || helperHints?.automationLevel === "helper";
@@ -324,6 +336,14 @@ export const evaluateCapabilityGate = (
   const frontendObservationPrelude = isFrontendObservationPreludeCase(currentCase, helperHints);
   const caseScope = inferCaseScope(currentCase, helperHints);
   const helperContractBlocker = missingActionTemplateBlocker(caseScope);
+  const scopeFrontendObservationPrelude =
+    caseScope.testIntent === "frontend_observation" &&
+    !caseScope.previewRequired &&
+    !caseScope.executionRequired &&
+    !hasExplicitHelperTemplate(helperHints) &&
+    /^BIUI_COLLAGE_R001-(?:I|J|K|L|M|N)-/i.test(currentCase?.caseNo ?? "")
+      ? { matched: true, needsEditor: needsCollageNavigationPrelude(currentCase, helperHints) && needsReportEditorPrelude(currentCase) }
+      : frontendObservationPrelude;
   const datePreviewEvidenceAllowed = mode === "collage" && !hasFilter && !hasGroup && canRunDatePreviewEvidenceHelper(params);
   const manualDateSaveAllowed =
     !noSave &&
@@ -386,10 +406,10 @@ export const evaluateCapabilityGate = (
       "collage.openProject",
       "collage.createAndDeleteTemporaryReport"
     );
-  } else if (frontendObservationPrelude.matched && !helperContractBlocker) {
+  } else if (scopeFrontendObservationPrelude.matched && !helperContractBlocker) {
     supportedHelperTemplates.push(
       "collage.openProject",
-      ...(frontendObservationPrelude.needsEditor ? ["collage.createReport"] : [])
+      ...(scopeFrontendObservationPrelude.needsEditor ? ["collage.createReport"] : [])
     );
   } else if (mode === "collage" && !hasFilter && !hasGroup) {
     supportedHelperTemplates.push(
@@ -438,7 +458,7 @@ export const evaluateCapabilityGate = (
     executionMode = "blocked_unsupported";
     helperPreRunAllowed = false;
     blockingReason = helperContractBlocker;
-  } else if (frontendObservationPrelude.matched) {
+  } else if (scopeFrontendObservationPrelude.matched) {
     supportStatus = "degraded";
     executionMode = "codex_visible_ui";
     helperPreRunAllowed = true;

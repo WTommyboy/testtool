@@ -625,7 +625,8 @@ const buildActions = (currentCase: CaseManifestCase | null, helperHints: HelperH
     features.hasGroup;
   const metadataOnly = features.isMetadataDropdown;
   if (unsupportedHelperTarget) return [];
-  if (missingActionTemplateBlocker(inferCaseScope(currentCase, helperHints))) return [];
+  const caseScope = inferCaseScope(currentCase, helperHints);
+  if (missingActionTemplateBlocker(caseScope)) return [];
   const createProjectFlow = isCreateProjectOnlyFlow(currentCase, helperHints);
   if (createProjectFlow) {
     const projectParams = {
@@ -712,7 +713,15 @@ const buildActions = (currentCase: CaseManifestCase | null, helperHints: HelperH
     ];
   }
   const frontendObservationPrelude = isFrontendObservationPreludeCase(currentCase, helperHints);
-  if (frontendObservationPrelude.matched) {
+  const scopeFrontendObservationPrelude =
+    caseScope.testIntent === "frontend_observation" &&
+    !caseScope.previewRequired &&
+    !caseScope.executionRequired &&
+    !hasExplicitHelperTemplate(helperHints) &&
+    /^BIUI_COLLAGE_R001-(?:I|J|K|L|M|N)-/i.test(currentCase.caseNo)
+      ? { matched: true, needsEditor: needsReportEditorPrelude(currentCase) }
+      : frontendObservationPrelude;
+  if (scopeFrontendObservationPrelude.matched) {
     const actions: HelperPlanAction[] = [
       action("H1", "collage.openProject", "開啟指定拼貼專案（前端觀察題前置導航）", params, {
         requiredEvidence: ["dom.url", "dom.pageTitle", "dom.state", "screenshot"],
@@ -722,7 +731,7 @@ const buildActions = (currentCase: CaseManifestCase | null, helperHints: HelperH
         ]
       })
     ];
-    if (frontendObservationPrelude.needsEditor) {
+    if (scopeFrontendObservationPrelude.needsEditor) {
       actions.push(
         action("H2", "collage.createReport", "進入新增報表頁（前端觀察題前置導航）", params, {
           requiredEvidence: ["dom.url", "dom.pageTitle", "dom.state", "screenshot"],

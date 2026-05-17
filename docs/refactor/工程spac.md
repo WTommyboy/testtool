@@ -2462,6 +2462,8 @@ Status update 2026-05-17 P0a/P0b/P0c runtime containment: after the reviewed `re
 
 P0a v1 containment scope: only the single-error `RESULT_PASS_CONTRADICTS_HELPER_EVIDENCE` path is downgraded to case-level `BLOCKED_NEEDS_REJUDGMENT`. Mixed self-check errors or structural workbook contract errors remain hard blocks.
 
+Status update 2026-05-17 P0a v2 after run `287c86ba-3d08-4ee8-ba30-fd674a4bf3e9`: K-10 showed that `frontend_observation / previewRequired=false` must be a hard planner boundary even when testcase text asks to observe whether a network request is triggered. Capability gate and helper execution plan now keep K-10-style editor observation cases on safe navigation only (`openProject + createReport`) and do not schedule generic `configureMetric/runPreview`. Server ingest also contains the single case-level `RESULT_SCOPE_OUT_OF_SCOPE_PREVIEW_BLOCKER` conflict as `BLOCKED_NEEDS_REJUDGMENT` and re-runs the result evidence gate, so this judgment-policy mismatch no longer fails the whole run. Raw gate strictness remains: invalid workbook structure, missing detail_json, missing current-run evidence, FAIL-without-bug, Tool Bridge response gaps, and non-containable gate errors still hard-block.
+
 Planning source: [domain-ui-contract-helper-gen3-gen4-plan.md](/Users/tommy/Downloads/codex_galaxy_dev/uat-tool/docs/planning/domain-ui-contract-helper-gen3-gen4-plan.md)
 
 Run `67990303-2c1b-4559-924a-297a089b5949` exposed two platform-level issues:

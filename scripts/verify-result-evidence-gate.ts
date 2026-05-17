@@ -5,11 +5,14 @@ import path from "node:path";
 import ExcelJS from "exceljs";
 import { parseResultXlsx } from "../src/result-parser/result-xlsx-parser";
 import { evaluateResultEvidenceGate } from "../src/result-parser/result-evidence-gate";
+import { containCaseLevelResultEvidenceGateIssues } from "../src/result-parser/result-evidence-containment";
 
 type FixtureCase = {
   caseNo: string;
   status: string;
   detailJson: string;
+  testType?: string;
+  failCategory?: string;
 };
 
 const goodDetail = {
@@ -53,10 +56,10 @@ const writeWorkbook = async (filePath: string, cases: FixtureCase[], schemaVersi
       "H:Fixture",
       item.caseNo,
       `${item.caseNo} result evidence gate fixture`,
-      "前後端整合",
+      item.testType ?? "前後端整合",
       "agent",
       item.status,
-      "",
+      item.failCategory ?? "",
       item.detailJson
     ]);
   }
@@ -243,6 +246,50 @@ const main = async (): Promise<void> => {
       `non-destructive validation alert should not require Tool Bridge response; issues=${JSON.stringify(allowlistedNativeValidationReport.issues)}`
     );
 
+    const outOfScopePreviewBlocker = path.join(tempRoot, "out-of-scope-preview-blocker-result.xlsx");
+    await writeWorkbook(outOfScopePreviewBlocker, [
+      {
+        caseNo: "BIUI_COLLAGE_R001-K-10",
+        status: "BLOCKED",
+        testType: "前端呈現",
+        failCategory: "EXECUTE_PRECONDITION_NO_SELECTED_FIELDS",
+        detailJson: JSON.stringify({
+          測試目的: "空設定/未完成設定點「計算」按鈕的防呆。",
+          設定條件: "第一列空白，previewRequired=false。",
+          預期行為: "應觀察防呆提示與 request 是否觸發，不應用 preview 前置條件直接阻擋。",
+          實際行為: "helper saw selectedMetricFields=0 and returned EXECUTE_PRECONDITION_NO_SELECTED_FIELDS before case-specific frontend observation.",
+          blocked_reason: "EXECUTE_PRECONDITION_NO_SELECTED_FIELDS",
+          previewRequired: false,
+          currentRunEvidence: goodDetail.currentRunEvidence
+        })
+      }
+    ]);
+    const outOfScopeParsed = await parseResultXlsx(outOfScopePreviewBlocker);
+    const outOfScopeReport = evaluateResultEvidenceGate({
+      parsed: outOfScopeParsed,
+      currentCaseNo: "BIUI_COLLAGE_R001-K-10",
+      expectedCaseNos: ["BIUI_COLLAGE_R001-K-10"],
+      resultSource: "codex_generated",
+      requireSingleCase: true
+    });
+    assert.equal(outOfScopeReport.status, "error");
+    assert.ok(hasIssue(outOfScopeReport, "RESULT_SCOPE_OUT_OF_SCOPE_PREVIEW_BLOCKER"));
+    const containmentReport = containCaseLevelResultEvidenceGateIssues(outOfScopeParsed, outOfScopeReport);
+    assert.equal(containmentReport.status, "updated");
+    assert.deepEqual(containmentReport.updatedCaseNos, ["BIUI_COLLAGE_R001-K-10"]);
+    const containedOutOfScopeReport = evaluateResultEvidenceGate({
+      parsed: outOfScopeParsed,
+      currentCaseNo: "BIUI_COLLAGE_R001-K-10",
+      expectedCaseNos: ["BIUI_COLLAGE_R001-K-10"],
+      resultSource: "codex_generated",
+      requireSingleCase: true
+    });
+    assert.equal(
+      containedOutOfScopeReport.status,
+      "ok",
+      `case-level containment should pass evidence gate for ingest continuation; issues=${JSON.stringify(containedOutOfScopeReport.issues)}`
+    );
+
     const blockedNoNativeConfirm = path.join(tempRoot, "blocked-no-native-confirm-result.xlsx");
     await writeWorkbook(blockedNoNativeConfirm, [
       {
@@ -418,6 +465,7 @@ const main = async (): Promise<void> => {
             "benign overwrite prose does not require Tool Bridge response",
             "Tool Bridge action claim without response evidence is blocked",
             "non-destructive selected-field validation alert does not require Tool Bridge response",
+            "out-of-scope preview blocker can be contained as case-level rejudgment",
             "negative or insufficient native-confirm prose does not require Tool Bridge response",
             "formula modal blocked prose does not require Tool Bridge response",
             "Tool Bridge prose in purpose/setup/expected fields does not trigger response gate",
