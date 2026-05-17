@@ -87,6 +87,18 @@ P0.17 implementation:
 - Verification result: 15/15 reduced-smoke cases match Tommy's oracle without running a browser. The verifier checks route boundaries first, then applies a contract-driven offline judgment pass. It specifically guards against two prior failure modes: frontend observation cases falling back to generic preview helpers, and unsupported observation types being incorrectly guessed into a wrong `observeFrontendState` subtype.
 - Boundary note: this is an offline smoke for route/judgment logic only. It does not prove the live templates can execute J-07 tooltip, J-12 project-limit toast, K-08 source-report picker, or N-03 download end to end; those remain P0.19/P0.20 work.
 
+P0.18 implementation:
+
+- Added package generator: `scripts/generate-p0-vocabulary-reduced-package.ts`
+- Added package verifier: `scripts/verify-p0-vocabulary-reduced-package.ts`
+- Added npm scripts: `npm run generate:p0-vocabulary-reduced-package` and `npm run verify:p0-vocabulary-reduced-package`
+- Generated files in `/Users/tommy/Downloads/codex_galaxy/BI_UAT_ROUNDS/p0_scope_smoke_20260517/`:
+  - `P0_SCOPE_SMOKE_測試案例_BIUI_COLLAGE_R001_20260518_vocab_v1.xlsx`
+  - `P0_SCOPE_SMOKE_測試執行說明_BIUI_COLLAGE_R001_20260518_vocab_v1.md`
+  - `P0_SCOPE_SMOKE_Codex_指派文字_BIUI_COLLAGE_R001_20260518_vocab_v1.md`
+- Verification result: generated package has 15 cases and 38 structured step rows. Every step action exists in `platform-action-vocabulary.v1.json`, every target exists in `BI_OFFICIAL_UI_COLLAGE/ui-object-vocabulary.json`, every xlsx `測試標的` aligns with the runtime case-scope contract, and the current parser imports the structured `步驟` sheet as 38 steps.
+- Boundary note: the generated package deliberately does not embed Tommy's oracle or any previous run result. It is a testcase authoring artifact, while the oracle remains only a time-bound calibration fixture.
+
 ## 1. 範圍
 
 本文件涵蓋線上工具端：
