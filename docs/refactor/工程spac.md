@@ -2460,6 +2460,8 @@ Status update 2026-05-17 P0 runtime guards: `agent/src/case-scope.ts` now infers
 
 Status update 2026-05-17 P0a/P0b/P0c runtime containment: after the reviewed `result-gate-decision-table.md` and `case-scope-contract-v1.md` draft, runtime now contains PASS/helper-evidence contradictions at case level instead of failing the full run. A self-check with only `RESULT_PASS_CONTRADICTS_HELPER_EVIDENCE` rewrites the current PASS row to `BLOCKED / BLOCKED_NEEDS_REJUDGMENT`, preserves the original detail and issues, reruns self-check, and uploads the contained result. Negative scope text such as `本題不測項目: 儲存、CSV、reopen` is now understood by case scope, capability gate, and helper plan, so B-09-style cases stay preview-only and do not execute save/reopen/download. Static date range helper evidence now requires visible UI static-tab interaction evidence; final represented date range alone is no longer sufficient to allow PASS.
 
+P0a v1 containment scope: only the single-error `RESULT_PASS_CONTRADICTS_HELPER_EVIDENCE` path is downgraded to case-level `BLOCKED_NEEDS_REJUDGMENT`. Mixed self-check errors or structural workbook contract errors remain hard blocks.
+
 Planning source: [domain-ui-contract-helper-gen3-gen4-plan.md](/Users/tommy/Downloads/codex_galaxy_dev/uat-tool/docs/planning/domain-ui-contract-helper-gen3-gen4-plan.md)
 
 Run `67990303-2c1b-4559-924a-297a089b5949` exposed two platform-level issues:

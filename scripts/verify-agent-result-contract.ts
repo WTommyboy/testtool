@@ -358,6 +358,40 @@ const main = async (): Promise<void> => {
     assert.equal(containedParsed.cases[0]?.status, "BLOCKED");
     assert.equal(containedParsed.cases[0]?.verdictReason, "BLOCKED_NEEDS_REJUDGMENT");
 
+    const mixedErrorContradictoryPass = path.join(tempRoot, "pass-contradicts-helper-evidence-plus-header-error.xlsx");
+    await writePassWorkbook(mixedErrorContradictoryPass, "OTTEST004-B-12");
+    fs.mkdirSync(path.join(tempRoot, "output", "helper-artifacts", "OTTEST004-B-12"), { recursive: true });
+    fs.writeFileSync(path.join(tempRoot, "output", "helper-artifacts", "OTTEST004-B-12", "collage.configureMetric-latest.json"), JSON.stringify({
+      schemaVersion: "bi-ui-helper-report-v1",
+      caseId: "OTTEST004-B-12",
+      action: "collage.configureMetric",
+      status: "ok",
+      evidence: {
+        stateDelta: {
+          after: {
+            checks: {
+              field: true,
+              dateRange: true,
+              display: false
+            }
+          }
+        }
+      }
+    }, null, 2));
+    const mixedWorkbook = new ExcelJS.Workbook();
+    await mixedWorkbook.xlsx.readFile(mixedErrorContradictoryPass);
+    const mixedCases = mixedWorkbook.getWorksheet("測試案例");
+    assert.ok(mixedCases, "fixture workbook should contain 測試案例 sheet");
+    mixedCases.getRow(1).getCell(1).value = "群組ID_BROKEN";
+    await mixedWorkbook.xlsx.writeFile(mixedErrorContradictoryPass);
+    const mixedErrorReport = await validateResultWorkbookContract(mixedErrorContradictoryPass, undefined, { runDir: tempRoot });
+    assert.equal(mixedErrorReport.status, "error");
+    assert.ok(mixedErrorReport.issues.some((item) => item.code === "RESULT_PASS_CONTRADICTS_HELPER_EVIDENCE"));
+    assert.ok(mixedErrorReport.issues.some((item) => item.code === "RESULT_XLSX_HEADER_MISSING"));
+    const mixedContainmentReport = await containPassContradictionsAsBlocked(mixedErrorContradictoryPass, mixedErrorReport);
+    assert.equal(mixedContainmentReport.status, "skipped", JSON.stringify(mixedContainmentReport));
+    assert.equal(mixedContainmentReport.reason, "SELF_CHECK_HAS_NON_CONTAINABLE_ERRORS");
+
     const normalizedDateRangeWithoutFlowPass = path.join(tempRoot, "pass-configure-metric-normalized-date-evidence-without-flow.xlsx");
     await writePassWorkbook(normalizedDateRangeWithoutFlowPass, "OTTEST004-B-09");
     fs.mkdirSync(path.join(tempRoot, "output", "helper-artifacts", "OTTEST004-B-09"), { recursive: true });
@@ -449,6 +483,7 @@ const main = async (): Promise<void> => {
         "BLOCKED detail_json with core fields but without current-run evidence is enriched before upload",
         "PASS result contradicting helper false checks is rejected before upload",
         "PASS/helper contradiction can be contained as BLOCKED_NEEDS_REJUDGMENT without failing workbook validation",
+        "PASS/helper contradiction containment is skipped when other workbook contract errors are present",
         "configureMetric dateRange=false still blocks without normalized date evidence",
         "static dateRange PASS requires flow interaction evidence, not only final represented range",
         "configureMetric dateRange=false is allowed when date-ui-evidence proves the represented range and flow evidence exists"

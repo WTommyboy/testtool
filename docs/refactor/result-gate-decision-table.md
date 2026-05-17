@@ -247,6 +247,8 @@ P0 runtime 行為:
 2. 該 case 寫入最具體 result code。
 3. Agent/server 繼續下一題,除非 browser/session fatal。
 
+P0a v1 scope note: current runtime containment is intentionally narrow. It only contains `RESULT_PASS_CONTRADICTS_HELPER_EVIDENCE` when that is the only self-check error, because this class is known to represent PASS/helper-evidence disagreement that should be reviewed at case level. Other self-check errors, such as invalid JSON, missing headers, missing required detail fields, or missing Bug rows for FAIL, still hard-block upload and may fail the run because they usually mean the workbook itself is not trustworthy.
+
 建議 sentinel:
 
 | sentinel | 用途 |
