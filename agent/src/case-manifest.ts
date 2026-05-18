@@ -22,7 +22,24 @@ export type CaseManifestCase = {
   testDate: string | null;
   detailJson: string | null;
   validationMethod: string | null;
+  structuredSteps?: CaseManifestStructuredStep[];
   currentCaseFile: string;
+};
+
+export type CaseManifestStructuredStep = {
+  caseNo: string;
+  stepNo: number;
+  actionType: string;
+  targetType: string | null;
+  targetValue: string | null;
+  inputValue: string | null;
+  expected: string | null;
+  requireApproval: boolean;
+  timeoutMs: number;
+  retry: number;
+  role: string | null;
+  actionId: string | null;
+  evidenceRequirements: string[];
 };
 
 export type CaseManifest = {
@@ -32,6 +49,7 @@ export type CaseManifest = {
   currentCaseNo: string | null;
   currentCaseSelection: CaseManifestCurrentCaseSelection;
   totalCases: number;
+  stepCount: number;
   groups: Array<{ id: string | null; name: string; caseCount: number; caseNos: string[] }>;
   cases: CaseManifestCase[];
   warnings: string[];
@@ -191,6 +209,150 @@ const detectHeader = (sheet: ExcelJS.Worksheet): { rowNumber: number; columns: H
 
 const getCell = (row: ExcelJS.Row, column: number | null): string => {
   return column ? cellText(row.getCell(column).value) : "";
+};
+
+const numberCell = (value: string, fallback: number): number => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+};
+
+const boolCell = (value: string): boolean => /^(true|1|yes|y|是)$/i.test(value.trim());
+
+const evidenceList = (value: string): string[] =>
+  value
+    .split(/[,，;；\n]/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+
+type StepColumns = {
+  caseNo: number | null;
+  stepNo: number | null;
+  actionType: number | null;
+  targetType: number | null;
+  targetValue: number | null;
+  inputValue: number | null;
+  expected: number | null;
+  requireApproval: number | null;
+  timeoutMs: number | null;
+  retry: number | null;
+  role: number | null;
+  actionId: number | null;
+  evidenceRequirements: number | null;
+};
+
+const stepAliases: Record<keyof StepColumns, string[]> = {
+  caseNo: ["案例編號", "測試案例", "case_no", "caseno", "caseid", "case_id"],
+  stepNo: ["步驟序號", "step_no", "stepno", "step"],
+  actionType: ["動作類型", "action_type", "actiontype", "action"],
+  targetType: ["目標類型", "target_type", "targettype"],
+  targetValue: ["目標值", "target_value", "targetvalue", "target"],
+  inputValue: ["輸入值", "input_value", "inputvalue", "value"],
+  expected: ["預期值", "expected", "expected_outcome", "expectedoutcome"],
+  requireApproval: ["需要人工確認", "require_approval", "requireapproval", "approval"],
+  timeoutMs: ["逾時毫秒", "timeout_ms", "timeoutms"],
+  retry: ["重試次數", "retry", "retries"],
+  role: ["role", "角色"],
+  actionId: ["actionid", "action_id", "動作id", "動作ID"],
+  evidenceRequirements: ["evidencerequirements", "evidence_requirements", "取證需求", "證據需求"]
+};
+
+const stepAliasSets = Object.fromEntries(
+  Object.entries(stepAliases).map(([key, names]) => [key, new Set(names.map((name) => normalizeHeader(name)))])
+) as Record<keyof StepColumns, Set<string>>;
+
+const findStepColumn = (row: ExcelJS.Row, names: Set<string>): number | null => {
+  let found: number | null = null;
+  row.eachCell((cell, col) => {
+    if (names.has(normalizeHeader(cell.value))) found = col;
+  });
+  return found;
+};
+
+const findArrayStepColumn = (row: string[], names: Set<string>): number | null => {
+  for (let col = 1; col < row.length; col += 1) {
+    if (names.has(normalizeHeader(row[col]))) return col;
+  }
+  return null;
+};
+
+const detectStepColumns = (row: ExcelJS.Row): StepColumns => Object.fromEntries(
+  Object.keys(stepAliases).map((key) => [key, findStepColumn(row, stepAliasSets[key as keyof StepColumns])])
+) as StepColumns;
+
+const detectArrayStepColumns = (row: string[]): StepColumns => Object.fromEntries(
+  Object.keys(stepAliases).map((key) => [key, findArrayStepColumn(row, stepAliasSets[key as keyof StepColumns])])
+) as StepColumns;
+
+const groupStructuredSteps = (steps: CaseManifestStructuredStep[]): Map<string, CaseManifestStructuredStep[]> => {
+  const grouped = new Map<string, CaseManifestStructuredStep[]>();
+  for (const step of steps) {
+    const key = normalizeCaseNo(step.caseNo);
+    const list = grouped.get(key) ?? [];
+    list.push(step);
+    grouped.set(key, list);
+  }
+  for (const list of grouped.values()) {
+    list.sort((a, b) => a.stepNo - b.stepNo);
+  }
+  return grouped;
+};
+
+const parseStructuredStepsFromSheet = (workbook: ExcelJS.Workbook): Map<string, CaseManifestStructuredStep[]> => {
+  const stepSheet = workbook.getWorksheet("步驟");
+  if (!stepSheet) return new Map();
+  const columns = detectStepColumns(stepSheet.getRow(1));
+  if (!columns.caseNo || !columns.stepNo || !columns.actionType) return new Map();
+  const steps: CaseManifestStructuredStep[] = [];
+  for (let rowNumber = 2; rowNumber <= stepSheet.rowCount; rowNumber += 1) {
+    const row = stepSheet.getRow(rowNumber);
+    const caseNo = getCell(row, columns.caseNo);
+    if (!caseNo) continue;
+    steps.push({
+      caseNo,
+      stepNo: numberCell(getCell(row, columns.stepNo), 0),
+      actionType: getCell(row, columns.actionType),
+      targetType: nullable(getCell(row, columns.targetType)),
+      targetValue: nullable(getCell(row, columns.targetValue)),
+      inputValue: nullable(getCell(row, columns.inputValue)),
+      expected: nullable(getCell(row, columns.expected)),
+      requireApproval: boolCell(getCell(row, columns.requireApproval)),
+      timeoutMs: numberCell(getCell(row, columns.timeoutMs), 10000),
+      retry: numberCell(getCell(row, columns.retry), 0),
+      role: nullable(getCell(row, columns.role)),
+      actionId: nullable(getCell(row, columns.actionId)),
+      evidenceRequirements: evidenceList(getCell(row, columns.evidenceRequirements))
+    });
+  }
+  return groupStructuredSteps(steps);
+};
+
+const parseStructuredStepsFromRows = (sheets: MinimalXlsxSheet[]): Map<string, CaseManifestStructuredStep[]> => {
+  const stepSheet = sheets.find((item) => item.name === "步驟");
+  const headerRow = stepSheet?.rows[0];
+  if (!stepSheet || !headerRow) return new Map();
+  const columns = detectArrayStepColumns(headerRow);
+  if (!columns.caseNo || !columns.stepNo || !columns.actionType) return new Map();
+  const steps: CaseManifestStructuredStep[] = [];
+  for (const row of stepSheet.rows.slice(1)) {
+    const caseNo = getArrayCell(row, columns.caseNo);
+    if (!caseNo) continue;
+    steps.push({
+      caseNo,
+      stepNo: numberCell(getArrayCell(row, columns.stepNo), 0),
+      actionType: getArrayCell(row, columns.actionType),
+      targetType: nullable(getArrayCell(row, columns.targetType)),
+      targetValue: nullable(getArrayCell(row, columns.targetValue)),
+      inputValue: nullable(getArrayCell(row, columns.inputValue)),
+      expected: nullable(getArrayCell(row, columns.expected)),
+      requireApproval: boolCell(getArrayCell(row, columns.requireApproval)),
+      timeoutMs: numberCell(getArrayCell(row, columns.timeoutMs), 10000),
+      retry: numberCell(getArrayCell(row, columns.retry), 0),
+      role: nullable(getArrayCell(row, columns.role)),
+      actionId: nullable(getArrayCell(row, columns.actionId)),
+      evidenceRequirements: evidenceList(getArrayCell(row, columns.evidenceRequirements))
+    });
+  }
+  return groupStructuredSteps(steps);
 };
 
 const caseGroupKey = (id: string | null, name: string | null): string => `${id?.trim() || "NO_GROUP_ID"}::${name?.trim() || "未分組"}`;
@@ -383,6 +545,7 @@ const writeManifestFiles = (
     source: requestedCaseNo ? options.preferredStartCaseSource ?? "startup_instruction" : null,
     reason: selectionReason
   };
+  const stepCount = cases.reduce((sum, item) => sum + (item.structuredSteps?.length ?? 0), 0);
 
   const manifest: CaseManifest = {
     generatedAt: new Date().toISOString(),
@@ -391,6 +554,7 @@ const writeManifestFiles = (
     currentCaseNo: selectedCase?.caseNo ?? null,
     currentCaseSelection,
     totalCases: cases.length,
+    stepCount,
     groups: [...grouped.values()].map((group) => ({
       id: group.id,
       name: group.name,
@@ -428,6 +592,7 @@ const writeMinimalCaseManifest = async (
 ): Promise<CaseManifestResult> => {
   const sheets = await loadMinimalXlsxSheets(xlsxPath);
   const sheet = sheets.find((item) => item.name === "測試案例") ?? sheets[0];
+  const structuredStepsByCase = parseStructuredStepsFromRows(sheets);
   if (!sheet) {
     return { manifestPath: null, currentCasePath: null, casesDir: null, currentCaseNo: null, currentCaseSelection: null, cases: [], totalCases: 0, warnings: [...warnings, "XLSX_NO_WORKSHEET"] };
   }
@@ -478,6 +643,7 @@ const writeMinimalCaseManifest = async (
       testDate: nullable(getArrayCell(row, header.columns.testDate)),
       detailJson: nullable(getArrayCell(row, header.columns.detailJson)),
       validationMethod: nullable(getArrayCell(row, header.columns.validationMethod)),
+      structuredSteps: structuredStepsByCase.get(normalizeCaseNo(caseNo)) ?? [],
       currentCaseFile
     };
     cases.push(item);
@@ -538,6 +704,7 @@ export const writeCaseManifest = async (
   if (!header.columns.groupName) warnings.push("GROUP_COLUMN_NOT_FOUND");
   if (!header.columns.groupId) warnings.push("GROUP_ID_COLUMN_NOT_FOUND");
   if (!header.columns.caseTitle) warnings.push("CASE_TITLE_COLUMN_NOT_FOUND");
+  const structuredStepsByCase = parseStructuredStepsFromSheet(workbook);
 
   const casesDir = path.join(outputDir, "cases");
   fs.mkdirSync(casesDir, { recursive: true });
@@ -581,6 +748,7 @@ export const writeCaseManifest = async (
       testDate: nullable(getCell(row, header.columns.testDate)),
       detailJson: nullable(getCell(row, header.columns.detailJson)),
       validationMethod: nullable(getCell(row, header.columns.validationMethod)),
+      structuredSteps: structuredStepsByCase.get(normalizeCaseNo(caseNo)) ?? [],
       currentCaseFile
     };
     cases.push(item);

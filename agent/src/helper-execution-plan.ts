@@ -392,6 +392,53 @@ const actionsForTemplate = (
   return [];
 };
 
+const structuredDatePresetLabelFromTarget = (target: string): string | null => {
+  switch (target) {
+    case "dateRange.preset.past30Days":
+      return "過去 30 天";
+    case "dateRange.preset.recent30Days":
+      return "最近 30 天";
+    case "dateRange.preset.yesterday":
+      return "昨日";
+    default:
+      return null;
+  }
+};
+
+const structuredDateVariantLabels = (contract: StructuredCaseScopeContract | null): string[] => {
+  const labels: string[] = [];
+  const seen = new Set<string>();
+  for (const action of contract?.requiredActions ?? []) {
+    const label = structuredDatePresetLabelFromTarget(action.target);
+    if (!label || seen.has(label)) continue;
+    seen.add(label);
+    labels.push(label);
+  }
+  return labels;
+};
+
+const paramsForStructuredContract = (
+  params: Record<string, unknown>,
+  contract: StructuredCaseScopeContract | null
+): Record<string, unknown> => {
+  if (!contract) return params;
+  const next = { ...params };
+  const variants = structuredDateVariantLabels(contract);
+  if (variants.length > 1) {
+    next.dateRange = null;
+    next.dateVariants = variants;
+  }
+  if (contract.routeIntent === "download_execution") {
+    next.skipDownload = false;
+    next.downloadScope = typeof next.downloadScope === "string" && next.downloadScope.trim() ? next.downloadScope : "editor_session";
+    if (typeof next.field !== "string" || !next.field.trim()) next.field = "新增帳號數";
+    if (!Array.isArray(next.fields) || next.fields.length === 0) next.fields = [next.field];
+    if (typeof next.source !== "string" || !next.source.trim()) next.source = "每日報表";
+    if (typeof next.sourceReport !== "string" || !next.sourceReport.trim()) next.sourceReport = next.source;
+  }
+  return next;
+};
+
 const dateRequiresCodexVisibleUi = (currentCase: CaseManifestCase | null, helperHints: HelperHints | null): boolean => {
   const params = paramsObject(helperHints);
   const cleanup = parseCleanupTargets(currentCase?.cleanupChecklist);
@@ -505,6 +552,14 @@ const numberParam = (params: Record<string, unknown>, keys: string[]): number | 
   return null;
 };
 
+const cleanupMetricFieldTarget = (value: string | null | undefined): string | null => {
+  const cleaned = nonNeutral(value);
+  if (!cleaned) return null;
+  if (/^\d+\s*(?:欄|欄位|列|row|rows?)$/i.test(cleaned)) return null;
+  if (/^(?:0|無|空)\s*(?:欄|欄位|列|row|rows?)$/i.test(cleaned)) return null;
+  return cleaned;
+};
+
 const inferReportNamePattern = (text: string, params: Record<string, unknown>): string | null =>
   cleanReportNamePattern(
     stringParam(params, ["reportName", "reportNamePattern"]) ??
@@ -539,6 +594,7 @@ const inferCollageParams = (currentCase: CaseManifestCase | null, helperHints: H
   const text = textBlob(currentCase);
   const cleanup = parseCleanupTargets(currentCase?.cleanupChecklist);
   const params = paramsObject(helperHints);
+  const caseScopeContract = inferCaseScope(currentCase, helperHints).caseScopeContract;
   const allZeroFieldInspection = isAllZeroFieldInspectionCase(currentCase, helperHints);
   const expectedSourcesParam = stringArrayParam(params, "expectedSources");
   const expectedTotalFieldCountParam = numberParam(params, ["expectedTotalFieldCount", "totalFieldCount"]);
@@ -555,8 +611,9 @@ const inferCollageParams = (currentCase: CaseManifestCase | null, helperHints: H
   const field = selectAllFields
     ? null
     : nonNeutral(stringParam(params, ["field", "metric", "metricField"])) ??
-      nonNeutral(cleanup["欄位"]) ??
-      nonNeutral(firstMatch(text, [/欄位[「=：: ]+([^」\n,，;；]+)/]));
+      cleanupMetricFieldTarget(cleanup["欄位"]) ??
+      cleanupMetricFieldTarget(firstMatch(text, [/欄位[「=：: ]+([^」\n,，;；]+)/])) ??
+      (caseScopeContract?.routeIntent === "download_execution" ? "新增帳號數" : null);
   const fields = splitCompositeMetricFields(field);
   const reportNamePattern = inferReportNamePattern(text, params);
   const modifiesExistingReport =
@@ -581,7 +638,7 @@ const inferCollageParams = (currentCase: CaseManifestCase | null, helperHints: H
   const inferredSource = selectAllFields && sourceReportsParam.length > 0
     ? null
     : firstMatch(text, [/來源報表[=：: ]*「?([^」\n,， ]+)/]);
-  const effectiveSource = explicitSource ?? inferredSource;
+  const effectiveSource = explicitSource ?? inferredSource ?? (caseScopeContract?.routeIntent === "download_execution" ? "每日報表" : null);
   const sourceReports = sourceReportsParam.length > 0
     ? sourceReportsParam
     : allZeroFieldInspection && effectiveSource
@@ -592,7 +649,7 @@ const inferCollageParams = (currentCase: CaseManifestCase | null, helperHints: H
     ...params,
     devUrl: stringParam(params, ["devUrl"]) ?? null,
     projectName: stringParam(params, ["projectName", "project"]) ?? firstMatch(text, [/(拼貼test[_\d]+)/i]),
-    source: explicitSource ?? inferredSource,
+    source: effectiveSource,
     referenceCsv: stringParam(params, ["referenceCsv"]) ?? "rules/BI_DATA/metadata.csv",
     referenceSourcePath: stringParam(params, ["referenceSourcePath"]) ?? null,
     referenceSourceName: stringParam(params, ["referenceSourceName"]) ?? firstMatch(text, [/原始指定檔名[=：: ]+`?([^`\n;]+)/, /source filename[=：: ]+`?([^`\n;]+)/i]),
@@ -635,7 +692,9 @@ const inferCollageParams = (currentCase: CaseManifestCase | null, helperHints: H
     display: nonNeutral(stringParam(params, ["display", "displayMode"])) ?? nonNeutral(cleanup["顯示"]) ?? null,
     skipSave: helperRequestsNoSave(params) || textExplicitlyDisablesSave(text),
     skipReopen: helperRequestsNoReopen(params) || helperRequestsSaveOnly(params) || textExplicitlyDisablesReopen(text),
-    skipDownload: helperRequestsNoDownload(params) || helperRequestsSaveOnly(params) || textExplicitlyDisablesDownload(text),
+    skipDownload: caseScopeContract?.routeIntent === "download_execution"
+      ? false
+      : helperRequestsNoDownload(params) || helperRequestsSaveOnly(params) || textExplicitlyDisablesDownload(text),
     cleanupChecklist: currentCase?.cleanupChecklist ?? null,
     cleanupTargets: cleanup,
     reportNamePattern,
@@ -858,7 +917,7 @@ const buildActions = (currentCase: CaseManifestCase | null, helperHints: HelperH
     !caseScope.executionRequired &&
     !hasExplicitHelperTemplate(helperHints) &&
     /^BIUI_COLLAGE_R001-(?:I|J|K|L|M|N)-/i.test(currentCase.caseNo)
-      ? { matched: true, needsEditor: needsReportEditorPrelude(currentCase) }
+      ? { matched: true, needsEditor: caseScopeContract ? caseScopeContract.requiresEditor : needsReportEditorPrelude(currentCase) }
       : frontendObservationPrelude;
   if (scopeFrontendObservationPrelude.matched) {
     const observationType = caseScopeContract
@@ -912,6 +971,73 @@ const buildActions = (currentCase: CaseManifestCase | null, helperHints: HelperH
     }
     return actions;
   }
+
+  if (caseScopeContract?.routeIntent === "preview_execution") {
+    const structuredParams = paramsForStructuredContract(params, caseScopeContract);
+    const structuredDateVariants = structuredDateVariantLabels(caseScopeContract);
+    const structuredActions: HelperPlanAction[] = [
+      action("H1", "collage.openProject", "開啟指定拼貼專案", structuredParams, {
+        requiredEvidence: ["dom.url", "dom.pageTitle", "dom.state", "screenshot"],
+        notes: ["structured preview_execution 前置導航；不判斷 testcase 結果。"]
+      }),
+      action("H2", "collage.createReport", "進入新增報表頁", structuredParams, {
+        requiredEvidence: ["dom.url", "dom.pageTitle", "dom.state", "screenshot"]
+      })
+    ];
+    if (structuredDateVariants.length > 1) {
+      structuredActions.push(
+        action("H3", "collage.runDateVariantsPreviewEvidence", "依 structured date variants 逐輪設定日期並收集 preview evidence", structuredParams, {
+          requiredEvidence: ["dom.state", "date.uiState", "date.representedRange", "network.requestBody", "chart.datasets", "screenshot"],
+          screenshotPolicy: "required_if_possible",
+          notes: [
+            "多個 dateRange preset under_test 需由同一 case 逐輪設定並各自按計算；不可只取最後一次 preview。",
+            "dateVariants 由 caseScopeContract target 推導，不使用 legacy composite cleanup dateRange。"
+          ]
+        })
+      );
+    } else {
+      structuredActions.push(
+        action("H3", "collage.configureMetric", "設定來源、欄位、日期與顯示", structuredParams, {
+          requiredEvidence: ["dom.state", "state.delta", "date.uiState", "date.representedRange", "screenshot"]
+        }),
+        action("H4", "collage.runPreviewAndCollectEvidence", "執行 preview 並收集 evidence", structuredParams, {
+          requiredEvidence: ["network.requestBody", "network.responseBody", "chart.datasets", "dom.previewState", "screenshot"],
+          screenshotPolicy: "required_if_possible"
+        })
+      );
+    }
+    return structuredActions;
+  }
+
+  if (caseScopeContract?.routeIntent === "download_execution") {
+    const structuredParams = paramsForStructuredContract(params, caseScopeContract);
+    return [
+      action("H1", "collage.openProject", "開啟指定拼貼專案", structuredParams, {
+        requiredEvidence: ["dom.url", "dom.pageTitle", "dom.state", "screenshot"],
+        notes: ["structured download_execution 前置導航；不判斷 testcase 結果。"]
+      }),
+      action("H2", "collage.createReport", "進入新增報表頁", structuredParams, {
+        requiredEvidence: ["dom.url", "dom.pageTitle", "dom.state", "screenshot"]
+      }),
+      action("H3", "collage.configureMetric", "建立有效 preview 前置設定", structuredParams, {
+        requiredEvidence: ["dom.state", "state.delta", "date.uiState", "date.representedRange", "screenshot"],
+        notes: ["若 testcase cleanup 寫的是欄位數量，例如 1欄，不可當作 metric field label。"]
+      }),
+      action("H4", "collage.runPreviewAndCollectEvidence", "執行 preview 並收集 evidence", structuredParams, {
+        requiredEvidence: ["network.requestBody", "network.responseBody", "chart.datasets", "dom.previewState", "screenshot"],
+        screenshotPolicy: "required_if_possible"
+      }),
+      action("H5", "collage.downloadCsvAndComparePreview", "點擊下載並收集 download/toast evidence", structuredParams, {
+        requiredEvidence: ["downloaded.csv", "download.toast.state", "screenshot"],
+        screenshotPolicy: "required_if_possible",
+        notes: [
+          "download_execution 代表 UI 下載與 toast 是測試標的；不測 CSV 內容比對不得 suppress download。",
+          "若 caseScopeContract 不要求 csv-preview comparison，helper 只需保留下載 artifact/toast evidence。"
+        ]
+      })
+    ];
+  }
+
   const formulaHelperFlow = hasFormulaParams(helperParams) || hasFormulaParams(params);
   if (formulaHelperFlow) {
     return [
