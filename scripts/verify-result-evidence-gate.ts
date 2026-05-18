@@ -209,6 +209,47 @@ const main = async (): Promise<void> => {
       `benign overwrite prose should not require Tool Bridge response; issues=${JSON.stringify(benignOverwriteProseReport.issues)}`
     );
 
+    const nonDestructiveHoverDeleteTooltip = path.join(tempRoot, "hover-delete-tooltip-result.xlsx");
+    await writeWorkbook(nonDestructiveHoverDeleteTooltip, [
+      {
+        caseNo: "BIUI_COLLAGE_R001-J-07",
+        status: "FAIL",
+        testType: "前端呈現",
+        detailJson: JSON.stringify({
+          測試目的: "驗證在拼貼報表專案列表中，hover 列內刪除動作時是否顯示對應 tooltip。",
+          設定條件: "已登入 DEV 並進入拼貼專案頁，存在可見報表列與列內刪除動作。",
+          預期行為: "hover projectList.rowDeleteAction 後應出現 projectList.rowDeleteTooltip（tooltip_visible），且語意對應刪除。",
+          實際行為:
+            "helper 已成功 hover 列內刪除動作（interactionLog 顯示 hovered=true），但 projectList.rowActionTooltip.state 顯示 tooltipVisible=false、visibleText=null，未出現 tooltip。",
+          錯誤原因: "前端未在 hover 列內刪除動作後顯示 tooltip。",
+          根因層級: "前端呈現/互動",
+          驗證方法: "依 caseScopeContract 逐步驗證：hoverRowDeleteAction expected=succeeded；assertRowDeleteTooltip expected=tooltip_visible 未達成。",
+          "RD 分派": "前端",
+          currentRunEvidence: {
+            ...goodDetail.currentRunEvidence,
+            helperPreRunSummary: "/tmp/run/output/helper-pre-run-summary.json",
+            frontendObservationReport: "/tmp/run/output/helper-artifacts/BIUI_COLLAGE_R001-J-07/collage.observeFrontendState-latest.json",
+            screenshot: "/tmp/run/output/helper-artifacts/BIUI_COLLAGE_R001-J-07/BIUI_COLLAGE_R001-J-07-observe-rowDeleteTooltip.png",
+            keyState: {
+              hoveredTarget: "projectList.rowDeleteAction",
+              hovered: true,
+              tooltipVisible: false,
+              visibleText: null
+            }
+          }
+        })
+      }
+    ]);
+    const nonDestructiveHoverDeleteTooltipReport = await runGate(nonDestructiveHoverDeleteTooltip, {
+      currentCaseNo: "BIUI_COLLAGE_R001-J-07",
+      expectedCaseNos: ["BIUI_COLLAGE_R001-J-07"]
+    });
+    assert.equal(
+      nonDestructiveHoverDeleteTooltipReport.status,
+      "ok",
+      `hovering a delete icon to observe tooltip must not require Tool Bridge response; issues=${JSON.stringify(nonDestructiveHoverDeleteTooltipReport.issues)}`
+    );
+
     const missingToolBridge = path.join(tempRoot, "missing-tool-bridge-result.xlsx");
     await writeWorkbook(missingToolBridge, [
       {
@@ -587,6 +628,7 @@ const main = async (): Promise<void> => {
             "agent fallback result is blocked",
             "diagnostic result source is blocked",
             "benign overwrite prose does not require Tool Bridge response",
+            "hovering a delete icon to observe tooltip does not require Tool Bridge response",
             "Tool Bridge action claim without response evidence is blocked",
             "non-destructive selected-field validation alert does not require Tool Bridge response",
             "out-of-scope preview blocker can be contained as case-level rejudgment",

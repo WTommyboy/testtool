@@ -192,6 +192,12 @@ const NEGATIVE_OR_MISSING_TOOL_BRIDGE_CLAIM_PATTERNS = [
   /(?:不測|超出本題範圍).{0,80}(?:未儲存|離開警告|native\s*confirm|confirm|alert|dialog|原生\s*(?:confirm|alert|dialog))/gi
 ];
 
+const NON_DESTRUCTIVE_HOVER_TOOLTIP_PATTERNS = [
+  /(?:已|完成|成功)?\s*(?:hover(?:ed)?|滑鼠(?:移入|懸停)|移入|懸停).{0,100}(?:刪除|删除|delete|trash|rowDeleteAction).{0,100}(?:tooltip|工具提示|hover|hovered|tooltipVisible|visibleText|未出現|沒有出現|顯示)/gi,
+  /(?:刪除|删除|delete|trash|rowDeleteAction).{0,100}(?:tooltip|工具提示).{0,100}(?:hover(?:ed)?|滑鼠(?:移入|懸停)|移入|懸停|tooltipVisible|visibleText|未出現|沒有出現|顯示)/gi,
+  /(?:projectList\.rowDeleteAction|projectList\.rowActionTooltip|rowDeleteTooltip|rowActionTooltip).{0,120}(?:hover(?:ed)?|tooltip|tooltipVisible|visibleText|未出現|沒有出現|顯示)/gi
+];
+
 const normalizeStatus = (status: string): string => status.trim().toUpperCase().replace(/\s+/g, "_");
 
 const normalizeCaseNo = (value: string): string =>
@@ -536,6 +542,9 @@ const claimsToolBridgeAction = (detail: Record<string, unknown>): boolean => {
   let text = flattenedToolBridgeExecutionText(detail);
   for (const pattern of NEGATIVE_OR_MISSING_TOOL_BRIDGE_CLAIM_PATTERNS) {
     text = text.replace(pattern, "NEGATED_OR_MISSING_EVIDENCE_TEXT");
+  }
+  for (const pattern of NON_DESTRUCTIVE_HOVER_TOOLTIP_PATTERNS) {
+    text = text.replace(pattern, "NON_DESTRUCTIVE_HOVER_TOOLTIP_TEXT");
   }
   const allowlistedNativeValidation =
     /browser_handle_dialog|native\s*(?:alert|dialog)|原生\s*(?:alert|dialog)|alert|dialog/i.test(text) &&
