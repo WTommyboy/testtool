@@ -101,12 +101,35 @@ const copyIfExists = (source: string, target: string): boolean => {
   return true;
 };
 
-const copyDirectoryIfExists = (source: string, target: string): boolean => {
-  if (!fs.existsSync(source) || !fs.statSync(source).isDirectory()) return false;
-  fs.mkdirSync(path.dirname(target), { recursive: true });
-  fs.rmSync(target, { recursive: true, force: true });
-  fs.cpSync(source, target, { recursive: true });
-  return true;
+const copyDirectoryRecursive = (sourceDir: string, targetDir: string): void => {
+  fs.mkdirSync(targetDir, { recursive: true });
+  for (const entry of fs.readdirSync(sourceDir, { withFileTypes: true })) {
+    const source = path.join(sourceDir, entry.name);
+    const target = path.join(targetDir, entry.name);
+    if (entry.isDirectory()) {
+      copyDirectoryRecursive(source, target);
+    } else if (entry.isFile()) {
+      fs.mkdirSync(path.dirname(target), { recursive: true });
+      fs.copyFileSync(source, target);
+    }
+  }
+};
+
+export const copyDirectoryIfExists = (source: string, target: string): boolean => {
+  try {
+    if (!fs.existsSync(source) || !fs.statSync(source).isDirectory()) return false;
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.rmSync(target, { recursive: true, force: true });
+    copyDirectoryRecursive(source, target);
+    return true;
+  } catch {
+    try {
+      fs.rmSync(target, { recursive: true, force: true });
+    } catch {
+      // Best-effort cleanup only. The caller can proceed without optional copied context.
+    }
+    return false;
+  }
 };
 
 const copyBiDataContext = (workspaceRoot: string, runDir: string, copied: Record<string, string>): string | null => {
