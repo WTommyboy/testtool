@@ -160,6 +160,7 @@ const main = (): void => {
     "projectToolbar.downloadButton",
     "projectToolbar.deleteButton",
     "projectToolbar.createButton",
+    "sidebar.collageProjectCreateButton",
     "projectLimit.toast",
     "projectList.rowDeleteAction",
     "projectList.rowDeleteTooltip",

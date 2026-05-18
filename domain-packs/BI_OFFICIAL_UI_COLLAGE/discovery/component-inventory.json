@@ -251,9 +251,17 @@
       "id": "projectToolbar.createButton",
       "page": "collageProjectList",
       "type": "iconButton",
-      "purpose": "Domain semantic child object for toolbar create action.",
+      "purpose": "Domain semantic child object for report-list toolbar create action.",
       "candidateSignals": ["toolbar ordered button index 2", "add/create icon near project list toolbar"],
-      "assertAfterAction": ["enabled state or project-limit toast can be observed"]
+      "assertAfterAction": ["enabled state can be observed; this is not the project-limit trigger"]
+    },
+    {
+      "id": "sidebar.collageProjectCreateButton",
+      "page": "officialHome",
+      "type": "iconButton",
+      "purpose": "Sidebar plus button next to 拼貼報表 for creating collage projects and triggering the project-limit toast.",
+      "candidateSignals": ["plus icon aligned with sidebar row text 拼貼報表", "same visible control used by create-project flow"],
+      "assertAfterAction": ["project-limit message visible when project count is already at the cap"]
     },
     {
       "id": "projectLimit.toast",

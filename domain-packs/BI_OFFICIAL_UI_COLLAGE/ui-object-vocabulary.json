@@ -74,13 +74,26 @@
       "page": "collageProjectList",
       "component": "projectToolbar.actionButtons",
       "objectType": "iconButton",
-      "purpose": "Project/report list create action.",
-      "aliases": ["新增專案", "新增按鈕", "toolbar create"],
+      "purpose": "Report-list toolbar create action for adding a report inside the selected collage project.",
+      "aliases": ["新增報表", "新增按鈕", "toolbar create", "report create"],
       "supportedActions": ["read", "click", "assertEnabled", "assertDisabled", "assertToast"],
       "stateAttributes": ["disabled", "aria-disabled", "computedStyle.pointerEvents", "computedStyle.opacity"],
-      "evidenceObjects": ["projectToolbar.buttons.state", "projectLimit.toast.state"],
+      "evidenceObjects": ["projectToolbar.buttons.state"],
       "locatorHints": ["toolbar ordered button index 2", "create/add icon above project/report list"],
-      "hazards": ["when project limit is reached, the button may remain clickable but produce a limit toast"]
+      "hazards": ["this creates a report, not a collage project; do not use it for project-limit toast assertions"]
+    },
+    {
+      "id": "sidebar.collageProjectCreateButton",
+      "page": "officialHome",
+      "component": "sidebar.collageProjectCreateButton",
+      "objectType": "iconButton",
+      "purpose": "Sidebar plus button next to the 拼貼報表 group for creating a collage project.",
+      "aliases": ["拼貼報表旁新增專案", "左側新增專案", "sidebar project create", "project limit trigger"],
+      "supportedActions": ["click", "assertToast"],
+      "stateAttributes": ["visible", "enabled", "toastAfterClick"],
+      "evidenceObjects": ["projectLimit.toast.state"],
+      "locatorHints": ["plus icon aligned with sidebar row text 拼貼報表", "same control used by createProject helper"],
+      "hazards": ["when project limit is reached, clicking this sidebar plus produces 已達最高5個專案 instead of opening the create-project modal"]
     },
     {
       "id": "projectLimit.toast",

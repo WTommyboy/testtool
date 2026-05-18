@@ -124,7 +124,7 @@
       "id": "tommy.projectLimitToast",
       "path": "/Users/tommy/Desktop/screenshot/截圖 2026-05-18 清晨5.09.25.png",
       "screen": "collageProjectList.projectLimitToast",
-      "observedObjects": ["projectLimit.toast"]
+      "observedObjects": ["sidebar.collageProjectCreateButton", "projectLimit.toast"]
     },
     {
       "id": "tommy.downloadToast",
@@ -184,7 +184,15 @@
       "screenContext": "Top-right toolbar above the project/report list.",
       "visibleText": [],
       "visualCues": ["plus icon button"],
-      "alignmentNotes": "Create is icon-only in the project list toolbar."
+      "alignmentNotes": "Create is icon-only in the project list toolbar and creates a report, not a project."
+    },
+    "sidebar.collageProjectCreateButton": {
+      "status": "confirmed",
+      "sourceIds": ["tommy.projectLimitToast"],
+      "screenContext": "Left sidebar row for 拼貼報表.",
+      "visibleText": [],
+      "visualCues": ["plus icon button aligned with 拼貼報表"],
+      "alignmentNotes": "This is the project-limit trigger shown in Tommy's 2026-05-18 screenshot."
     },
     "projectLimit.toast": {
       "status": "confirmed",

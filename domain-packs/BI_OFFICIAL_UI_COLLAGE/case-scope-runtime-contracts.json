@@ -317,7 +317,7 @@
         {
           "actionId": "clickProjectCreateAtLimit",
           "action": "click",
-          "target": "projectToolbar.createButton",
+          "target": "sidebar.collageProjectCreateButton",
           "role": "under_test",
           "expectedOutcome": "toast_visible",
           "requiredForPass": true,

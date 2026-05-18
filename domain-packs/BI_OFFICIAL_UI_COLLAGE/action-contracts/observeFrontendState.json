@@ -159,9 +159,9 @@
       }
     },
     "projectLimitToast": {
-      "component": "projectToolbar.actionButtons",
+      "component": "sidebar.collageProjectCreateButton",
       "objectIds": [
-        "projectToolbar.createButton",
+        "sidebar.collageProjectCreateButton",
         "projectLimit.toast"
       ],
       "requiredEvidence": [

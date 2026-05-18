@@ -764,6 +764,7 @@ const buildActions = (currentCase: CaseManifestCase | null, helperHints: HelperH
   if (unsupportedHelperTarget) return [];
   const caseScope = inferCaseScope(currentCase, helperHints);
   const caseScopeContract = caseScope.caseScopeContract;
+  const contractRequiresDownload = caseScopeContract?.routeIntent === "download_execution";
   if (missingActionTemplateBlocker(caseScope)) return [];
   const createProjectFlow = isCreateProjectOnlyFlow(currentCase, helperHints);
   if (createProjectFlow) {
@@ -1183,7 +1184,7 @@ const buildActions = (currentCase: CaseManifestCase | null, helperHints: HelperH
       );
     }
 
-    if (!noDownload && /下載|CSV/i.test(text)) {
+    if (!noDownload && (contractRequiresDownload || /下載|CSV/i.test(text))) {
       actions.push(
         action(`H${actions.length + 1}`, "collage.downloadCsvAndComparePreview", "下載 CSV 並與 preview evidence 比對", params, {
           requiredEvidence: ["downloaded.csv", "csv.rows", "preview.table_or_chart", "screenshot"],

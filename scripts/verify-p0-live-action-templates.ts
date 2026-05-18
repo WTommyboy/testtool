@@ -99,6 +99,8 @@ const main = (): void => {
   for (const snippet of [
     "FRONTEND_OBSERVATION_ASSERTION_FALSE_REQUIRES_CODEX_JUDGMENT",
     "date_range_under_test_not_completed_with_evidence",
+    "caseScopeDatePresets",
+    "caseScopeDateTimeTypeTab",
     "editor-toolbar-icon-download-control",
     "\"download.toast.state\"",
     "\"sourceControl.after\""
@@ -130,6 +132,17 @@ const main = (): void => {
   assert(downloadCase, "fixture should include download execution case");
   const downloadPlan = buildHelperExecutionPlan({ runDir: os.tmpdir(), currentCase: fixtureCase(downloadCase), helperHints: null });
   assert.ok(downloadPlan.actions.some((item) => item.template === "collage.downloadCsvAndComparePreview"), "download case must include download helper");
+  const minimalDownloadCase = {
+    ...fixtureCase(downloadCase),
+    caseTitle: `${downloadCase.caseNo} structured download route`,
+    stepsSummary: downloadCase.requiredActions.map((item) => `${item.action}:${item.target}:${item.expectedOutcome}`).join(" "),
+    expected: "Expected behavior is defined by caseScopeContract only."
+  };
+  const minimalDownloadPlan = buildHelperExecutionPlan({ runDir: os.tmpdir(), currentCase: minimalDownloadCase, helperHints: null });
+  assert.ok(
+    minimalDownloadPlan.actions.some((item) => item.template === "collage.downloadCsvAndComparePreview"),
+    "download_execution contract must include download helper even when prose lacks 下載/CSV keywords"
+  );
 
   console.log(JSON.stringify({
     ok: true,

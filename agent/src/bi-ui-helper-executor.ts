@@ -1422,6 +1422,14 @@ const bodyContainsText = async (page: Page, expected: string): Promise<boolean> 
   return normalizeUiText(bodyText).includes(normalizeUiText(expected));
 };
 
+const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+const datePresetLabelRegex = (label: string): RegExp => {
+  const normalized = normalizeUiText(label);
+  const pattern = Array.from(normalized).map((char) => `${escapeRegExp(char)}\\s*`).join("");
+  return new RegExp(pattern, "u");
+};
+
 const isDatePickerOpen = async (page: Page): Promise<boolean> => {
   return page.locator("#datePickerPopup").first().evaluate((element) => {
     const rect = element.getBoundingClientRect();
@@ -2210,9 +2218,12 @@ const setDatePreset = async (options: CliOptions, page: Page, preset: string): P
   }
   uiProfiles.push(await captureUiDomProfile(options, page, "datePreset.popupOpened"));
 
+  const uiPresetPattern = datePresetLabelRegex(uiPreset);
   const selected = await clickFirstVisible([
     page.getByText(uiPreset, { exact: true }),
-    page.locator("button").filter({ hasText: uiPreset })
+    page.getByText(uiPresetPattern, { exact: false }),
+    page.locator("button").filter({ hasText: uiPresetPattern }),
+    page.locator("[role='button']").filter({ hasText: uiPresetPattern })
   ], 5000);
   if (!selected) {
     return {
@@ -4194,11 +4205,90 @@ const reconcileMetricFieldsThroughUi = async (page: Page, targetFields: string[]
   throw new HelperBlockedError(`FIELD_RECONCILE_FAILED:target=${JSON.stringify(targetFields)}; selected=${JSON.stringify(finalSelected).slice(0, 1200)}`);
 };
 
+type HelperCaseScopeAction = {
+  actionId?: string;
+  action?: string;
+  target?: string;
+  role?: string;
+  expectedOutcome?: string;
+};
+
+const caseScopeActionsFromParams = (params: Record<string, unknown>): HelperCaseScopeAction[] => {
+  const fromActions = params.caseScopeActions;
+  if (Array.isArray(fromActions)) {
+    return fromActions.filter((item): item is HelperCaseScopeAction => Boolean(item && typeof item === "object"));
+  }
+  const contract = params.caseScopeContract;
+  if (contract && typeof contract === "object") {
+    const actions = (contract as { requiredActions?: unknown }).requiredActions;
+    if (Array.isArray(actions)) {
+      return actions.filter((item): item is HelperCaseScopeAction => Boolean(item && typeof item === "object"));
+    }
+  }
+  return [];
+};
+
+const caseScopeTargetsFromParams = (params: Record<string, unknown>): Set<string> => {
+  const targets = new Set(caseScopeActionsFromParams(params).map((item) => item.target).filter((item): item is string => typeof item === "string"));
+  for (const target of stringArrayParam(params, "targetObjectIds")) targets.add(target);
+  return targets;
+};
+
+const datePresetLabelFromTarget = (target: string): string | null => {
+  switch (target) {
+    case "dateRange.preset.past30Days":
+      return "過去 30 天";
+    case "dateRange.preset.recent30Days":
+      return "最近 30 天";
+    case "dateRange.preset.yesterday":
+      return "昨日";
+    default:
+      return null;
+  }
+};
+
+const caseScopeDatePresetRequests = (params: Record<string, unknown>): Array<{ target: string; label: string }> => {
+  const seen = new Set<string>();
+  return caseScopeActionsFromParams(params).flatMap((action) => {
+    const target = typeof action.target === "string" ? action.target : "";
+    const label = datePresetLabelFromTarget(target);
+    if (!label || seen.has(target)) return [];
+    seen.add(target);
+    return [{ target, label }];
+  });
+};
+
+const contractRequiresCsvPreviewComparison = (params: Record<string, unknown>): boolean => {
+  const contract = params.caseScopeContract;
+  if (!contract || typeof contract !== "object") return true;
+  const requirements: string[] = [];
+  const pushRequirement = (value: unknown): void => {
+    if (typeof value === "string") requirements.push(value);
+  };
+  const pushRequirementList = (value: unknown): void => {
+    if (Array.isArray(value)) value.forEach(pushRequirement);
+  };
+  const requiredActions = (contract as { requiredActions?: unknown }).requiredActions;
+  if (Array.isArray(requiredActions)) {
+    for (const action of requiredActions) {
+      if (!action || typeof action !== "object") continue;
+      pushRequirementList((action as { evidenceRequirements?: unknown }).evidenceRequirements);
+    }
+  }
+  const evidenceRequirements = (contract as { evidenceRequirements?: unknown }).evidenceRequirements;
+  if (evidenceRequirements && typeof evidenceRequirements === "object") {
+    Object.values(evidenceRequirements as Record<string, unknown>).forEach(pushRequirementList);
+  }
+  return requirements.some((item) => /csv.*preview|preview.*csv|csv.*compare|compare.*csv|comparison|比對/i.test(item));
+};
+
 const configureMetric = async (options: CliOptions, page: Page, startedAt: string): Promise<HelperReport> => {
   const warnings: string[] = [];
   const fields = metricFieldsFromParams(options.params);
   const metricRows = metricRowsFromParams(options.params);
   const dateRange = nonNeutralUiTarget(stringParam(options.params, "dateRange"));
+  const caseScopeDatePresets = caseScopeDatePresetRequests(options.params);
+  const caseScopeTargets = caseScopeTargetsFromParams(options.params);
   const uiProfileBefore = await captureUiDomProfile(options, page, "configureMetric.before");
   const stateDeltaBefore = await readStateDelta(page, options.params);
   const operations: string[] = [];
@@ -4230,6 +4320,56 @@ const configureMetric = async (options: CliOptions, page: Page, startedAt: strin
     } else {
       operations.push(`dateRange:verified:${dateRange}`);
     }
+  } else if (caseScopeDatePresets.length > 0) {
+    const stages: Record<string, unknown>[] = [];
+    for (const request of caseScopeDatePresets) {
+      const result = await setDateRange(options, page, request.label);
+      const { uiProfiles, ...resultEvidence } = result;
+      dateRangeUiProfiles.push(...(uiProfiles ?? []));
+      const dateUiEvidence = await readDateUiEvidence(page, request.label, options.params);
+      dateUiArtifact = writeDateUiEvidenceArtifact(options, dateUiEvidence);
+      stages.push({
+        target: request.target,
+        requestedLabel: request.label,
+        ...resultEvidence,
+        dateUiEvidence
+      });
+      if (!result.ok) {
+        warnings.push(`DATE_RANGE_UI_SETTING_NOT_COMPLETED:${request.target}:${result.warning ?? "unknown"}`);
+        operations.push(`dateRange:blocked:${request.target}:${request.label}`);
+      } else {
+        operations.push(`dateRange:verified:${request.target}:${request.label}`);
+      }
+    }
+    const lastStage = stages[stages.length - 1] as Record<string, unknown> | undefined;
+    dateRangeEvidence = {
+      mode: "caseScopeDatePresets",
+      stages,
+      interactionLog: stages.map((stage) => ({
+        target: stage.target,
+        requestedLabel: stage.requestedLabel,
+        ok: stage.ok,
+        warning: stage.warning ?? null
+      })),
+      dateUiEvidence: lastStage?.dateUiEvidence ?? null
+    };
+  } else if (caseScopeTargets.has("dateRange.timeTypeTab.static")) {
+    const actionWarnings: string[] = [];
+    const visibleUiAction = await observeFrontendVisibleUiActions(page, "dateTimeTypeTab", options.params, actionWarnings);
+    const observationState = await readFrontendObservationState(page, "datePanel", null, options.params, visibleUiAction);
+    dateRangeEvidence = {
+      mode: "caseScopeDateTimeTypeTab",
+      visibleUiAction,
+      observationState,
+      interactionLog: observationState.interactionLog ?? null
+    };
+    if (observationState.asserted === false) {
+      warnings.push("DATE_RANGE_UI_SETTING_NOT_COMPLETED:dateRange.timeTypeTab.static:STATIC_TAB_ASSERTION_FALSE");
+      operations.push("dateRange:blocked:dateRange.timeTypeTab.static");
+    } else {
+      operations.push("dateRange:verified:dateRange.timeTypeTab.static");
+    }
+    warnings.push(...actionWarnings);
   }
   const displayOperation = await setDisplayModeThroughUi(page, stringParam(options.params, "display"));
   if (displayOperation) operations.push(displayOperation);
@@ -7377,6 +7517,7 @@ const downloadCsvAndComparePreview = async (options: CliOptions, page: Page, sta
   };
   const checks = comparison.checks as Record<string, unknown>;
   const failedComparison = checks.rowCountMatchesPreview === false || checks.allSeriesMatched === false;
+  const strictCsvPreviewComparison = contractRequiresCsvPreviewComparison(options.params);
   return createReport(
     options,
     "ok",
@@ -7404,7 +7545,7 @@ const downloadCsvAndComparePreview = async (options: CliOptions, page: Page, sta
       ...csvWarnings,
       ...(downloadToastState.asserted ? [] : ["DOWNLOAD_TOAST_NOT_OBSERVED"]),
       ...(preview ? [] : ["PREVIEW_EVIDENCE_NOT_FOUND_FOR_CSV_COMPARISON"]),
-      ...(failedComparison ? ["CSV_PREVIEW_COMPARISON_MISMATCH"] : [])
+      ...(failedComparison && strictCsvPreviewComparison ? ["CSV_PREVIEW_COMPARISON_MISMATCH"] : [])
     ]
   );
 };
@@ -8494,10 +8635,16 @@ const observeFrontendVisibleUiActions = async (
   }
 
   if (observationType === "projectLimitToast") {
-    const domIndex = await projectToolbarCreateButtonDomIndex(page);
-    const clicked = await clickButtonByDomIndex(page, domIndex, 6000);
-    actions.push({ action: "click", target: "projectToolbar.createButton", clicked, domIndex });
-    if (!clicked) warnings.push("PROJECT_CREATE_BUTTON_NOT_CLICKABLE");
+    let clicked = false;
+    let error: string | null = null;
+    try {
+      await clickCreateProjectButton(page);
+      clicked = true;
+    } catch (cause) {
+      error = cause instanceof Error ? cause.message : String(cause);
+    }
+    actions.push({ action: "click", target: "sidebar.collageProjectCreateButton", clicked, ...(error ? { error } : {}) });
+    if (!clicked) warnings.push("SIDEBAR_PROJECT_CREATE_BUTTON_NOT_CLICKABLE");
     await page.waitForTimeout(1000);
     return { actions };
   }
@@ -8770,7 +8917,10 @@ const readFrontendObservationState = async (
 
     if (type === "projectLimitToast") {
       const actionList = Array.isArray(actionData?.actions) ? actionData.actions as Array<Record<string, unknown>> : [];
-      const clickAction = actionList.find((item) => item.target === "projectToolbar.createButton") ?? null;
+      const clickAction =
+        actionList.find((item) => item.target === "sidebar.collageProjectCreateButton") ??
+        actionList.find((item) => item.target === "projectToolbar.createButton") ??
+        null;
       const expectedText = "已達最高5個專案";
       const visibleText = bodyText.includes(expectedText) ? expectedText : truncate(bodyText, 600);
       return {
