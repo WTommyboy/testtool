@@ -372,6 +372,8 @@ const VISUAL_FALLBACK_MARKER_PATTERN =
   /(?:screenshotVisual|visual_screenshot|visualObservation|visual_observation|domEvidenceGap|dom_evidence_gap|BLOCKED_NEEDS_VISUAL_REVIEW|PASS_VISUAL_EVIDENCE)/i;
 const TOOL_EXECUTION_UNAVAILABLE_PATTERN =
   /(?:TOOL_EXECUTION_UNAVAILABLE|browser\s*tool(?:ing)?\s*unavailable|Playwright\s*MCP.{0,40}unavailable|瀏覽器.{0,16}(?:工具|自動化).{0,16}(?:不可用|無法使用)|工具.{0,16}(?:不可用|無法使用))/i;
+const STRUCTURED_FRONTEND_PRECONDITION_BLOCKER_PATTERN =
+  /PROJECT_LIMIT_PRECONDITION_NOT_ESTABLISHED|FRONTEND_OBSERVATION_BLOCKED:PROJECT_LIMIT_PRECONDITION_NOT_ESTABLISHED/i;
 
 const isFalseLike = (value: unknown): boolean =>
   value === false || (typeof value === "string" && value.trim().toLowerCase() === "false");
@@ -434,6 +436,7 @@ const hasFrontendObservationVisualFallbackGap = (item: ParsedResultCase, normali
   const text = [item.verdictReason, item.detailJsonRaw, flattenedDetailText(item.detailJson)]
     .filter(Boolean)
     .join("\n");
+  if (STRUCTURED_FRONTEND_PRECONDITION_BLOCKER_PATTERN.test(text)) return false;
   return /EVIDENCE_INSUFFICIENT/i.test(text);
 };
 

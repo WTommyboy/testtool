@@ -386,6 +386,45 @@ const main = async (): Promise<void> => {
       `visual fallback containment should pass evidence gate for ingest continuation; issues=${JSON.stringify(containedVisualGapReport.issues)}`
     );
 
+    const projectLimitPreconditionBlocked = path.join(tempRoot, "project-limit-precondition-blocked-result.xlsx");
+    await writeWorkbook(projectLimitPreconditionBlocked, [
+      {
+        caseNo: "BIUI_COLLAGE_R001-J-12",
+        status: "BLOCKED",
+        testType: "前端呈現",
+        failCategory: "EVIDENCE_INSUFFICIENT",
+        detailJson: JSON.stringify({
+          測試目的: "驗證拼貼專案數達上限 5 個時，點擊側欄新增專案入口會被阻擋並顯示上限提示。",
+          設定條件: "本題要求先具備拼貼專案數 >= 5 的前置條件。",
+          預期行為: "達上限時新增入口被阻擋，且顯示專案上限提示 toast。",
+          實際行為: "current-run helper evidence 顯示側欄拼貼專案數 projectCount=3，requiredProjectCount=5，preconditionEstablished=false；未點擊新增入口。",
+          blocked_reason: "PROJECT_LIMIT_PRECONDITION_NOT_ESTABLISHED",
+          previewRequired: false,
+          currentRunEvidence: {
+            screenshotPath:
+              "output/helper-artifacts/BIUI_COLLAGE_R001-J-12/BIUI_COLLAGE_R001-J-12-observe-projectLimitToast.png",
+            frontendObservationEvidence:
+              "output/helper-artifacts/BIUI_COLLAGE_R001-J-12/frontend-observation-evidence.json",
+            projectLimitPrecondition: {
+              projectNames: ["拼貼test_001", "UAT_G01測試專案", "BIUIG0105160621"],
+              projectCount: 3,
+              requiredProjectCount: 5,
+              preconditionEstablished: false
+            }
+          }
+        })
+      }
+    ]);
+    const projectLimitPreconditionBlockedReport = await runGate(projectLimitPreconditionBlocked, {
+      currentCaseNo: "BIUI_COLLAGE_R001-J-12",
+      expectedCaseNos: ["BIUI_COLLAGE_R001-J-12"]
+    });
+    assert.equal(
+      projectLimitPreconditionBlockedReport.status,
+      "ok",
+      `structured project-limit precondition blockers should not be reclassified as visual fallback gaps; issues=${JSON.stringify(projectLimitPreconditionBlockedReport.issues)}`
+    );
+
     const blockedNoNativeConfirm = path.join(tempRoot, "blocked-no-native-confirm-result.xlsx");
     await writeWorkbook(blockedNoNativeConfirm, [
       {
@@ -633,6 +672,7 @@ const main = async (): Promise<void> => {
             "non-destructive selected-field validation alert does not require Tool Bridge response",
             "out-of-scope preview blocker can be contained as case-level rejudgment",
             "frontend observation screenshot evidence requires explicit visual fallback and can be contained",
+            "structured project-limit precondition blockers keep their blocker reason",
             "TOOL_EXECUTION_UNAVAILABLE requires browserMcp preflight and can be contained when missing",
             "negative or insufficient native-confirm prose does not require Tool Bridge response",
             "formula modal blocked prose does not require Tool Bridge response",
