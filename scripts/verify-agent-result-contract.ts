@@ -470,6 +470,75 @@ const main = async (): Promise<void> => {
     const normalizedDateRangeReport = await validateResultWorkbookContract(normalizedDateRangePass, undefined, { runDir: tempRoot });
     assert.equal(normalizedDateRangeReport.status, "ok", JSON.stringify(normalizedDateRangeReport.issues));
 
+    const staticTabNoChangePass = path.join(tempRoot, "pass-configure-metric-static-tab-no-change.xlsx");
+    await writePassWorkbook(staticTabNoChangePass, "OTTEST004-B-09");
+    fs.writeFileSync(path.join(tempRoot, "output", "helper-artifacts", "OTTEST004-B-09", "collage.configureMetric-latest.json"), JSON.stringify({
+      ...staticDateRangeHelperEvidence,
+      params: {
+        caseScopeActions: [
+          {
+            actionId: "selectStaticTimeType",
+            role: "under_test",
+            target: "dateRange.timeTypeTab.static",
+            expectedOutcome: "state_changed"
+          }
+        ],
+        caseScopeContract: {
+          judgmentPolicy: { testTarget: "功能流程" }
+        }
+      },
+      evidence: {
+        ...(staticDateRangeHelperEvidence.evidence as Record<string, unknown>),
+        uiProfiles: {
+          dateRange: [
+            { context: "dateRange.popupOpened", status: "ok", signature: "same-static-tab-signature" },
+            { context: "dateRange.staticTabRequested", status: "ok", signature: "same-static-tab-signature" }
+          ]
+        },
+        dateRangeEvidence: {
+          ...((staticDateRangeHelperEvidence.evidence as Record<string, unknown>).dateRangeEvidence as Record<string, unknown>),
+          interactionLog: {
+            schemaVersion: "interaction-log-v1",
+            actions: {
+              setStaticDateRange: {
+                role: "under_test",
+                expectedOutcome: "succeeded",
+                actualOutcome: "partial_state_change",
+                steps: {
+                  openStaticTab: {
+                    expectedOutcome: "succeeded",
+                    actualOutcome: "dispatched_no_change"
+                  }
+                }
+              }
+            }
+          }
+        },
+        stateDelta: {
+          after: {
+            checks: {
+              field: true,
+              dateRange: true,
+              display: true
+            }
+          }
+        }
+      }
+    }, null, 2));
+    const staticTabNoChangeReport = await validateResultWorkbookContract(staticTabNoChangePass, undefined, { runDir: tempRoot });
+    assert.equal(staticTabNoChangeReport.status, "error");
+    assert.ok(
+      staticTabNoChangeReport.issues.some((item) => item.code === "RESULT_PASS_CONTRADICTS_REQUIRED_ACTION_FLOW"),
+      "required static-tab flow failure must be a deterministic FAIL containment path, not generic BLOCKED"
+    );
+    const staticTabContainmentReport = await containPassContradictionsAsBlocked(staticTabNoChangePass, staticTabNoChangeReport);
+    assert.equal(staticTabContainmentReport.status, "updated", JSON.stringify(staticTabContainmentReport));
+    const staticTabContainedReport = await validateResultWorkbookContract(staticTabNoChangePass, undefined, { runDir: tempRoot });
+    assert.equal(staticTabContainedReport.status, "ok", JSON.stringify(staticTabContainedReport.issues));
+    const staticTabContainedParsed = await parseResultXlsx(staticTabNoChangePass);
+    assert.equal(staticTabContainedParsed.cases[0]?.status, "FAIL");
+    assert.equal(staticTabContainedParsed.cases[0]?.verdictReason, "FAIL_INTERACTION_OR_ASSERTION_FAILED");
+
     console.log(JSON.stringify({
       ok: true,
       fixture: "agent-result-contract",
@@ -486,7 +555,8 @@ const main = async (): Promise<void> => {
         "PASS/helper contradiction containment is skipped when other workbook contract errors are present",
         "configureMetric dateRange=false still blocks without normalized date evidence",
         "static dateRange PASS requires flow interaction evidence, not only final represented range",
-        "configureMetric dateRange=false is allowed when date-ui-evidence proves the represented range and flow evidence exists"
+        "configureMetric dateRange=false is allowed when date-ui-evidence proves the represented range and flow evidence exists",
+        "required static-tab under_test flow failure is contained as FAIL with an auto Bug row"
       ]
     }, null, 2));
   } finally {

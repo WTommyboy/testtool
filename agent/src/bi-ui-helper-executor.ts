@@ -1903,7 +1903,11 @@ type DateRangeUiResult = {
   interactionLog?: Record<string, unknown>;
 };
 
-const staticDateRangeInteractionLog = (actualOutcome: string, extra: Record<string, unknown> = {}): Record<string, unknown> => ({
+const staticDateRangeInteractionLog = (
+  actualOutcome: string,
+  extra: Record<string, unknown> = {},
+  openStaticTabOutcome = actualOutcome
+): Record<string, unknown> => ({
   schemaVersion: "interaction-log-v1",
   actions: {
     setStaticDateRange: {
@@ -1913,7 +1917,7 @@ const staticDateRangeInteractionLog = (actualOutcome: string, extra: Record<stri
       steps: {
         openStaticTab: {
           expectedOutcome: "succeeded",
-          actualOutcome
+          actualOutcome: openStaticTabOutcome
         }
       },
       ...extra
@@ -2146,18 +2150,35 @@ const setDateRange = async (options: CliOptions, page: Page, dateRange: string):
     if (!opened) return { ok: false, warning: "DATE_RANGE_CONTROL_NOT_CLICKABLE", uiProfiles };
     await page.waitForTimeout(400);
   }
-  uiProfiles.push(await captureUiDomProfile(options, page, "dateRange.popupOpened"));
+  const popupOpenedProfile = await captureUiDomProfile(options, page, "dateRange.popupOpened");
+  uiProfiles.push(popupOpenedProfile);
 
   const staticTabClicked = await clickFirstVisible([page.getByText("靜態時間", { exact: true }), page.locator("button").filter({ hasText: "靜態時間" })], 5000);
   await page.waitForTimeout(400);
-  uiProfiles.push(await captureUiDomProfile(options, page, "dateRange.staticTabRequested"));
+  const staticTabRequestedProfile = await captureUiDomProfile(options, page, "dateRange.staticTabRequested");
+  uiProfiles.push(staticTabRequestedProfile);
+  const staticTabStateChanged = Boolean(
+    staticTabClicked &&
+    popupOpenedProfile.status === "ok" &&
+    staticTabRequestedProfile.status === "ok" &&
+    popupOpenedProfile.signature &&
+    staticTabRequestedProfile.signature &&
+    popupOpenedProfile.signature !== staticTabRequestedProfile.signature
+  );
+  const staticTabOutcome = !staticTabClicked ? "target_not_found_timeout" : staticTabStateChanged ? "succeeded" : "dispatched_no_change";
+  const staticTabEvidence = {
+    staticTabClicked,
+    staticTabStateChanged,
+    popupOpenedSignature: popupOpenedProfile.signature ?? null,
+    staticTabRequestedSignature: staticTabRequestedProfile.signature ?? null
+  };
   if (!staticTabClicked) {
     return {
       ok: false,
       warning: "DATE_RANGE_STATIC_TAB_NOT_CLICKABLE",
       observedAfter: (await page.locator("body").innerText({ timeout: 5000 }).catch(() => "")).slice(0, 1200),
       uiProfiles,
-      interactionLog: staticDateRangeInteractionLog("target_not_found_timeout")
+      interactionLog: staticDateRangeInteractionLog("target_not_found_timeout", staticTabEvidence)
     };
   }
 
@@ -2168,14 +2189,17 @@ const setDateRange = async (options: CliOptions, page: Page, dateRange: string):
   if (targets.length < 2) {
     const calendarResult = await setStaticDateRangeByCalendar(options, page, parsed);
     const combinedProfiles = [...uiProfiles, ...(calendarResult.uiProfiles ?? [])];
+    const setOutcome = calendarResult.ok
+      ? (staticTabOutcome === "succeeded" ? "succeeded" : "partial_state_change")
+      : "wrong_state_change";
     return calendarResult.ok
-      ? { ...calendarResult, inputs, uiProfiles: combinedProfiles, interactionLog: staticDateRangeInteractionLog("succeeded", { calendarFallback: true }) }
+      ? { ...calendarResult, inputs, uiProfiles: combinedProfiles, interactionLog: staticDateRangeInteractionLog(setOutcome, { ...staticTabEvidence, calendarFallback: true }, staticTabOutcome) }
       : {
           ...calendarResult,
           inputs,
           uiProfiles: combinedProfiles,
           warning: `${calendarResult.warning ?? "DATE_RANGE_CALENDAR_FAILED"};DATE_RANGE_INPUTS_NOT_FOUND`,
-          interactionLog: staticDateRangeInteractionLog("succeeded", { calendarFallback: true, calendarWarning: calendarResult.warning ?? null })
+          interactionLog: staticDateRangeInteractionLog(setOutcome, { ...staticTabEvidence, calendarFallback: true, calendarWarning: calendarResult.warning ?? null }, staticTabOutcome)
         };
   }
 
@@ -2195,7 +2219,7 @@ const setDateRange = async (options: CliOptions, page: Page, dateRange: string):
     observedAfter: (await page.locator("body").innerText({ timeout: 5000 }).catch(() => "")).slice(0, 1000),
     inputs,
     uiProfiles: [...uiProfiles, await captureUiDomProfile(options, page, "dateRange.afterInputConfirm")],
-    interactionLog: staticDateRangeInteractionLog(ok ? "succeeded" : "wrong_state_change")
+    interactionLog: staticDateRangeInteractionLog(ok && staticTabOutcome === "succeeded" ? "succeeded" : ok ? "partial_state_change" : "wrong_state_change", staticTabEvidence, staticTabOutcome)
   };
 };
 
@@ -8519,6 +8543,80 @@ const readDateRangeButtonText = async (page: Page): Promise<string | null> =>
     return candidate?.innerText?.trim() ?? null;
   }).catch(() => null);
 
+const COMPANY_SHARED_SIDEBAR_CHILD_LABELS = [
+  "每日報表",
+  "雙平台營收占比",
+  "退費追蹤",
+  "beanfun! 導流",
+  "商品銷售明細表",
+  "商品退款明細",
+  "篩選訂單明細"
+];
+
+const readCompanySharedSidebarState = async (page: Page): Promise<Record<string, unknown>> =>
+  page.evaluate((childLabels) => {
+    const lines = (document.body.innerText || "")
+      .split(/\n+/)
+      .map((line) => line.trim())
+      .filter(Boolean);
+    const visibleChildren = childLabels.filter((label) => lines.includes(label));
+    return {
+      groupLabelVisible: lines.includes("公司共享"),
+      visibleChildLabels: visibleChildren,
+      visibleChildCount: visibleChildren.length,
+      expanded: visibleChildren.length > 0,
+      bodyTextSample: lines.slice(0, 80).join("\n")
+    };
+  }, COMPANY_SHARED_SIDEBAR_CHILD_LABELS).catch((error) => ({
+    groupLabelVisible: null,
+    visibleChildLabels: [],
+    visibleChildCount: null,
+    expanded: null,
+    error: error instanceof Error ? error.message : String(error)
+  }));
+
+const readCollageSidebarProjectLimitState = async (page: Page): Promise<Record<string, unknown>> =>
+  page.evaluate(() => {
+    const lines = (document.body.innerText || "")
+      .split(/\n+/)
+      .map((line) => line.trim())
+      .filter(Boolean);
+    const stopPattern = /^(報表明細|指標趨勢|新增自訂報表|指標儀表板|即時數據|活躍數據|營收數據|留存數據|新用戶數據|報表名稱|資料週期區間|操作)$/;
+    const excludedPattern = /^(報表|我的自訂|拼貼報表|下載|刪除|新增|\+|搜尋|返回)$/;
+    const dateOrRangePattern = /\d{4}[/-]\d{1,2}[/-]\d{1,2}|過去\s*\d+\s*天|最近\s*\d+\s*天/;
+    const groups: string[][] = [];
+    for (let index = 0; index < lines.length; index += 1) {
+      if (lines[index] !== "拼貼報表") continue;
+      const hasCustomParent = lines.slice(Math.max(0, index - 4), index).includes("我的自訂");
+      const names: string[] = [];
+      for (let cursor = index + 1; cursor < lines.length; cursor += 1) {
+        const line = lines[cursor] ?? "";
+        if (stopPattern.test(line)) break;
+        if (excludedPattern.test(line) || dateOrRangePattern.test(line)) continue;
+        if (!names.includes(line)) names.push(line);
+        if (names.length > 12) break;
+      }
+      if (names.length > 0) groups.push(hasCustomParent ? names : names.slice(0, 8));
+    }
+    const preferred = groups.find((group) => group.length <= 5) ?? groups[0] ?? [];
+    const limit = 5;
+    return {
+      projectNames: preferred,
+      projectCount: preferred.length,
+      requiredProjectCount: limit,
+      preconditionEstablished: preferred.length >= limit,
+      source: preferred.length > 0 ? "sidebar.myCustom.collageReport.visibleText" : "not_found",
+      bodyTextSample: lines.slice(0, 100).join("\n")
+    };
+  }).catch((error) => ({
+    projectNames: [],
+    projectCount: null,
+    requiredProjectCount: 5,
+    preconditionEstablished: false,
+    source: "error",
+    error: error instanceof Error ? error.message : String(error)
+  }));
+
 const observeFrontendVisibleUiActions = async (
   page: Page,
   observationType: FrontendObservationType,
@@ -8602,7 +8700,8 @@ const observeFrontendVisibleUiActions = async (
   }
 
   if (observationType === "sidebarGroup") {
-    const before = await page.locator("body").innerText({ timeout: 3000 }).catch(() => "");
+    const beforeState = await readCompanySharedSidebarState(page);
+    const before = typeof beforeState.bodyTextSample === "string" ? beforeState.bodyTextSample : "";
     const clicked = await clickFirstVisible([
       page.getByText("公司共享", { exact: true }),
       page.locator("button, [role=button], [role=treeitem], a, div").filter({ hasText: /^\\s*公司共享\\s*$/ })
@@ -8610,8 +8709,15 @@ const observeFrontendVisibleUiActions = async (
     actions.push({ action: "click", target: "sidebar.companySharedGroup", clicked });
     if (!clicked) warnings.push("SIDEBAR_COMPANY_SHARED_GROUP_NOT_CLICKABLE");
     await page.waitForTimeout(700);
-    const after = await page.locator("body").innerText({ timeout: 3000 }).catch(() => "");
-    return { actions, beforeTextSample: before.slice(0, 1200), afterTextSample: after.slice(0, 1200) };
+    const afterState = await readCompanySharedSidebarState(page);
+    const after = typeof afterState.bodyTextSample === "string" ? afterState.bodyTextSample : "";
+    return {
+      actions,
+      beforeSidebarState: beforeState,
+      afterSidebarState: afterState,
+      beforeTextSample: before.slice(0, 2400),
+      afterTextSample: after.slice(0, 2400)
+    };
   }
 
   if (observationType === "rowDeleteTooltip") {
@@ -8635,6 +8741,12 @@ const observeFrontendVisibleUiActions = async (
   }
 
   if (observationType === "projectLimitToast") {
+    const precondition = await readCollageSidebarProjectLimitState(page);
+    actions.push({ action: "observe", target: "sidebar.collageProjects.count", ...precondition });
+    if (precondition.preconditionEstablished !== true) {
+      warnings.push("PROJECT_LIMIT_PRECONDITION_NOT_ESTABLISHED");
+      return { actions, projectLimitPrecondition: precondition };
+    }
     let clicked = false;
     let error: string | null = null;
     try {
@@ -8646,7 +8758,7 @@ const observeFrontendVisibleUiActions = async (
     actions.push({ action: "click", target: "sidebar.collageProjectCreateButton", clicked, ...(error ? { error } : {}) });
     if (!clicked) warnings.push("SIDEBAR_PROJECT_CREATE_BUTTON_NOT_CLICKABLE");
     await page.waitForTimeout(1000);
-    return { actions };
+    return { actions, projectLimitPrecondition: precondition };
   }
 
   if (observationType === "sourceReportPicker") {
@@ -8884,16 +8996,39 @@ const readFrontendObservationState = async (
       const clickAction = actionList.find((item) => item.target === "sidebar.companySharedGroup") ?? null;
       const beforeText = typeof actionData?.beforeTextSample === "string" ? actionData.beforeTextSample : "";
       const afterText = typeof actionData?.afterTextSample === "string" ? actionData.afterTextSample : "";
-      const companyTextVisible = bodyText.includes("公司共享");
-      const nestedItemsVisible = /商品退款明細|篩選訂單明細|公司共享/.test(bodyText);
+      const childLabels = ["每日報表", "雙平台營收占比", "退費追蹤", "beanfun! 導流", "商品銷售明細表", "商品退款明細", "篩選訂單明細"];
+      const readCount = (value: unknown, fallbackText: string) => {
+        if (value && typeof value === "object" && !Array.isArray(value)) {
+          const count = (value as Record<string, unknown>).visibleChildCount;
+          if (typeof count === "number") return count;
+        }
+        const lines = fallbackText.split(/\n+/).map((line) => line.trim()).filter(Boolean);
+        return childLabels.filter((label) => lines.includes(label)).length;
+      };
+      const beforeState = actionData?.beforeSidebarState && typeof actionData.beforeSidebarState === "object" && !Array.isArray(actionData.beforeSidebarState)
+        ? actionData.beforeSidebarState as Record<string, unknown>
+        : null;
+      const afterState = actionData?.afterSidebarState && typeof actionData.afterSidebarState === "object" && !Array.isArray(actionData.afterSidebarState)
+        ? actionData.afterSidebarState as Record<string, unknown>
+        : null;
+      const beforeChildCount = readCount(beforeState, beforeText);
+      const afterChildCount = readCount(afterState, afterText || bodyText);
+      const beforeExpanded = beforeChildCount > 0;
+      const afterExpanded = afterChildCount > 0;
+      const stateChanged = beforeChildCount !== afterChildCount;
       return {
         evidenceObject: "sidebar.companySharedGroup.state",
         triggeredByVisibleUi: clickAction?.clicked === true,
-        beforeExpanded: beforeText !== afterText ? beforeText.includes("公司共享") : null,
-        afterExpanded: companyTextVisible,
-        nestedItemsVisible,
+        beforeExpanded,
+        afterExpanded,
+        beforeNestedItemCount: beforeChildCount,
+        afterNestedItemCount: afterChildCount,
+        beforeNestedItems: Array.isArray(beforeState?.visibleChildLabels) ? beforeState?.visibleChildLabels : null,
+        afterNestedItems: Array.isArray(afterState?.visibleChildLabels) ? afterState?.visibleChildLabels : null,
+        nestedItemsVisible: afterChildCount > 0,
+        stateChanged,
         interactionLog: actionList,
-        asserted: clickAction?.clicked === true && companyTextVisible && beforeText !== afterText
+        asserted: clickAction?.clicked === true && stateChanged
       };
     }
 
@@ -8923,10 +9058,25 @@ const readFrontendObservationState = async (
         null;
       const expectedText = "已達最高5個專案";
       const visibleText = bodyText.includes(expectedText) ? expectedText : truncate(bodyText, 600);
+      const precondition = actionData?.projectLimitPrecondition && typeof actionData.projectLimitPrecondition === "object" && !Array.isArray(actionData.projectLimitPrecondition)
+        ? actionData.projectLimitPrecondition as Record<string, unknown>
+        : null;
+      if (precondition?.preconditionEstablished === false) {
+        return {
+          evidenceObject: "projectLimit.toast.state",
+          triggeredByVisibleUi: false,
+          visibleText,
+          precondition,
+          blockedReason: "PROJECT_LIMIT_PRECONDITION_NOT_ESTABLISHED",
+          interactionLog: actionList,
+          asserted: false
+        };
+      }
       return {
         evidenceObject: "projectLimit.toast.state",
         triggeredByVisibleUi: clickAction?.clicked === true,
         visibleText,
+        precondition,
         interactionLog: actionList,
         asserted: clickAction?.clicked === true && bodyText.includes(expectedText)
       };
@@ -9123,9 +9273,10 @@ const observeFrontendState = async (options: CliOptions, page: Page, startedAt: 
   const evidencePath = frontendObservationEvidencePath(options);
   ensureDir(path.dirname(evidencePath));
   fs.writeFileSync(evidencePath, `${JSON.stringify(evidence, null, 2)}\n`);
+  const blockedReason = typeof observationState.blockedReason === "string" ? observationState.blockedReason : null;
   return createReport(
     options,
-    "ok",
+    blockedReason ? "blocked" : "ok",
     startedAt,
     {
       frontendObservationEvidence: evidence,
@@ -9134,7 +9285,9 @@ const observeFrontendState = async (options: CliOptions, page: Page, startedAt: 
       ...(observationState.editorToolbarDownload ? { "editorToolbar.download.state": observationState.editorToolbarDownload } : {})
     },
     { frontendObservationEvidence: evidencePath, ...(shot ? { screenshot: shot } : {}) },
-    observationState.asserted === false ? [...warnings, "FRONTEND_OBSERVATION_ASSERTION_FALSE_REQUIRES_CODEX_JUDGMENT"] : warnings
+    observationState.asserted === false
+      ? [...warnings, ...(blockedReason ? [`FRONTEND_OBSERVATION_BLOCKED:${blockedReason}`] : ["FRONTEND_OBSERVATION_ASSERTION_FALSE_REQUIRES_CODEX_JUDGMENT"])]
+      : warnings
   );
 };
 

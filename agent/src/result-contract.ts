@@ -179,6 +179,10 @@ const record = (value: unknown): Record<string, unknown> | null => (
   value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null
 );
 
+const records = (value: unknown): Record<string, unknown>[] => (
+  Array.isArray(value) ? value.filter((item): item is Record<string, unknown> => Boolean(record(item))) : []
+);
+
 const falseChecks = (checks: unknown): string[] => {
   if (!checks || typeof checks !== "object" || Array.isArray(checks)) return [];
   return Object.entries(checks as Record<string, unknown>)
@@ -186,10 +190,73 @@ const falseChecks = (checks: unknown): string[] => {
     .map(([key]) => key);
 };
 
+type HelperEvidencePassContradiction = {
+  reportPath: string;
+  falseChecks: string[];
+  requiredActionFlowFailures: string[];
+  containmentVerdict: "BLOCKED_NEEDS_REJUDGMENT" | "FAIL_INTERACTION_OR_ASSERTION_FAILED";
+};
+
 const dateUiEvidenceMatchesRequested = (value: unknown): boolean => {
   const dateUiEvidence = record(value);
   const checks = record(dateUiEvidence?.checks);
   return checks?.representedRangeMatchesRequested === true || checks?.staticRequestedRangeObserved === true;
+};
+
+const isStaticDateRangeRequest = (dateRangeEvidence: Record<string, unknown> | null): boolean => {
+  if (!dateRangeEvidence) return false;
+  const dateUiEvidence = record(dateRangeEvidence.dateUiEvidence);
+  const requestedRange = record(dateUiEvidence?.requestedRange);
+  const checks = record(dateUiEvidence?.checks);
+  return requestedRange?.basis === "static_range" ||
+    checks?.staticRequestedRangeObserved === true;
+};
+
+const helperReportRequiredActions = (parsed: Record<string, unknown>): Record<string, unknown>[] => {
+  const params = record(parsed.params) ?? {};
+  const directActions = records(params.caseScopeActions);
+  const contract = record(params.caseScopeContract);
+  const contractActions = records(contract?.requiredActions);
+  return [...directActions, ...contractActions];
+};
+
+const helperReportTestTarget = (parsed: Record<string, unknown>): string | null => {
+  const params = record(parsed.params) ?? {};
+  const contract = record(params.caseScopeContract);
+  const policy = record(contract?.judgmentPolicy);
+  const raw = params.testTarget ?? params["測試標的"] ?? policy?.testTarget ?? policy?.["測試標的"];
+  return typeof raw === "string" && raw.trim() ? raw.trim() : null;
+};
+
+const helperReportRequiresStaticTabUnderTest = (parsed: Record<string, unknown>): boolean => {
+  const targetPattern = /dateRange\.timeTypeTab\.static|timeTypeTab\.static|靜態時間|靜態/i;
+  const actions = helperReportRequiredActions(parsed);
+  if (actions.some((action) => {
+    const role = typeof action.role === "string" ? action.role : "";
+    const target = [action.target, action.targetObjectId, action.objectId, action.actionId]
+      .filter((item): item is string => typeof item === "string")
+      .join("\n");
+    const expectedOutcome = typeof action.expectedOutcome === "string" ? action.expectedOutcome : "";
+    return (!role || role === "under_test") && targetPattern.test(target) && /succeeded|state_changed|changed/i.test(expectedOutcome || "succeeded");
+  })) {
+    return true;
+  }
+  const testTarget = helperReportTestTarget(parsed);
+  return Boolean(testTarget && /功能流程|前端呈現|前後端整合|frontend|flow|integration/i.test(testTarget));
+};
+
+const dateRangeProfileSignature = (parsed: Record<string, unknown>, context: string): string | null => {
+  const evidence = record(parsed.evidence);
+  const uiProfiles = record(evidence?.uiProfiles);
+  const dateRangeProfiles = records(uiProfiles?.dateRange);
+  const profile = dateRangeProfiles.find((item) => item.context === context);
+  return typeof profile?.signature === "string" && profile.signature ? profile.signature : null;
+};
+
+const staticTabDomDidNotChange = (parsed: Record<string, unknown>): boolean => {
+  const popupSignature = dateRangeProfileSignature(parsed, "dateRange.popupOpened");
+  const staticRequestedSignature = dateRangeProfileSignature(parsed, "dateRange.staticTabRequested");
+  return Boolean(popupSignature && staticRequestedSignature && popupSignature === staticRequestedSignature);
 };
 
 const configureMetricDateRangeVerified = (parsed: Record<string, unknown>): boolean => {
@@ -205,17 +272,14 @@ const outcomeSucceeded = (value: unknown): boolean =>
 
 const staticDateRangeFlowVerified = (dateRangeEvidence: Record<string, unknown> | null): boolean => {
   if (!dateRangeEvidence) return true;
-  const dateUiEvidence = record(dateRangeEvidence.dateUiEvidence);
-  const requestedRange = record(dateUiEvidence?.requestedRange);
-  const checks = record(dateUiEvidence?.checks);
-  const isStaticRequestedRange = requestedRange?.basis === "static_range" || checks?.staticRequestedRangeObserved === true;
-  if (!isStaticRequestedRange) return true;
+  if (!isStaticDateRangeRequest(dateRangeEvidence)) return true;
 
   const interactionLog = record(dateRangeEvidence.interactionLog);
   const actions = record(interactionLog?.actions);
   const setStaticDateRange = record(actions?.setStaticDateRange);
   const steps = record(setStaticDateRange?.steps);
   if (outcomeSucceeded(setStaticDateRange) || outcomeSucceeded(steps?.openStaticTab)) return true;
+  if (interactionLog) return false;
 
   const inputs = record(dateRangeEvidence.inputs);
   const startResult = record(inputs?.startResult);
@@ -234,40 +298,58 @@ const staticDateRangeFlowVerified = (dateRangeEvidence: Record<string, unknown> 
   return false;
 };
 
-const configureMetricFalseChecksForPass = (parsed: Record<string, unknown>): string[] => {
+const configureMetricRequiredActionFlowFailures = (parsed: Record<string, unknown>): string[] => {
+  const evidence = record(parsed.evidence);
+  const dateRangeEvidence = record(evidence?.dateRangeEvidence);
+  if (!isStaticDateRangeRequest(dateRangeEvidence)) return [];
+  if (!helperReportRequiresStaticTabUnderTest(parsed)) return [];
+  if (staticDateRangeFlowVerified(dateRangeEvidence) && !staticTabDomDidNotChange(parsed)) return [];
+  return ["dateRange.timeTypeTab.static"];
+};
+
+const configureMetricContradictionForPass = (parsed: Record<string, unknown>): Omit<HelperEvidencePassContradiction, "reportPath"> | null => {
   const evidence = record(parsed.evidence) ?? {};
   const stateDelta = record(evidence.stateDelta) ?? {};
   const after = record(stateDelta.after) ?? {};
   const failed = falseChecks(after.checks);
-  if (!failed.includes("dateRange")) return failed;
-  if (!configureMetricDateRangeVerified(parsed)) return failed;
-  return failed.filter((item) => item !== "dateRange");
+  const requiredActionFlowFailures = configureMetricRequiredActionFlowFailures(parsed);
+  const adjustedFailed = failed.includes("dateRange") && configureMetricDateRangeVerified(parsed)
+    ? failed.filter((item) => item !== "dateRange")
+    : failed;
+  if (adjustedFailed.length === 0 && requiredActionFlowFailures.length === 0) return null;
+  return {
+    falseChecks: adjustedFailed,
+    requiredActionFlowFailures,
+    containmentVerdict: requiredActionFlowFailures.length > 0 ? "FAIL_INTERACTION_OR_ASSERTION_FAILED" : "BLOCKED_NEEDS_REJUDGMENT"
+  };
 };
 
-const helperEvidenceFalseChecksForPass = (runDir: string, caseNo: string): Array<{ reportPath: string; falseChecks: string[] }> => {
+const helperEvidenceFalseChecksForPass = (runDir: string, caseNo: string): HelperEvidencePassContradiction[] => {
   const caseDir = path.join(runDir, "output", "helper-artifacts", sanitizePathPart(caseNo));
   const reports = [
     {
       fileName: "collage.configureMetric-latest.json",
-      readFalseChecks: configureMetricFalseChecksForPass
+      readContradiction: configureMetricContradictionForPass
     },
     {
       fileName: "collage.reopenReport-latest.json",
-      readFalseChecks: (parsed: Record<string, unknown>) => {
+      readContradiction: (parsed: Record<string, unknown>): Omit<HelperEvidencePassContradiction, "reportPath"> | null => {
         const evidence = record(parsed.evidence) ?? {};
         const reopen = record(evidence.reopenReportEvidence) ?? {};
         const stateDelta = record(reopen.stateDelta) ?? {};
         const after = record(stateDelta.after) ?? {};
-        return falseChecks(after.checks);
+        const failed = falseChecks(after.checks);
+        if (failed.length === 0) return null;
+        return { falseChecks: failed, requiredActionFlowFailures: [], containmentVerdict: "BLOCKED_NEEDS_REJUDGMENT" };
       }
     }
   ];
-  return reports.flatMap(({ fileName, readFalseChecks }) => {
+  return reports.flatMap(({ fileName, readContradiction }) => {
     const reportPath = path.join(caseDir, fileName);
     const parsed = readJsonIfExists<Record<string, unknown>>(reportPath);
     if (!parsed) return [];
-    const failed = readFalseChecks(parsed);
-    return failed.length > 0 ? [{ reportPath: path.relative(runDir, reportPath), falseChecks: failed }] : [];
+    const contradiction = readContradiction(parsed);
+    return contradiction ? [{ reportPath: path.relative(runDir, reportPath), ...contradiction }] : [];
   });
 };
 
@@ -329,16 +411,25 @@ export const validateResultWorkbookContract = async (
         }
         if (status === "PASS" && options.runDir) {
           for (const contradiction of helperEvidenceFalseChecksForPass(options.runDir, caseNo)) {
+            const requiredFlow = contradiction.requiredActionFlowFailures;
+            const code = requiredFlow.length > 0
+              ? "RESULT_PASS_CONTRADICTS_REQUIRED_ACTION_FLOW"
+              : "RESULT_PASS_CONTRADICTS_HELPER_EVIDENCE";
+            const suffix = requiredFlow.length > 0
+              ? `required under_test flow failure(s): ${requiredFlow.join(",")}`
+              : `helper evidence has failed check(s): ${contradiction.falseChecks.join(",")}`;
             issues.push({
               severity: "error",
-              code: "RESULT_PASS_CONTRADICTS_HELPER_EVIDENCE",
-              message: `${caseNo} is PASS but helper evidence has failed check(s): ${contradiction.falseChecks.join(",")}`,
+              code,
+              message: `${caseNo} is PASS but ${suffix}`,
               context: {
                 rowNo,
                 caseNo,
                 status,
                 helperReport: contradiction.reportPath,
-                falseChecks: contradiction.falseChecks
+                falseChecks: contradiction.falseChecks,
+                requiredActionFlowFailures: requiredFlow,
+                containmentVerdict: contradiction.containmentVerdict
               }
             });
           }
@@ -388,6 +479,69 @@ export const validateResultWorkbookContract = async (
   };
 };
 
+const containablePassContradictionCodes = new Set([
+  "RESULT_PASS_CONTRADICTS_HELPER_EVIDENCE",
+  "RESULT_PASS_CONTRADICTS_REQUIRED_ACTION_FLOW"
+]);
+
+const issueRequiresFailContainment = (issue: ResultContractIssue): boolean =>
+  issue.code === "RESULT_PASS_CONTRADICTS_REQUIRED_ACTION_FLOW" ||
+  issue.context?.containmentVerdict === "FAIL_INTERACTION_OR_ASSERTION_FAILED";
+
+const rowHasAnyContent = (row: ExcelJS.Row): boolean => {
+  let hasContent = false;
+  row.eachCell((cell) => {
+    if (text(cell.value)) hasContent = true;
+  });
+  return hasContent;
+};
+
+const bugSheetHasRelatedCase = (bugSheet: ExcelJS.Worksheet, caseNo: string): boolean => {
+  const bugHeaders = headerValues(bugSheet.getRow(1));
+  const relatedCaseNoIdx = findHeaderIndex(bugHeaders, "關聯編號");
+  const bugIdIdx = findHeaderIndex(bugHeaders, "Bug ID");
+  const titleIdx = findHeaderIndex(bugHeaders, "標題");
+  const descriptionIdx = findHeaderIndex(bugHeaders, "描述");
+  if (relatedCaseNoIdx === -1) return false;
+  for (let rowNo = 2; rowNo <= bugSheet.rowCount; rowNo += 1) {
+    const row = bugSheet.getRow(rowNo);
+    const relatedCaseNo = text(row.getCell(relatedCaseNoIdx + 1).value);
+    if (normalizeCaseNo(relatedCaseNo) !== normalizeCaseNo(caseNo)) continue;
+    const hasBugContent = [bugIdIdx, titleIdx, descriptionIdx]
+      .filter((idx) => idx !== -1)
+      .some((idx) => Boolean(text(row.getCell(idx + 1).value)));
+    if (hasBugContent || rowHasAnyContent(row)) return true;
+  }
+  return false;
+};
+
+const setCellByHeader = (row: ExcelJS.Row, headers: string[], header: string, value: unknown): void => {
+  const index = findHeaderIndex(headers, header);
+  if (index !== -1) row.getCell(index + 1).value = value as ExcelJS.CellValue;
+};
+
+const appendAutoBugRow = (
+  bugSheet: ExcelJS.Worksheet,
+  caseNo: string,
+  title: string,
+  description: string,
+  suggestion: string
+): boolean => {
+  if (bugSheetHasRelatedCase(bugSheet, caseNo)) return false;
+  const headers = headerValues(bugSheet.getRow(1));
+  const row = bugSheet.addRow([]);
+  setCellByHeader(row, headers, "嚴重度", "P2");
+  setCellByHeader(row, headers, "Bug ID", `AUTO-${caseNo}`);
+  setCellByHeader(row, headers, "關聯編號", caseNo);
+  setCellByHeader(row, headers, "標題", title);
+  setCellByHeader(row, headers, "描述", description);
+  setCellByHeader(row, headers, "建議", suggestion);
+  setCellByHeader(row, headers, "狀態", "OPEN");
+  setCellByHeader(row, headers, "Evidence", "Generated by result self-check containment for a required under_test UI flow failure.");
+  row.commit?.();
+  return true;
+};
+
 export const containPassContradictionsAsBlocked = async (
   filePath: string,
   contractReport: ResultContractReport,
@@ -403,7 +557,7 @@ export const containPassContradictionsAsBlocked = async (
       updatedCaseNos: []
     };
   }
-  if (errorIssues.some((item) => item.code !== "RESULT_PASS_CONTRADICTS_HELPER_EVIDENCE")) {
+  if (errorIssues.some((item) => !containablePassContradictionCodes.has(item.code))) {
     return {
       schemaVersion: "result-contract-containment-v1",
       generatedAt: new Date().toISOString(),
@@ -430,6 +584,7 @@ export const containPassContradictionsAsBlocked = async (
   const workbook = new ExcelJS.Workbook();
   await workbook.xlsx.readFile(filePath);
   const caseSheet = workbook.getWorksheet(adapter.sheets.cases);
+  const bugSheet = workbook.getWorksheet(adapter.sheets.bugs);
   if (!caseSheet) {
     return {
       schemaVersion: "result-contract-containment-v1",
@@ -478,18 +633,51 @@ export const containPassContradictionsAsBlocked = async (
       message: item.message,
       context: item.context ?? {}
     }));
-    row.getCell(statusIdx + 1).value = "BLOCKED";
-    row.getCell(failCategoryIdx + 1).value = "BLOCKED_NEEDS_REJUDGMENT";
-    row.getCell(detailIdx + 1).value = JSON.stringify({
-      測試目的: previousDetail["測試目的"] ?? "Agent self-check containment for PASS/helper evidence contradiction.",
-      設定條件: previousDetail["設定條件"] ?? "See original Codex detail_json before containment.",
-      預期行為: previousDetail["預期行為"] ?? "PASS requires helper/evidence checks to support the required case scope.",
-      實際行為: `${text(previousDetail["實際行為"]) || "Codex wrote PASS."} Agent self-check found PASS contradicts helper evidence, so this case was contained as BLOCKED_NEEDS_REJUDGMENT instead of failing the whole run.`,
-      blocked_reason: "BLOCKED_NEEDS_REJUDGMENT:RESULT_PASS_CONTRADICTS_HELPER_EVIDENCE",
-      original_result_before_agent_containment: "PASS",
-      self_check_issues: issueSummaries,
-      previous_detail_json: previousDetail
-    });
+    const shouldFail = (issueByCase.get(key) ?? []).some(issueRequiresFailContainment);
+    if (shouldFail) {
+      row.getCell(statusIdx + 1).value = "FAIL";
+      row.getCell(failCategoryIdx + 1).value = "FAIL_INTERACTION_OR_ASSERTION_FAILED";
+      const failedActions = [...new Set((issueByCase.get(key) ?? []).flatMap((item) => {
+        const value = item.context?.requiredActionFlowFailures;
+        return Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === "string") : [];
+      }))];
+      const actual = `${text(previousDetail["實際行為"]) || "Codex wrote PASS."} Agent self-check found required under_test UI flow failure(s): ${failedActions.join(",") || "unknown"}, so this PASS was converted to FAIL instead of BLOCKED.`;
+      row.getCell(detailIdx + 1).value = JSON.stringify({
+        測試目的: previousDetail["測試目的"] ?? "Agent self-check containment for required UI flow contradiction.",
+        設定條件: previousDetail["設定條件"] ?? "See original Codex detail_json before containment.",
+        預期行為: previousDetail["預期行為"] ?? "Required under_test UI actions must complete with their expected outcomes.",
+        實際行為: actual,
+        錯誤原因: "Required under_test UI action did not achieve the expected state transition.",
+        根因層級: "前端互動/狀態切換",
+        驗證方法: "Result self-check compared PASS result with current-run helper interaction evidence and found a required UI flow failure.",
+        "RD 分派": "BI 前端",
+        original_result_before_agent_containment: "PASS",
+        self_check_issues: issueSummaries,
+        previous_detail_json: previousDetail
+      });
+      if (bugSheet) {
+        appendAutoBugRow(
+          bugSheet,
+          caseNo,
+          `[AUTO] ${caseNo} required under_test UI flow failed`,
+          actual,
+          "Route to BI frontend. Verify the required visible UI action changes state before accepting PASS evidence."
+        );
+      }
+    } else {
+      row.getCell(statusIdx + 1).value = "BLOCKED";
+      row.getCell(failCategoryIdx + 1).value = "BLOCKED_NEEDS_REJUDGMENT";
+      row.getCell(detailIdx + 1).value = JSON.stringify({
+        測試目的: previousDetail["測試目的"] ?? "Agent self-check containment for PASS/helper evidence contradiction.",
+        設定條件: previousDetail["設定條件"] ?? "See original Codex detail_json before containment.",
+        預期行為: previousDetail["預期行為"] ?? "PASS requires helper/evidence checks to support the required case scope.",
+        實際行為: `${text(previousDetail["實際行為"]) || "Codex wrote PASS."} Agent self-check found PASS contradicts helper evidence, so this case was contained as BLOCKED_NEEDS_REJUDGMENT instead of failing the whole run.`,
+        blocked_reason: "BLOCKED_NEEDS_REJUDGMENT:RESULT_PASS_CONTRADICTS_HELPER_EVIDENCE",
+        original_result_before_agent_containment: "PASS",
+        self_check_issues: issueSummaries,
+        previous_detail_json: previousDetail
+      });
+    }
     updatedCaseNos.push(caseNo);
   }
 
@@ -510,7 +698,7 @@ export const containPassContradictionsAsBlocked = async (
     schemaVersion: "result-contract-containment-v1",
     generatedAt: new Date().toISOString(),
     status: "updated",
-    reason: "PASS_CONTRADICTION_CONTAINED_AS_BLOCKED_NEEDS_REJUDGMENT",
+    reason: "PASS_CONTRADICTION_CONTAINED",
     updatedCaseNos,
     backupPath
   };
