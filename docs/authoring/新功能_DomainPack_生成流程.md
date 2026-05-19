@@ -50,17 +50,21 @@ uat-tool/domain-packs/<DOMAIN_PACK_NAME>/
 - `locators/README.md`
 - `locators/demo001-locator-registry.json`
 - `ui-contract.json`
+- `ui-object-vocabulary.json`
 - `action-contracts/<action>.json`
 - `evidence-schema.json`
 - `lint-rules.json`
 - `discovery/page-map.json`
 - `discovery/component-inventory.json`
+- `discovery/visual-alignment.json`,若此 domain 需要 screenshot / visual fallback 對齊。
 
 ### 1.3 共用規則 / domain common 規則
 
 若新功能暴露出通用規則,要放到較上層,不要塞進單一 domain-pack:
 
 - 跨所有 domain 共用:`uat-tool/docs/authoring/UAT_三文件撰寫規則_vNext_共用草稿.md`
+- UAT Tool Layer 1 分層規則:`uat-tool/agent-skills/uat-tool/rules/platform-domain-boundary.md`
+- 平台 action vocabulary:`uat-tool/contracts/platform-action-vocabulary.v1.json`
 - BI 三模式共用:`BI_TEST_RULES/BI_UAT_三文件撰寫補充規則.md`
 - 單一功能特殊規則:`uat-tool/domain-packs/<DOMAIN_PACK_NAME>/AGENTS.md` 或專案資料區的 `<功能>_邊界規則.md`
 
@@ -143,16 +147,32 @@ Gate:沒有完成核心決策前,Claude 不應正式產三文件;最多只能產
 
 判斷每條規則應放在哪一層:
 
-- 所有 domain 共用 -> 共用三文件規則。
+- 所有 domain 共用 -> Layer 1 / platform action vocabulary / 共用三文件規則。
 - 同一產品 / 同一大 domain 共用 -> domain common 規則。
-- 只有這個新功能適用 -> domain-pack 邊界規則。
-- 只有本輪適用 -> `Codex_指派文字_*.md` 或 `測試執行說明_*.md`。
+- 同一 feature/domain 可重用,但非所有 domain 共用 -> domain pack (`AGENTS.md`、UI object vocabulary、action contract、evidence schema、lint rules、known gaps)。
+- 只有這個 testcase package 適用 -> testcase xlsx / `Codex_指派文字_*.md` / `測試執行說明_*.md`。
+- 只為目前 runtime 相容而存在 -> temporary bridge,必須在 dev log / spec 中標記替代長期 contract。
 
 原則:
 
 - 不複製整份大規則。
 - 不把單輪特例寫進共用規則。
 - 不讓 domain-pack 依賴 chat 記憶。
+- 不把 domain UI object、locator、source label、case id、單題 workaround 寫進 platform runtime。
+- 若新功能需要與 BI 類似的 UI/action/evidence 能力,應在新 domain pack 產生對應 artifact,而不是要求平台 runtime 新增 product-specific branch。
+
+分層決策表:
+
+| 問題 | 應放位置 |
+| --- | --- |
+| 所有 domain 都需要的動作 verb 或 assertion | `contracts/platform-action-vocabulary.v1.json` |
+| 所有 domain 都需要的 evidence/result gate 機制 | Layer 1 rules / platform runtime |
+| 某 domain 的按鈕、tab、modal、toast、row、picker 語意 | `domain-packs/<DOMAIN>/ui-object-vocabulary.json` |
+| 某 domain 的 action 如何由平台 verbs 組成 | `domain-packs/<DOMAIN>/action-contracts/*.json` |
+| 某 domain 的 DOM/ARIA/network/screenshot/download evidence 要求 | `domain-packs/<DOMAIN>/evidence-schema.json` |
+| 某 domain 的 known product gap 或 locator hazard | domain pack `AGENTS.md` / `ui-object-vocabulary.json` / `discovery/visual-alignment.json` |
+| 單題輸入值、expectedOutcome、風險等級、測試標的 | testcase xlsx / run instructions |
+| 為救當前 run 的相容 patch | temporary bridge,附替代 contract 與移除方向 |
 
 ### Step 4:建立出題指令
 
@@ -243,12 +263,16 @@ locators/demo001-locator-registry.json
 
 - page map:URL、入口、頁面狀態、modal/drawer/popover。
 - component inventory:表格、row、picker、date panel、save/delete modal、toast。
+- UI object vocabulary:穩定 object id、alias、locator hints、supported platform actions、state attributes、hazards、known product gaps。
 - action contracts:例如 `setMetricRows`、`setDateRange`、`runPreview`、`saveReport`。
 - params schema:例如 BI official collage 的 metric 必須是 `metrics[].sourceReport + metrics[].field`,不可只靠自然語言「加欄位 X」。
 - evidence schema:每個 action 的 required / conditional evidence,包含 Tool Bridge response 何時才需要。
 - lint rules:package consistency 應在跑測前擋掉 helper 無法執行的 testcase contract。
+- visual fallback policy:若 DOM/ARIA 不足但 screenshot 可判,需定義 screenshot evidence 可如何被 review;不得讓 screenshot 默默取代 structured evidence。
 
 Discovery 產物應隨 domain pack lifecycle 管理。raw DOM / screenshots 只作 artifact;穩定來源是整理後的 UI / action / evidence contract。
+
+若 `ui-object-vocabulary.json` 或 `action-contracts/*.json` 尚未覆蓋某 case 的 required action,package lint / capability gate 應回 contract gap,不要 fallback 到其他 helper 路徑產生看似相關但 scope 錯誤的 evidence。
 
 詳見 planning: [domain-ui-contract-helper-gen3-gen4-plan.md](/Users/tommy/Downloads/codex_galaxy_dev/uat-tool/docs/planning/domain-ui-contract-helper-gen3-gen4-plan.md)。
 
@@ -342,11 +366,23 @@ prod 前檢查:
 - [ ] `uat-tool/domain-packs/<DOMAIN>/startup_prompt_template.md`
 - [ ] `uat-tool/domain-packs/<DOMAIN>/xlsx_schema.json`
 - [ ] `uat-tool/domain-packs/<DOMAIN>/result_parser_adapter.json`
+- [ ] `uat-tool/domain-packs/<DOMAIN>/ui-contract.json`,若有正式 UI flow。
+- [ ] `uat-tool/domain-packs/<DOMAIN>/ui-object-vocabulary.json`,若 testcase 會指向具名 UI objects。
+- [ ] `uat-tool/domain-packs/<DOMAIN>/action-contracts/*.json`,若 testcase 需要 reusable domain actions。
+- [ ] `uat-tool/domain-packs/<DOMAIN>/evidence-schema.json`,若判定需要 structured evidence。
+- [ ] `uat-tool/domain-packs/<DOMAIN>/lint-rules.json`,若 package consistency 應提前擋缺漏 contract。
+- [ ] `uat-tool/domain-packs/<DOMAIN>/discovery/page-map.json`,若頁面/route/modal 邊界會影響執行。
+- [ ] `uat-tool/domain-packs/<DOMAIN>/discovery/component-inventory.json`,若 UI component semantics 會影響判定。
+- [ ] `uat-tool/domain-packs/<DOMAIN>/discovery/visual-alignment.json`,若 screenshot / visual fallback 需要對齊。
 - [ ] locator guidance,若需要。
 
 ### 驗證
 
 - [ ] domain loader 看得到新 pack。
+- [ ] platform/domain/testcase placement 已對照 `agent-skills/uat-tool/rules/platform-domain-boundary.md`。
+- [ ] domain-specific UI object/action/evidence 沒被塞進 platform runtime。
+- [ ] testcase-specific values 沒被塞進 domain vocabulary。
+- [ ] temporary bridge 已命名並寫明 replacement contract。
 - [ ] `npm run typecheck` 通過。
 - [ ] `npm run build` 通過。
 - [ ] `git diff --check` 通過。

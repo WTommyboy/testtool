@@ -65,7 +65,52 @@ Conflict handling:
 - Required modal / toast checks:
 - Required download / export checks:
 
-## 7. Risk Rules
+## 7. Platform / Domain / Testcase Placement
+
+Apply `uat-tool/agent-skills/uat-tool/rules/platform-domain-boundary.md`.
+
+### Platform Reuse
+
+List any requirement that is truly cross-domain and should use platform rules or platform action vocabulary:
+
+| Requirement | Platform artifact |
+| --- | --- |
+|  |  |
+
+### Domain Pack Ownership
+
+List domain-specific semantics that must be authored in this domain pack:
+
+| Item | Domain pack artifact | Notes |
+| --- | --- | --- |
+| UI object vocabulary | `ui-object-vocabulary.json` |  |
+| Page / modal / route map | `discovery/page-map.json` |  |
+| Component semantics | `discovery/component-inventory.json` |  |
+| Reusable domain actions | `action-contracts/*.json` |  |
+| Evidence requirements | `evidence-schema.json` |  |
+| Package lint rules | `lint-rules.json` |  |
+| Visual fallback / screenshot alignment | `discovery/visual-alignment.json` |  |
+| Known product gaps / hazards | `AGENTS.md` or domain references |  |
+
+### Testcase-Only Ownership
+
+List values or expectations that belong only in this testcase package:
+
+- Input values:
+- Expected outcomes:
+- Risk levels:
+- Test target decisions:
+- Cleanup expectations:
+
+### Temporary Bridges
+
+If any current behavior is only a compatibility bridge, name it and define the intended replacement contract:
+
+| Bridge | Why needed | Replacement contract | Follow-up owner |
+| --- | --- | --- | --- |
+|  |  |  |  |
+
+## 8. Risk Rules
 
 Use the standard risk levels:
 
@@ -82,7 +127,7 @@ Feature-specific interpretation:
 - Cancel:
 - Native confirm / browser dialog:
 
-## 8. Test Target Rules
+## 9. Test Target Rules
 
 Use the standard test target values:
 
@@ -98,7 +143,7 @@ Feature-specific interpretation:
 - Flow interrupted:
 - Data unavailable:
 
-## 9. Evidence Rules
+## 10. Evidence Rules
 
 Required evidence by case type:
 
@@ -113,7 +158,7 @@ Forbidden evidence:
 
 -
 
-## 10. Resource Policy
+## 11. Resource Policy
 
 - Temporary resource naming:
 - Creation allowed:
@@ -122,7 +167,7 @@ Forbidden evidence:
 - Explicit approval required before:
 - Resources that must never be touched:
 
-## 11. Known Risks And Drift
+## 12. Known Risks And Drift
 
 | ID | Risk / Drift | Impact | Case Design Response |
 | --- | --- | --- | --- |

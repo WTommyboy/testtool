@@ -14,6 +14,7 @@ Layer 1 負責平台共通行為：
 - 遇到需要人處理的情境時，透過 Tool Bridge 暫停。
 - 寫入可信結果前，套用 evidence gate。
 - 依 `domain`、`featureMain`、testcase metadata 將 run 路由到正確的 domain rules。
+- 維護 platform / domain pack / testcase / temporary bridge 的分層邊界。
 
 Layer 1 不負責 domain 專屬邏輯：
 
@@ -22,6 +23,7 @@ Layer 1 不負責 domain 專屬邏輯：
 - 不定義 BI 報表如何設定。
 - 不定義 BI 專用 `detail_json` 寫法。
 - 不取代既有 `/Users/tommy/Downloads/codex_galaxy/AGENTS.md`。
+- 不把單一 domain 的 UI object、selector、source report、case workaround 寫成平台預設行為。
 
 目前 `domain=BI` 的 MVP 仍沿用：
 
@@ -62,6 +64,7 @@ CodexRunner 不應在 initial prompt 一次塞入所有規則。
 - `rules/evidence-policy.md`：可信 PASS/FAIL 前需要哪些 evidence。
 - `rules/artifacts-and-results.md`：logs、partial artifacts、result upload contract。
 - `rules/domain-routing.md`：如何路由 `domain=BI` 與未來 domain。
+- `rules/platform-domain-boundary.md`：平台 / domain pack / testcase / temporary bridge 的分層決策表。
 - `rules/codex-runtime.md`：CodexRunner prompt、stdout progress、MCP 使用與 runtime 限制。
 - `rules/agent-security.md`：Agent task 白名單、active run lock、token 範圍。
 - `rules/helper-protocol.md`：Helper 職責邊界、artifact contract、current-run evidence gate。
@@ -80,6 +83,9 @@ CodexRunner 不應在 initial prompt 一次塞入所有規則。
 - 不可用單次 Playwright tool call 或單次 result write 執行多個 case。
 - Helper 只可加速固定且可驗證的 UI 操作；不可判結果、不可寫 result.xlsx、不可引用 stale artifact。
 - 補強平台共通紀律時才改 Layer 1；補強特定 domain 測試邏輯時，寫進該 domain 的 `AGENTS.md` / `rules` / `references`，不可寫進 Layer 1。
+- 可通用的能力放平台層；不可通用但可在一個 feature/domain 重用的能力放 domain pack；只屬於本輪或單題的內容放 testcase/run contract。
+- Runtime 不應永久包含 case id、BI 專案名、source report label、單一 UI 文案 workaround。必要 compatibility bridge 必須明確標記、附替代的長期 contract 與後續移除方向。
+- 新 domain pack 若需要與既有 domain 類似的 UI object/action/evidence 能力，應補對應 domain pack artifact，而不是要求平台 runtime 新增 product-specific branch。
 
 ## 版本說明
 

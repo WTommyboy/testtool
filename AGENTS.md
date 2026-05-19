@@ -54,6 +54,7 @@ three-document packages for a new domain, read this workflow first:
 - `docs/authoring/domain-pack-templates/boundary_rules_template.md`
 - `docs/authoring/domain-pack-templates/claude_testcase_request_template.md`
 - `docs/authoring/domain-pack-templates/domain_pack_completion_checklist.md`
+- `agent-skills/uat-tool/rules/platform-domain-boundary.md`
 
 Use the scaffold and verifier when appropriate:
 
@@ -66,6 +67,12 @@ Do not let domain-pack decisions live only in chat. Write durable decisions into
 the intake, boundary rules, domain pack, or testcase package. New domain packs
 should go through dev branch and dev `/api/domains` verification before any
 production promote.
+
+When a proposed fix is not platform-generic, place the reusable semantics in the
+domain pack instead of the runtime. If it is only a run/testcase decision, keep it
+in the testcase package or run instructions. Any temporary bridge must be named
+as such and must state what platform vocabulary or domain-pack contract will
+replace it.
 
 ## Session History Hygiene
 

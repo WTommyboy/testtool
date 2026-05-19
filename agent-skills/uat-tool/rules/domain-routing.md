@@ -92,3 +92,17 @@ References 只在需要時讀。
 ## Cross-Domain Rule
 
 除非 run 明確要求用 BI 作為 comparison reference，否則不可把 BI-specific rules 套到非 BI domain。
+
+## Platform / Domain Boundary
+
+Routing selects which domain pack supplies feature semantics. It must not convert domain semantics into platform behavior.
+
+Use `rules/platform-domain-boundary.md` when deciding where a new rule, helper behavior, evidence requirement, or judgment policy belongs.
+
+Minimum rules:
+
+1. Platform routing can know that a domain pack exists, but not how that feature's UI works.
+2. Domain pack data owns UI object ids, aliases, locator hints, semantic maps, action templates, evidence schemas, lint rules, and known product gaps.
+3. Testcase packages own per-case purpose, values, expected outcomes, risk level, and test target.
+4. Runtime branches containing concrete BI case ids, project names, source report labels, or single-feature UI phrases are temporary bridge candidates, not permanent routing behavior.
+5. If a future feature needs the same structural capability as BI, create the equivalent domain-pack artifact for that feature instead of adding another platform branch.

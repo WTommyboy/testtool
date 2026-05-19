@@ -1682,3 +1682,11 @@ P0a v1 範圍釐清：containment 只處理唯一 self-check error 為 `RESULT_P
 - 修正：`uploadResultXlsx` 加入 transient retry，針對 `fetch failed`、socket/network 類錯誤，以及 `408/425/429/5xx` result upload response 自動重試 4 次（指數退避，上限 8 秒）。每次 retry 會送出 `run.stderr` 診斷，避免只看到最後一個 `fetch failed`。
 - 診斷邊界：若重試後仍失敗但本機已存在 trusted `output/result.xlsx`，partial artifact path 會優先保留/重試該 trusted workbook，不再把狀態誤寫成「只有 agent fallback」。真正的 agent fallback 仍維持 local diagnostic only，不上傳為 UAT 結果。
 - 驗證：新增 `npm run verify:result-upload-retry`，以本機 HTTP server 模擬前兩次 503、第三次成功，確認 result upload 會 retry 並成功。另已跑 `npm run typecheck`、`npm run build --prefix agent`。
+
+### 2026-05-19 - Platform/domain/testcase boundary rule documentation
+
+- 背景：Tommy 在 run `ee0cae6b-f2c4-4cb0-a5aa-d79f5b611ca3` 108 題執行中指出 BLOCKED 變多,並追問接下來修法是否又會變成這次 BI testcase 客製。回顧後確認：早期 P0 確有不少 Gen1/Gen2 compatibility bridge,後續才開始轉向 platform action vocabulary + BI domain UI object vocabulary。需要把「可通用的放平台,不可通用但可重用的放 domain pack,單輪/單題的放 testcase」寫成常駐規則,並更新 domain pack 生成流程。
+- 新增規則：`agent-skills/uat-tool/rules/platform-domain-boundary.md` 定義 Platform runtime / Platform vocabulary / Domain pack / Testcase package / Temporary bridge 五層責任、placement rules、domain pack authoring requirements、runtime 禁止事項、temporary bridge policy 與 review checklist。
+- Skill/Layer 1 接線：`agent-skills/uat-tool/SKILL.md`、`agent-skills/uat-tool/rules/domain-routing.md`、`uat-tool/AGENTS.md` 都已指向新分層規則,要求 runtime 不永久包含 case id、BI 專案名、source report label 或單題 workaround；必要 bridge 必須命名並指向替代 contract。
+- Authoring workflow：`docs/authoring/新功能_DomainPack_生成流程.md`、`domain_intake_template.md`、`boundary_rules_template.md`、`claude_testcase_request_template.md`、`domain_pack_completion_checklist.md` 已補齊 domain UI object vocabulary、action contracts、evidence schema、lint rules、visual alignment、known product gaps 與 temporary bridge 欄位。未來新 domain pack 生成時,不能只產 prompt/xlsx schema/locator guidance。
+- 規劃同步：`docs/refactor/規劃說明.md`、`docs/refactor/工程spac.md`、`docs/planning/domain-ui-contract-helper-gen3-gen4-plan.md` 已記錄此分層標準。這批是 documentation-only,不改 runtime、不改 helper、不改 testcase、不推 prod；後續才回頭分析 `ee0cae6b...` 108 題結果並按新邊界修 routing/result gate。

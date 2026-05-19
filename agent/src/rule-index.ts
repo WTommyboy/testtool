@@ -85,7 +85,8 @@ const buildCurrentCaseRecommendations = (runDir: string, entries: RuleIndexEntry
     "helper-protocol",
     "evidence-policy",
     "codex-runtime",
-    "artifacts-and-results"
+    "artifacts-and-results",
+    "platform-domain-boundary"
   ]) {
     add(ids, id);
   }
@@ -178,6 +179,20 @@ export const writeRuleIndex = (runDir: string, domain: string): string => {
     filePath: path.join(skillRoot, "rules", "domain-routing.md"),
     loadWhen: ["need domain selection", "feature/domain mapping unclear"],
     summary: "How to route a run to domain rules without mixing BI-specific rules into Layer 1."
+  });
+  addIfExists(entries, runDir, {
+    id: "platform-domain-boundary",
+    scope: "platform",
+    filePath: path.join(skillRoot, "rules", "platform-domain-boundary.md"),
+    loadWhen: [
+      "platform/domain/testcase boundary",
+      "new helper behavior",
+      "domain pack generation",
+      "temporary bridge",
+      "where a rule belongs"
+    ],
+    summary:
+      "Placement rule for platform runtime, platform vocabulary, domain pack data, testcase package values, and temporary bridges."
   });
   addIfExists(entries, runDir, {
     id: "tool-bridge",

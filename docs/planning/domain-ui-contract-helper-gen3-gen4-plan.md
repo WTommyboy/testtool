@@ -1,7 +1,7 @@
 # Domain UI Contract / Helper Gen3-Gen4 Plan
 
 Date: 2026-05-16 Asia/Taipei
-Status: planned, dev-tracked; Gen1a/Gen1b contract wiring and short-term bridge are in dev; Gen1c contract hardening added before next live UAT; scope-aware contract refinement recorded after run `81455108-f612-4024-9d71-4f1995e08d7a`; P0 scope runtime guards and observation bridge are in dev; P0 vocabulary-first reset recorded after run `1762c1b2-bc42-47f0-80b6-d1ef10a0f713`
+Status: planned, dev-tracked; Gen1a/Gen1b contract wiring and short-term bridge are in dev; Gen1c contract hardening added before next live UAT; scope-aware contract refinement recorded after run `81455108-f612-4024-9d71-4f1995e08d7a`; P0 scope runtime guards and observation bridge are in dev; P0 vocabulary-first reset recorded after run `1762c1b2-bc42-47f0-80b6-d1ef10a0f713`; platform/domain/testcase boundary rule formalized 2026-05-19
 Primary triggers: BIUI_COLLAGE_R001 runs `67990303-2c1b-4559-924a-297a089b5949`, `81455108-f612-4024-9d71-4f1995e08d7a`, `ecc53283-18c4-4b29-a405-e7681626e28b`, and `1762c1b2-bc42-47f0-80b6-d1ef10a0f713`
 
 ## 1. Why This Exists
@@ -60,6 +60,16 @@ Responsibility split:
 | Stable core runtime | browser lease, Tool Bridge, irreversible guard, generic action interpreter, artifact writing, generic result/evidence gate hooks | BI fields such as `sourceReport`, `metrics`, `selectedMetricFields`, `拼貼模式` |
 | Domain pack | domain UI map, domain action templates, domain param schema, aliases, locator candidates, evidence schema, lint rules, domain hazards | executable helper code or free-form agent logic |
 | Testcase package | concrete case intent, scope, risk, expected evidence, concrete domain values | runtime implementation details or hidden helper assumptions |
+
+The formal placement rule now lives in `agent-skills/uat-tool/rules/platform-domain-boundary.md`. This plan follows that rule:
+
+- Platform runtime owns mechanics that every domain can use.
+- Platform vocabulary owns generic action verbs and assertions.
+- Domain packs own feature UI semantics, object ids, locator hints, action templates, evidence schemas, lint rules, visual alignment, and known product gaps.
+- Testcase packages own per-case values, expected outcomes, risk levels, test targets, and cleanup decisions.
+- Temporary Gen1/Gen2 bridges must be named and must point to the platform or domain contract that will replace them.
+
+This distinction is intentionally stricter than "make everything generic." Not every BI concept should become platform behavior. The standard is that anything not generic must still have a durable domain-pack location so the next similar feature can generate the same kind of artifact instead of requiring another runtime patch.
 
 Generic runtime fields should be stable across domains:
 
@@ -549,6 +559,12 @@ Layer ownership:
 - Domain pack layer owns official BI UI object IDs, aliases, locators, allowed evidence sources, domain action templates, and BI-specific state semantics.
 - Testcase/run layer owns case-specific values, expected outcomes, `testTarget`, `judgmentPolicy`, risk level, cleanup policy, and optional structured action steps.
 - Oracle fixtures own temporary human-verified expected results for calibration. They must be versioned with run/testcase context and must never be treated as required authoring input for normal UAT.
+
+Domain pack generation implication:
+
+- New domains must explicitly decide whether they need `ui-object-vocabulary.json`, `action-contracts/*.json`, `evidence-schema.json`, `lint-rules.json`, `discovery/page-map.json`, `discovery/component-inventory.json`, and `discovery/visual-alignment.json`.
+- A missing domain object/action/evidence contract should surface as a contract gap (`DOMAIN_OBJECT_MISSING`, `ACTION_TEMPLATE_MISSING`, `HELPER_CONTRACT_MISSING`) instead of falling back to an unrelated helper path.
+- Result taxonomy should distinguish product bug, testcase design issue, PM skip, visual review, domain contract gap, tool/runtime failure, and temporary bridge containment.
 
 Recommended continuation of P0:
 

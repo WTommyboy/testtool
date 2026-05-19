@@ -36,11 +36,24 @@
 - [ ] `domain-packs/<DOMAIN>/startup_prompt_template.md`
 - [ ] `domain-packs/<DOMAIN>/xlsx_schema.json`
 - [ ] `domain-packs/<DOMAIN>/result_parser_adapter.json`
+- [ ] `domain-packs/<DOMAIN>/ui-contract.json`, if the domain has visible UI flows.
+- [ ] `domain-packs/<DOMAIN>/ui-object-vocabulary.json`, if testcase steps target named UI objects.
+- [ ] `domain-packs/<DOMAIN>/action-contracts/*.json`, if testcase steps need reusable domain operations.
+- [ ] `domain-packs/<DOMAIN>/evidence-schema.json`, if PASS/FAIL/BLOCKED depends on structured evidence.
+- [ ] `domain-packs/<DOMAIN>/lint-rules.json`, if package consistency should catch missing action/object contracts before live run.
+- [ ] `domain-packs/<DOMAIN>/discovery/page-map.json`, if URL/page/modal boundaries matter.
+- [ ] `domain-packs/<DOMAIN>/discovery/component-inventory.json`, if UI component semantics matter.
+- [ ] `domain-packs/<DOMAIN>/discovery/visual-alignment.json`, if screenshot/visual fallback may be needed.
 - [ ] `domain-packs/<DOMAIN>/locators/README.md`, if locators are needed.
 - [ ] `domain-packs/<DOMAIN>/locators/demo001-locator-registry.json`, if locator registry is needed by current MVP endpoint.
 
 ## 4. Content Gate
 
+- [ ] Platform/domain/testcase placement was checked against `agent-skills/uat-tool/rules/platform-domain-boundary.md`.
+- [ ] Generic action verbs are referenced from `contracts/platform-action-vocabulary.v1.json`; no domain action verbs were invented in testcase prose only.
+- [ ] Domain-specific UI object ids, aliases, locator hints, state attributes, hazards, and known product gaps live in the domain pack, not platform runtime.
+- [ ] Testcase-specific input values and expected outcomes remain in the testcase package, not the domain vocabulary.
+- [ ] Any temporary bridge is named, scoped, and has a follow-up contract that will replace it.
 - [ ] `AGENTS.md` has scope and out-of-scope.
 - [ ] `AGENTS.md` has specification priority.
 - [ ] `AGENTS.md` has irreversible action policy.
@@ -51,6 +64,9 @@
 - [ ] `startup_prompt_template.md` has result workbook contract.
 - [ ] `xlsx_schema.json` parses as JSON.
 - [ ] `result_parser_adapter.json` parses as JSON.
+- [ ] UI/action/evidence/lint JSON files parse, if present.
+- [ ] Action contracts use platform action ids and domain UI object ids; they do not embed executable helper code.
+- [ ] Evidence schema distinguishes DOM/ARIA, network, screenshot, download artifact, toast, URL, and visual review paths when applicable.
 - [ ] Locator registry parses as JSON, if present.
 
 ## 5. Local Verification Gate
@@ -88,6 +104,9 @@ Expected:
 - [ ] Smoke uses low-risk observation cases first.
 - [ ] Mac Agent downloads domain pack files.
 - [ ] Codex sees the domain `AGENTS.md`.
+- [ ] Codex sees domain UI/action/evidence/lint files when present.
+- [ ] A frontend observation smoke proves DOM/ARIA path or explicit visual fallback contract.
+- [ ] A workflow smoke proves required action coverage, not only page navigation.
 - [ ] One case completes and uploads `result.xlsx`.
 - [ ] Result parser ingests the case.
 - [ ] Final aggregate can be downloaded.

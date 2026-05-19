@@ -31,13 +31,20 @@ What must remain:
    - `<PATH_TO_DOMAIN_INTAKE>`
 3. Domain boundary rules:
    - `<PATH_TO_BOUNDARY_RULES>`
-4. PRD / spec:
+4. Platform/domain boundary:
+   - `uat-tool/agent-skills/uat-tool/rules/platform-domain-boundary.md`
+   - `uat-tool/contracts/platform-action-vocabulary.v1.json`
+5. Domain pack contracts, if already drafted:
+   - `<PATH_TO_UI_OBJECT_VOCABULARY_OR_NONE>`
+   - `<PATH_TO_ACTION_CONTRACTS_OR_NONE>`
+   - `<PATH_TO_EVIDENCE_SCHEMA_OR_NONE>`
+6. PRD / spec:
    - `<PATH_TO_PRIMARY_PRD>`
    - `<PATH_TO_SECONDARY_PRD_IF_ANY>`
-5. UI references:
+7. UI references:
    - `<PATH_TO_SCREENSHOT_FOLDER>`
    - `<PATH_TO_LIVE_PREFLIGHT_SCREENSHOTS_IF_ANY>`
-6. Existing testcase package:
+8. Existing testcase package:
    - `<PATH_TO_OLD_XLSX>`
    - `<PATH_TO_OLD_CODEX_ASSIGNMENT_MD>`
    - `<PATH_TO_OLD_EXECUTION_INSTRUCTION_MD>`
@@ -91,6 +98,10 @@ Required edge cases:
 - Every case must be independently executable.
 - Every case must support one-case-at-a-time result writing.
 - Irreversible actions require explicit Tommy approval during execution; testcase prose is not approval.
+- Use canonical platform actions where possible, such as `click`, `hover`, `type`, `select`, `openModal`, `cancelModal`, `confirmModal`, `assertVisible`, `assertDisabled`, `assertEnabled`, `assertNoRequest`, `addRow`, `duplicateRow`, and `deleteRow`.
+- When a step targets a domain UI element, reference the domain UI object id if available. If no object id exists, record it as a domain-pack gap instead of inventing a runtime workaround in the testcase.
+- Do not put reusable UI object definitions, locator hints, helper behavior, or result-gate workarounds in testcase prose. Those belong in the domain pack or platform contracts.
+- If a testcase requires a domain action not yet covered by the domain pack, flag it as `ACTION_TEMPLATE_MISSING` / `DOMAIN_OBJECT_MISSING` for Codex review before live execution.
 
 ## Xlsx Format
 

@@ -112,7 +112,54 @@ Conflict handling:
 - Irreversible action approval:
 - Required screenshots / evidence:
 
-## 9. Case Design Targets
+## 9. Domain Contract Inventory
+
+Use this section to decide what belongs in the domain pack instead of platform runtime or testcase prose.
+
+### Platform Action Vocabulary Reuse
+
+- Existing platform actions sufficient: yes / no
+- Missing generic platform actions, if any:
+- Why each missing action is cross-domain rather than domain-specific:
+
+### Domain UI Object Vocabulary
+
+- Required buttons / icon buttons:
+- Required tabs / segmented controls / radio groups:
+- Required modals / drawers / popovers:
+- Required tables / rows / row actions:
+- Required pickers / dropdowns / search inputs:
+- Required toasts / validation messages:
+- Known disabled / enabled states:
+- Known visual-only states:
+
+### Domain Action Contracts
+
+- Required observation actions:
+- Required workflow actions:
+- Required create/update/delete actions:
+- Required download/export actions:
+- Actions that must never fallback to unrelated helpers:
+
+### Evidence Mapping
+
+- DOM / ARIA evidence:
+- Network evidence:
+- Screenshot / visual fallback evidence:
+- Download artifact evidence:
+- Toast / alert evidence:
+- URL / route evidence:
+- Known evidence gaps:
+
+### Temporary Bridges
+
+- Current bridge needed: yes / no
+- Bridge name:
+- Why not platform-generic:
+- Replacement domain/platform contract:
+- Expected removal trigger:
+
+## 10. Case Design Targets
 
 ### Existing Case Preservation
 
@@ -137,7 +184,7 @@ Conflict handling:
 - Cancel path:
 - Delete confirmation path:
 
-## 10. Open Decisions
+## 11. Open Decisions
 
 List decisions that block authoring.
 
@@ -145,7 +192,7 @@ List decisions that block authoring.
 | --- | --- | --- | --- | --- |
 | D-01 |  |  |  |  |
 
-## 11. Finalized Decisions
+## 12. Finalized Decisions
 
 Move answered decisions here.
 
