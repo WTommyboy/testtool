@@ -27,7 +27,8 @@
         "projectToolbar.downloadButton",
         "projectToolbar.deleteButton",
         "projectToolbar.createButton",
-        "projectList.rowDeleteAction"
+        "projectList.rowDeleteAction",
+        "projectList.reportRow"
       ]
     },
     {
@@ -41,7 +42,8 @@
         "metricRows.fieldControl",
         "preview.calculateButton",
         "dateRange.button",
-        "editorToolbar.downloadButton"
+        "editorToolbar.downloadButton",
+        "editorToolbar.saveButton"
       ]
     },
     {
@@ -68,7 +70,10 @@
         "metricRows.fieldControl",
         "preview.calculateButton",
         "dateRange.button",
-        "editorToolbar.downloadButton"
+        "editorToolbar.downloadButton",
+        "editorToolbar.saveButton",
+        "editorToolbar.copyButton",
+        "editorToolbar.updateButton"
       ]
     },
     {
@@ -393,6 +398,102 @@
       "visualCues": ["download icon button", "disabled in blank editor", "enabled after preview result"],
       "alignmentNotes": "Icon-only editor download/export control."
     },
+    "editorToolbar.saveButton": {
+      "status": "confirmed",
+      "sourceIds": ["live.editorBlank", "live.editorSaved"],
+      "screenContext": "Top-right / action area of the collage editor.",
+      "visibleText": ["儲存報表"],
+      "visualCues": ["save report action button"],
+      "alignmentNotes": "Used to open the save-report modal. Confirming save still follows Tool Bridge policy."
+    },
+    "saveModal.reportNameInput": {
+      "status": "notCaptured",
+      "sourceIds": ["live.editorBlank"],
+      "screenContext": "Save-report modal after clicking 儲存報表.",
+      "visibleText": [],
+      "visualCues": ["report name text input expected inside save modal"],
+      "alignmentNotes": "Not captured in the current screenshot set; runtime observes this modal live."
+    },
+    "saveModal.cancelButton": {
+      "status": "notCaptured",
+      "sourceIds": ["live.editorBlank"],
+      "screenContext": "Save-report modal footer.",
+      "visibleText": ["取消"],
+      "visualCues": ["secondary cancel button expected inside save modal"],
+      "alignmentNotes": "Not captured in the current screenshot set; runtime observes this modal live."
+    },
+    "editorToolbar.copyButton": {
+      "status": "confirmed",
+      "sourceIds": ["live.editorSaved"],
+      "screenContext": "Existing-report editor action area.",
+      "visibleText": ["複製副本"],
+      "visualCues": ["copy report action button"],
+      "alignmentNotes": "Locator registry also records this as an existing-report editor action."
+    },
+    "copyModal.reportNameInput": {
+      "status": "notCaptured",
+      "sourceIds": ["live.editorSaved"],
+      "screenContext": "Copy-report modal after clicking 複製副本.",
+      "visibleText": [],
+      "visualCues": ["report name input expected to default to a 副本 name"],
+      "alignmentNotes": "Not captured in the current screenshot set; runtime observes this modal live."
+    },
+    "copyModal.projectSelect": {
+      "status": "notCaptured",
+      "sourceIds": ["live.editorSaved"],
+      "screenContext": "Copy-report modal project selector area.",
+      "visibleText": ["儲存專案", "請選擇專案"],
+      "visualCues": ["project picker or selected project text expected inside copy modal"],
+      "alignmentNotes": "Not captured in the current screenshot set; runtime observes this modal live."
+    },
+    "copyModal.hintText": {
+      "status": "notCaptured",
+      "sourceIds": ["live.editorSaved"],
+      "screenContext": "Copy-report modal body text.",
+      "visibleText": [],
+      "visualCues": ["hint/rule text expected near copy name and project fields"],
+      "alignmentNotes": "Not captured in the current screenshot set; absence/presence should be judged by the testcase scope."
+    },
+    "copyModal.cancelButton": {
+      "status": "notCaptured",
+      "sourceIds": ["live.editorSaved"],
+      "screenContext": "Copy-report modal footer.",
+      "visibleText": ["取消"],
+      "visualCues": ["secondary cancel button expected inside copy modal"],
+      "alignmentNotes": "Not captured in the current screenshot set; runtime observes this modal live."
+    },
+    "copyModal.saveButton": {
+      "status": "notCaptured",
+      "sourceIds": ["live.editorSaved"],
+      "screenContext": "Copy-report modal footer.",
+      "visibleText": ["儲存", "確認"],
+      "visualCues": ["primary save/confirm button expected inside copy modal"],
+      "alignmentNotes": "Not captured in the current screenshot set; runtime observes this modal live and requires Tool Bridge policy for save."
+    },
+    "editorToolbar.updateButton": {
+      "status": "confirmed",
+      "sourceIds": ["live.editorSaved"],
+      "screenContext": "Existing-report editor action area.",
+      "visibleText": ["更新設定"],
+      "visualCues": ["update settings action button"],
+      "alignmentNotes": "Locator registry records this as the update action for existing reports."
+    },
+    "projectList.reportRow": {
+      "status": "confirmed",
+      "sourceIds": ["live.projectList"],
+      "screenContext": "Selected collage project/report list table.",
+      "visibleText": ["報表名稱", "資料週期區間", "下載", "刪除"],
+      "visualCues": ["table/list row containing report name and operation controls"],
+      "alignmentNotes": "Used for save/copy row-created and cancel no-row-created verification."
+    },
+    "reportPersistence.reopenState": {
+      "status": "inferredFromSameSurface",
+      "sourceIds": ["live.editorSaved"],
+      "screenContext": "Saved report editor after opening a report row from the project list.",
+      "visibleText": ["報表設定", "時間區間", "欄位選擇"],
+      "visualCues": ["editor controls can be read after reopening a saved report"],
+      "alignmentNotes": "This is not one visible control; it is a structured read-back evidence object."
+    },
     "download.toast": {
       "status": "confirmed",
       "sourceIds": ["tommy.downloadToast"],
@@ -402,5 +503,38 @@
       "alignmentNotes": "Confirmed by Tommy screenshot on 2026-05-18."
     }
   },
-  "needsHumanConfirmation": []
+  "needsHumanConfirmation": [
+    {
+      "objectId": "saveModal.reportNameInput",
+      "reason": "Save modal was not present in the current screenshot set; runtime observes it live."
+    },
+    {
+      "objectId": "saveModal.cancelButton",
+      "reason": "Save modal was not present in the current screenshot set; runtime observes it live."
+    },
+    {
+      "objectId": "copyModal.reportNameInput",
+      "reason": "Copy modal was not present in the current screenshot set; runtime observes it live."
+    },
+    {
+      "objectId": "copyModal.projectSelect",
+      "reason": "Copy modal was not present in the current screenshot set; runtime observes it live."
+    },
+    {
+      "objectId": "copyModal.hintText",
+      "reason": "Copy modal was not present in the current screenshot set; testcase scope decides whether missing hint text is a product issue."
+    },
+    {
+      "objectId": "copyModal.cancelButton",
+      "reason": "Copy modal was not present in the current screenshot set; runtime observes it live."
+    },
+    {
+      "objectId": "copyModal.saveButton",
+      "reason": "Copy modal was not present in the current screenshot set; runtime observes it live under Tool Bridge policy."
+    },
+    {
+      "objectId": "reportPersistence.reopenState",
+      "reason": "This is structured read-back evidence rather than a single visible UI control."
+    }
+  ]
 }

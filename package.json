@@ -35,6 +35,7 @@
     "verify:p0-visual-fallback-contract": "tsx scripts/verify-p0-visual-fallback-contract.ts",
     "verify:p0-save-reopen-download-flow": "tsx scripts/verify-p0-save-reopen-download-flow.ts",
     "verify:p0-field-picker-date-preset-templates": "tsx scripts/verify-p0-field-picker-date-preset-templates.ts",
+    "verify:p0-report-mutation-templates": "tsx scripts/verify-p0-report-mutation-templates.ts",
     "verify:fail-bug-fallback": "tsx scripts/verify-fail-bug-fallback.ts",
     "verify:save-calculation-judgment": "tsx scripts/verify-save-calculation-judgment.ts",
     "verify:open-project-retry": "tsx scripts/verify-open-project-retry.ts",

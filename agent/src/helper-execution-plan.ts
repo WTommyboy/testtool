@@ -277,6 +277,8 @@ type FrontendObservationType =
   | "dateTimeTypeTab"
   | "datePanelCancel"
   | "downloadToast"
+  | "saveModalCancel"
+  | "copyModalCancel"
   | null;
 
 const inferFrontendObservationType = (currentCase: CaseManifestCase | null): FrontendObservationType => {
@@ -303,6 +305,8 @@ const inferFrontendObservationType = (currentCase: CaseManifestCase | null): Fro
   if (/時間面板|時間區間\s*button|時間設置|動態|靜態|date\s*panel|date\s*range/i.test(text)) return "datePanel";
   if (/空設定|未完成設定|防呆|欄位未設置完成|點.{0,8}計算|計算.{0,8}按鈕|validation/i.test(text)) return "validationMessage";
   if (/下載.*toast|數據已開始下載|editor.*下載|右上下載/i.test(text)) return "downloadToast";
+  if (/儲存\s*modal|儲存.*取消|save\s*modal/i.test(text)) return "saveModalCancel";
+  if (/複製副本.*modal|copy\s*modal|複製.*取消/i.test(text)) return "copyModalCancel";
   return null;
 };
 
@@ -334,6 +338,10 @@ const observationRequiredEvidence = (observationType: FrontendObservationType): 
       return ["dateRange.cancelFlow.state", "interactionLog", "screenshot"];
     case "downloadToast":
       return ["editorToolbar.download.state", "download.toast.state", "interactionLog", "screenshot"];
+    case "saveModalCancel":
+      return ["saveModal.cancelFlow.state", "interactionLog", "screenshot"];
+    case "copyModalCancel":
+      return ["copyModal.cancelFlow.state", "interactionLog", "screenshot"];
     default:
       return ["dom.state", "screenshot"];
   }
@@ -370,6 +378,10 @@ const fallbackObservationType = (value: string | null): FrontendObservationType 
     case "downloadToast":
     case "editorDownload":
       return "downloadToast";
+    case "saveModalCancel":
+      return "saveModalCancel";
+    case "copyModalCancel":
+      return "copyModalCancel";
     default:
       return null;
   }
@@ -394,6 +406,21 @@ const actionsForTemplate = (
   }
   if (template === "collage.downloadCsvAndComparePreview") {
     return contract.requiredActions.filter((item) => item.target.startsWith("editorToolbar.") || item.target.startsWith("download.") || item.evidenceRequirements.includes("downloadArtifact"));
+  }
+  if (template === "collage.copyReportAndVerify") {
+    return contract.requiredActions.filter((item) =>
+      item.target.startsWith("editorToolbar.copy") ||
+      item.target.startsWith("copyModal.") ||
+      item.target.startsWith("projectList.")
+    );
+  }
+  if (template === "collage.updateExistingReportAndReopen") {
+    return contract.requiredActions.filter((item) =>
+      item.target.startsWith("editorToolbar.update") ||
+      item.target.startsWith("dateRange.") ||
+      item.target.startsWith("reportPersistence.") ||
+      item.target.startsWith("projectList.")
+    );
   }
   return [];
 };
@@ -1042,6 +1069,95 @@ const buildActions = (currentCase: CaseManifestCase | null, helperHints: HelperH
         ]
       })
     ];
+  }
+
+  if (caseScopeContract?.routeIntent === "report_mutation_flow") {
+    const structuredParams = paramsForStructuredContract(params, caseScopeContract);
+    const observationType = fallbackObservationType(caseScopeContract.observationType);
+    const openProjectAction = action("H1", "collage.openProject", "開啟指定拼貼專案", structuredParams, {
+      requiredEvidence: ["dom.url", "dom.pageTitle", "dom.state", "screenshot"],
+      notes: ["structured report_mutation_flow 前置導航；不判斷 testcase 結果。"]
+    });
+    const observeParams = observationType
+      ? {
+          ...structuredParams,
+          observationType,
+          caseScopeContract,
+          targetObjectIds: [...new Set(caseScopeContract.requiredActions.map((item) => item.target))],
+          expectedOutcomes: [...new Set(caseScopeContract.requiredActions.map((item) => item.expectedOutcome))]
+        }
+      : structuredParams;
+    if (/M-06$/i.test(caseScopeContract.caseNo)) {
+      return [
+        openProjectAction,
+        action("H2", "collage.createReport", "進入新增報表頁", structuredParams, {
+          requiredEvidence: ["dom.url", "dom.pageTitle", "dom.state", "screenshot"]
+        }),
+        action("H3", "collage.observeFrontendState", "收集儲存 modal 取消 evidence", observeParams, {
+          mutatesUi: true,
+          requiredEvidence: structuredEvidenceList(caseScopeContract),
+          screenshotPolicy: "required_if_possible",
+          notes: [
+            "本 action 只開啟儲存 modal、輸入本 case 臨時名稱、按取消並驗證未建立報表。",
+            "不點 modal 儲存，不接受 native dialog；Codex 仍依 case scope 判斷。"
+          ]
+        })
+      ];
+    }
+    if (/M-09$/i.test(caseScopeContract.caseNo)) {
+      return [
+        openProjectAction,
+        action("H2", "collage.openReportFromProjectList", "開啟既有報表進入設定頁", structuredParams, {
+          requiredEvidence: ["dom.state", "screenshot"],
+          screenshotPolicy: "required_if_possible"
+        }),
+        action("H3", "collage.observeFrontendState", "收集複製副本 modal 取消 evidence", observeParams, {
+          mutatesUi: true,
+          requiredEvidence: structuredEvidenceList(caseScopeContract),
+          screenshotPolicy: "required_if_possible",
+          notes: [
+            "本 action 只開啟複製副本 modal、讀取預設值/提示、按取消並驗證未建立副本。",
+            "不點 modal 儲存；Codex 仍依 case scope 判斷。"
+          ]
+        })
+      ];
+    }
+    if (/M-10$/i.test(caseScopeContract.caseNo)) {
+      return [
+        openProjectAction,
+        action("H2", "collage.openReportFromProjectList", "開啟既有報表進入設定頁", structuredParams, {
+          requiredEvidence: ["dom.state", "screenshot"],
+          screenshotPolicy: "required_if_possible"
+        }),
+        action("H3", "collage.copyReportAndVerify", "複製副本、改名儲存並驗證清單新報表", structuredParams, {
+          requiresToolBridge: true,
+          requiredEvidence: ["toolBridge.response", ...structuredEvidenceList(caseScopeContract), "screenshot"],
+          screenshotPolicy: "required_if_possible",
+          notes: [
+            "單一授權只允許本 current case 複製既有報表並以本 case 臨時名稱儲存。",
+            "helper 必須透過 visible UI 點複製副本、改名、點儲存；未知 native dialog 必須 blocked。"
+          ]
+        })
+      ];
+    }
+    if (/M-11$/i.test(caseScopeContract.caseNo)) {
+      return [
+        openProjectAction,
+        action("H2", "collage.openReportFromProjectList", "開啟既有報表進入設定頁", structuredParams, {
+          requiredEvidence: ["dom.state", "screenshot"],
+          screenshotPolicy: "required_if_possible"
+        }),
+        action("H3", "collage.updateExistingReportAndReopen", "修改設定、更新設定並重開驗證還原", structuredParams, {
+          requiresToolBridge: true,
+          requiredEvidence: ["toolBridge.response", ...structuredEvidenceList(caseScopeContract), "screenshot"],
+          screenshotPolicy: "required_if_possible",
+          notes: [
+            "單一授權只允許本 current case 修改既有報表設定並點更新設定。",
+            "helper 必須留下 before/after setting、更新成功訊號、返回清單與重開後設定 evidence；Codex 仍依 case scope 判斷。"
+          ]
+        })
+      ];
+    }
   }
 
   const formulaHelperFlow = hasFormulaParams(helperParams) || hasFormulaParams(params);

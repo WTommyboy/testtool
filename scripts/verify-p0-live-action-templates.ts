@@ -81,7 +81,9 @@ const requiredObservationTypes = new Set([
   "fieldPicker",
   "dateTimeTypeTab",
   "datePanelCancel",
-  "downloadToast"
+  "downloadToast",
+  "saveModalCancel",
+  "copyModalCancel"
 ]);
 
 const previewTemplates = new Set(["collage.runPreviewAndCollectEvidence", "collage.runDateVariantsPreviewEvidence"]);

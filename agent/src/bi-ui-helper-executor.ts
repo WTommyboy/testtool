@@ -336,6 +336,8 @@ const createProjectEvidencePath = (options: CliOptions): string => path.join(art
 const createdProjectStatePath = (options: CliOptions): string => path.join(artifactRoot(options), "created-project.json");
 const metricRowsEvidencePath = (options: CliOptions): string => path.join(artifactRoot(options), "metric-rows-evidence.json");
 const frontendObservationEvidencePath = (options: CliOptions): string => path.join(artifactRoot(options), "frontend-observation-evidence.json");
+const copyReportEvidencePath = (options: CliOptions): string => path.join(artifactRoot(options), "copy-report-evidence.json");
+const updateReopenEvidencePath = (options: CliOptions): string => path.join(artifactRoot(options), "update-reopen-evidence.json");
 const dateUiEvidencePath = (options: CliOptions, suffix: string | null = null): string =>
   path.join(artifactRoot(options), suffix ? `date-ui-evidence-${sanitize(suffix)}.json` : "date-ui-evidence.json");
 
@@ -7842,6 +7844,174 @@ const selectSaveReportProjectIfNeeded = async (page: Page, projectName: string):
   };
 };
 
+const readVisibleModalState = async (page: Page): Promise<Record<string, unknown>> => {
+  return page.evaluate(() => {
+    const normalize = (value: string | null | undefined) => (value ?? "").trim().replace(/\s+/g, " ");
+    const isVisible = (element: Element): boolean => {
+      const rect = element.getBoundingClientRect();
+      const style = window.getComputedStyle(element);
+      return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden" && style.opacity !== "0";
+    };
+    const rectFor = (element: Element) => {
+      const rect = element.getBoundingClientRect();
+      return {
+        x: Math.round(rect.x),
+        y: Math.round(rect.y),
+        width: Math.round(rect.width),
+        height: Math.round(rect.height)
+      };
+    };
+    const dialogs = Array.from(document.querySelectorAll<HTMLElement>("[role='dialog'], .modal, .ant-modal, .MuiDialog-root, .swal2-popup"))
+      .filter(isVisible)
+      .map((dialog, dialogIndex) => ({
+        dialogIndex,
+        text: normalize(dialog.innerText || dialog.textContent).slice(0, 2000),
+        rect: rectFor(dialog),
+        inputs: Array.from(dialog.querySelectorAll("input, textarea"))
+          .filter((input): input is HTMLInputElement | HTMLTextAreaElement => input instanceof HTMLInputElement || input instanceof HTMLTextAreaElement)
+          .filter(isVisible)
+          .map((input, inputIndex) => ({
+            inputIndex,
+            tagName: input.tagName.toLowerCase(),
+            type: input instanceof HTMLInputElement ? input.type : "textarea",
+            placeholder: input.getAttribute("placeholder"),
+            value: input.value,
+            disabled: input.disabled || input.getAttribute("aria-disabled") === "true"
+          })),
+        buttons: Array.from(dialog.querySelectorAll("button, [role='button']"))
+          .filter((button): button is HTMLElement => button instanceof HTMLElement && isVisible(button))
+          .map((button, buttonIndex) => ({
+            buttonIndex,
+            text: normalize(button.innerText || button.textContent),
+            ariaLabel: button.getAttribute("aria-label"),
+            disabled: button instanceof HTMLButtonElement ? button.disabled : button.getAttribute("aria-disabled") === "true"
+          }))
+      }));
+    return {
+      dialogCount: dialogs.length,
+      dialogs,
+      bodyTextExcerpt: normalize(document.body.innerText || "").slice(0, 2400)
+    };
+  });
+};
+
+const clickModalCancelButton = async (page: Page): Promise<boolean> => {
+  const clicked = await clickFirstVisible([
+    page.locator("[role='dialog'] button").filter({ hasText: /^\s*取消\s*$/ }),
+    page.locator(".modal button").filter({ hasText: /^\s*取消\s*$/ }),
+    page.locator(".ant-modal button").filter({ hasText: /^\s*取消\s*$/ }),
+    page.locator(".MuiDialog-root button").filter({ hasText: /^\s*取消\s*$/ }),
+    page.getByRole("button", { name: /^取消$/ }),
+    page.getByText("取消", { exact: true })
+  ], 8000);
+  if (clicked) {
+    await page.waitForTimeout(700);
+  }
+  return clicked;
+};
+
+const clickCopyReportButton = async (page: Page): Promise<boolean> => {
+  const clicked = await clickFirstVisible([
+    page.getByRole("button", { name: /複製副本/ }),
+    page.getByText("複製副本", { exact: true }),
+    page.locator("button, [role=button], a").filter({ hasText: /複製副本|复制副本|copy/i })
+  ], 10000);
+  if (clicked) await page.waitForTimeout(900);
+  return clicked;
+};
+
+const observeSaveModalCancelFlow = async (
+  options: CliOptions,
+  page: Page
+): Promise<Record<string, unknown>> => {
+  const reportName = firstStringParam(options.params, ["cancelReportName", "cancelReportNamePattern", "temporaryReportName"]) ?? resolveReportName(options);
+  const before = await readVisibleModalState(page);
+  const saveClicked = await clickFirstVisible([
+    page.getByText("儲存報表", { exact: false }),
+    page.getByRole("button", { name: /儲存報表|儲存/ }),
+    page.locator("button, [role=button]").filter({ hasText: /儲存報表|儲存/ })
+  ], 10000);
+  await page.waitForTimeout(700);
+  const modalOpened = await readVisibleModalState(page);
+  let nameInputEvidence: Record<string, unknown> | null = null;
+  let nameInputError: string | null = null;
+  if (saveClicked) {
+    try {
+      nameInputEvidence = await fillVisibleReportNameInput(page, reportName);
+    } catch (error) {
+      nameInputError = error instanceof Error ? error.message : String(error);
+    }
+  }
+  const afterFill = await readVisibleModalState(page);
+  const cancelClicked = await clickModalCancelButton(page);
+  const afterCancel = await readVisibleModalState(page);
+  let backToList: Record<string, unknown> | null = null;
+  let rowState: Record<string, unknown> | null = null;
+  try {
+    const backReport = await clickBackToProjectList(options, page, new Date().toISOString());
+    backToList = reportSummary(backReport);
+    rowState = await readReportListRowState(page, reportName);
+  } catch (error) {
+    backToList = { status: "error", error: error instanceof Error ? error.message : String(error) };
+  }
+  return {
+    reportName,
+    before,
+    saveClicked,
+    modalOpened,
+    nameInputEvidence,
+    nameInputError,
+    afterFill,
+    cancelClicked,
+    afterCancel,
+    modalClosed: Number(afterCancel.dialogCount ?? 0) === 0,
+    backToList,
+    rowState,
+    noReportCreated: rowState ? rowState.found === false : null
+  };
+};
+
+const observeCopyModalCancelFlow = async (
+  options: CliOptions,
+  page: Page
+): Promise<Record<string, unknown>> => {
+  const sourceReportName = readSavedReportName(options);
+  const before = await readVisibleModalState(page);
+  const copyClicked = await clickCopyReportButton(page);
+  const modalOpened = await readVisibleModalState(page);
+  const defaultInputs = Array.isArray(modalOpened.dialogs)
+    ? (modalOpened.dialogs as Array<Record<string, unknown>>).flatMap((dialog) => Array.isArray(dialog.inputs) ? dialog.inputs as Array<Record<string, unknown>> : [])
+    : [];
+  const defaultName = defaultInputs
+    .map((input) => typeof input.value === "string" ? input.value : "")
+    .find((value) => /副本|copy/i.test(value)) ?? null;
+  const cancelClicked = await clickModalCancelButton(page);
+  const afterCancel = await readVisibleModalState(page);
+  let rowState: Record<string, unknown> | null = null;
+  if (defaultName) {
+    try {
+      rowState = await readReportListRowState(page, defaultName);
+    } catch (error) {
+      rowState = { found: null, error: error instanceof Error ? error.message : String(error) };
+    }
+  }
+  return {
+    sourceReportName,
+    before,
+    copyClicked,
+    modalOpened,
+    defaultName,
+    defaultNameContainsCopySuffix: typeof defaultName === "string" ? /副本|copy/i.test(defaultName) : false,
+    modalTextContainsSaveProjectRule: /儲存專案|請選擇專案|專案/.test(String(modalOpened.bodyTextExcerpt ?? "")),
+    modalTextContainsHint: /副本|儲存|專案|提示|名稱/.test(String(modalOpened.bodyTextExcerpt ?? "")),
+    cancelClicked,
+    afterCancel,
+    modalClosed: Number(afterCancel.dialogCount ?? 0) === 0,
+    rowState,
+    noCopyCreated: rowState ? rowState.found === false : null
+  };
+};
+
 const clickModalSaveButton = async (page: Page): Promise<void> => {
   const clicked = await clickFirstVisible([
     page.getByRole("button", { name: /^(儲存|確認|確定|保存)$/ }),
@@ -8060,6 +8230,262 @@ const reportSummary = (report: HelperReport): Record<string, unknown> => ({
   artifacts: report.artifacts,
   evidence: report.evidence
 });
+
+const resolveCopyReportName = (options: CliOptions): string => {
+  const explicit = firstStringParam(options.params, ["copyReportName", "copyReportNamePattern", "newReportName", "newReportNamePattern"]);
+  if (explicit) return fitUiResourceName(explicit.replace("<timestamp>", timestampId()));
+  return fitUiResourceName(`${sanitize(options.caseId)}COPY${timestampId()}`);
+};
+
+const clickUpdateSettingButton = async (page: Page): Promise<boolean> => {
+  const clicked = await clickFirstVisible([
+    page.getByRole("button", { name: /更新設定|更新|儲存設定/ }),
+    page.getByText("更新設定", { exact: true }),
+    page.locator("button, [role=button]").filter({ hasText: /更新設定|更新|儲存設定/ })
+  ], 10000);
+  if (clicked) await page.waitForTimeout(1400);
+  return clicked;
+};
+
+const copyReportAndVerify = async (options: CliOptions, page: Page, startedAt: string): Promise<HelperReport> => {
+  if (!options.approvedToolRequestId) return approvalRequired(options, "copy current report and save a current-case temporary copy", startedAt);
+  const warnings: string[] = [];
+  const copyReportName = resolveCopyReportName(options);
+  const sourceReportName = readSavedReportName(options);
+  const uiProfileBefore = await captureUiDomProfile(options, page, "copyReport.before");
+  const dialogs: Record<string, unknown>[] = [];
+  let dialogChainRequiresApproval = false;
+  const dialogHandler = async (dialog: Dialog) => {
+    const sequence = dialogs.length + 1;
+    const record: Record<string, unknown> = {
+      sequence,
+      type: dialog.type(),
+      message: dialog.message(),
+      defaultValue: dialog.defaultValue()
+    };
+    const handling = decideSaveDialogHandling(record, sequence);
+    record.handledAction = handling.action;
+    record.handledReason = handling.reason;
+    dialogs.push(record);
+    if (handling.requiresRecovery) dialogChainRequiresApproval = true;
+    try {
+      if (handling.action === "accept") await dialog.accept();
+      else await dialog.dismiss();
+      record.handledAt = new Date().toISOString();
+    } catch (error) {
+      record.handledError = error instanceof Error ? error.message : String(error);
+      dialogChainRequiresApproval = true;
+    }
+  };
+  page.on("dialog", dialogHandler);
+  let observed: { result: Record<string, unknown>; requests: Record<string, unknown>[]; responses: Record<string, unknown>[] } | null = null;
+  try {
+    observed = await withTimeout(
+      observeDuring(page, async () => {
+        const copyClicked = await clickCopyReportButton(page);
+        const modalOpened = await readVisibleModalState(page);
+        let nameInputEvidence: Record<string, unknown> | null = null;
+        let nameInputError: string | null = null;
+        let projectSelectionEvidence: Record<string, unknown> | null = null;
+        let modalAfterFill: Record<string, unknown> | null = null;
+        let submitClicked = false;
+        if (copyClicked) {
+          try {
+            nameInputEvidence = await fillVisibleReportNameInput(page, copyReportName);
+            const targetProjectName = firstStringParam(options.params, ["saveProjectName", "projectName", "project"]) ?? "拼貼test_001";
+            projectSelectionEvidence = await selectSaveReportProjectIfNeeded(page, targetProjectName);
+            modalAfterFill = await readVisibleModalState(page);
+            await withTimeout(clickModalSaveButton(page), 20000, "COPY_REPORT_MODAL_SUBMIT_TIMEOUT");
+            submitClicked = true;
+          } catch (error) {
+            nameInputError = error instanceof Error ? error.message : String(error);
+          }
+        }
+        await page.waitForTimeout(1800);
+        return {
+          sourceReportName,
+          copyReportName,
+          copyClicked,
+          modalOpened,
+          nameInputEvidence,
+          nameInputError,
+          projectSelectionEvidence,
+          modalAfterFill,
+          submitClicked
+        };
+      }),
+      50000,
+      "COPY_REPORT_FLOW_TIMEOUT"
+    );
+  } finally {
+    page.off("dialog", dialogHandler);
+  }
+  if (!observed) throw new HelperBlockedError("COPY_REPORT_FLOW_DID_NOT_COMPLETE");
+  writeSavedReportState(options, copyReportName, { approvedToolRequestId: options.approvedToolRequestId, copiedFromReportName: sourceReportName, dialogs });
+  let readiness: BackToProjectListReadiness | null = null;
+  let rowState: ReportListRowState | null = null;
+  try {
+    readiness = await waitForBackToProjectListReadiness(options, page);
+    rowState = await readReportListRowState(page, copyReportName);
+  } catch (error) {
+    warnings.push(`COPY_REPORT_LIST_VERIFICATION_ERROR:${error instanceof Error ? error.message : String(error)}`);
+  }
+  const uiProfileAfter = await captureUiDomProfile(options, page, "copyReport.after");
+  const shot = await screenshot(options, page, "copy-report");
+  if (!shot) warnings.push("SCREENSHOT_UNAVAILABLE");
+  if (dialogChainRequiresApproval) warnings.push("COPY_REPORT_NATIVE_DIALOG_CHAIN_BLOCKED");
+  if (observed.result.copyClicked !== true) warnings.push("COPY_REPORT_BUTTON_NOT_CLICKED");
+  if (observed.result.submitClicked !== true) warnings.push("COPY_REPORT_SAVE_NOT_SUBMITTED");
+  if (rowState?.found !== true) warnings.push("COPY_REPORT_ROW_NOT_VERIFIED");
+  const evidence = {
+    workflowStatus: dialogChainRequiresApproval || observed.result.copyClicked !== true || observed.result.submitClicked !== true ? "blocked" : "completed",
+    approvedToolRequestId: options.approvedToolRequestId,
+    sourceReportName,
+    copyReportName,
+    uiProfiles: { before: uiProfileBefore, after: uiProfileAfter },
+    modalFlow: observed.result,
+    dialogs,
+    network: { requests: observed.requests, responses: observed.responses },
+    reportListEvidence: { readiness, rowState, copyReportVisible: rowState?.found === true }
+  };
+  ensureDir(artifactRoot(options));
+  fs.writeFileSync(copyReportEvidencePath(options), `${JSON.stringify(evidence, null, 2)}\n`);
+  return createReport(
+    options,
+    evidence.workflowStatus === "blocked" || dialogChainRequiresApproval ? "blocked" : "ok",
+    startedAt,
+    {
+      copyReportEvidence: evidence,
+      "copyModal.saveFlow.state": evidence,
+      "projectList.reportRow.state": rowState
+    },
+    { copyReportEvidence: copyReportEvidencePath(options), ...(shot ? { screenshot: shot } : {}) },
+    warnings
+  );
+};
+
+const updateExistingReportAndReopen = async (options: CliOptions, page: Page, startedAt: string): Promise<HelperReport> => {
+  if (!options.approvedToolRequestId) return approvalRequired(options, "update existing report settings and reopen it for current-case verification", startedAt);
+  const warnings: string[] = [];
+  const reportName = readSavedReportName(options);
+  if (!reportName) throw new HelperBlockedError("UPDATE_REOPEN_SOURCE_REPORT_NAME_MISSING");
+  const uiProfileBefore = await captureUiDomProfile(options, page, "updateReopen.before");
+  const stateBefore = await readStateDelta(page, options.params).catch((error) => ({ readError: error instanceof Error ? error.message : String(error) }));
+  const targetDateRange = firstStringParam(options.params, ["updateDateRange", "targetDateRange", "dateRangeAfterUpdate"]) ?? "昨日";
+  const dateResult = await setDateRange(options, page, targetDateRange).catch((error) => ({
+    ok: false,
+    warning: error instanceof Error ? error.message : String(error),
+    uiProfiles: []
+  }));
+  const stateAfterModify = await readStateDelta(page, { ...options.params, dateRange: targetDateRange }).catch((error) => ({ readError: error instanceof Error ? error.message : String(error) }));
+  const dialogs: Record<string, unknown>[] = [];
+  let dialogChainRequiresApproval = false;
+  const dialogHandler = async (dialog: Dialog) => {
+    const sequence = dialogs.length + 1;
+    const record: Record<string, unknown> = {
+      sequence,
+      type: dialog.type(),
+      message: dialog.message(),
+      defaultValue: dialog.defaultValue()
+    };
+    const handling = decideSaveDialogHandling(record, sequence);
+    record.handledAction = handling.action;
+    record.handledReason = handling.reason;
+    dialogs.push(record);
+    if (handling.requiresRecovery) dialogChainRequiresApproval = true;
+    try {
+      if (handling.action === "accept") await dialog.accept();
+      else await dialog.dismiss();
+      record.handledAt = new Date().toISOString();
+    } catch (error) {
+      record.handledError = error instanceof Error ? error.message : String(error);
+      dialogChainRequiresApproval = true;
+    }
+  };
+  page.on("dialog", dialogHandler);
+  let updateObserved: { result: Record<string, unknown>; requests: Record<string, unknown>[]; responses: Record<string, unknown>[] } | null = null;
+  try {
+    updateObserved = await observeDuring(page, async () => {
+      const clicked = await clickUpdateSettingButton(page);
+      const bodyText = await page.locator("body").innerText({ timeout: 5000 }).catch(() => "");
+      return {
+        clicked,
+        successTextObserved: /更新成功|儲存成功|保存成功|設定已更新|成功/.test(bodyText),
+        bodyTextExcerpt: bodyText.slice(0, 1800)
+      };
+    });
+  } finally {
+    page.off("dialog", dialogHandler);
+  }
+  const backReport = await clickBackToProjectList(options, page, startedAt).catch((error) => createReport(
+    options,
+    "blocked",
+    startedAt,
+    { error: error instanceof Error ? error.message : String(error) },
+    {},
+    ["UPDATE_REOPEN_BACK_TO_LIST_FAILED"]
+  ));
+  const reopenStep = backReport.status === "ok"
+    ? await reopenReport(options, page, startedAt).catch((error) => createReport(
+        options,
+        "blocked",
+        startedAt,
+        { error: error instanceof Error ? error.message : String(error) },
+        {},
+        ["UPDATE_REOPEN_REOPEN_FAILED"]
+      ))
+    : null;
+  const stateAfterReopen = await readStateDelta(page, { ...options.params, dateRange: targetDateRange }).catch((error) => ({ readError: error instanceof Error ? error.message : String(error) }));
+  const uiProfileAfter = await captureUiDomProfile(options, page, "updateReopen.after");
+  const shot = await screenshot(options, page, "update-reopen");
+  const stateAfterReopenRecord = stateAfterReopen && typeof stateAfterReopen === "object" && !Array.isArray(stateAfterReopen)
+    ? stateAfterReopen as Record<string, unknown>
+    : {};
+  const stateAfterReopenChecks = stateAfterReopenRecord.checks && typeof stateAfterReopenRecord.checks === "object" && !Array.isArray(stateAfterReopenRecord.checks)
+    ? stateAfterReopenRecord.checks as Record<string, unknown>
+    : {};
+  const persisted = stateAfterReopenChecks.dateRange === true || stateAfterReopenChecks.field === true;
+  if (!shot) warnings.push("SCREENSHOT_UNAVAILABLE");
+  if (dateResult.ok !== true) warnings.push(`UPDATE_REOPEN_DATE_MODIFY_NOT_VERIFIED:${dateResult.warning ?? "unknown"}`);
+  if (updateObserved?.result.clicked !== true) warnings.push("UPDATE_SETTING_BUTTON_NOT_CLICKED");
+  if (dialogChainRequiresApproval) warnings.push("UPDATE_REOPEN_NATIVE_DIALOG_CHAIN_BLOCKED");
+  if (persisted !== true) warnings.push("UPDATE_REOPEN_PERSISTENCE_ASSERTION_FALSE_REQUIRES_CODEX_JUDGMENT");
+  const evidence = {
+    workflowStatus: dateResult.ok === true && updateObserved?.result.clicked === true && !dialogChainRequiresApproval ? "completed" : "blocked",
+    approvedToolRequestId: options.approvedToolRequestId,
+    reportName,
+    targetDateRange,
+    uiProfiles: { before: uiProfileBefore, after: uiProfileAfter, dateRange: "uiProfiles" in dateResult ? dateResult.uiProfiles : [] },
+    stateDelta: {
+      before: stateBefore,
+      afterModify: stateAfterModify,
+      afterReopen: stateAfterReopen
+    },
+    dateRangeUpdate: dateResult,
+    updateAction: {
+      result: updateObserved?.result ?? null,
+      network: updateObserved ? { requests: updateObserved.requests, responses: updateObserved.responses } : null,
+      dialogs
+    },
+    backToList: reportSummary(backReport),
+    reopen: reopenStep ? reportSummary(reopenStep) : null,
+    persisted
+  };
+  ensureDir(artifactRoot(options));
+  fs.writeFileSync(updateReopenEvidencePath(options), `${JSON.stringify(evidence, null, 2)}\n`);
+  return createReport(
+    options,
+    evidence.workflowStatus === "blocked" ? "blocked" : "ok",
+    startedAt,
+    {
+      updateReopenEvidence: evidence,
+      "reportPersistence.reopenState": stateAfterReopen,
+      "editorToolbar.update.state": updateObserved?.result ?? null
+    },
+    { updateReopenEvidence: updateReopenEvidencePath(options), ...(shot ? { screenshot: shot } : {}) },
+    warnings
+  );
+};
 
 const isTemporaryDeleteReportName = (reportName: string): boolean =>
   /(?:temp|temporary|臨時|OTTEST004[_-]?G03|OTTEST004[_-]?G[_-]?03|G03[_-]?temp)/i.test(reportName) &&
@@ -8576,7 +9002,9 @@ type FrontendObservationType =
   | "fieldPicker"
   | "dateTimeTypeTab"
   | "datePanelCancel"
-  | "downloadToast";
+  | "downloadToast"
+  | "saveModalCancel"
+  | "copyModalCancel";
 
 const frontendObservationType = (options: CliOptions): FrontendObservationType | null => {
   const value = firstStringParam(options.params, ["observationType", "type"]);
@@ -8596,7 +9024,9 @@ const frontendObservationType = (options: CliOptions): FrontendObservationType |
     value === "dateTimeTypeTab" ||
     value === "datePanelCancel" ||
     value === "downloadToast" ||
-    value === "editorDownload"
+    value === "editorDownload" ||
+    value === "saveModalCancel" ||
+    value === "copyModalCancel"
   ) {
     if (value === "sidebarCompanySharedGroup") return "sidebarGroup";
     if (value === "rowActionTooltip") return "rowDeleteTooltip";
@@ -9077,6 +9507,35 @@ const observeFrontendVisibleUiActions = async (
     return { actions };
   }
 
+  if (observationType === "saveModalCancel") {
+    const flow = await observeSaveModalCancelFlow(options, page);
+    actions.push(
+      { action: "open", target: "editorToolbar.saveButton", clicked: flow.saveClicked === true },
+      { action: "type", target: "saveModal.reportNameInput", typed: Boolean(flow.nameInputEvidence), error: flow.nameInputError ?? null },
+      { action: "cancel", target: "saveModal.cancelButton", clicked: flow.cancelClicked === true },
+      { action: "assertHidden", target: "projectList.reportRow", asserted: flow.noReportCreated === true }
+    );
+    if (flow.saveClicked !== true) warnings.push("SAVE_MODAL_TRIGGER_NOT_CLICKABLE");
+    if (!flow.nameInputEvidence) warnings.push("SAVE_MODAL_NAME_INPUT_NOT_VERIFIED");
+    if (flow.cancelClicked !== true) warnings.push("SAVE_MODAL_CANCEL_NOT_CLICKABLE");
+    if (flow.noReportCreated !== true) warnings.push("SAVE_MODAL_CANCEL_NO_CREATE_NOT_VERIFIED");
+    return { actions, saveModalCancelFlow: flow };
+  }
+
+  if (observationType === "copyModalCancel") {
+    const flow = await observeCopyModalCancelFlow(options, page);
+    actions.push(
+      { action: "open", target: "editorToolbar.copyButton", clicked: flow.copyClicked === true },
+      { action: "read", target: "copyModal.reportNameInput", defaultName: flow.defaultName ?? null },
+      { action: "cancel", target: "copyModal.cancelButton", clicked: flow.cancelClicked === true },
+      { action: "assertHidden", target: "projectList.reportRow", asserted: flow.noCopyCreated ?? null }
+    );
+    if (flow.copyClicked !== true) warnings.push("COPY_MODAL_TRIGGER_NOT_CLICKABLE");
+    if (flow.defaultNameContainsCopySuffix !== true) warnings.push("COPY_MODAL_DEFAULT_NAME_NOT_VERIFIED");
+    if (flow.cancelClicked !== true) warnings.push("COPY_MODAL_CANCEL_NOT_CLICKABLE");
+    return { actions, copyModalCancelFlow: flow };
+  }
+
   return { actions };
 };
 
@@ -9437,6 +9896,60 @@ const readFrontendObservationState = async (
       };
     }
 
+    if (type === "saveModalCancel") {
+      const actionList = Array.isArray(actionData?.actions) ? actionData.actions as Array<Record<string, unknown>> : [];
+      const flow = actionData?.saveModalCancelFlow && typeof actionData.saveModalCancelFlow === "object" && !Array.isArray(actionData.saveModalCancelFlow)
+        ? actionData.saveModalCancelFlow as Record<string, unknown>
+        : {};
+      const modalOpened = flow.modalOpened && typeof flow.modalOpened === "object" && !Array.isArray(flow.modalOpened)
+        ? flow.modalOpened as Record<string, unknown>
+        : null;
+      const afterCancel = flow.afterCancel && typeof flow.afterCancel === "object" && !Array.isArray(flow.afterCancel)
+        ? flow.afterCancel as Record<string, unknown>
+        : null;
+      return {
+        evidenceObject: "saveModal.cancelFlow.state",
+        reportName: typeof flow.reportName === "string" ? flow.reportName : null,
+        modalOpenedByVisibleUi: flow.saveClicked === true && Number(modalOpened?.dialogCount ?? 0) > 0,
+        nameInputVerified: Boolean(flow.nameInputEvidence),
+        cancelClicked: flow.cancelClicked === true,
+        modalClosed: flow.modalClosed === true || Number(afterCancel?.dialogCount ?? 1) === 0,
+        backToList: flow.backToList ?? null,
+        rowStateAfterCancel: flow.rowState ?? null,
+        noReportCreated: flow.noReportCreated === true,
+        interactionLog: actionList,
+        asserted: flow.saveClicked === true && Boolean(flow.nameInputEvidence) && flow.cancelClicked === true && flow.modalClosed === true && flow.noReportCreated === true
+      };
+    }
+
+    if (type === "copyModalCancel") {
+      const actionList = Array.isArray(actionData?.actions) ? actionData.actions as Array<Record<string, unknown>> : [];
+      const flow = actionData?.copyModalCancelFlow && typeof actionData.copyModalCancelFlow === "object" && !Array.isArray(actionData.copyModalCancelFlow)
+        ? actionData.copyModalCancelFlow as Record<string, unknown>
+        : {};
+      const modalOpened = flow.modalOpened && typeof flow.modalOpened === "object" && !Array.isArray(flow.modalOpened)
+        ? flow.modalOpened as Record<string, unknown>
+        : null;
+      const afterCancel = flow.afterCancel && typeof flow.afterCancel === "object" && !Array.isArray(flow.afterCancel)
+        ? flow.afterCancel as Record<string, unknown>
+        : null;
+      return {
+        evidenceObject: "copyModal.cancelFlow.state",
+        sourceReportName: typeof flow.sourceReportName === "string" ? flow.sourceReportName : null,
+        modalOpenedByVisibleUi: flow.copyClicked === true && Number(modalOpened?.dialogCount ?? 0) > 0,
+        defaultName: typeof flow.defaultName === "string" ? flow.defaultName : null,
+        defaultNameContainsCopySuffix: flow.defaultNameContainsCopySuffix === true,
+        projectRuleTextObserved: flow.modalTextContainsSaveProjectRule === true,
+        hintTextObserved: flow.modalTextContainsHint === true,
+        cancelClicked: flow.cancelClicked === true,
+        modalClosed: flow.modalClosed === true || Number(afterCancel?.dialogCount ?? 1) === 0,
+        rowStateAfterCancel: flow.rowState ?? null,
+        noCopyCreated: flow.noCopyCreated ?? null,
+        interactionLog: actionList,
+        asserted: flow.copyClicked === true && flow.defaultNameContainsCopySuffix === true && flow.cancelClicked === true && flow.modalClosed === true
+      };
+    }
+
     if (type === "datePanel") {
       const requiredTexts = [
         "昨日",
@@ -9570,7 +10083,9 @@ const waitForFrontendObservationReadiness = async (
     fieldPicker: /欄位|來源報表|每日報表|報表設定/i,
     dateTimeTypeTab: /時間|動態|靜態|報表設定/i,
     datePanelCancel: /時間|取消|報表設定/i,
-    downloadToast: /下載|計算|執行|報表設定/i
+    downloadToast: /下載|計算|執行|報表設定/i,
+    saveModalCancel: /儲存報表|報表設定/i,
+    copyModalCancel: /複製副本|更新設定|報表設定/i
   };
   const marker = markerByType[observationType];
   try {
@@ -9740,6 +10255,12 @@ const run = async (): Promise<void> => {
         break;
       case "collage.reopenReport":
         report = await reopenReport(options, page, startedAt);
+        break;
+      case "collage.copyReportAndVerify":
+        report = await copyReportAndVerify(options, page, startedAt);
+        break;
+      case "collage.updateExistingReportAndReopen":
+        report = await updateExistingReportAndReopen(options, page, startedAt);
         break;
       case "collage.clickBackToProjectList":
         report = await clickBackToProjectList(options, page, startedAt);

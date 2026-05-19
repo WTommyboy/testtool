@@ -99,6 +99,45 @@
       ]
     },
     {
+      "caseNo": "BIUI_COLLAGE_R001-M-06",
+      "objectIds": [
+        "editorToolbar.saveButton",
+        "saveModal.reportNameInput",
+        "saveModal.cancelButton",
+        "projectList.reportRow"
+      ]
+    },
+    {
+      "caseNo": "BIUI_COLLAGE_R001-M-09",
+      "objectIds": [
+        "editorToolbar.copyButton",
+        "copyModal.reportNameInput",
+        "copyModal.projectSelect",
+        "copyModal.hintText",
+        "copyModal.cancelButton"
+      ]
+    },
+    {
+      "caseNo": "BIUI_COLLAGE_R001-M-10",
+      "objectIds": [
+        "editorToolbar.copyButton",
+        "copyModal.reportNameInput",
+        "copyModal.projectSelect",
+        "copyModal.saveButton",
+        "projectList.reportRow"
+      ]
+    },
+    {
+      "caseNo": "BIUI_COLLAGE_R001-M-11",
+      "objectIds": [
+        "dateRange.button",
+        "dateRange.preset.yesterday",
+        "editorToolbar.updateButton",
+        "projectList.reportRow",
+        "reportPersistence.reopenState"
+      ]
+    },
+    {
       "caseNo": "BIUI_COLLAGE_R001-N-03",
       "objectIds": [
         "metricRows.sourceReportControl",

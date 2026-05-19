@@ -236,6 +236,88 @@
       ],
       "purpose": "Frontend observation evidence for download-started toast."
     },
+    "saveModal.cancelFlow.state": {
+      "type": "object",
+      "requiredFields": [
+        "modalOpenedByVisibleUi",
+        "nameInputVerified",
+        "cancelClicked",
+        "modalClosed",
+        "noReportCreated",
+        "asserted"
+      ],
+      "purpose": "Frontend observation evidence for opening save modal, typing a temporary name, cancelling, and verifying no report row is created."
+    },
+    "saveModal.saveFlow.state": {
+      "type": "object",
+      "requiredFields": [
+        "workflowStatus",
+        "reportName",
+        "reportListEvidence"
+      ],
+      "purpose": "Current-run evidence for saving or overwriting a report and verifying list/read-back state."
+    },
+    "copyModal.cancelFlow.state": {
+      "type": "object",
+      "requiredFields": [
+        "modalOpenedByVisibleUi",
+        "defaultNameContainsCopySuffix",
+        "cancelClicked",
+        "modalClosed",
+        "asserted"
+      ],
+      "purpose": "Frontend observation evidence for copy modal default values and cancel behavior."
+    },
+    "copyModal.saveFlow.state": {
+      "type": "object",
+      "requiredFields": [
+        "workflowStatus",
+        "copyReportName",
+        "modalFlow",
+        "reportListEvidence"
+      ],
+      "purpose": "Current-run evidence for copying an existing report, saving it under a new name, and verifying the new row."
+    },
+    "projectList.reportRow.state": {
+      "type": "object",
+      "requiredFields": [
+        "reportName",
+        "found",
+        "url"
+      ],
+      "purpose": "Report-list row visibility evidence after save/copy/cancel flows."
+    },
+    "reportListEvidence": {
+      "type": "object",
+      "requiredFields": [
+        "reportName",
+        "found"
+      ],
+      "purpose": "Helper-level report list readiness and row visibility evidence."
+    },
+    "editorToolbar.update.state": {
+      "type": "object",
+      "requiredFields": [
+        "clicked"
+      ],
+      "purpose": "Current-run evidence for clicking the existing-report update-settings button."
+    },
+    "reportPersistence.reopenState": {
+      "type": "object",
+      "requiredFields": [
+        "observed",
+        "checks"
+      ],
+      "purpose": "Read-back state after updating an existing report and reopening it from the project list."
+    },
+    "reopen-report-evidence": {
+      "type": "object",
+      "requiredFields": [
+        "reportName",
+        "stateDelta"
+      ],
+      "purpose": "Artifact-level evidence emitted when reopening a saved report from the project list."
+    },
     "preview.result": {
       "type": "object",
       "requiredFields": [

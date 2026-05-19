@@ -86,7 +86,7 @@ const assertVocabularyCoverage = (contracts: StructuredCaseScopeContract[]): voi
   const actionIds = new Set((platform.actions ?? []).map((item: JsonObject) => item.id));
   const expectedOutcomes = new Set(platform.expectedOutcomes ?? []);
   const objectIds = new Set((objects.objects ?? []).map((item: JsonObject) => item.id));
-  assert.equal(contracts.length, 17, "P0 runtime wiring should cover the 15 reduced-smoke cases plus P0.26 K-09/L-08 action-template slices");
+  assert.equal(contracts.length, 21, "P0 runtime wiring should cover the 15 reduced-smoke cases plus P0.26 K-09/L-08 and P0.27 M-06/M-09/M-10/M-11 action-template slices");
   for (const contract of contracts) {
     for (const action of contract.requiredActions) {
       assert.ok(actionIds.has(action.action), `${contract.caseNo} action ${action.action} is not in platform vocabulary`);
@@ -110,7 +110,9 @@ const supportedObservationTypes = new Set([
   "fieldPicker",
   "dateTimeTypeTab",
   "datePanelCancel",
-  "downloadToast"
+  "downloadToast",
+  "saveModalCancel",
+  "copyModalCancel"
 ]);
 
 const assertRuntimeRouting = (contracts: StructuredCaseScopeContract[]): void => {
@@ -147,6 +149,16 @@ const assertRuntimeRouting = (contracts: StructuredCaseScopeContract[]): void =>
       assert.ok(
         plan.actions.some((item) => item.template === "collage.downloadCsvAndComparePreview"),
         `${contract.caseNo} download scope must include download helper`
+      );
+    }
+    if (contract.routeIntent === "report_mutation_flow") {
+      assert.ok(
+        plan.actions.some((item) =>
+          item.template === "collage.observeFrontendState" ||
+          item.template === "collage.copyReportAndVerify" ||
+          item.template === "collage.updateExistingReportAndReopen"
+        ),
+        `${contract.caseNo} report mutation scope must include a report mutation helper`
       );
     }
     for (const target of new Set(contract.requiredActions.map((item) => item.target))) {

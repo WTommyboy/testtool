@@ -6,7 +6,12 @@ import {
   type StructuredCaseScopeContract
 } from "./structured-case-scope";
 
-export type CaseScopeIntent = "frontend_observation" | "preview_execution" | "download_execution" | "unknown";
+export type CaseScopeIntent =
+  | "frontend_observation"
+  | "preview_execution"
+  | "download_execution"
+  | "report_mutation_flow"
+  | "unknown";
 
 export type InferredCaseScope = {
   testIntent: CaseScopeIntent;
@@ -59,7 +64,10 @@ export const inferCaseScope = (
     return {
       testIntent: structured.routeIntent,
       previewRequired: structured.routeIntent === "preview_execution" || structured.routeIntent === "download_execution",
-      executionRequired: structured.routeIntent === "preview_execution" || structured.routeIntent === "download_execution",
+      executionRequired:
+        structured.routeIntent === "preview_execution" ||
+        structured.routeIntent === "download_execution" ||
+        structured.routeIntent === "report_mutation_flow",
       requiredEvidence: structuredEvidenceList(structured),
       missingActionTemplate: null,
       caseScopeContract: structured

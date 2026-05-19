@@ -331,7 +331,9 @@ const helperSupportsStructuredObservationType = (value: string | null | undefine
   value === "dateTimeTypeTab" ||
   value === "datePanelCancel" ||
   value === "downloadToast" ||
-  value === "editorDownload";
+  value === "editorDownload" ||
+  value === "saveModalCancel" ||
+  value === "copyModalCancel";
 
 const isDeleteReportFlow = (currentCase: CaseManifestCase | null, helperHints: HelperHints | null): boolean => {
   const operationTemplate = helperHints?.operationTemplate ?? "";
@@ -377,6 +379,7 @@ export const evaluateCapabilityGate = (
   const frontendObservationPrelude = isFrontendObservationPreludeCase(currentCase, helperHints);
   const caseScope = inferCaseScope(currentCase, helperHints);
   const helperContractBlocker = missingActionTemplateBlocker(caseScope);
+  const reportMutationFlow = caseScope.caseScopeContract?.routeIntent === "report_mutation_flow";
   const frontendObservationTemplate = inferFrontendObservationTemplate(currentCase);
   const scopeFrontendObservationPrelude =
     caseScope.testIntent === "frontend_observation" &&
@@ -462,6 +465,22 @@ export const evaluateCapabilityGate = (
       ...(scopeFrontendObservationPrelude.needsEditor ? ["collage.createReport"] : []),
       ...(effectiveFrontendObservationTemplate ? [effectiveFrontendObservationTemplate] : [])
     );
+  } else if (reportMutationFlow && !helperContractBlocker) {
+    supportedHelperTemplates.push("collage.openProject");
+    if (/M-06$/i.test(caseScope.caseScopeContract?.caseNo ?? "")) {
+      supportedHelperTemplates.push("collage.createReport", "collage.observeFrontendState");
+    } else {
+      supportedHelperTemplates.push("collage.openReportFromProjectList");
+      if (/M-09$/i.test(caseScope.caseScopeContract?.caseNo ?? "")) {
+        supportedHelperTemplates.push("collage.observeFrontendState");
+      }
+      if (/M-10$/i.test(caseScope.caseScopeContract?.caseNo ?? "")) {
+        supportedHelperTemplates.push("collage.copyReportAndVerify");
+      }
+      if (/M-11$/i.test(caseScope.caseScopeContract?.caseNo ?? "")) {
+        supportedHelperTemplates.push("collage.updateExistingReportAndReopen");
+      }
+    }
   } else if (mode === "collage" && !hasFilter && !hasGroup) {
     supportedHelperTemplates.push(
       "collage.openProject",
@@ -512,6 +531,10 @@ export const evaluateCapabilityGate = (
   } else if (scopeFrontendObservationPrelude.matched) {
     supportStatus = "degraded";
     executionMode = "codex_visible_ui";
+    helperPreRunAllowed = true;
+  } else if (reportMutationFlow && supportedHelperTemplates.length > 0) {
+    supportStatus = "supported";
+    executionMode = "helper_assisted";
     helperPreRunAllowed = true;
   } else if (formulaHelperAllowed || createProjectAllowed || simpleProjectFlowAllowed) {
     supportStatus = "supported";

@@ -214,6 +214,14 @@
       ]
     },
     {
+      "id": "editorToolbar.saveButton",
+      "page": "collageEditor",
+      "type": "button",
+      "purpose": "Editor action that opens the save report modal.",
+      "candidateSignals": ["visible text 儲存報表", "save action in editor toolbar"],
+      "assertAfterAction": ["save modal opens, or disabled state is recorded"]
+    },
+    {
       "id": "save.modal",
       "page": "collageEditor",
       "type": "modalOrNativeDialog",
@@ -230,6 +238,48 @@
       "assertAfterAction": [
         "report list row visible after save or explicit save failure evidence"
       ]
+    },
+    {
+      "id": "editorToolbar.copyButton",
+      "page": "collageEditor",
+      "type": "button",
+      "purpose": "Existing-report editor action that opens the copy report modal.",
+      "candidateSignals": ["visible text 複製副本", "copy action in existing-report editor toolbar"],
+      "assertAfterAction": ["copy modal opens with default copy name and project selector"]
+    },
+    {
+      "id": "copy.modal",
+      "page": "collageEditor",
+      "type": "modalOrNativeDialog",
+      "purpose": "Copy-report modal for reading default copy values or saving a copied report.",
+      "candidateSignals": ["copy dialog visible", "report name input contains 副本", "project selector visible"],
+      "preconditions": ["existing report editor is open"],
+      "assertAfterAction": ["cancel closes modal without row creation, or save creates a new report row"]
+    },
+    {
+      "id": "editorToolbar.updateButton",
+      "page": "collageEditor",
+      "type": "button",
+      "purpose": "Existing-report editor action that updates saved report settings.",
+      "candidateSignals": ["visible text 更新設定", "update action in existing-report editor toolbar"],
+      "preconditions": ["existing report editor is open", "Tool Bridge response for modifying existing report"],
+      "assertAfterAction": ["update success signal or reopened state proves persistence"]
+    },
+    {
+      "id": "projectList.reportRow",
+      "page": "collageProjectList",
+      "type": "row",
+      "purpose": "Report row in the selected collage project list.",
+      "candidateSignals": ["row text contains report name", "row operation controls contain 下載/刪除"],
+      "assertAfterAction": ["row visibility matches created/cancelled/deleted expectation"]
+    },
+    {
+      "id": "reportPersistence.reopenState",
+      "page": "collageEditor",
+      "type": "stateEvidence",
+      "purpose": "Read-back state after reopening a saved report.",
+      "candidateSignals": ["stateDelta dateRangeText", "selected fields", "display mode"],
+      "assertAfterAction": ["reopened editor state matches the saved update target"]
     },
     {
       "id": "projectToolbar.downloadButton",

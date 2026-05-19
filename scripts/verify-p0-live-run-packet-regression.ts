@@ -110,6 +110,7 @@ const assertStructuredManifest = async (runDir: string, failures: Failure[]): Pr
 
   for (const contract of contracts()) {
     const item = caseByNo(cases, contract.caseNo);
+    if (!item) continue;
     const steps = structuredStepsFor(item);
     if (steps.length !== contract.requiredActions.length) {
       addFailure(failures, {

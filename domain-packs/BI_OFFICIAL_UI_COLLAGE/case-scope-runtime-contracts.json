@@ -660,6 +660,256 @@
       }
     },
     {
+      "caseNo": "BIUI_COLLAGE_R001-M-06",
+      "routeIntent": "report_mutation_flow",
+      "testTarget": "functional_flow",
+      "requiresEditor": true,
+      "observationType": "saveModalCancel",
+      "requiredActions": [
+        {
+          "actionId": "openSaveModal",
+          "action": "open",
+          "target": "editorToolbar.saveButton",
+          "role": "precondition",
+          "expectedOutcome": "visible",
+          "requiredForPass": true,
+          "evidenceRequirements": ["saveModal.cancelFlow.state", "interactionLog", "screenshot"]
+        },
+        {
+          "actionId": "typeTemporaryReportName",
+          "action": "type",
+          "target": "saveModal.reportNameInput",
+          "role": "under_test",
+          "expectedOutcome": "value_matches",
+          "requiredForPass": true,
+          "evidenceRequirements": ["saveModal.cancelFlow.state", "interactionLog"]
+        },
+        {
+          "actionId": "cancelSaveModal",
+          "action": "cancel",
+          "target": "saveModal.cancelButton",
+          "role": "under_test",
+          "expectedOutcome": "hidden",
+          "requiredForPass": true,
+          "evidenceRequirements": ["saveModal.cancelFlow.state", "interactionLog", "screenshot"]
+        },
+        {
+          "actionId": "assertCancelledReportNotCreated",
+          "action": "assertHidden",
+          "target": "projectList.reportRow",
+          "role": "verification",
+          "expectedOutcome": "hidden",
+          "requiredForPass": true,
+          "evidenceRequirements": ["projectList.reportRow.state", "saveModal.cancelFlow.state"]
+        }
+      ],
+      "evidenceRequirements": {
+        "flow": ["interactionLog", "saveModal.cancelFlow.state"],
+        "observation": ["projectList.reportRow.state", "screenshot"]
+      },
+      "judgmentPolicy": {
+        "failWhen": ["save modal is reachable but cancel does not close it or creates a report row"],
+        "blockedWhen": ["editor cannot be reached or save modal cannot be opened"]
+      }
+    },
+    {
+      "caseNo": "BIUI_COLLAGE_R001-M-09",
+      "routeIntent": "report_mutation_flow",
+      "testTarget": "frontend_presentation",
+      "requiresEditor": true,
+      "observationType": "copyModalCancel",
+      "requiredActions": [
+        {
+          "actionId": "openExistingReportBeforeCopy",
+          "action": "open",
+          "target": "projectList.reportRow",
+          "role": "precondition",
+          "expectedOutcome": "visible",
+          "requiredForPass": true,
+          "evidenceRequirements": ["projectList.reportRow.state", "screenshot"]
+        },
+        {
+          "actionId": "openCopyModal",
+          "action": "open",
+          "target": "editorToolbar.copyButton",
+          "role": "under_test",
+          "expectedOutcome": "visible",
+          "requiredForPass": true,
+          "evidenceRequirements": ["copyModal.cancelFlow.state", "interactionLog", "screenshot"]
+        },
+        {
+          "actionId": "assertCopyDefaultName",
+          "action": "assertValue",
+          "target": "copyModal.reportNameInput",
+          "role": "verification",
+          "expectedOutcome": "value_matches",
+          "requiredForPass": true,
+          "evidenceRequirements": ["copyModal.cancelFlow.state"]
+        },
+        {
+          "actionId": "assertCopyProjectRule",
+          "action": "assertText",
+          "target": "copyModal.projectSelect",
+          "role": "verification",
+          "expectedOutcome": "text_matches",
+          "requiredForPass": true,
+          "evidenceRequirements": ["copyModal.cancelFlow.state"]
+        },
+        {
+          "actionId": "assertCopyHintText",
+          "action": "assertText",
+          "target": "copyModal.hintText",
+          "role": "verification",
+          "expectedOutcome": "text_matches",
+          "requiredForPass": true,
+          "evidenceRequirements": ["copyModal.cancelFlow.state"]
+        },
+        {
+          "actionId": "cancelCopyModal",
+          "action": "cancel",
+          "target": "copyModal.cancelButton",
+          "role": "under_test",
+          "expectedOutcome": "hidden",
+          "requiredForPass": true,
+          "evidenceRequirements": ["copyModal.cancelFlow.state", "interactionLog", "screenshot"]
+        }
+      ],
+      "evidenceRequirements": {
+        "flow": ["interactionLog", "copyModal.cancelFlow.state"],
+        "observation": ["screenshot"]
+      },
+      "judgmentPolicy": {
+        "failWhen": ["copy modal is reachable but default values, hint/project rule, or cancel behavior do not match authored scope"],
+        "blockedWhen": ["existing report editor or copy modal cannot be reached"]
+      }
+    },
+    {
+      "caseNo": "BIUI_COLLAGE_R001-M-10",
+      "routeIntent": "report_mutation_flow",
+      "testTarget": "functional_flow",
+      "requiresEditor": true,
+      "observationType": null,
+      "requiredActions": [
+        {
+          "actionId": "openExistingReportBeforeCopySave",
+          "action": "open",
+          "target": "projectList.reportRow",
+          "role": "precondition",
+          "expectedOutcome": "visible",
+          "requiredForPass": true,
+          "evidenceRequirements": ["projectList.reportRow.state", "screenshot"]
+        },
+        {
+          "actionId": "openCopyModalForSave",
+          "action": "open",
+          "target": "editorToolbar.copyButton",
+          "role": "under_test",
+          "expectedOutcome": "visible",
+          "requiredForPass": true,
+          "evidenceRequirements": ["copyModal.saveFlow.state", "interactionLog", "screenshot"]
+        },
+        {
+          "actionId": "typeCopyReportName",
+          "action": "type",
+          "target": "copyModal.reportNameInput",
+          "role": "under_test",
+          "expectedOutcome": "value_matches",
+          "requiredForPass": true,
+          "evidenceRequirements": ["copyModal.saveFlow.state", "interactionLog"]
+        },
+        {
+          "actionId": "saveCopyReport",
+          "action": "confirm",
+          "target": "copyModal.saveButton",
+          "role": "under_test",
+          "expectedOutcome": "succeeded",
+          "requiredForPass": true,
+          "evidenceRequirements": ["toolBridge.response", "copyModal.saveFlow.state", "interactionLog"]
+        },
+        {
+          "actionId": "assertCopiedReportRowVisible",
+          "action": "assertVisible",
+          "target": "projectList.reportRow",
+          "role": "verification",
+          "expectedOutcome": "visible",
+          "requiredForPass": true,
+          "evidenceRequirements": ["projectList.reportRow.state", "copyModal.saveFlow.state"]
+        }
+      ],
+      "evidenceRequirements": {
+        "flow": ["interactionLog", "copyModal.saveFlow.state"],
+        "observation": ["projectList.reportRow.state", "screenshot"],
+        "artifact": ["toolBridge.response"]
+      },
+      "judgmentPolicy": {
+        "failWhen": ["copy save action completes but the new copied report row is not visible in the project list"],
+        "blockedWhen": ["existing report editor, copy modal, or Tool Bridge authorization cannot be reached"]
+      }
+    },
+    {
+      "caseNo": "BIUI_COLLAGE_R001-M-11",
+      "routeIntent": "report_mutation_flow",
+      "testTarget": "functional_flow",
+      "requiresEditor": true,
+      "observationType": null,
+      "requiredActions": [
+        {
+          "actionId": "openExistingReportBeforeUpdate",
+          "action": "open",
+          "target": "projectList.reportRow",
+          "role": "precondition",
+          "expectedOutcome": "visible",
+          "requiredForPass": true,
+          "evidenceRequirements": ["projectList.reportRow.state", "screenshot"]
+        },
+        {
+          "actionId": "modifyDateRangeForUpdate",
+          "action": "select",
+          "target": "dateRange.preset.yesterday",
+          "role": "under_test",
+          "expectedOutcome": "state_changed",
+          "requiredForPass": true,
+          "evidenceRequirements": ["dateRange.panel.state", "interactionLog", "screenshot"]
+        },
+        {
+          "actionId": "clickUpdateSettings",
+          "action": "confirm",
+          "target": "editorToolbar.updateButton",
+          "role": "under_test",
+          "expectedOutcome": "succeeded",
+          "requiredForPass": true,
+          "evidenceRequirements": ["toolBridge.response", "editorToolbar.update.state", "interactionLog"]
+        },
+        {
+          "actionId": "reopenUpdatedReport",
+          "action": "open",
+          "target": "projectList.reportRow",
+          "role": "verification",
+          "expectedOutcome": "visible",
+          "requiredForPass": true,
+          "evidenceRequirements": ["projectList.reportRow.state", "reportPersistence.reopenState"]
+        },
+        {
+          "actionId": "assertUpdatedSettingPersists",
+          "action": "assertValue",
+          "target": "reportPersistence.reopenState",
+          "role": "verification",
+          "expectedOutcome": "value_matches",
+          "requiredForPass": true,
+          "evidenceRequirements": ["reportPersistence.reopenState", "screenshot"]
+        }
+      ],
+      "evidenceRequirements": {
+        "flow": ["interactionLog", "editorToolbar.update.state"],
+        "observation": ["projectList.reportRow.state", "reportPersistence.reopenState", "screenshot"],
+        "artifact": ["toolBridge.response"]
+      },
+      "judgmentPolicy": {
+        "failWhen": ["update action completes but reopening the same report does not show the updated setting"],
+        "blockedWhen": ["existing report editor, update button, Tool Bridge authorization, or reopen path cannot be reached"]
+      }
+    },
+    {
       "caseNo": "BIUI_COLLAGE_R001-N-03",
       "routeIntent": "download_execution",
       "testTarget": "frontend_backend_integration",

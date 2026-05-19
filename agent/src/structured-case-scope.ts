@@ -3,7 +3,12 @@ import path from "node:path";
 import type { CaseManifestCase } from "./case-manifest";
 import type { HelperHints } from "./helper-hints";
 
-export type StructuredCaseScopeIntent = "frontend_observation" | "preview_execution" | "download_execution" | "unknown";
+export type StructuredCaseScopeIntent =
+  | "frontend_observation"
+  | "preview_execution"
+  | "download_execution"
+  | "report_mutation_flow"
+  | "unknown";
 export type StructuredCaseTestTarget =
   | "frontend_presentation"
   | "backend_function"

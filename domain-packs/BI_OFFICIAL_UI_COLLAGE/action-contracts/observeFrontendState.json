@@ -17,7 +17,9 @@
     "collage.observation.fieldPicker",
     "collage.observation.dateTimeTypeTab",
     "collage.observation.datePanelCancel",
-    "collage.observation.editorDownload"
+    "collage.observation.editorDownload",
+    "collage.observation.saveModalCancel",
+    "collage.observation.copyModalCancel"
   ],
   "paramsSchema": {
     "type": "object",
@@ -43,7 +45,9 @@
           "dateTimeTypeTab",
           "datePanelCancel",
           "downloadToast",
-          "editorDownload"
+          "editorDownload",
+          "saveModalCancel",
+          "copyModalCancel"
         ]
       },
       "expectedTextContains": {
@@ -285,6 +289,44 @@
       ],
       "successState": {
         "downloadStartedAndToastVisible": true
+      }
+    },
+    "saveModalCancel": {
+      "component": "save.modal",
+      "objectIds": [
+        "editorToolbar.saveButton",
+        "saveModal.reportNameInput",
+        "saveModal.cancelButton",
+        "projectList.reportRow"
+      ],
+      "requiredEvidence": [
+        "saveModal.cancelFlow.state"
+      ],
+      "successState": {
+        "modalOpenedByVisibleUi": true,
+        "nameInputVerified": true,
+        "cancelClicked": true,
+        "modalClosed": true,
+        "noReportCreated": true
+      }
+    },
+    "copyModalCancel": {
+      "component": "copy.modal",
+      "objectIds": [
+        "editorToolbar.copyButton",
+        "copyModal.reportNameInput",
+        "copyModal.projectSelect",
+        "copyModal.hintText",
+        "copyModal.cancelButton"
+      ],
+      "requiredEvidence": [
+        "copyModal.cancelFlow.state"
+      ],
+      "successState": {
+        "modalOpenedByVisibleUi": true,
+        "defaultNameContainsCopySuffix": true,
+        "cancelClicked": true,
+        "modalClosed": true
       }
     }
   },
