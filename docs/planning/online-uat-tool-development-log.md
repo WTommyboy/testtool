@@ -1694,6 +1694,15 @@ P0a v1 範圍釐清：containment 只處理唯一 self-check error 為 `RESULT_P
 - 診斷邊界：若重試後仍失敗但本機已存在 trusted `output/result.xlsx`，partial artifact path 會優先保留/重試該 trusted workbook，不再把狀態誤寫成「只有 agent fallback」。真正的 agent fallback 仍維持 local diagnostic only，不上傳為 UAT 結果。
 - 驗證：新增 `npm run verify:result-upload-retry`，並在 2026-05-19 P0.22 follow-up 補強為本機 HTTP server 第一次直接中斷 socket 產生 `fetch failed`、第二次回 503、第三次成功，確認 result upload 對 network/transport error 與 5xx 都會 retry 並成功。另已跑 `npm run typecheck`、`npm run build --prefix agent`。
 
+### 2026-05-19 - P0.23 108-case BLOCKED triage smoke
+
+- 背景：108-case run `ee0cae6b-f2c4-4cb0-a5aa-d79f5b611ca3` 已跑到 N-02 前，但最終報告仍有 48 個 BLOCKED。Tommy 要求後續修法必須先分辨哪些是工具 routing/evidence 問題、哪些是 testcase precondition、domain metadata/field picker、product gap 或需要人工 review，不能再把所有問題都當 helper bug。
+- 新增 verifier：`scripts/verify-p0-108-blocked-triage.ts`。
+- 新增 npm script：`npm run verify:p0-108-blocked-triage`。
+- Baseline：108 total / 48 BLOCKED。分類為：`result_gate_visual_fallback_contract_gap=11`、`save_reopen_row_download_flow_gap=10`、`missing_action_template_or_incomplete_helper_flow=7`、`manual_review_required=7`、`domain_metadata_or_field_picker_gap=5`、`wrong_observation_route_or_missing_case_contract=4`、`date_helper_or_product_gap=2`、`navigation_template_gap=1`、`testcase_precondition_not_met=1`。
+- 邊界：這是 triage/regression smoke，不改 runtime、不把 BLOCKED 改判、不把 Tommy oracle 推進 platform/domain pack。下一批 runtime 修正應先挑一個分類做 small smoke，再修改對應 platform/domain/testcase 層。
+- 驗證：已跑 `npm run verify:p0-108-blocked-triage`、`npm run typecheck`、`git diff --check`。
+
 ### 2026-05-19 - Platform/domain/testcase boundary rule documentation
 
 - 背景：Tommy 在 run `ee0cae6b-f2c4-4cb0-a5aa-d79f5b611ca3` 108 題執行中指出 BLOCKED 變多,並追問接下來修法是否又會變成這次 BI testcase 客製。回顧後確認：早期 P0 確有不少 Gen1/Gen2 compatibility bridge,後續才開始轉向 platform action vocabulary + BI domain UI object vocabulary。需要把「可通用的放平台,不可通用但可重用的放 domain pack,單輪/單題的放 testcase」寫成常駐規則,並更新 domain pack 生成流程。
