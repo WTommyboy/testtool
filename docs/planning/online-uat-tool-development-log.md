@@ -1692,7 +1692,7 @@ P0a v1 範圍釐清：containment 只處理唯一 self-check error 為 `RESULT_P
 - 背景：dev run `01e9c8e6-07b5-45ba-9309-48e3863091dd` 跑到 `BIUI_COLLAGE_R001-B-04` 時，Codex turn 已成功判定 PASS 並在本機寫出 trusted `output/result.xlsx`，但 Agent `upload_result` phase 於上傳結果 workbook 時收到 `fetch failed`，整輪因此 FAILED，B-05 之後維持 PENDING。這不是 B-12 類 Codex result-write failure，也不是 case 判定錯誤，而是 result upload transport isolation gap。
 - 修正：`uploadResultXlsx` 加入 transient retry，針對 `fetch failed`、socket/network 類錯誤，以及 `408/425/429/5xx` result upload response 自動重試 4 次（指數退避，上限 8 秒）。每次 retry 會送出 `run.stderr` 診斷，避免只看到最後一個 `fetch failed`。
 - 診斷邊界：若重試後仍失敗但本機已存在 trusted `output/result.xlsx`，partial artifact path 會優先保留/重試該 trusted workbook，不再把狀態誤寫成「只有 agent fallback」。真正的 agent fallback 仍維持 local diagnostic only，不上傳為 UAT 結果。
-- 驗證：新增 `npm run verify:result-upload-retry`，以本機 HTTP server 模擬前兩次 503、第三次成功，確認 result upload 會 retry 並成功。另已跑 `npm run typecheck`、`npm run build --prefix agent`。
+- 驗證：新增 `npm run verify:result-upload-retry`，並在 2026-05-19 P0.22 follow-up 補強為本機 HTTP server 第一次直接中斷 socket 產生 `fetch failed`、第二次回 503、第三次成功，確認 result upload 對 network/transport error 與 5xx 都會 retry 並成功。另已跑 `npm run typecheck`、`npm run build --prefix agent`。
 
 ### 2026-05-19 - Platform/domain/testcase boundary rule documentation
 

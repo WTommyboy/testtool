@@ -24,11 +24,15 @@ const main = async (): Promise<void> => {
   const receivedBodies: Buffer[] = [];
   const server = http.createServer((req, res) => {
     attempts += 1;
+    if (attempts === 1) {
+      req.socket.destroy(new Error("fixture socket terminated before upload response"));
+      return;
+    }
     const chunks: Buffer[] = [];
     req.on("data", (chunk) => chunks.push(Buffer.from(chunk)));
     req.on("end", () => {
       receivedBodies.push(Buffer.concat(chunks));
-      if (attempts < 3) {
+      if (attempts === 2) {
         res.writeHead(503, { "content-type": "application/json" });
         res.end(JSON.stringify({ error: "temporary upstream failure" }));
         return;
@@ -66,7 +70,8 @@ const main = async (): Promise<void> => {
     assert.deepEqual(response, { ok: true, attempts: 3 });
     assert.equal(attempts, 3);
     assert.equal(retryEvents.length, 2);
-    assert.match(retryEvents[0]?.error ?? "", /RESULT_UPLOAD_FAILED 503/);
+    assert.match(retryEvents[0]?.error ?? "", /fetch failed|socket|terminated/i);
+    assert.match(retryEvents[1]?.error ?? "", /RESULT_UPLOAD_FAILED 503/);
     assert.ok(receivedBodies.every((body) => body.includes(Buffer.from("codex_generated"))));
 
     console.log(JSON.stringify({
