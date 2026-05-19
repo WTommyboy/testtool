@@ -213,6 +213,19 @@
       "hazards": ["field picker can be stale after source report changes"]
     },
     {
+      "id": "fieldPicker.option.newAccounts",
+      "page": "collageEditor",
+      "component": "fieldPicker.option",
+      "objectType": "pickerOption",
+      "purpose": "The 新增帳號數 field option inside the row-scoped field picker after selecting 每日報表.",
+      "aliases": ["新增帳號數", "NEW_ACCOUNTS", "new accounts"],
+      "supportedActions": ["read", "select", "assertVisible", "assertText", "assertStateChanged"],
+      "stateAttributes": ["visibleText", "visible", "selected", "sourceReport"],
+      "evidenceObjects": ["fieldPicker.state", "fieldPicker.signature", "fieldControl.after"],
+      "locatorHints": ["option text 新增帳號數 inside the opened field picker after source report 每日報表"],
+      "hazards": ["option selection must be row-scoped; do not click a global text match outside the opened picker"]
+    },
+    {
       "id": "preview.calculateButton",
       "page": "collageEditor",
       "component": "preview.button",

@@ -273,6 +273,7 @@ type FrontendObservationType =
   | "rowDeleteTooltip"
   | "projectLimitToast"
   | "sourceReportPicker"
+  | "fieldPicker"
   | "dateTimeTypeTab"
   | "datePanelCancel"
   | "downloadToast"
@@ -293,6 +294,7 @@ const inferFrontendObservationType = (currentCase: CaseManifestCase | null): Fro
   if (/側欄|公司共享|sidebar/i.test(text)) return "sidebarGroup";
   if (/hover|tooltip|列內.*刪除|row.*delete/i.test(text)) return "rowDeleteTooltip";
   if (/5\s*個上限|最高\s*5\s*個專案|上限阻擋|project.*limit/i.test(text)) return "projectLimitToast";
+  if (/欄位\s*picker|field\s*picker|欄位選擇.*新增帳號數|選取.*新增帳號數/i.test(text)) return "fieldPicker";
   if (/報表\s*picker|來源報表|source\s*report|搜尋.*每日|每日報表/i.test(text)) return "sourceReportPicker";
   if (/下載\/刪除\s*icon|下載\s*icon|刪除\s*icon|toolbar|工具列|勾選.*下載|未勾選.*下載|disabled|enabled/i.test(text)) {
     return "projectToolbar";
@@ -324,6 +326,8 @@ const observationRequiredEvidence = (observationType: FrontendObservationType): 
       return ["projectLimit.toast.state", "interactionLog", "screenshot"];
     case "sourceReportPicker":
       return ["sourceReportPicker.state", "sourceControl.after", "interactionLog", "screenshot"];
+    case "fieldPicker":
+      return ["fieldPicker.state", "fieldPicker.signature", "fieldControl.after", "interactionLog", "screenshot"];
     case "dateTimeTypeTab":
       return ["dateRange.timeTypeTab.state", "interactionLog", "screenshot"];
     case "datePanelCancel":
@@ -357,6 +361,8 @@ const fallbackObservationType = (value: string | null): FrontendObservationType 
       return "projectLimitToast";
     case "sourceReportPicker":
       return "sourceReportPicker";
+    case "fieldPicker":
+      return "fieldPicker";
     case "dateTimeTypeTab":
       return "dateTimeTypeTab";
     case "datePanelCancel":

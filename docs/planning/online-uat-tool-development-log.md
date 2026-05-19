@@ -128,6 +128,15 @@ P0.25 save/reopen/row-download flow first slice:
 - Boundary: this does not yet implement the remaining specialized templates in the same P0.23 bucket (`K-09` field picker observation, `L-08` two-preset switching, `M-06` save-modal cancel, `M-09/M-10` copy modal/save, `M-11` update-and-reopen). Those should be handled as later P0 slices with their own smoke.
 - Regression checks: `npm run verify:p0-save-reopen-download-flow`, `npm run verify:capability-gate`, `npm run verify:open-project-retry`, `npm run verify:p0-live-action-templates`, `npm run verify:p0-108-blocked-triage`, `npm run typecheck`, and `npm run build --prefix agent`.
 
+P0.26 field picker / 30-day date preset action-template slice:
+
+- Trigger category: follow-up to the same P0.23 bucket, but limited to two incomplete frontend-observation helper flows from run `ee0cae6b-f2c4-4cb0-a5aa-d79f5b611ca3`: `K-09` only collected source-report picker evidence, and `L-08` only opened the date panel without clicking `過去 30 天` then `最近 30 天`.
+- Added verifier: `npm run verify:p0-field-picker-date-preset-templates`. The smoke locks `K-09 -> observationType=fieldPicker` with `metricRows.fieldControl` / `fieldPicker.option.newAccounts` evidence, and `L-08 -> observationType=datePanel` with both 30-day preset targets.
+- Domain contract update: `case-scope-runtime-contracts.json` now covers 17 cases: the original 15 reduced-smoke contracts plus `K-09` and `L-08`. `fieldPicker.option.newAccounts`, `fieldPicker.state`, and `dateRange.presetSwitch.state` were added to the BI official UI vocabulary/evidence data with visual alignment references.
+- Runtime fix: `collage.observeFrontendState(fieldPicker)` now uses the official row-scoped source + field picker flow, selecting `每日報表` and `新增帳號數` through visible UI and returning `fieldPicker.signature` + `fieldControl.after` evidence. `datePanel` observation now executes requested preset targets and records per-preset before/after date button text, accepting either explicit preset label text or concrete date-range state changes.
+- Boundary: this is still a helper-runtime compatibility slice, not a generic Gen4 interpreter. It removes the evidence gap for `K-09` and `L-08`; `M-06`, `M-09/M-10`, and `M-11` remain separate action-template slices.
+- Regression checks: `npm run verify:p0-field-picker-date-preset-templates`, `npm run verify:p0-runtime-wiring`, `npm run verify:p0-live-action-templates`, `npm run verify:official-observation-contract`, `npm run verify:bi-official-ui-object-vocabulary`, `npm run verify:domain-pack`, `npm run verify:capability-gate`, `npm run typecheck`, and `npm run build --prefix agent`.
+
 P0.21 follow-up implementation:
 
 - Trigger run: `ee0cae6b-f2c4-4cb0-a5aa-d79f5b611ca3` reached `BIUI_COLLAGE_R001-N-02` with a local single-case `output/result.xlsx`, but server upload rejected it with `RESULT_EVIDENCE_GATE_FAILED` issue codes `RESULT_FRONTEND_OBSERVATION_VISUAL_FALLBACK_REQUIRED` and `TOOL_BRIDGE_RESPONSE_MISSING`. The whole 108-case run then stopped at 100/108, leaving `N-02` through `N-09` unrun.

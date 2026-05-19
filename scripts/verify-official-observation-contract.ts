@@ -294,6 +294,7 @@ const main = (): void => {
     "rowDeleteTooltip",
     "projectLimitToast",
     "sourceReportPicker",
+    "fieldPicker",
     "dateTimeTypeTab",
     "datePanelCancel",
     "downloadToast"

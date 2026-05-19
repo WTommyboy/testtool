@@ -169,6 +169,8 @@ const main = (): void => {
     "metricRows.sourceReportControl",
     "sourceReportPicker.searchInput",
     "sourceReportPicker.option.dailyReport",
+    "metricRows.fieldControl",
+    "fieldPicker.option.newAccounts",
     "validation.toast",
     "editorToolbar.downloadButton",
     "download.toast"

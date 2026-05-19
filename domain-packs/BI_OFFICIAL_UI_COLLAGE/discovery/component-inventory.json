@@ -304,6 +304,14 @@
       "assertAfterAction": ["picker closes and row source text updates after selection"]
     },
     {
+      "id": "fieldPicker.option",
+      "page": "collageEditor",
+      "type": "pickerOption",
+      "purpose": "Field picker option selected by visible text after a row source report is selected.",
+      "candidateSignals": ["option text inside opened row-scoped field picker", "visible field labels such as 新增帳號數"],
+      "assertAfterAction": ["picker closes and row field text updates after selection"]
+    },
+    {
       "id": "dateRange.button",
       "page": "collageEditor",
       "type": "button",

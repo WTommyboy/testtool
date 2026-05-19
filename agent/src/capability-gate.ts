@@ -327,6 +327,7 @@ const helperSupportsStructuredObservationType = (value: string | null | undefine
   value === "rowActionTooltip" ||
   value === "projectLimitToast" ||
   value === "sourceReportPicker" ||
+  value === "fieldPicker" ||
   value === "dateTimeTypeTab" ||
   value === "datePanelCancel" ||
   value === "downloadToast" ||

@@ -78,6 +78,7 @@ const requiredObservationTypes = new Set([
   "rowDeleteTooltip",
   "projectLimitToast",
   "sourceReportPicker",
+  "fieldPicker",
   "dateTimeTypeTab",
   "datePanelCancel",
   "downloadToast"

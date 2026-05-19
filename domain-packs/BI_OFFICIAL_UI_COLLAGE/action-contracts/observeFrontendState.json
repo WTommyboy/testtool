@@ -14,6 +14,7 @@
     "collage.observation.projectLimitToast",
     "collage.observation.rowActionTooltip",
     "collage.observation.sourceReportPicker",
+    "collage.observation.fieldPicker",
     "collage.observation.dateTimeTypeTab",
     "collage.observation.datePanelCancel",
     "collage.observation.editorDownload"
@@ -38,6 +39,7 @@
           "rowDeleteTooltip",
           "rowActionTooltip",
           "sourceReportPicker",
+          "fieldPicker",
           "dateTimeTypeTab",
           "datePanelCancel",
           "downloadToast",
@@ -209,6 +211,26 @@
       ],
       "successState": {
         "openedSearchedSelectedByVisibleUi": true
+      }
+    },
+    "fieldPicker": {
+      "component": "metricRows.fieldControl",
+      "objectIds": [
+        "metricRows.sourceReportControl",
+        "sourceReportPicker.option.dailyReport",
+        "metricRows.fieldControl",
+        "fieldPicker.option.newAccounts"
+      ],
+      "requiredEvidence": [
+        "fieldPicker.state",
+        "fieldPicker.signature",
+        "fieldControl.after"
+      ],
+      "successState": {
+        "sourceSelectedByVisibleUi": true,
+        "fieldPickerOpenedByVisibleUi": true,
+        "fieldSelectedByVisibleUi": true,
+        "fieldControlUpdated": true
       }
     },
     "dateTimeTypeTab": {

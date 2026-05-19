@@ -4561,7 +4561,7 @@ const configureMetric = async (options: CliOptions, page: Page, startedAt: strin
     };
   } else if (caseScopeTargets.has("dateRange.timeTypeTab.static")) {
     const actionWarnings: string[] = [];
-    const visibleUiAction = await observeFrontendVisibleUiActions(page, "dateTimeTypeTab", options.params, actionWarnings);
+    const visibleUiAction = await observeFrontendVisibleUiActions(options, page, "dateTimeTypeTab", options.params, actionWarnings);
     const observationState = await readFrontendObservationState(page, "datePanel", null, options.params, visibleUiAction);
     dateRangeEvidence = {
       mode: "caseScopeDateTimeTypeTab",
@@ -8573,6 +8573,7 @@ type FrontendObservationType =
   | "rowDeleteTooltip"
   | "projectLimitToast"
   | "sourceReportPicker"
+  | "fieldPicker"
   | "dateTimeTypeTab"
   | "datePanelCancel"
   | "downloadToast";
@@ -8591,6 +8592,7 @@ const frontendObservationType = (options: CliOptions): FrontendObservationType |
     value === "rowActionTooltip" ||
     value === "projectLimitToast" ||
     value === "sourceReportPicker" ||
+    value === "fieldPicker" ||
     value === "dateTimeTypeTab" ||
     value === "datePanelCancel" ||
     value === "downloadToast" ||
@@ -8643,6 +8645,16 @@ const frontendObservationTargets = (params: Record<string, unknown>): Set<string
   const targets = new Set(frontendObservationActions(params).map((item) => item.target).filter((item): item is string => typeof item === "string"));
   for (const target of stringArrayParam(params, "targetObjectIds")) targets.add(target);
   return targets;
+};
+
+const fieldPickerObservationMetricRows = (params: Record<string, unknown>): MetricRowParam[] => {
+  const explicit = metricRowsFromParams(params);
+  if (explicit.length > 0) return explicit;
+  return [{
+    sourceReport: firstStringParam(params, ["sourceReport", "source", "report", "reportName"]) ?? "每日報表",
+    field: firstStringParam(params, ["field", "metric", "metricField", "targetField"]) ?? "新增帳號數",
+    metricIndex: numberParam(params, ["metricIndex", "rowIndex", "index"]) ?? 0
+  }];
 };
 
 const projectToolbarCreateButtonDomIndex = async (page: Page): Promise<number | null> => {
@@ -8810,6 +8822,7 @@ const readCollageSidebarProjectLimitState = async (page: Page): Promise<Record<s
   }));
 
 const observeFrontendVisibleUiActions = async (
+  options: CliOptions,
   page: Page,
   observationType: FrontendObservationType,
   params: Record<string, unknown>,
@@ -8840,6 +8853,40 @@ const observeFrontendVisibleUiActions = async (
       actions.push({ action: "select", target: "dateRange.preset.yesterday", clicked: selected });
       if (!selected) warnings.push("DATE_PANEL_YESTERDAY_PRESET_NOT_CLICKABLE");
       await page.waitForTimeout(400);
+    }
+    const presetRequests = caseScopeDatePresetRequests(params).filter((request) => request.target !== "dateRange.preset.yesterday");
+    for (const request of presetRequests) {
+      const beforePresetDateText = await readDateRangeButtonText(page);
+      if (!(await isDatePickerOpen(page))) {
+        await clickDateRangeButton();
+      }
+      const pattern = datePresetLabelRegex(request.label);
+      const selected = await clickFirstVisible([
+        page.getByText(request.label, { exact: true }),
+        page.getByText(pattern, { exact: false }),
+        page.locator("button").filter({ hasText: pattern }),
+        page.locator("[role='button']").filter({ hasText: pattern })
+      ], 5000);
+      let confirmed = false;
+      if (selected) {
+        confirmed = await clickDateConfirmButton(page, 3000).catch(() => false);
+        await page.waitForTimeout(800);
+      }
+      const afterPresetDateText = await readDateRangeButtonText(page);
+      actions.push({
+        action: "select",
+        target: request.target,
+        label: request.label,
+        clicked: selected,
+        confirmed,
+        beforeDateText: beforePresetDateText,
+        afterDateText: afterPresetDateText,
+        labelApplied: normalizeUiText(afterPresetDateText ?? "").includes(normalizeUiText(request.label)),
+        stateChanged: beforePresetDateText !== null && afterPresetDateText !== null
+          ? normalizeUiText(beforePresetDateText) !== normalizeUiText(afterPresetDateText)
+          : null
+      });
+      if (!selected) warnings.push(`DATE_PANEL_PRESET_NOT_CLICKABLE:${request.target}`);
     }
     if (targets.has("dateRange.timeTypeTab.static")) {
       const beforeStaticSelected = await page.evaluate(() => {
@@ -8953,6 +9000,36 @@ const observeFrontendVisibleUiActions = async (
     return { actions, projectLimitPrecondition: precondition };
   }
 
+  if (observationType === "fieldPicker") {
+    const requestedMetrics = fieldPickerObservationMetricRows(params);
+    try {
+      const metricRowsEvidence = await setMetricRowsThroughOfficialUi(options, page, requestedMetrics);
+      const firstSelection = metricRowsEvidence?.selections[0] ?? null;
+      actions.push({
+        action: "select",
+        target: "metricRows.fieldControl",
+        clicked: firstSelection?.verified === true,
+        sourceReport: firstSelection?.sourceSelection?.selectedSource ?? requestedMetrics[0]?.sourceReport ?? null,
+        field: firstSelection?.fieldControlAfter ?? requestedMetrics[0]?.field ?? null,
+        pickerOptionCount: typeof firstSelection?.fieldPickerSignature?.optionCount === "number" ? firstSelection.fieldPickerSignature.optionCount : null
+      });
+      if (!metricRowsEvidence || firstSelection?.verified !== true) {
+        warnings.push("FIELD_PICKER_OBSERVATION_NOT_VERIFIED");
+      }
+      return { actions, requestedMetrics, metricRowsEvidence };
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : String(cause);
+      warnings.push(`FIELD_PICKER_OBSERVATION_FAILED:${message.slice(0, 500)}`);
+      actions.push({
+        action: "select",
+        target: "metricRows.fieldControl",
+        clicked: false,
+        error: message.slice(0, 1200)
+      });
+      return { actions, requestedMetrics, metricRowsEvidence: null };
+    }
+  }
+
   if (observationType === "sourceReportPicker") {
     const opened = await clickFirstVisible([
       page.getByText(/請選擇.*報表|來源報表|每日報表/).first(),
@@ -9017,6 +9094,7 @@ const readFrontendObservationState = async (
       if (!normalized) return null;
       return normalized.length > length ? `${normalized.slice(0, length)}...` : normalized;
     };
+    const normalizeText = (value: string | null | undefined): string => (value ?? "").trim().replace(/\s+/g, "");
     const isVisible = (element: Element): boolean => {
       const rect = element.getBoundingClientRect();
       const style = window.getComputedStyle(element);
@@ -9301,6 +9379,45 @@ const readFrontendObservationState = async (
       };
     }
 
+    if (type === "fieldPicker") {
+      const actionList = Array.isArray(actionData?.actions) ? actionData.actions as Array<Record<string, unknown>> : [];
+      const fieldAction = actionList.find((item) => item.target === "metricRows.fieldControl") ?? null;
+      const metricRowsEvidence = actionData?.metricRowsEvidence && typeof actionData.metricRowsEvidence === "object" && !Array.isArray(actionData.metricRowsEvidence)
+        ? actionData.metricRowsEvidence as Record<string, unknown>
+        : null;
+      const selections = Array.isArray(metricRowsEvidence?.selections) ? metricRowsEvidence.selections as Array<Record<string, unknown>> : [];
+      const firstSelection = selections[0] ?? null;
+      const sourceSelection = firstSelection?.sourceSelection && typeof firstSelection.sourceSelection === "object" && !Array.isArray(firstSelection.sourceSelection)
+        ? firstSelection.sourceSelection as Record<string, unknown>
+        : null;
+      const fieldPickerSignature = firstSelection?.fieldPickerSignature && typeof firstSelection.fieldPickerSignature === "object" && !Array.isArray(firstSelection.fieldPickerSignature)
+        ? firstSelection.fieldPickerSignature as Record<string, unknown>
+        : null;
+      const selectedField = typeof firstSelection?.fieldControlAfter === "string" ? firstSelection.fieldControlAfter : null;
+      const requested = firstSelection?.requested && typeof firstSelection.requested === "object" && !Array.isArray(firstSelection.requested)
+        ? firstSelection.requested as Record<string, unknown>
+        : null;
+      const expectedField = typeof requested?.field === "string" ? requested.field : "新增帳號數";
+      return {
+        evidenceObject: "fieldPicker.state",
+        selectedSourceReport: sourceSelection?.selectedSource ?? requested?.sourceReport ?? null,
+        selectedField,
+        fieldPickerOpenedByVisibleUi: selections.some((selection) =>
+          Array.isArray(selection.operations) && (selection.operations as unknown[]).some((operation) => typeof operation === "string" && operation.includes("official:fieldPicker:open"))
+        ),
+        fieldPickerSignature,
+        fieldControl: {
+          rowIndex: typeof firstSelection?.rowIndex === "number" ? firstSelection.rowIndex : 0,
+          expected: expectedField,
+          actual: selectedField,
+          asserted: firstSelection?.verified === true && selectedField !== null && selectedField.includes(expectedField)
+        },
+        metricRowsEvidence,
+        interactionLog: actionList,
+        asserted: fieldAction?.clicked === true && firstSelection?.verified === true && selectedField !== null && selectedField.includes(expectedField)
+      };
+    }
+
     if (type === "downloadToast") {
       const actionList = Array.isArray(actionData?.actions) ? actionData.actions as Array<Record<string, unknown>> : [];
       const downloadAction = actionList.find((item) => item.target === "editorToolbar.downloadButton") ?? null;
@@ -9342,6 +9459,7 @@ const readFrontendObservationState = async (
       const targetList = Array.isArray(targets) ? targets.filter((item): item is string => typeof item === "string") : [];
       const wantsCancel = targetList.includes("dateRange.action.cancel");
       const wantsStatic = targetList.includes("dateRange.timeTypeTab.static");
+      const wantedPresetTargets = targetList.filter((target) => /^dateRange\.preset\./.test(target));
       if (wantsCancel) {
         const cancelAction = actionList.find((item) => item.target === "dateRange.action.cancel") ?? null;
         const beforeDateText = typeof actionData?.beforeDateText === "string" ? actionData.beforeDateText : null;
@@ -9372,6 +9490,36 @@ const readFrontendObservationState = async (
           staticVisible,
           interactionLog: actionList,
           asserted: staticAction?.clicked === true && staticAction?.afterSelected === true
+        };
+      }
+      if (wantedPresetTargets.length > 0) {
+        const presetActions = actionList.filter((item) => typeof item.target === "string" && wantedPresetTargets.includes(item.target));
+        const switches = presetActions.map((item) => ({
+          target: item.target,
+          label: item.label ?? null,
+          clicked: item.clicked === true,
+          confirmed: item.confirmed === true,
+          beforeDateText: item.beforeDateText ?? null,
+          afterDateText: item.afterDateText ?? null,
+          stateChanged: item.stateChanged ?? null,
+          labelApplied: typeof item.label === "string" && typeof item.afterDateText === "string"
+            ? normalizeText(item.afterDateText).includes(normalizeText(item.label))
+            : item.labelApplied === true
+        }));
+        const afterTexts = switches
+          .map((item) => typeof item.afterDateText === "string" ? normalizeText(item.afterDateText) : "")
+          .filter(Boolean);
+        const distinctAfterTexts = new Set(afterTexts).size;
+        return {
+          evidenceObject: "dateRange.presetSwitch.state",
+          openedByVisibleUi: actionList.some((item) => item.target === "dateRange.button" && item.clicked === true),
+          requestedPresetTargets: wantedPresetTargets,
+          presetSwitches: switches,
+          distinctAfterDateTexts: distinctAfterTexts,
+          interactionLog: actionList,
+          asserted: switches.length === wantedPresetTargets.length &&
+            switches.every((item) => item.clicked === true && (item.labelApplied === true || item.stateChanged === true || typeof item.afterDateText === "string")) &&
+            distinctAfterTexts === wantedPresetTargets.length
         };
       }
       return {
@@ -9419,6 +9567,7 @@ const waitForFrontendObservationReadiness = async (
     rowDeleteTooltip: /下載|刪除|拼貼報表|專案/i,
     projectLimitToast: /新增|拼貼報表|專案/i,
     sourceReportPicker: /來源報表|每日報表|欄位|報表設定/i,
+    fieldPicker: /欄位|來源報表|每日報表|報表設定/i,
     dateTimeTypeTab: /時間|動態|靜態|報表設定/i,
     datePanelCancel: /時間|取消|報表設定/i,
     downloadToast: /下載|計算|執行|報表設定/i
@@ -9447,7 +9596,7 @@ const observeFrontendState = async (options: CliOptions, page: Page, startedAt: 
   const requestBefore = await readUiRequestCount(page).catch(() => null);
   const warnings: string[] = [];
   await waitForFrontendObservationReadiness(page, observationType, warnings);
-  const visibleUiAction = await observeFrontendVisibleUiActions(page, observationType, options.params, warnings);
+  const visibleUiAction = await observeFrontendVisibleUiActions(options, page, observationType, options.params, warnings);
   const observationState = await readFrontendObservationState(page, observationType, requestBefore, options.params, visibleUiAction);
   const uiProfileAfter = await captureUiDomProfile(options, page, `observe.${observationType}.after`);
   const shot = await screenshot(options, page, `observe-${observationType}`);

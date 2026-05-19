@@ -85,7 +85,7 @@
       "id": "ui.fieldPicker",
       "path": "other/bi_v1/ui_screenshot/截圖 2026-05-14 晚上9.15.49.png",
       "screen": "collageEditor.fieldPicker",
-      "observedObjects": ["metricRows.fieldControl"]
+      "observedObjects": ["metricRows.fieldControl", "fieldPicker.option.newAccounts"]
     },
     {
       "id": "ui.datePanelOpen",
@@ -265,6 +265,14 @@
       "visibleText": ["--", "新增帳號數", "MAU(帳號)"],
       "visualCues": ["row-scoped dropdown", "field picker popover"],
       "alignmentNotes": "Field control depends on selected source report and can be stale after source changes."
+    },
+    "fieldPicker.option.newAccounts": {
+      "status": "confirmed",
+      "sourceIds": ["ui.fieldPicker"],
+      "screenContext": "Opened row-scoped field picker after selecting source report 每日報表.",
+      "visibleText": ["新增帳號數"],
+      "visualCues": ["picker option in the field dropdown"],
+      "alignmentNotes": "This option must be selected through the row-scoped picker, not by a global body-text click."
     },
     "preview.calculateButton": {
       "status": "confirmed",

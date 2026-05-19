@@ -58,6 +58,18 @@
       ],
       "purpose": "Detect stale field picker options after source report changes."
     },
+    "fieldPicker.state": {
+      "type": "object",
+      "requiredFields": [
+        "selectedSourceReport",
+        "selectedField",
+        "fieldPickerSignature",
+        "fieldControl",
+        "interactionLog",
+        "asserted"
+      ],
+      "purpose": "Row-scoped field picker open/search/select evidence for frontend observation cases."
+    },
     "locatorAttempts": {
       "type": "array",
       "requiredFields": [
@@ -114,6 +126,17 @@
         "asserted"
       ],
       "purpose": "Frontend observation evidence for date panel composition without preview execution."
+    },
+    "dateRange.presetSwitch.state": {
+      "type": "object",
+      "requiredFields": [
+        "openedByVisibleUi",
+        "requestedPresetTargets",
+        "presetSwitches",
+        "interactionLog",
+        "asserted"
+      ],
+      "purpose": "Frontend observation evidence for clicking multiple dynamic date presets and reading the resulting date button labels."
     },
     "validation.message.state": {
       "type": "object",

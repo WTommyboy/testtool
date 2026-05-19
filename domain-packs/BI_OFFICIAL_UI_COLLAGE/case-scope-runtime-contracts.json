@@ -412,6 +412,50 @@
       }
     },
     {
+      "caseNo": "BIUI_COLLAGE_R001-K-09",
+      "routeIntent": "frontend_observation",
+      "testTarget": "functional_flow",
+      "requiresEditor": true,
+      "observationType": "fieldPicker",
+      "requiredActions": [
+        {
+          "actionId": "selectDailyReportBeforeFieldPicker",
+          "action": "select",
+          "target": "sourceReportPicker.option.dailyReport",
+          "role": "precondition",
+          "expectedOutcome": "state_changed",
+          "requiredForPass": true,
+          "evidenceRequirements": ["sourceControl.after", "interactionLog"]
+        },
+        {
+          "actionId": "openFieldPicker",
+          "action": "open",
+          "target": "metricRows.fieldControl",
+          "role": "under_test",
+          "expectedOutcome": "visible",
+          "requiredForPass": true,
+          "evidenceRequirements": ["fieldPicker.signature", "interactionLog", "screenshot"]
+        },
+        {
+          "actionId": "selectNewAccountsField",
+          "action": "select",
+          "target": "fieldPicker.option.newAccounts",
+          "role": "under_test",
+          "expectedOutcome": "state_changed",
+          "requiredForPass": true,
+          "evidenceRequirements": ["fieldPicker.signature", "fieldControl.after", "interactionLog", "screenshot"]
+        }
+      ],
+      "evidenceRequirements": {
+        "flow": ["interactionLog", "fieldPicker.signature", "fieldControl.after"],
+        "observation": ["screenshot"]
+      },
+      "judgmentPolicy": {
+        "failWhen": ["field picker is reachable but selecting 新增帳號數 does not update the row-local field control"],
+        "blockedWhen": ["editor, source report control, or row-local field control cannot be reached with current browser evidence"]
+      }
+    },
+    {
       "caseNo": "BIUI_COLLAGE_R001-K-10",
       "routeIntent": "frontend_observation",
       "testTarget": "frontend_presentation",
@@ -533,6 +577,50 @@
       "judgmentPolicy": {
         "failWhen": ["cancel does not close the panel or applies the temporary preset"],
         "blockedWhen": ["date panel cannot be opened or temporary preset cannot be selected"]
+      }
+    },
+    {
+      "caseNo": "BIUI_COLLAGE_R001-L-08",
+      "routeIntent": "frontend_observation",
+      "testTarget": "functional_flow",
+      "requiresEditor": true,
+      "observationType": "datePanel",
+      "requiredActions": [
+        {
+          "actionId": "openDatePanelForPast30Days",
+          "action": "open",
+          "target": "dateRange.button",
+          "role": "precondition",
+          "expectedOutcome": "visible",
+          "requiredForPass": true,
+          "evidenceRequirements": ["dateRange.panel.state", "interactionLog"]
+        },
+        {
+          "actionId": "selectPast30DaysPreset",
+          "action": "select",
+          "target": "dateRange.preset.past30Days",
+          "role": "under_test",
+          "expectedOutcome": "state_changed",
+          "requiredForPass": true,
+          "evidenceRequirements": ["dateRange.presetSwitch.state", "interactionLog", "screenshot"]
+        },
+        {
+          "actionId": "selectRecent30DaysPreset",
+          "action": "select",
+          "target": "dateRange.preset.recent30Days",
+          "role": "under_test",
+          "expectedOutcome": "state_changed",
+          "requiredForPass": true,
+          "evidenceRequirements": ["dateRange.presetSwitch.state", "interactionLog", "screenshot"]
+        }
+      ],
+      "evidenceRequirements": {
+        "flow": ["interactionLog", "dateRange.presetSwitch.state"],
+        "observation": ["screenshot"]
+      },
+      "judgmentPolicy": {
+        "failWhen": ["both 30-day preset buttons are reachable but either preset click does not update the date range button text/state"],
+        "blockedWhen": ["date panel or the requested preset buttons cannot be reached"]
       }
     },
     {
