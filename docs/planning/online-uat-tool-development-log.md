@@ -118,6 +118,16 @@ P0.24 visual fallback contract smoke and containment refinement:
 - Boundary: this still does not turn screenshots into automatic PASS evidence. It makes screenshot-only frontend observations explicitly reviewable and prevents opaque generic blockers from hiding that the missing piece is structured UI assertion evidence.
 - Regression checks: `npm run verify:p0-visual-fallback-contract`, `npm run verify:result-evidence-upload-containment`, `npm run verify:result-evidence-gate`, `npm run typecheck`, and `npm run build --prefix agent`.
 
+P0.25 save/reopen/row-download flow first slice:
+
+- Trigger category: P0.23 classified 10 BLOCKED rows as `save_reopen_row_download_flow_gap`. The first runtime slice targets the shared official UI navigation/readiness issue behind `F-02`, `F-04`, `G-02`, and `M-07`: after saving, helper remained on `/report/new` and failed to return to the project list, while empty official project pages (`新增自訂報表` + `無數據`) were not treated as ready for create-report.
+- Added verifier: `npm run verify:p0-save-reopen-download-flow`. The smoke locks official editor/sidebar disambiguation, official empty-project readiness, same-case `F-02` save/reopen routing, same-case `F-04` project-row CSV routing, and `G-02` create-project-then-create-report routing.
+- Runtime fix: official UI sidebar navigation no longer treats editor text `拼貼模式` as the left-nav target. It opens `我的自訂` first when needed and only uses `拼貼報表` as the official sidebar target.
+- Runtime fix: official empty project routes such as `/report/myCustom/tileMode/<id>` with `新增自訂報表` and `無數據` now count as project-list-ready, so create-report flows can proceed after creating a new project.
+- Runtime fix: back-to-project-list readiness recognizes official `/report/new` as an editor route and attempts project/list reselection instead of polling the editor page as if it were already a list page.
+- Boundary: this does not yet implement the remaining specialized templates in the same P0.23 bucket (`K-09` field picker observation, `L-08` two-preset switching, `M-06` save-modal cancel, `M-09/M-10` copy modal/save, `M-11` update-and-reopen). Those should be handled as later P0 slices with their own smoke.
+- Regression checks: `npm run verify:p0-save-reopen-download-flow`, `npm run verify:capability-gate`, `npm run verify:open-project-retry`, `npm run verify:p0-live-action-templates`, `npm run verify:p0-108-blocked-triage`, `npm run typecheck`, and `npm run build --prefix agent`.
+
 P0.21 follow-up implementation:
 
 - Trigger run: `ee0cae6b-f2c4-4cb0-a5aa-d79f5b611ca3` reached `BIUI_COLLAGE_R001-N-02` with a local single-case `output/result.xlsx`, but server upload rejected it with `RESULT_EVIDENCE_GATE_FAILED` issue codes `RESULT_FRONTEND_OBSERVATION_VISUAL_FALLBACK_REQUIRED` and `TOOL_BRIDGE_RESPONSE_MISSING`. The whole 108-case run then stopped at 100/108, leaving `N-02` through `N-09` unrun.

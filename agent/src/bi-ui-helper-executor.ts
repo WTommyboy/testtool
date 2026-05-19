@@ -2828,21 +2828,62 @@ const hasSelectProjectPrompt = (bodyText: string): boolean => /請從左側選�
 const isCollageReportListReady = (bodyText: string): boolean =>
   hasCreateReportEntry(bodyText) && !hasSelectProjectPrompt(bodyText);
 
+const isOfficialCollageProjectRouteUrl = (url: string): boolean =>
+  Boolean(parseHttpUrl(url)?.pathname.match(/\/bi-dev\/[^/]+\/report\/myCustom\/tileMode\/[^/]+$/));
+
+const isOfficialCollageEditorRouteUrl = (url: string): boolean =>
+  Boolean(parseHttpUrl(url)?.pathname.match(/\/bi-dev\/[^/]+\/report\/new$/));
+
+const hasOfficialCreateReportEntry = (bodyText: string): boolean =>
+  /(?:[+＋➕]\s*)?新增(?:自訂)?報表/.test(bodyText);
+
 const isOfficialCollageReportListReady = (page: Page, bodyText: string): boolean => {
-  const parsed = parseHttpUrl(page.url());
-  const isOfficialProjectRoute = Boolean(parsed?.pathname.match(/\/bi-dev\/[^/]+\/report\/myCustom\/tileMode\/[^/]+$/));
+  const isOfficialProjectRoute = isOfficialCollageProjectRouteUrl(page.url());
+  const hasListTableHeaders =
+    /報表名稱/.test(bodyText) &&
+    /資料(?:週期)?區間/.test(bodyText) &&
+    /操作/.test(bodyText);
+  const hasEmptyProjectListState =
+    hasOfficialCreateReportEntry(bodyText) &&
+    /無數據|無資料|尚無.{0,12}報表|沒有.{0,12}報表/.test(bodyText);
   return (
     isOfficialProjectRoute &&
     /拼貼報表/.test(bodyText) &&
+    (hasListTableHeaders || hasEmptyProjectListState) &&
+    !hasSelectProjectPrompt(bodyText)
+  );
+};
+
+const isOfficialCollageReportListReadyForUrl = (url: string, bodyText: string): boolean => {
+  const isOfficialProjectRoute = isOfficialCollageProjectRouteUrl(url);
+  const hasListTableHeaders =
     /報表名稱/.test(bodyText) &&
     /資料(?:週期)?區間/.test(bodyText) &&
-    /操作/.test(bodyText) &&
+    /操作/.test(bodyText);
+  const hasEmptyProjectListState =
+    hasOfficialCreateReportEntry(bodyText) &&
+    /無數據|無資料|尚無.{0,12}報表|沒有.{0,12}報表/.test(bodyText);
+  return (
+    isOfficialProjectRoute &&
+    /拼貼報表/.test(bodyText) &&
+    (hasListTableHeaders || hasEmptyProjectListState) &&
     !hasSelectProjectPrompt(bodyText)
   );
 };
 
 const isCollageReportListReadyForPage = (page: Page, bodyText: string): boolean =>
   isCollageReportListReady(bodyText) || isOfficialCollageReportListReady(page, bodyText);
+
+const officialCollageSidebarPreludeLabels = (url: string, bodyText: string): string[] => {
+  if (!isOfficialBiUiPageUrl(url)) return /拼貼報表|拼貼模式/.test(bodyText) ? [] : ["我的自訂"];
+  return /拼貼報表/.test(bodyText) ? [] : ["我的自訂"];
+};
+
+const officialCollageSidebarTargetLabel = (url: string, bodyText: string): string | null => {
+  if (/拼貼報表/.test(bodyText)) return "拼貼報表";
+  if (!isOfficialBiUiPageUrl(url) && /拼貼模式/.test(bodyText)) return "拼貼模式";
+  return null;
+};
 
 type CollageProjectSelectionAttempt = {
   label: string;
@@ -3072,8 +3113,14 @@ const shouldTryOfficialCollageSidebarNavigation = (page: Page, bodyText: string)
 
 export const __openProjectRetryTestHooks = {
   hasCreateReportEntry,
+  hasOfficialCreateReportEntry,
   hasSelectProjectPrompt,
   isCollageReportListReady,
+  isOfficialCollageReportListReadyForUrl,
+  isOfficialCollageProjectRouteUrl,
+  isOfficialCollageEditorRouteUrl,
+  officialCollageSidebarPreludeLabels,
+  officialCollageSidebarTargetLabel,
   inferVisibleCollageProjectName,
   scoreCollageProjectClickCandidate,
   scoreVisibleBodyTextClickCandidate
@@ -3086,7 +3133,7 @@ const navigateOfficialCollageSidebar = async (
   initialBodyText: string
 ): Promise<string> => {
   let bodyText = initialBodyText;
-  const labels = /拼貼報表|拼貼模式/.test(bodyText) ? [] : ["我的自訂"];
+  const labels = officialCollageSidebarPreludeLabels(page.url(), bodyText);
 
   for (const label of labels) {
     if (isCollageReportListReadyForPage(page, bodyText)) return bodyText;
@@ -3185,7 +3232,7 @@ const navigateOfficialCollageSidebar = async (
     }
   }
 
-  const collageLabel = /拼貼報表/.test(bodyText) ? "拼貼報表" : /拼貼模式/.test(bodyText) ? "拼貼模式" : null;
+  const collageLabel = officialCollageSidebarTargetLabel(page.url(), bodyText);
   if (collageLabel && !isCollageReportListReadyForPage(page, bodyText)) {
     const beforeUrl = page.url();
     const beforeExcerpt = bodyText.slice(0, 500);
@@ -8370,6 +8417,9 @@ type BackToProjectListReadiness = {
 const reportListSignalsFromBodyText = (bodyText: string): boolean =>
   hasCreateReportEntry(bodyText) && /報表名稱|資料區間日期|下載|刪除|⬇|🗑/.test(bodyText);
 
+const reportListSignalsForPage = (page: Page, bodyText: string): boolean =>
+  reportListSignalsFromBodyText(bodyText) || isOfficialCollageReportListReady(page, bodyText);
+
 const waitForBackToProjectListReadiness = async (
   options: CliOptions,
   page: Page
@@ -8396,8 +8446,8 @@ const waitForBackToProjectListReadiness = async (
     }
     if (bodyText.trim()) lastBodyText = bodyText;
     const effectiveBodyText = bodyText.trim() ? bodyText : lastBodyText;
-    const editorUrl = /\/testview\/edit\b/i.test(lastUrl);
-    const reportListSignals = reportListSignalsFromBodyText(effectiveBodyText);
+    const editorUrl = /\/testview\/edit\b/i.test(lastUrl) || isOfficialCollageEditorRouteUrl(lastUrl);
+    const reportListSignals = reportListSignalsForPage(page, effectiveBodyText);
     const hasSelectProjectPrompt = /請從左側選擇專案查看報表/.test(effectiveBodyText);
     attempts.push({
       label: `poll_${attempt + 1}`,
@@ -8412,7 +8462,7 @@ const waitForBackToProjectListReadiness = async (
     if (!editorUrl && reportListSignals) {
       return { url: lastUrl, bodyText: effectiveBodyText, reportListSignals, editorUrl, attempts };
     }
-    if (!editorUrl && hasSelectProjectPrompt && !reselectedProject) {
+    if ((editorUrl || hasSelectProjectPrompt) && !reselectedProject) {
       reselectedProject = true;
       await ensureCollageProjectSelected(options, page).catch((selectError) => {
         attempts.push({
@@ -8431,8 +8481,8 @@ const waitForBackToProjectListReadiness = async (
   }
 
   const finalUrl = page.url();
-  const finalEditorUrl = /\/testview\/edit\b/i.test(finalUrl);
-  const finalReportListSignals = reportListSignalsFromBodyText(lastBodyText);
+  const finalEditorUrl = /\/testview\/edit\b/i.test(finalUrl) || isOfficialCollageEditorRouteUrl(finalUrl);
+  const finalReportListSignals = reportListSignalsForPage(page, lastBodyText);
   return {
     url: finalUrl,
     bodyText: lastBodyText,
@@ -8480,7 +8530,7 @@ const clickBackToProjectList = async (options: CliOptions, page: Page, startedAt
   if (!observed?.result.clicked) throw new HelperBlockedError("BACK_TO_PROJECT_LIST_BUTTON_NOT_CLICKABLE");
   const readiness = await waitForBackToProjectListReadiness(options, page);
   const { bodyText, url, reportListSignals, editorUrl } = readiness;
-  const returnedToProjectList = !editorUrl && hasCreateReportEntry(bodyText) && reportListSignals;
+  const returnedToProjectList = !editorUrl && reportListSignalsForPage(page, bodyText);
   const shot = await screenshot(options, page, returnedToProjectList ? "back-to-project-list" : "back-to-project-list-blocked");
   const uiProfileAfter = await captureUiDomProfile(options, page, "backToProjectList.after");
   const evidence = {
