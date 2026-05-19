@@ -1,6 +1,6 @@
 # 線上 UAT Tool 開發與規劃日誌
 
-最後更新：2026-05-18
+最後更新：2026-05-19
 
 本文件記錄「UAT Tool 線上派工 + Mac Agent」這條路徑的歷史決策、設計理由、目前架構與後續待辦。它的用途是跨聊天室、跨 session 交接，不取代 `AGENTS.md`、Layer rules、authoring spec 或實作 spec。
 
@@ -108,6 +108,17 @@ P0.19 implementation:
 - Added visible UI action coverage for sidebar company-shared toggle, row delete hover, project-limit create click/toast, source-report picker open/search/select, date-panel static tab and cancel flow, validation toast/no-preview-request, and editor icon-only download/download toast.
 - Adjusted `configureMetric` date-range failure handling: static/date UI failures with current-run interaction/date evidence no longer force helper status `blocked`; they remain evidence for downstream FAIL/BLOCKED judgment.
 - Boundary note: P0.19 is still a live-template wiring and local smoke milestone. It improves the agent's ability to collect evidence, but P0.20 remains the first small live smoke using the dev Agent profile before asking Tommy for another dev UAT run.
+
+P0.21 follow-up implementation:
+
+- Trigger run: `ee0cae6b-f2c4-4cb0-a5aa-d79f5b611ca3` reached `BIUI_COLLAGE_R001-N-02` with a local single-case `output/result.xlsx`, but server upload rejected it with `RESULT_EVIDENCE_GATE_FAILED` issue codes `RESULT_FRONTEND_OBSERVATION_VISUAL_FALLBACK_REQUIRED` and `TOOL_BRIDGE_RESPONSE_MISSING`. The whole 108-case run then stopped at 100/108, leaving `N-02` through `N-09` unrun.
+- Added Agent-side result evidence upload containment: `agent/src/result-evidence-upload-containment.ts`.
+- Added verifier: `scripts/verify-result-evidence-upload-containment.ts`.
+- Added npm script: `npm run verify:result-evidence-upload-containment`.
+- Runtime behavior: when `codex_generated` single-case result upload receives a server `RESULT_EVIDENCE_GATE_FAILED` 422 and the issue codes are containable, Agent rewrites only the current case row to `BLOCKED / BLOCKED_RESULT_GATE_CONTAINMENT`, preserves the previous detail JSON inside the new detail, writes `output/result-evidence-upload-containment.json`, and retries the result upload. This keeps the round moving while making the gate conflict explicit.
+- Hard boundary: invalid workbook structure, non-current case, multi-case result, missing/invalid detail JSON, untrusted fallback/diagnostic results, and other hard structural result-gate errors still abort. This is a case-level fail-isolation bridge, not a PASS/FAIL judgment engine and not a permission to hide product bugs as BLOCKED.
+- Smoke result: fixture smoke reproduces the N-02 issue-code pair, containment updates the workbook, and the same result evidence gate passes after containment. A second smoke copied the actual N-02 `result.xlsx` from run `ee0cae6b-f2c4-4cb0-a5aa-d79f5b611ca3` into `/tmp`, confirmed the same two issue codes before containment, and confirmed `afterStatus=ok` after containment.
+- Regression checks: `npm run build --prefix agent`, `npm run verify:result-evidence-upload-containment`, `npm run verify:result-evidence-gate`, and `git diff --check`.
 
 ## 1. 範圍
 

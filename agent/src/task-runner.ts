@@ -9,6 +9,7 @@ import { containPassContradictionsAsBlocked, validateResultWorkbookContract } fr
 import { ensureBlockedResultCurrentRunEvidence } from "./result-evidence-enricher";
 import { normalizeCodexResultWorkbook } from "./result-workbook-normalizer";
 import { repairSingleCaseResultWorkbook } from "./result-workbook-repair";
+import { containResultEvidenceUploadFailure } from "./result-evidence-upload-containment";
 import { writeCodexRuntimeContainmentResultIfNeeded, type RuntimeContainmentReport } from "./runtime-containment-result";
 import { parseToolRequests, type ParsedToolRequest } from "./tool-bridge";
 import { writeBiUiHelperGuidance } from "./bi-ui-helper-guidance";
@@ -3031,22 +3032,104 @@ const uploadRunArtifacts = async (options: UploadArtifactsOptions): Promise<Uplo
         false
       );
     } catch (error) {
-      writeJson(path.join(runDir, "output", "result-xlsx.json"), {
-        path: resultXlsxPath,
-        uploaded: false,
-        source: resultSource,
-        upload_metadata: resultUploadMetadata,
-        error: error instanceof Error ? error.message : String(error)
-      });
-      sendBestEffort(
-        connection,
-        "run.stderr",
-        {
-          run_id: runId,
-          text: `uat-agent result upload failed: ${error instanceof Error ? error.message : String(error)}`
-        },
-      );
-      if (throwOnResultUploadError) throw error;
+      const uploadError = error instanceof Error ? error : new Error(String(error));
+      const uploadContainmentReport = resultSource === "codex_generated"
+        ? await containResultEvidenceUploadFailure({
+          filePath: resultXlsxPath,
+          error: uploadError,
+          runId,
+          currentCaseNo: resultUploadMetadata.currentCaseNo
+        })
+        : null;
+      if (uploadContainmentReport) {
+        writeJson(path.join(runDir, "output", "result-evidence-upload-containment.json"), uploadContainmentReport);
+      }
+      if (uploadContainmentReport?.status === "updated") {
+        sendBestEffort(
+          connection,
+          "run.stdout",
+          {
+            run_id: runId,
+            text: `uat-agent contained result evidence gate upload failure for ${uploadContainmentReport.updatedCaseNos.join(", ")} as BLOCKED_RESULT_GATE_CONTAINMENT; retrying result upload.`
+          },
+          false
+        );
+        try {
+          const retryUploadResponse = await uploadResultXlsx(outputUrls.result_xlsx, resultXlsxPath, config.token, resultUploadMetadata, {
+            maxAttempts: 2,
+            baseDelayMs: 1000,
+            maxDelayMs: 4000,
+            onRetry: ({ attempt, maxAttempts, nextDelayMs, error }) => {
+              sendBestEffort(
+                connection,
+                "run.stderr",
+                {
+                  run_id: runId,
+                  text: `uat-agent contained result upload retry transient failure on attempt ${attempt}/${maxAttempts}; retrying in ${nextDelayMs}ms: ${error.message}`
+                },
+                false
+              );
+            }
+          });
+          resultXlsxUploaded = true;
+          writeJson(path.join(runDir, "output", "result-xlsx.json"), {
+            path: resultXlsxPath,
+            uploaded: true,
+            source: resultSource,
+            upload_metadata: resultUploadMetadata,
+            self_check: contractReport,
+            upload_containment: uploadContainmentReport,
+            upload_response: retryUploadResponse
+          });
+          sendBestEffort(
+            connection,
+            "run.stdout",
+            {
+              run_id: runId,
+              text: "uat-agent uploaded contained result.xlsx"
+            },
+            false
+          );
+        } catch (retryError) {
+          writeJson(path.join(runDir, "output", "result-xlsx.json"), {
+            path: resultXlsxPath,
+            uploaded: false,
+            source: resultSource,
+            upload_metadata: resultUploadMetadata,
+            self_check: contractReport,
+            upload_containment: uploadContainmentReport,
+            error: retryError instanceof Error ? retryError.message : String(retryError)
+          });
+          sendBestEffort(
+            connection,
+            "run.stderr",
+            {
+              run_id: runId,
+              text: `uat-agent contained result upload retry failed: ${retryError instanceof Error ? retryError.message : String(retryError)}`
+            },
+            false
+          );
+          if (throwOnResultUploadError) throw retryError;
+        }
+      } else {
+        writeJson(path.join(runDir, "output", "result-xlsx.json"), {
+          path: resultXlsxPath,
+          uploaded: false,
+          source: resultSource,
+          upload_metadata: resultUploadMetadata,
+          upload_containment: uploadContainmentReport,
+          error: uploadError.message
+        });
+        sendBestEffort(
+          connection,
+          "run.stderr",
+          {
+            run_id: runId,
+            text: `uat-agent result upload failed: ${uploadError.message}`
+          },
+        );
+        if (throwOnResultUploadError) throw uploadError;
+      }
     }
   } else {
     sendBestEffort(

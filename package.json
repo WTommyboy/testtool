@@ -23,6 +23,7 @@
     "verify:case-advance-policy": "tsx scripts/verify-case-advance-policy.ts",
     "verify:package-consistency": "tsx scripts/verify-package-consistency-fixture.ts",
     "verify:result-evidence-gate": "tsx scripts/verify-result-evidence-gate.ts",
+    "verify:result-evidence-upload-containment": "tsx scripts/verify-result-evidence-upload-containment.ts",
     "verify:agent-resume": "tsx scripts/verify-agent-resume.ts",
     "verify:agent-browser-session-isolation": "tsx scripts/verify-agent-browser-session-isolation.ts",
     "verify:agent-connection-resilience": "tsx scripts/verify-agent-connection-resilience.ts",
