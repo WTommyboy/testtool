@@ -30,6 +30,7 @@
     "verify:agent-context-prep": "tsx scripts/verify-agent-context-prep.ts",
     "verify:agent-result-contract": "tsx scripts/verify-agent-result-contract.ts",
     "verify:runtime-containment-result": "tsx scripts/verify-runtime-containment-result.ts",
+    "verify:p0-helper-browser-session-containment": "tsx scripts/verify-p0-helper-browser-session-containment.ts",
     "verify:result-upload-retry": "tsx scripts/verify-result-upload-retry.ts",
     "verify:zombie-run-guards": "tsx scripts/verify-zombie-run-guards.ts",
     "verify:p0-visual-fallback-contract": "tsx scripts/verify-p0-visual-fallback-contract.ts",

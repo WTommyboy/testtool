@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { readFirstInputCase, writeAgentResultXlsx } from "./result-writer";
+import type { HelperPreRunActionResult, HelperPreRunSummary } from "./helper-pre-runner";
 
 type RuntimeResultLike = {
   assistantText?: string;
@@ -22,6 +23,24 @@ export type RuntimeContainmentReport = {
   resultXlsxPath?: string;
   failCategory?: string;
   helperPreRunSummaryPath?: string;
+};
+
+export type HelperBrowserSessionContainmentReport = {
+  schemaVersion: "helper-browser-session-containment-result-v1";
+  generatedAt: string;
+  status: "written" | "skipped";
+  reason?: string;
+  runId: string;
+  caseNo: string | null;
+  resultXlsxPath?: string;
+  failCategory?: string;
+  helperPreRunSummaryPath?: string;
+  blockingActions?: Array<{
+    actionId: string;
+    template: string;
+    status: string;
+    reportPath: string | null;
+  }>;
 };
 
 const readJsonIfExists = <T>(filePath: string): T | null => {
@@ -56,6 +75,70 @@ const helperReportsFromSummary = (summary: Record<string, unknown> | null): stri
     if (!action || typeof action !== "object" || Array.isArray(action)) return [];
     const reportPath = (action as { reportPath?: unknown }).reportPath;
     return typeof reportPath === "string" && reportPath.trim() ? [reportPath.trim()] : [];
+  });
+};
+
+const readTextIfExists = (filePath: string | null | undefined, maxBytes = 20_000): string => {
+  if (!filePath || !fs.existsSync(filePath)) return "";
+  try {
+    const buffer = fs.readFileSync(filePath);
+    return buffer.subarray(0, maxBytes).toString("utf8");
+  } catch {
+    return "";
+  }
+};
+
+export const isBrowserTargetClosedText = (text: string): boolean => {
+  if (!text.trim()) return false;
+  return [
+    /Target page, context or browser has been closed/i,
+    /\bTarget closed\b/i,
+    /\bbrowser (?:has been )?closed\b/i,
+    /\bcontext (?:has been )?closed\b/i,
+    /\bpage (?:has been )?closed\b/i,
+    /BROWSER_SESSION_TARGET_MISSING/i,
+    /BROWSER_SESSION_STALE/i
+  ].some((pattern) => pattern.test(text));
+};
+
+const helperActionText = (
+  action: Partial<HelperPreRunActionResult>,
+  options: { readReport?: boolean } = {}
+): string => [
+  action.status,
+  action.error,
+  action.stdoutExcerpt,
+  action.stderrExcerpt,
+  ...(Array.isArray(action.warnings) ? action.warnings : []),
+  options.readReport ? readTextIfExists(action.reportPath) : ""
+]
+  .filter((item): item is string => typeof item === "string" && item.length > 0)
+  .join("\n");
+
+const helperActionHasBrowserTargetClosed = (
+  action: Partial<HelperPreRunActionResult>,
+  options: { readReport?: boolean } = {}
+): boolean => {
+  const status = String(action.status ?? "").toLowerCase();
+  if (status !== "blocked" && status !== "error") return false;
+  return isBrowserTargetClosedText(helperActionText(action, options));
+};
+
+export const helperSummaryHasBrowserTargetClosed = (
+  summary: Pick<HelperPreRunSummary, "actions"> | null | undefined,
+  options: { readReports?: boolean } = {}
+): boolean => {
+  const actions = Array.isArray(summary?.actions) ? summary.actions : [];
+  return actions.some((action) => helperActionHasBrowserTargetClosed(action, { readReport: options.readReports ?? true }));
+};
+
+const helperBrowserTargetClosedActions = (
+  summary: HelperPreRunSummary | Record<string, unknown> | null
+): HelperPreRunActionResult[] => {
+  const actions = Array.isArray(summary?.actions) ? summary.actions : [];
+  return actions.filter((action): action is HelperPreRunActionResult => {
+    if (!action || typeof action !== "object" || Array.isArray(action)) return false;
+    return helperActionHasBrowserTargetClosed(action as Partial<HelperPreRunActionResult>, { readReport: true });
   });
 };
 
@@ -221,5 +304,156 @@ export const writeCodexRuntimeContainmentResultIfNeeded = async (input: {
     resultXlsxPath: writtenPath,
     failCategory,
     helperPreRunSummaryPath
+  });
+};
+
+export const writeHelperBrowserSessionContainmentResultIfNeeded = async (input: {
+  runId: string;
+  roundId: string;
+  runDir: string;
+  xlsxPath?: string;
+  currentCaseNo: string | null;
+}): Promise<HelperBrowserSessionContainmentReport> => {
+  const generatedAt = new Date().toISOString();
+  const reportPath = path.join(input.runDir, "output", "helper-browser-session-containment-result.json");
+  const resultXlsxPath = path.join(input.runDir, "output", "result.xlsx");
+  const helperPreRunSummaryPath = path.join(input.runDir, "output", "helper-pre-run-summary.json");
+  const writeReport = (report: HelperBrowserSessionContainmentReport): HelperBrowserSessionContainmentReport => {
+    fs.mkdirSync(path.dirname(reportPath), { recursive: true });
+    fs.writeFileSync(reportPath, `${JSON.stringify(report, null, 2)}\n`);
+    return report;
+  };
+
+  if (fs.existsSync(resultXlsxPath)) {
+    return writeReport({
+      schemaVersion: "helper-browser-session-containment-result-v1",
+      generatedAt,
+      status: "skipped",
+      reason: "RESULT_XLSX_ALREADY_EXISTS",
+      runId: input.runId,
+      caseNo: input.currentCaseNo,
+      resultXlsxPath,
+      helperPreRunSummaryPath
+    });
+  }
+
+  if (consistencyGateHasErrors(input.runDir)) {
+    return writeReport({
+      schemaVersion: "helper-browser-session-containment-result-v1",
+      generatedAt,
+      status: "skipped",
+      reason: "CONSISTENCY_GATE_ERROR_REQUIRES_PM_DECISION",
+      runId: input.runId,
+      caseNo: input.currentCaseNo,
+      helperPreRunSummaryPath
+    });
+  }
+
+  const helperPreRunSummary = readJsonIfExists<HelperPreRunSummary>(helperPreRunSummaryPath);
+  if (!helperSummaryHasCurrentRunEvidence(helperPreRunSummary as unknown as Record<string, unknown> | null, input.currentCaseNo)) {
+    return writeReport({
+      schemaVersion: "helper-browser-session-containment-result-v1",
+      generatedAt,
+      status: "skipped",
+      reason: "NO_CURRENT_RUN_HELPER_EVIDENCE_TO_CONTAIN",
+      runId: input.runId,
+      caseNo: input.currentCaseNo,
+      helperPreRunSummaryPath
+    });
+  }
+
+  const blockingActions = helperBrowserTargetClosedActions(helperPreRunSummary);
+  if (blockingActions.length === 0) {
+    return writeReport({
+      schemaVersion: "helper-browser-session-containment-result-v1",
+      generatedAt,
+      status: "skipped",
+      reason: "NO_HELPER_BROWSER_SESSION_CLOSED_BLOCKER",
+      runId: input.runId,
+      caseNo: input.currentCaseNo,
+      helperPreRunSummaryPath
+    });
+  }
+
+  const sourceCase = await readFirstInputCase(input.xlsxPath, input.currentCaseNo) ?? (
+    input.currentCaseNo
+      ? {
+          groupId: null,
+          groupName: null,
+          caseNo: input.currentCaseNo,
+          caseTitle: null,
+          testType: null,
+          executionMethod: null
+        }
+      : null
+  );
+  if (!sourceCase) {
+    return writeReport({
+      schemaVersion: "helper-browser-session-containment-result-v1",
+      generatedAt,
+      status: "skipped",
+      reason: "CURRENT_CASE_UNAVAILABLE",
+      runId: input.runId,
+      caseNo: input.currentCaseNo,
+      helperPreRunSummaryPath
+    });
+  }
+
+  const failCategory = "BLOCKED_BROWSER_SESSION_CLOSED";
+  const compactActions = blockingActions.map((action) => ({
+    actionId: action.actionId,
+    template: action.template,
+    status: action.status,
+    reportPath: action.reportPath
+  }));
+  const detailJson = {
+    測試目的: sourceCase.caseTitle
+      ? `執行並判定 ${sourceCase.caseNo}：${sourceCase.caseTitle}`
+      : `執行並判定 ${sourceCase.caseNo}`,
+    設定條件: {
+      runId: input.runId,
+      caseNo: sourceCase.caseNo,
+      helperPreRunStatus: helperPreRunSummary?.status ?? null,
+      helperExecutedCount: helperPreRunSummary?.executedCount ?? null,
+      blockingActions: compactActions
+    },
+    預期行為: "Helper pre-run 若遇到 browser/page/context lifecycle failure，Agent 應隔離為當前單題 BLOCKED，不能讓整輪 run failed 或留下後續 PENDING。",
+    實際行為: "Helper pre-run 已產生 current-run evidence，但 helper action 回報 browser/page/context 已關閉；Agent 以單題 containment 結果保留 evidence 並讓整輪可繼續。",
+    blocked_reason: `${failCategory}: helper browser/page/context target closed during current-case helper pre-run.`,
+    currentRunEvidence: {
+      helperPreRunSummary: helperPreRunSummaryPath,
+      helperReports: helperReportsFromSummary(helperPreRunSummary as unknown as Record<string, unknown> | null),
+      browserSessionContainment: reportPath,
+      helperArtifactDir: path.join(input.runDir, "output", "helper-artifacts", sourceCase.caseNo)
+    },
+    runtimeContainment: {
+      schemaVersion: "helper-browser-session-containment-result-v1",
+      generatedAt,
+      failCategory,
+      policy: "This is a trusted single-case BLOCKED containment result for browser/session lifecycle isolation only. It is not a PASS/FAIL judgment of the product behavior."
+    }
+  };
+
+  const writtenPath = await writeAgentResultXlsx({
+    runId: input.runId,
+    roundId: input.roundId,
+    outputDir: path.join(input.runDir, "output"),
+    sourceCase,
+    status: "BLOCKED",
+    failCategory,
+    detailJson,
+    fileName: "result.xlsx"
+  });
+
+  return writeReport({
+    schemaVersion: "helper-browser-session-containment-result-v1",
+    generatedAt,
+    status: "written",
+    runId: input.runId,
+    caseNo: sourceCase.caseNo,
+    resultXlsxPath: writtenPath,
+    failCategory,
+    helperPreRunSummaryPath,
+    blockingActions: compactActions
   });
 };

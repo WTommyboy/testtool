@@ -304,6 +304,32 @@
       "hazards": ["used as a temporary change in cancel-flow assertions"]
     },
     {
+      "id": "dateRange.preset.lastWeek",
+      "page": "collageEditor",
+      "component": "dateRange.preset",
+      "objectType": "presetButton",
+      "purpose": "Last week preset inside the date range panel.",
+      "aliases": ["上週", "last week"],
+      "supportedActions": ["click", "select", "assertSelected", "assertStateChanged"],
+      "stateAttributes": ["visibleText", "selected", "className"],
+      "evidenceObjects": ["dateRange.panel.state", "dateRange.presetSwitch.state"],
+      "locatorHints": ["preset button text 上週 inside opened date panel"],
+      "hazards": ["paired preset tests must capture after-label evidence for each selected preset"]
+    },
+    {
+      "id": "dateRange.preset.currentWeek",
+      "page": "collageEditor",
+      "component": "dateRange.preset",
+      "objectType": "presetButton",
+      "purpose": "Current week preset inside the date range panel.",
+      "aliases": ["本週", "current week", "this week"],
+      "supportedActions": ["click", "select", "assertSelected", "assertStateChanged"],
+      "stateAttributes": ["visibleText", "selected", "className"],
+      "evidenceObjects": ["dateRange.panel.state", "dateRange.presetSwitch.state"],
+      "locatorHints": ["preset button text 本週 inside opened date panel"],
+      "hazards": ["paired preset tests must capture after-label evidence for each selected preset"]
+    },
+    {
       "id": "dateRange.preset.past30Days",
       "page": "collageEditor",
       "component": "dateRange.preset",

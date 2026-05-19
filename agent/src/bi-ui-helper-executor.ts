@@ -283,8 +283,9 @@ const metricRowsFromParams = (params: Record<string, unknown>): MetricRowParam[]
   const fallbackSourceReport = firstStringParam(params, ["sourceReport", "source", "report", "reportName"]) ?? "每日報表";
   const explicitRows = metricRowsFromUnknownArray(params.metrics, fallbackSourceReport);
   if (explicitRows.length > 0) return explicitRows;
+  const sourceReports = stringArrayParam(params, "sourceReports");
   return metricFieldsFromParams(params).map((field, index) => ({
-    sourceReport: fallbackSourceReport,
+    sourceReport: sourceReports[index] ?? fallbackSourceReport,
     field,
     metricIndex: index
   }));
@@ -2038,14 +2039,34 @@ const fillRelativeDateEndpoint = async (page: Page, side: "start" | "end", offse
   await page.waitForTimeout(250);
   const selector = side === "start" ? "#startDayInput" : "#endDayInput";
   const dayValue = String(Math.abs(offsetDays));
-  await page.locator(selector).first().fill(dayValue, { timeout: 5000 });
-  const observedValue = await page.locator(selector).first().inputValue({ timeout: 3000 }).catch(() => null);
+  let fillMethod = selector;
+  let fillError: string | null = null;
+  let observedValue: string | null = null;
+  try {
+    await page.locator(selector).first().fill(dayValue, { timeout: 2500 });
+    observedValue = await page.locator(selector).first().inputValue({ timeout: 2000 }).catch(() => null);
+  } catch (cause) {
+    fillError = cause instanceof Error ? cause.message : String(cause);
+    const inputs = (await visibleInputIndexes(page).catch(() => []))
+      .filter((item) =>
+        (item.type === "number" || item.type === "text" || item.type === "") &&
+        !/報表名稱|name/i.test(item.placeholder)
+      );
+    const preferred = inputs[side === "start" ? 0 : Math.min(1, Math.max(0, inputs.length - 1))] ?? inputs[0] ?? null;
+    if (preferred) {
+      fillMethod = `input:nth(${preferred.index})`;
+      await page.locator("input").nth(preferred.index).fill(dayValue, { timeout: 5000 });
+      observedValue = await page.locator("input").nth(preferred.index).inputValue({ timeout: 3000 }).catch(() => null);
+    }
+  }
   return {
     side,
     type: "relative",
     offsetDays,
     tabClicked,
-    selector,
+    selector: fillMethod,
+    selectorFallbackFrom: fillMethod === selector ? null : selector,
+    fillError: fillMethod === selector ? null : fillError?.slice(0, 500) ?? null,
     requestedInputValue: dayValue,
     observedValue,
     verified: observedValue === dayValue
@@ -4444,6 +4465,10 @@ const caseScopeTargetsFromParams = (params: Record<string, unknown>): Set<string
 
 const datePresetLabelFromTarget = (target: string): string | null => {
   switch (target) {
+    case "dateRange.preset.lastWeek":
+      return "上週";
+    case "dateRange.preset.currentWeek":
+      return "本週";
     case "dateRange.preset.past30Days":
       return "過去 30 天";
     case "dateRange.preset.recent30Days":

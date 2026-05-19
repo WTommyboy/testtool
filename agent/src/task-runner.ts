@@ -10,7 +10,12 @@ import { ensureBlockedResultCurrentRunEvidence } from "./result-evidence-enriche
 import { normalizeCodexResultWorkbook } from "./result-workbook-normalizer";
 import { repairSingleCaseResultWorkbook } from "./result-workbook-repair";
 import { containResultEvidenceUploadFailure } from "./result-evidence-upload-containment";
-import { writeCodexRuntimeContainmentResultIfNeeded, type RuntimeContainmentReport } from "./runtime-containment-result";
+import {
+  helperSummaryHasBrowserTargetClosed,
+  writeCodexRuntimeContainmentResultIfNeeded,
+  writeHelperBrowserSessionContainmentResultIfNeeded,
+  type RuntimeContainmentReport
+} from "./runtime-containment-result";
 import { parseToolRequests, type ParsedToolRequest } from "./tool-bridge";
 import { writeBiUiHelperGuidance } from "./bi-ui-helper-guidance";
 import { writeCapabilityGate } from "./capability-gate";
@@ -802,6 +807,7 @@ const removeStaleCaseOutput = (runDir: string): void => {
     "result-xlsx-repair.json",
     "tool-requests.json",
     "tool-requests-resume.json",
+    "helper-browser-session-containment-result.json",
     "runtime-containment-result.json"
   ];
   for (const fileName of staleFiles) {
@@ -2413,6 +2419,23 @@ const makeSyntheticCodexResult = (errorMessage: string): CodexTurnResult => ({
   durationMs: 0
 });
 
+const makeSyntheticContainedCodexResult = (message: string): CodexTurnResult => {
+  const at = new Date().toISOString();
+  return {
+    threadId: null,
+    assistantText: message,
+    events: [],
+    rawStdout: "",
+    parseErrors: [],
+    exitCode: 0,
+    signal: null,
+    stderr: "",
+    startedAt: at,
+    endedAt: at,
+    durationMs: 0
+  };
+};
+
 const findFiles = (dir: string, predicate: (filePath: string) => boolean): string[] => {
   if (!fs.existsSync(dir)) return [];
   const results: string[] = [];
@@ -3156,6 +3179,66 @@ type NextCasePreparation = {
   chromeCdpEndpoint: string | null;
 };
 
+const recoverHelperPreRunBrowserSessionIfNeeded = async (options: {
+  connection: AgentConnection;
+  config: AgentConfig;
+  message: AgentMessage;
+  runId: string;
+  runDir: string;
+  timing: RunTimingRecorder;
+  currentCaseNo: string | null;
+  helperPreRunSummary: HelperPreRunSummary;
+  chromeCdpEndpoint: string | null;
+}): Promise<{ helperPreRunSummary: HelperPreRunSummary; chromeCdpEndpoint: string | null; recovered: boolean }> => {
+  if (!helperSummaryHasBrowserTargetClosed(options.helperPreRunSummary)) {
+    return {
+      helperPreRunSummary: options.helperPreRunSummary,
+      chromeCdpEndpoint: options.chromeCdpEndpoint,
+      recovered: false
+    };
+  }
+
+  sendBestEffort(
+    options.connection,
+    "run.stdout",
+    {
+      run_id: options.runId,
+      text: `uat-agent detected helper browser/session target closed for ${options.currentCaseNo ?? "current case"}; recreating browser lease and retrying helper pre-run once.`
+    },
+    false
+  );
+  const chromeCdpEndpoint = await timeAgentPhase(
+    options.timing,
+    options.connection,
+    options.runId,
+    "browser_recover_helper_pre_run",
+    "重建 Helper Browser Session",
+    `current_case=${options.currentCaseNo ?? "unknown"}; previous helper pre-run hit browser/page/context closed.`,
+    () => prepareChromeForCase(options.config, options.message, options.runDir, options.currentCaseNo)
+  );
+  const helperPreRunSummary = await timeAgentPhase(
+    options.timing,
+    options.connection,
+    options.runId,
+    "helper_pre_run_retry",
+    "重跑安全 Helper",
+    "browser session 已重建；同一 case 只重試 helper pre-run 一次。",
+    () => runSafeHelperActions(options.runDir, options.timing)
+  );
+  sendProgress(options.connection, options.runId, `helper pre-run retry after browser recovery: ${summarizeHelperPreRun(helperPreRunSummary)}`, {
+    helperPreRun: helperPreRunSummary,
+    helperPreRunRecovery: {
+      reason: "BROWSER_SESSION_CLOSED",
+      recovered: !helperSummaryHasBrowserTargetClosed(helperPreRunSummary)
+    }
+  });
+  return {
+    helperPreRunSummary,
+    chromeCdpEndpoint,
+    recovered: !helperSummaryHasBrowserTargetClosed(helperPreRunSummary)
+  };
+};
+
 const prepareNextCaseIfAny = async (options: {
   connection: AgentConnection;
   config: AgentConfig;
@@ -3202,7 +3285,7 @@ const prepareNextCaseIfAny = async (options: {
     "done"
   );
 
-  const chromeCdpEndpoint = await timeAgentPhase(
+  let chromeCdpEndpoint = await timeAgentPhase(
     timing,
     connection,
     runId,
@@ -3213,7 +3296,7 @@ const prepareNextCaseIfAny = async (options: {
       : "下一題前重建 dedicated Chrome process，建立背景 lease tab，避免沿用上一題 UI/native dialog 狀態。",
     () => prepareChromeForCase(config, message, runDir, guides.caseManifest.currentCaseNo)
   );
-  const helperPreRunSummary = await timeAgentPhase(
+  let helperPreRunSummary = await timeAgentPhase(
     timing,
     connection,
     runId,
@@ -3225,6 +3308,19 @@ const prepareNextCaseIfAny = async (options: {
   sendProgress(connection, runId, summarizeHelperPreRun(helperPreRunSummary), {
     helperPreRun: helperPreRunSummary
   });
+  const recovery = await recoverHelperPreRunBrowserSessionIfNeeded({
+    connection,
+    config,
+    message,
+    runId,
+    runDir,
+    timing,
+    currentCaseNo: guides.caseManifest.currentCaseNo,
+    helperPreRunSummary,
+    chromeCdpEndpoint
+  });
+  helperPreRunSummary = recovery.helperPreRunSummary;
+  chromeCdpEndpoint = recovery.chromeCdpEndpoint;
   await runAutoApprovedPendingHelperContinuation({
     connection,
     config,
@@ -3307,6 +3403,89 @@ const runFreshCasesUntilPauseOrDone = async (options: {
   let firstIteration = true;
 
   while (true) {
+    const helperBrowserContainment = await writeHelperBrowserSessionContainmentResultIfNeeded({
+      runId,
+      roundId: getStringPayload(message, "round_id") ?? runId,
+      runDir,
+      xlsxPath: inputs.xlsx,
+      currentCaseNo: guides.caseManifest.currentCaseNo
+    });
+    if (helperBrowserContainment.status === "written") {
+      sendBestEffort(
+        connection,
+        "run.stdout",
+        {
+          run_id: runId,
+          text: `uat-agent contained helper browser/session failure for ${helperBrowserContainment.caseNo ?? "current case"} as BLOCKED/BLOCKED_BROWSER_SESSION_CLOSED; continuing run after result upload.`
+        },
+        false
+      );
+      const containedResult = makeSyntheticContainedCodexResult(
+        `Agent wrote BLOCKED/BLOCKED_BROWSER_SESSION_CLOSED for ${helperBrowserContainment.caseNo ?? "current case"} before starting Codex because helper pre-run browser/page/context target closed.`
+      );
+      lastResult = containedResult;
+      persistCodexResult(runDir, containedResult, "codex-helper-browser-session-containment");
+      uploadedArtifacts = await timeAgentPhase(
+        timing,
+        connection,
+        runId,
+        "upload_result",
+        "上傳結果與 Log",
+        `Agent 已隔離 ${guides.caseManifest.currentCaseNo ?? "current case"} 的 helper browser/session failure，正在上傳 output/result.xlsx 與 agent.log。`,
+        () => uploadRunArtifacts({
+          connection,
+          config,
+          message,
+          runId,
+          runDir,
+          inputs,
+          result: containedResult,
+          failCategory: null
+        })
+      );
+      if (!uploadedArtifacts.usedCodexGeneratedResult) {
+        throw new Error("CODEX_NO_RESULT_XLSX");
+      }
+
+      const advancePolicy = evaluateRunCaseAdvancePolicy(inputs);
+      writeJson(path.join(runDir, "output", "case-advance-policy.json"), {
+        ...advancePolicy,
+        currentCaseNo: guides.caseManifest.currentCaseNo,
+        generatedAt: new Date().toISOString()
+      });
+      if (!advancePolicy.autoAdvance) {
+        markCurrentCaseCompleted(runDir, runId, guides.caseManifest, uploadedArtifacts);
+        sendPhase(
+          connection,
+          runId,
+          "case_completed_stop",
+          "單題 Run 已完成",
+          `依指派文字停止自動下一題：${advancePolicy.matchedText ?? advancePolicy.reason}`,
+          "done"
+        );
+        return { paused: false, lastResult, uploadedArtifacts, runner };
+      }
+
+      const next = await prepareNextCaseIfAny({
+        connection,
+        config,
+        message,
+        runId,
+        runDir,
+        inputs,
+        timing,
+        currentGuides: guides,
+        uploadedArtifacts
+      });
+      if (!next) {
+        return { paused: false, lastResult, uploadedArtifacts, runner };
+      }
+      guides = next.guides;
+      chromeCdpEndpoint = next.chromeCdpEndpoint;
+      firstIteration = false;
+      continue;
+    }
+
     runner = createCodexRunner(connection, config, runDir, runId, chromeCdpEndpoint, timing);
     const activeRunner = runner;
     hooks.onCancelReady?.(runId, (reason = "cancelled_by_pm") => {
@@ -3540,7 +3719,7 @@ export const handleTaskDispatch = async (
       `已下載 ${Object.keys(downloadedInputs).length} 個輸入檔；run brief: ${runBriefPath}`,
       "done"
     );
-    const chromeCdpEndpoint = await timeAgentPhase(
+    let chromeCdpEndpoint = await timeAgentPhase(
       timing,
       connection,
       runId,
@@ -3574,7 +3753,7 @@ export const handleTaskDispatch = async (
       false
     );
 
-    const helperPreRunSummary = await timeAgentPhase(
+    let helperPreRunSummary = await timeAgentPhase(
       timing,
       connection,
       runId,
@@ -3586,6 +3765,19 @@ export const handleTaskDispatch = async (
     sendProgress(connection, runId, summarizeHelperPreRun(helperPreRunSummary), {
       helperPreRun: helperPreRunSummary
     });
+    const recovery = await recoverHelperPreRunBrowserSessionIfNeeded({
+      connection,
+      config,
+      message,
+      runId,
+      runDir,
+      timing,
+      currentCaseNo: generatedGuides.caseManifest.currentCaseNo,
+      helperPreRunSummary,
+      chromeCdpEndpoint
+    });
+    helperPreRunSummary = recovery.helperPreRunSummary;
+    chromeCdpEndpoint = recovery.chromeCdpEndpoint;
     await runAutoApprovedPendingHelperContinuation({
       connection,
       config,

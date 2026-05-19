@@ -327,6 +327,22 @@
       "visualCues": ["preset button"],
       "alignmentNotes": "Visible preset text is 昨日."
     },
+    "dateRange.preset.lastWeek": {
+      "status": "confirmed",
+      "sourceIds": ["live.datePanelOpen", "ui.datePanelOpen"],
+      "screenContext": "Date range panel preset column.",
+      "visibleText": ["上週"],
+      "visualCues": ["preset button"],
+      "alignmentNotes": "Visible preset text is 上週."
+    },
+    "dateRange.preset.currentWeek": {
+      "status": "confirmed",
+      "sourceIds": ["live.datePanelOpen", "ui.datePanelOpen"],
+      "screenContext": "Date range panel preset column.",
+      "visibleText": ["本週"],
+      "visualCues": ["preset button"],
+      "alignmentNotes": "Visible preset text is 本週."
+    },
     "dateRange.preset.past30Days": {
       "status": "confirmed",
       "sourceIds": ["live.datePanelOpen", "ui.datePanelOpen"],

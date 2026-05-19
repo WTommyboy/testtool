@@ -427,6 +427,10 @@ const actionsForTemplate = (
 
 const structuredDatePresetLabelFromTarget = (target: string): string | null => {
   switch (target) {
+    case "dateRange.preset.lastWeek":
+      return "上週";
+    case "dateRange.preset.currentWeek":
+      return "本週";
     case "dateRange.preset.past30Days":
       return "過去 30 天";
     case "dateRange.preset.recent30Days":
@@ -623,6 +627,17 @@ const cleanDateRangeText = (value: string | null): string | null => {
   return nonNeutral(cleaned);
 };
 
+const sourceReportListFromText = (text: string): string[] => {
+  const match = text.match(/來源報表(?:[（(][^)）]+[)）])?[=：: ]*([^\n]+)/);
+  const raw = match?.[1]?.trim() ?? "";
+  if (!raw) return [];
+  return raw
+    .split(/[,，、;/；]/)
+    .map((item) => item.replace(/[`"'「」]/g, "").trim())
+    .map((item) => item.replace(/\s*\(.*?\)\s*$/, "").trim())
+    .filter((item) => item && !/多源|固定欄位|授權需求|備註/.test(item));
+};
+
 const inferCollageParams = (currentCase: CaseManifestCase | null, helperHints: HelperHints | null): Record<string, unknown> => {
   const text = textBlob(currentCase);
   const cleanup = parseCleanupTargets(currentCase?.cleanupChecklist);
@@ -664,14 +679,22 @@ const inferCollageParams = (currentCase: CaseManifestCase | null, helperHints: H
     cleanDateRangeText(cleanup["時間"]) ??
     firstMatch(text, [/(\d{4}\/\d{2}\/\d{2}\s*[~～-]\s*\d{4}\/\d{2}\/\d{2})/]);
   const explicitSourceReportsParam = stringArrayParam(params, "sourceReports");
-  const sourceReportsParam = explicitSourceReportsParam.length > 0 ? explicitSourceReportsParam : expectedSourcesParam;
+  const sourceReportsFromText = sourceReportListFromText(text);
+  const sourceReportsParam = explicitSourceReportsParam.length > 0
+    ? explicitSourceReportsParam
+    : expectedSourcesParam.length > 0
+      ? expectedSourcesParam
+      : sourceReportsFromText.length > 1
+        ? sourceReportsFromText
+        : [];
   const explicitSource = stringParam(params, ["source", "sourceReport"]);
   const paramReportListDownload = paramsRequestReportListDownload(params);
   const paramEditorSessionDownload = paramsRequestEditorSessionDownload(params);
   const inferredSource = selectAllFields && sourceReportsParam.length > 0
     ? null
-    : firstMatch(text, [/來源報表[=：: ]*「?([^」\n,， ]+)/]);
-  const effectiveSource = explicitSource ?? inferredSource ?? (caseScopeContract?.routeIntent === "download_execution" ? "每日報表" : null);
+    : firstMatch(text, [/來源報表(?:[（(][^)）]+[)）])?[=：: ]*「?([^」\n,， ]+)/]);
+  const cleanInferredSource = inferredSource && !/多源/.test(inferredSource) ? inferredSource : null;
+  const effectiveSource = explicitSource ?? cleanInferredSource ?? (sourceReportsFromText.length === 1 ? sourceReportsFromText[0] : null) ?? (caseScopeContract?.routeIntent === "download_execution" ? "每日報表" : null);
   const sourceReports = sourceReportsParam.length > 0
     ? sourceReportsParam
     : allZeroFieldInspection && effectiveSource

@@ -580,6 +580,50 @@
       }
     },
     {
+      "caseNo": "BIUI_COLLAGE_R001-L-05",
+      "routeIntent": "frontend_observation",
+      "testTarget": "frontend_presentation",
+      "requiresEditor": true,
+      "observationType": "datePanel",
+      "requiredActions": [
+        {
+          "actionId": "openDatePanelForWeekPresets",
+          "action": "open",
+          "target": "dateRange.button",
+          "role": "precondition",
+          "expectedOutcome": "visible",
+          "requiredForPass": true,
+          "evidenceRequirements": ["dateRange.panel.state", "interactionLog"]
+        },
+        {
+          "actionId": "selectLastWeekPreset",
+          "action": "select",
+          "target": "dateRange.preset.lastWeek",
+          "role": "under_test",
+          "expectedOutcome": "state_changed",
+          "requiredForPass": true,
+          "evidenceRequirements": ["dateRange.presetSwitch.state", "interactionLog", "screenshot"]
+        },
+        {
+          "actionId": "selectCurrentWeekPreset",
+          "action": "select",
+          "target": "dateRange.preset.currentWeek",
+          "role": "under_test",
+          "expectedOutcome": "state_changed",
+          "requiredForPass": true,
+          "evidenceRequirements": ["dateRange.presetSwitch.state", "interactionLog", "screenshot"]
+        }
+      ],
+      "evidenceRequirements": {
+        "flow": ["interactionLog", "dateRange.presetSwitch.state"],
+        "observation": ["screenshot"]
+      },
+      "judgmentPolicy": {
+        "failWhen": ["上週 and 本週 preset buttons are reachable but either click does not update the date range button text/state"],
+        "blockedWhen": ["date panel or the requested week preset buttons cannot be reached"]
+      }
+    },
+    {
       "caseNo": "BIUI_COLLAGE_R001-L-08",
       "routeIntent": "frontend_observation",
       "testTarget": "functional_flow",

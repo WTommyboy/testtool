@@ -106,7 +106,10 @@ const main = (): void => {
     "caseScopeDateTimeTypeTab",
     "editor-toolbar-icon-download-control",
     "\"download.toast.state\"",
-    "\"sourceControl.after\""
+    "\"sourceControl.after\"",
+    "\"dateRange.preset.lastWeek\"",
+    "\"dateRange.preset.currentWeek\"",
+    "selectorFallbackFrom"
   ]) {
     assert(executorSource.includes(snippet), `helper executor missing P0.19 live-template guard: ${snippet}`);
   }
@@ -146,6 +149,34 @@ const main = (): void => {
     minimalDownloadPlan.actions.some((item) => item.template === "collage.downloadCsvAndComparePreview"),
     "download_execution contract must include download helper even when prose lacks 下載/CSV keywords"
   );
+
+  const multiSourceCase: CaseManifestCase = {
+    order: 1,
+    rowNumber: 2,
+    groupId: "D",
+    groupName: "D:cross-source",
+    caseNo: "BIUI_COLLAGE_R001-D-01",
+    caseTitle: "跨報表欄位組合 — 數據獨立性",
+    testType: "後端功能",
+    executionMethod: "agent",
+    riskLevel: "🟢 觀察",
+    testTarget: "後端功能",
+    cleanupChecklist: "欄位=新增帳號數,總營收,退費總金額;篩選=0組;分組=不影響;時間=2026/03/01~2026/03/31;顯示=不影響",
+    preconditions: "起始頁面: 拼貼模式新增報表設定頁\n導航路徑: 我的自訂 > 拼貼報表 > 任一專案 > +新增報表\n建構模式: 拼貼\n來源報表(多源): 每日報表, 雙平台營收佔比, 退費追蹤\n固定欄位: 新增帳號數(每日報表), 總營收(雙平台營收佔比), 退費總金額(退費追蹤)",
+    stepsSummary: "選擇三個不同來源報表欄位，按執行 preview。",
+    expected: "3 欄都成功 preview，且 source report 不被解析為 literal '(多源)'。",
+    resultStatus: null,
+    testDate: null,
+    detailJson: null,
+    validationMethod: "P0.28 multi-source route smoke",
+    currentCaseFile: path.join(os.tmpdir(), "BIUI_COLLAGE_R001-D-01.json")
+  };
+  const multiSourcePlan = buildHelperExecutionPlan({ runDir: os.tmpdir(), currentCase: multiSourceCase, helperHints: null });
+  const configureAction = multiSourcePlan.actions.find((item) => item.template === "collage.configureMetric");
+  assert(configureAction, "D-01 multi-source case must route to configureMetric");
+  assert.deepEqual(configureAction.params.sourceReports, ["每日報表", "雙平台營收佔比", "退費追蹤"]);
+  assert.deepEqual(configureAction.params.fields, ["新增帳號數", "總營收", "退費總金額"]);
+  assert.notEqual(configureAction.params.source, "(多源):");
 
   console.log(JSON.stringify({
     ok: true,
