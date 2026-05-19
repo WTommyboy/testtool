@@ -1667,3 +1667,11 @@ P0a v1 範圍釐清：containment 只處理唯一 self-check error 為 `RESULT_P
   - L-02 run `/Users/tommy/.uat-agent-dev/runs/p0-12-observe-l02-20260517232559`：`openProject=ok`、`createReport=ok`、`observe=ok`、`openedByVisibleUi=true`、`requestDelta=0`、`missingTexts=[]`。
   - K-10 run `/Users/tommy/.uat-agent-dev/runs/p0-12-observe-k10-20260517232642`：`openProject=ok`、`createReport=ok`、`observe=ok`、`visibleText=欄位未設置完成`、`requestDelta=0`。
 - 結論：P0.12 proves the observation bridge is no longer merely a stricter blocker. It can collect structured evidence for the exact I/J/K/L cases that became false BLOCKED in `ecc53283`. Before Tommy runs dev UAT, final step is commit/push dev and restart `com.tommy.uat-agent-dev`, then record dist mtime + process start time to avoid stale-code confusion.
+
+### 2026-05-19 - Runtime containment for B-12 Codex result-write failure
+
+- 背景：dev run `e352cf8b-213b-4bbb-8c4a-674070a8df3f` 已完成 A-01 到 B-11，B-12 helper pre-run 也完成 `openProject/createReport/runDateVariantsPreviewEvidence` 並產生兩段日期 evidence，但 Codex subprocess 在讀 evidence / 判定 / 寫 `output/result.xlsx` 前以 `CODEX_RUN_FAILED` 結束。Agent 只產生不可信 `agent-fallback-result.xlsx`，導致整輪 FAILED 且 B-12 之後 85 題停住。
+- Date variants evidence：`collage.runDateVariantsPreviewEvidence` 現在會在原本 per-variant evidence 外，補向前相容摘要欄位：`networkEvidence.requestBody/requestDateRange`、`tableSummary.rowCount/firstDate/lastDate/sum/dateHeaders`、`judgmentSummary` 與 top-level `comparison`。這不讓 helper 判 PASS/FAIL，只把 evidence shape 穩定化，避免 Codex 用舊路徑如 `.dateVariants[].tableSummary` 時直接讀不到。
+- Runtime containment：新增 `agent/src/runtime-containment-result.ts`。若 Codex exit 非 0 且沒有 `output/result.xlsx`，但 current case 的 helper pre-run 已有 current-run evidence，且 package/document consistency 沒有 error，Agent 會寫可信單題 `output/result.xlsx`：`BLOCKED / CODEX_RUNTIME_RESULT_WRITE_FAILED`，detail_json 保留 helper summary/report paths、Codex failure、artifact dir 與 containment metadata。這是 process isolation，不是產品 PASS/FAIL 判定。
+- 邊界：若 package/document consistency 為 error，仍不 containment，必須停等 PM resolve/override；若沒有 current-run helper evidence，也不 containment，避免把真實工具不可達或前置缺失偽裝成可繼續結果。
+- 驗證：新增 `npm run verify:date-variants-evidence-summary` 與 `npm run verify:runtime-containment-result`。另已跑 `npm run verify:agent-result-contract`、`npm run typecheck`、`npm run build --prefix agent`、`npm run build`。

@@ -2423,6 +2423,141 @@ const observeDuring = async <T>(page: Page, fn: () => Promise<T>): Promise<{ res
   }
 };
 
+const parseJsonObject = (value: unknown): Record<string, unknown> | null => {
+  if (!value) return null;
+  if (typeof value === "object" && !Array.isArray(value)) return value as Record<string, unknown>;
+  if (typeof value !== "string" || !value.trim()) return null;
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed as Record<string, unknown> : null;
+  } catch {
+    return null;
+  }
+};
+
+const isoDateFromHeader = (value: unknown): string | null => {
+  if (typeof value !== "string") return null;
+  const match = value.match(/\b(\d{4})-(\d{2})-(\d{2})\b/);
+  return match ? `${match[1]}-${match[2]}-${match[3]}` : null;
+};
+
+const tableDateHeaders = (table: Record<string, unknown> | null): string[] => {
+  const header = Array.isArray(table?.header) ? table.header : [];
+  return header.flatMap((item) => {
+    const iso = isoDateFromHeader(item);
+    return iso ? [iso] : [];
+  });
+};
+
+const summarizePreviewTableForDateVariant = (table: Record<string, unknown> | null): Record<string, unknown> | null => {
+  if (!table) return null;
+  const dateHeaders = tableDateHeaders(table);
+  const numericColumns = Array.isArray(table.numericColumns) ? table.numericColumns : [];
+  const intervalColumn = numericColumns.find((item) => {
+    if (!item || typeof item !== "object" || Array.isArray(item)) return false;
+    return String((item as Record<string, unknown>).header ?? "").includes("區間總和");
+  }) as Record<string, unknown> | undefined;
+  const intervalSummary = intervalColumn?.summary && typeof intervalColumn.summary === "object" && !Array.isArray(intervalColumn.summary)
+    ? intervalColumn.summary as Record<string, unknown>
+    : null;
+  return {
+    rowCount: dateHeaders.length,
+    dateColumnCount: dateHeaders.length,
+    firstDate: dateHeaders.length > 0 ? dateHeaders[dateHeaders.length - 1] : null,
+    lastDate: dateHeaders.length > 0 ? dateHeaders[0] : null,
+    dateHeaders,
+    sum: intervalSummary?.sum ?? null,
+    intervalSummary,
+    dataRowCount: table.dataRowCount ?? null
+  };
+};
+
+const summarizeNetworkForDateVariant = (network: Record<string, unknown>): Record<string, unknown> => {
+  const requests = Array.isArray(network.requests) ? network.requests as Array<Record<string, unknown>> : [];
+  const responses = Array.isArray(network.responses) ? network.responses as Array<Record<string, unknown>> : [];
+  const previewRequest = [...requests].reverse().find((item) => /preview/i.test(String(item.url ?? ""))) ?? requests[requests.length - 1] ?? null;
+  const requestBody = parseJsonObject(previewRequest?.postData);
+  return {
+    request: previewRequest,
+    requestBody,
+    requestDateRange: requestBody?.dateRange ?? null,
+    response: responses[responses.length - 1] ?? null,
+    responseStatus: responses[responses.length - 1]?.status ?? null
+  };
+};
+
+const representedRangeLabel = (value: unknown): string | null => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  const start = typeof record.startIso === "string" ? record.startIso : typeof record.start === "string" ? record.start : null;
+  const end = typeof record.endIso === "string" ? record.endIso : typeof record.end === "string" ? record.end : null;
+  return start && end ? `${start} ~ ${end}` : null;
+};
+
+export const summarizeDateVariantPreviewEvidenceForJudgment = (
+  evidence: Record<string, unknown>
+): Record<string, unknown> => {
+  const variants = Array.isArray(evidence.variants) ? evidence.variants as Array<Record<string, unknown>> : [];
+  const summaries = variants.map((variant) => {
+    const dateUiEvidence = variant.dateUiEvidence && typeof variant.dateUiEvidence === "object" && !Array.isArray(variant.dateUiEvidence)
+      ? variant.dateUiEvidence as Record<string, unknown>
+      : {};
+    const observed = dateUiEvidence.observed && typeof dateUiEvidence.observed === "object" && !Array.isArray(dateUiEvidence.observed)
+      ? dateUiEvidence.observed as Record<string, unknown>
+      : {};
+    const matchedRepresentedRange = dateUiEvidence.matchedRepresentedRange ?? null;
+    const networkEvidence = summarizeNetworkForDateVariant(
+      variant.network && typeof variant.network === "object" && !Array.isArray(variant.network)
+        ? variant.network as Record<string, unknown>
+        : {}
+    );
+    const tableSummary = summarizePreviewTableForDateVariant(
+      variant.table && typeof variant.table === "object" && !Array.isArray(variant.table)
+        ? variant.table as Record<string, unknown>
+        : null
+    );
+    const effectiveDateRange = representedRangeLabel(matchedRepresentedRange) ??
+      representedRangeLabel(networkEvidence.requestDateRange) ??
+      null;
+    return {
+      index: variant.index ?? null,
+      requestedLabel: variant.requestedLabel ?? null,
+      requestedDateRange: variant.normalizedLabel ?? variant.requestedLabel ?? null,
+      effectiveDateRange,
+      dateButtonText: observed.dateRangeButtonText ?? observed.dateRangeDisplayText ?? (matchedRepresentedRange as Record<string, unknown> | null)?.rawText ?? null,
+      status: variant.status ?? null,
+      tableSummary,
+      networkEvidence,
+      dateUiChecks: dateUiEvidence.checks ?? null,
+      interactionLog: (variant.setDateResult as Record<string, unknown> | undefined)?.interactionLog ?? null,
+      warnings: Array.isArray(variant.warnings) ? variant.warnings : []
+    };
+  });
+  const dateRanges = summaries.map((item) => item.effectiveDateRange).filter((item): item is string => typeof item === "string" && item.length > 0);
+  const rowCounts = summaries
+    .map((item) => item.tableSummary && typeof item.tableSummary === "object" && !Array.isArray(item.tableSummary) ? (item.tableSummary as Record<string, unknown>).rowCount : null)
+    .filter((item): item is number => typeof item === "number");
+  const dateHeaderSets = summaries.map((item) => {
+    const headers = item.tableSummary && typeof item.tableSummary === "object" && !Array.isArray(item.tableSummary)
+      ? (item.tableSummary as Record<string, unknown>).dateHeaders
+      : null;
+    return new Set(Array.isArray(headers) ? headers.filter((header): header is string => typeof header === "string") : []);
+  });
+  const overlappingDateHeaders = dateHeaderSets.length >= 2
+    ? [...dateHeaderSets[0]].some((header) => dateHeaderSets.slice(1).some((set) => set.has(header)))
+    : null;
+  return {
+    schemaVersion: "date-variants-preview-judgment-summary-v1",
+    variantCount: summaries.length,
+    variants: summaries,
+    comparison: {
+      dateRangesDiffer: dateRanges.length >= 2 ? new Set(dateRanges).size === dateRanges.length : null,
+      rowCountsDiffer: rowCounts.length >= 2 ? new Set(rowCounts).size > 1 : null,
+      overlappingDateHeaders
+    }
+  };
+};
+
 const observeDuringWithResponseBodies = async <T>(
   page: Page,
   fn: () => Promise<T>,
@@ -5269,8 +5404,10 @@ const runDateVariantsPreviewEvidence = async (options: CliOptions, page: Page, s
       dateUiEvidence,
       executePrecondition,
       network: observed,
+      networkEvidence: summarizeNetworkForDateVariant(observed),
       chart,
       table,
+      tableSummary: summarizePreviewTableForDateVariant(table),
       domState: await readDomState(page),
       stateDelta: await readStateDelta(page, { ...options.params, dateRange: label }).catch((error) => ({
         readError: error instanceof Error ? error.message : String(error)
@@ -5308,6 +5445,11 @@ const runDateVariantsPreviewEvidence = async (options: CliOptions, page: Page, s
     operations,
     variants
   };
+  const judgmentSummary = summarizeDateVariantPreviewEvidenceForJudgment(evidence);
+  Object.assign(evidence, {
+    judgmentSummary,
+    comparison: judgmentSummary.comparison
+  });
   ensureDir(artifactRoot(options));
   fs.writeFileSync(dateVariantsPreviewEvidencePath(options), `${JSON.stringify(evidence, null, 2)}\n`);
   if (variants.length === 1) {

@@ -9,6 +9,7 @@ import { containPassContradictionsAsBlocked, validateResultWorkbookContract } fr
 import { ensureBlockedResultCurrentRunEvidence } from "./result-evidence-enricher";
 import { normalizeCodexResultWorkbook } from "./result-workbook-normalizer";
 import { repairSingleCaseResultWorkbook } from "./result-workbook-repair";
+import { writeCodexRuntimeContainmentResultIfNeeded, type RuntimeContainmentReport } from "./runtime-containment-result";
 import { parseToolRequests, type ParsedToolRequest } from "./tool-bridge";
 import { writeBiUiHelperGuidance } from "./bi-ui-helper-guidance";
 import { writeCapabilityGate } from "./capability-gate";
@@ -704,7 +705,8 @@ const removeStaleCaseOutput = (runDir: string): void => {
     "result-xlsx-self-check.json",
     "result-xlsx-repair.json",
     "tool-requests.json",
-    "tool-requests-resume.json"
+    "tool-requests-resume.json",
+    "runtime-containment-result.json"
   ];
   for (const fileName of staleFiles) {
     fs.rmSync(path.join(outputDir, fileName), { force: true });
@@ -2988,6 +2990,49 @@ const prepareNextCaseIfAny = async (options: {
   return { guides, chromeCdpEndpoint };
 };
 
+const containCodexRuntimeFailureIfNeeded = async (options: {
+  connection: AgentConnection;
+  message: AgentMessage;
+  runId: string;
+  runDir: string;
+  inputs: DownloadedInputs;
+  guides: GeneratedRunGuides;
+  result: CodexTurnResult;
+}): Promise<RuntimeContainmentReport | null> => {
+  if (options.result.exitCode === 0) return null;
+  const report = await writeCodexRuntimeContainmentResultIfNeeded({
+    runId: options.runId,
+    roundId: getStringPayload(options.message, "round_id") ?? options.runId,
+    runDir: options.runDir,
+    xlsxPath: options.inputs.xlsx,
+    currentCaseNo: options.guides.caseManifest.currentCaseNo,
+    result: options.result,
+    failCategory: "CODEX_RUNTIME_RESULT_WRITE_FAILED"
+  });
+  if (report.status === "written") {
+    sendBestEffort(
+      options.connection,
+      "run.stdout",
+      {
+        run_id: options.runId,
+        text: `uat-agent contained Codex runtime failure for ${report.caseNo ?? "current case"} as BLOCKED/CODEX_RUNTIME_RESULT_WRITE_FAILED; continuing run after result upload.`
+      },
+      false
+    );
+  } else {
+    sendBestEffort(
+      options.connection,
+      "run.stderr",
+      {
+        run_id: options.runId,
+        text: `uat-agent could not contain Codex runtime failure for ${options.guides.caseManifest.currentCaseNo ?? "current case"}: ${report.reason ?? "unknown"}`
+      },
+      false
+    );
+  }
+  return report;
+};
+
 const runFreshCasesUntilPauseOrDone = async (options: {
   connection: AgentConnection;
   config: AgentConfig;
@@ -3109,6 +3154,16 @@ const runFreshCasesUntilPauseOrDone = async (options: {
       );
     }
 
+    const runtimeContainment = await containCodexRuntimeFailureIfNeeded({
+      connection,
+      message,
+      runId,
+      runDir,
+      inputs,
+      guides,
+      result
+    });
+
     uploadedArtifacts = await timeAgentPhase(
       timing,
       connection,
@@ -3128,7 +3183,8 @@ const runFreshCasesUntilPauseOrDone = async (options: {
       })
     );
 
-    if (result.exitCode !== 0) {
+    const runtimeFailureContained = runtimeContainment?.status === "written" && uploadedArtifacts.usedCodexGeneratedResult;
+    if (result.exitCode !== 0 && !runtimeFailureContained) {
       throw new Error(`CODEX_RUN_FAILED exit=${result.exitCode} signal=${result.signal ?? "none"}`);
     }
     if (!uploadedArtifacts.usedCodexGeneratedResult) {
@@ -3656,6 +3712,39 @@ export const handleToolResponse = async (
       );
     }
 
+    const runtimeContainment = result.exitCode === 0
+      ? null
+      : await writeCodexRuntimeContainmentResultIfNeeded({
+        runId,
+        roundId: getStringPayload(dispatch, "round_id") ?? runId,
+        runDir,
+        xlsxPath: downloadedInputs.xlsx,
+        currentCaseNo,
+        result,
+        failCategory: "CODEX_RUNTIME_RESULT_WRITE_FAILED"
+      });
+    if (runtimeContainment?.status === "written") {
+      sendBestEffort(
+        connection,
+        "run.stdout",
+        {
+          run_id: runId,
+          text: `uat-agent contained Codex runtime failure during resume for ${runtimeContainment.caseNo ?? "current case"} as BLOCKED/CODEX_RUNTIME_RESULT_WRITE_FAILED.`
+        },
+        false
+      );
+    } else if (runtimeContainment) {
+      sendBestEffort(
+        connection,
+        "run.stderr",
+        {
+          run_id: runId,
+          text: `uat-agent could not contain Codex runtime failure during resume for ${currentCaseNo ?? "current case"}: ${runtimeContainment.reason ?? "unknown"}`
+        },
+        false
+      );
+    }
+
     uploadedArtifacts = await timeAgentPhase(
       timing,
       connection,
@@ -3675,7 +3764,8 @@ export const handleToolResponse = async (
       })
     );
 
-    if (result.exitCode !== 0) {
+    const runtimeFailureContained = runtimeContainment?.status === "written" && uploadedArtifacts.usedCodexGeneratedResult;
+    if (result.exitCode !== 0 && !runtimeFailureContained) {
       throw new Error(`CODEX_RUN_FAILED exit=${result.exitCode} signal=${result.signal ?? "none"}`);
     }
     if (!uploadedArtifacts.usedCodexGeneratedResult) {
