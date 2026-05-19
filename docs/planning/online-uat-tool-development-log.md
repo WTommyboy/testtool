@@ -1675,3 +1675,10 @@ P0a v1 範圍釐清：containment 只處理唯一 self-check error 為 `RESULT_P
 - Runtime containment：新增 `agent/src/runtime-containment-result.ts`。若 Codex exit 非 0 且沒有 `output/result.xlsx`，但 current case 的 helper pre-run 已有 current-run evidence，且 package/document consistency 沒有 error，Agent 會寫可信單題 `output/result.xlsx`：`BLOCKED / CODEX_RUNTIME_RESULT_WRITE_FAILED`，detail_json 保留 helper summary/report paths、Codex failure、artifact dir 與 containment metadata。這是 process isolation，不是產品 PASS/FAIL 判定。
 - 邊界：若 package/document consistency 為 error，仍不 containment，必須停等 PM resolve/override；若沒有 current-run helper evidence，也不 containment，避免把真實工具不可達或前置缺失偽裝成可繼續結果。
 - 驗證：新增 `npm run verify:date-variants-evidence-summary` 與 `npm run verify:runtime-containment-result`。另已跑 `npm run verify:agent-result-contract`、`npm run typecheck`、`npm run build --prefix agent`、`npm run build`。
+
+### 2026-05-19 - Result upload retry for B-04 transport failure
+
+- 背景：dev run `01e9c8e6-07b5-45ba-9309-48e3863091dd` 跑到 `BIUI_COLLAGE_R001-B-04` 時，Codex turn 已成功判定 PASS 並在本機寫出 trusted `output/result.xlsx`，但 Agent `upload_result` phase 於上傳結果 workbook 時收到 `fetch failed`，整輪因此 FAILED，B-05 之後維持 PENDING。這不是 B-12 類 Codex result-write failure，也不是 case 判定錯誤，而是 result upload transport isolation gap。
+- 修正：`uploadResultXlsx` 加入 transient retry，針對 `fetch failed`、socket/network 類錯誤，以及 `408/425/429/5xx` result upload response 自動重試 4 次（指數退避，上限 8 秒）。每次 retry 會送出 `run.stderr` 診斷，避免只看到最後一個 `fetch failed`。
+- 診斷邊界：若重試後仍失敗但本機已存在 trusted `output/result.xlsx`，partial artifact path 會優先保留/重試該 trusted workbook，不再把狀態誤寫成「只有 agent fallback」。真正的 agent fallback 仍維持 local diagnostic only，不上傳為 UAT 結果。
+- 驗證：新增 `npm run verify:result-upload-retry`，以本機 HTTP server 模擬前兩次 503、第三次成功，確認 result upload 會 retry 並成功。另已跑 `npm run typecheck`、`npm run build --prefix agent`。

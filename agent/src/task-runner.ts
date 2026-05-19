@@ -757,6 +757,57 @@ type ResultUploadMetadata = {
   expectedCaseNos: string[];
 };
 
+type UploadRetryOptions = {
+  maxAttempts?: number;
+  baseDelayMs?: number;
+  maxDelayMs?: number;
+  onRetry?: (event: {
+    attempt: number;
+    maxAttempts: number;
+    nextDelayMs: number;
+    error: Error;
+  }) => void | Promise<void>;
+};
+
+const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+
+const isTransientUploadError = (error: unknown): boolean => {
+  const message = error instanceof Error ? error.message : String(error);
+  if (/fetch failed|network|ECONNRESET|ECONNREFUSED|ETIMEDOUT|EPIPE|UND_ERR|socket|terminated/i.test(message)) {
+    return true;
+  }
+  const statusMatch = message.match(/\b(?:RESULT_UPLOAD_FAILED|LOG_UPLOAD_FAILED|ARTIFACT_UPLOAD_FAILED)\s+(\d{3})\b/);
+  if (!statusMatch) return false;
+  const status = Number(statusMatch[1]);
+  return status === 408 || status === 425 || status === 429 || status >= 500;
+};
+
+const withUploadRetry = async <T>(
+  operation: () => Promise<T>,
+  options: UploadRetryOptions = {}
+): Promise<T> => {
+  const maxAttempts = Math.max(1, options.maxAttempts ?? 4);
+  const baseDelayMs = Math.max(0, options.baseDelayMs ?? 1000);
+  const maxDelayMs = Math.max(baseDelayMs, options.maxDelayMs ?? 8000);
+  let lastError: Error | null = null;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      return await operation();
+    } catch (error) {
+      const normalizedError = error instanceof Error ? error : new Error(String(error));
+      lastError = normalizedError;
+      const shouldRetry = attempt < maxAttempts && isTransientUploadError(normalizedError);
+      if (!shouldRetry) throw normalizedError;
+      const nextDelayMs = Math.min(maxDelayMs, Math.round(baseDelayMs * (2 ** (attempt - 1))));
+      await options.onRetry?.({ attempt, maxAttempts, nextDelayMs, error: normalizedError });
+      if (nextDelayMs > 0) await sleep(nextDelayMs);
+    }
+  }
+
+  throw lastError ?? new Error("UPLOAD_RETRY_FAILED");
+};
+
 const readResultUploadMetadata = (runDir: string, resultSource: ResultUploadMetadata["resultSource"]): ResultUploadMetadata => {
   const metadata: ResultUploadMetadata = {
     resultSource,
@@ -782,37 +833,40 @@ const readResultUploadMetadata = (runDir: string, resultSource: ResultUploadMeta
   return metadata;
 };
 
-const uploadResultXlsx = async (
+export const uploadResultXlsx = async (
   url: string,
   filePath: string,
   token: string,
-  metadata: ResultUploadMetadata
+  metadata: ResultUploadMetadata,
+  retryOptions?: UploadRetryOptions
 ): Promise<unknown> => {
-  const form = new FormData();
-  const bytes = fs.readFileSync(filePath);
-  form.append("resultXlsx", new Blob([new Uint8Array(bytes)]), "result.xlsx");
-  form.append("resultSource", metadata.resultSource);
-  if (metadata.currentCaseNo) form.append("currentCaseNo", metadata.currentCaseNo);
-  if (metadata.expectedCaseNos.length > 0) {
-    form.append("expectedCaseNos", JSON.stringify(metadata.expectedCaseNos));
-  }
+  return withUploadRetry(async () => {
+    const form = new FormData();
+    const bytes = fs.readFileSync(filePath);
+    form.append("resultXlsx", new Blob([new Uint8Array(bytes)]), "result.xlsx");
+    form.append("resultSource", metadata.resultSource);
+    if (metadata.currentCaseNo) form.append("currentCaseNo", metadata.currentCaseNo);
+    if (metadata.expectedCaseNos.length > 0) {
+      form.append("expectedCaseNos", JSON.stringify(metadata.expectedCaseNos));
+    }
 
-  const response = await fetch(url, {
-    method: "POST",
-    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-    body: form
-  });
-  const text = await response.text();
-  let body: unknown = text;
-  try {
-    body = text ? JSON.parse(text) : null;
-  } catch {
-    // Keep raw text for diagnostics.
-  }
-  if (!response.ok) {
-    throw new Error(`RESULT_UPLOAD_FAILED ${response.status} ${typeof body === "string" ? body : JSON.stringify(body)}`);
-  }
-  return body;
+    const response = await fetch(url, {
+      method: "POST",
+      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      body: form
+    });
+    const text = await response.text();
+    let body: unknown = text;
+    try {
+      body = text ? JSON.parse(text) : null;
+    } catch {
+      // Keep raw text for diagnostics.
+    }
+    if (!response.ok) {
+      throw new Error(`RESULT_UPLOAD_FAILED ${response.status} ${typeof body === "string" ? body : JSON.stringify(body)}`);
+    }
+    return body;
+  }, retryOptions);
 };
 
 const uploadLogFile = async (url: string, filePath: string, token: string): Promise<unknown> => {
@@ -2847,7 +2901,22 @@ const uploadRunArtifacts = async (options: UploadArtifactsOptions): Promise<Uplo
       true
     );
     try {
-      const uploadResponse = await uploadResultXlsx(outputUrls.result_xlsx, resultXlsxPath, config.token, resultUploadMetadata);
+      const uploadResponse = await uploadResultXlsx(outputUrls.result_xlsx, resultXlsxPath, config.token, resultUploadMetadata, {
+        maxAttempts: 4,
+        baseDelayMs: 1000,
+        maxDelayMs: 8000,
+        onRetry: ({ attempt, maxAttempts, nextDelayMs, error }) => {
+          sendBestEffort(
+            connection,
+            "run.stderr",
+            {
+              run_id: runId,
+              text: `uat-agent result upload transient failure on attempt ${attempt}/${maxAttempts}; retrying in ${nextDelayMs}ms: ${error.message}`
+            },
+            false
+          );
+        }
+      });
       resultXlsxUploaded = true;
       writeJson(path.join(runDir, "output", "result-xlsx.json"), {
         path: resultXlsxPath,
@@ -3481,7 +3550,7 @@ export const handleTaskDispatch = async (
                 : errorMessage.startsWith("TOOL_BRIDGE_SCHEMA_INVALID")
                   ? "TOOL_BRIDGE_SCHEMA_INVALID"
                 : "AGENT_RUN_FAILED",
-            preferCodexGeneratedResult: false,
+            preferCodexGeneratedResult: Boolean(getCodexGeneratedResultXlsx(runDir)),
             throwOnResultUploadError: false
           })
         );
@@ -3877,7 +3946,7 @@ export const handleToolResponse = async (
                 : errorMessage.startsWith("TOOL_BRIDGE_SCHEMA_INVALID")
                   ? "TOOL_BRIDGE_SCHEMA_INVALID"
                 : "AGENT_RUN_FAILED",
-            preferCodexGeneratedResult: false,
+            preferCodexGeneratedResult: Boolean(getCodexGeneratedResultXlsx(runDir)),
             throwOnResultUploadError: false
           })
         );
