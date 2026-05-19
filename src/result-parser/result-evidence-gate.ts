@@ -420,12 +420,30 @@ const hasScreenshotEvidence = (detail: Record<string, unknown>): boolean => {
   return found;
 };
 
+const detailHasStringField = (detail: Record<string, unknown>, fieldName: string, pattern?: RegExp): boolean => {
+  let found = false;
+  const normalizedFieldName = fieldName.replace(/\s+/g, "").toLowerCase();
+  walkDetail(detail, ({ key, value }) => {
+    if (found || typeof value !== "string" || value.trim().length === 0) return;
+    const normalizedKey = key?.replace(/\s+/g, "").toLowerCase() ?? "";
+    if (normalizedKey !== normalizedFieldName) return;
+    found = pattern ? pattern.test(value) : true;
+  });
+  return found;
+};
+
 const hasVisualFallbackContract = (item: ParsedResultCase): boolean => {
   if (!item.detailJson) return false;
   const text = [item.verdictReason, item.detailJsonRaw, flattenedDetailText(item.detailJson)]
     .filter(Boolean)
     .join("\n");
-  return VISUAL_FALLBACK_MARKER_PATTERN.test(text) && hasScreenshotEvidence(item.detailJson);
+  return (
+    VISUAL_FALLBACK_MARKER_PATTERN.test(text) &&
+    hasScreenshotEvidence(item.detailJson) &&
+    detailHasStringField(item.detailJson, "evidenceSource", /^screenshotVisual$/i) &&
+    detailHasStringField(item.detailJson, "visualObservation") &&
+    detailHasStringField(item.detailJson, "domEvidenceGap")
+  );
 };
 
 const hasFrontendObservationVisualFallbackGap = (item: ParsedResultCase, normalizedStatus: string): boolean => {
@@ -437,7 +455,7 @@ const hasFrontendObservationVisualFallbackGap = (item: ParsedResultCase, normali
     .filter(Boolean)
     .join("\n");
   if (STRUCTURED_FRONTEND_PRECONDITION_BLOCKER_PATTERN.test(text)) return false;
-  return /EVIDENCE_INSUFFICIENT/i.test(text);
+  return VISUAL_FALLBACK_MARKER_PATTERN.test(text) || /EVIDENCE_INSUFFICIENT/i.test(text);
 };
 
 const hasBrowserMcpPreflightEvidence = (detail: Record<string, unknown>): boolean => {

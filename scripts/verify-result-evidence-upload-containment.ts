@@ -79,8 +79,9 @@ const main = async (): Promise<void> => {
 
   const afterParsed = await parseResultXlsx(fixture);
   assert.equal(afterParsed.cases[0]?.status, "BLOCKED");
-  assert.equal(afterParsed.cases[0]?.verdictReason, "BLOCKED_RESULT_GATE_CONTAINMENT");
+  assert.equal(afterParsed.cases[0]?.verdictReason, "BLOCKED_NEEDS_VISUAL_REVIEW");
   assert.equal(afterParsed.cases[0]?.detailJson?.["evidenceSource"], "screenshotVisual");
+  assert.equal(afterParsed.cases[0]?.detailJson?.["blocked_reason"], "BLOCKED_NEEDS_VISUAL_REVIEW:RESULT_FRONTEND_OBSERVATION_VISUAL_FALLBACK_REQUIRED,TOOL_BRIDGE_RESPONSE_MISSING");
   const afterReport = evaluateResultEvidenceGate({
     parsed: afterParsed,
     currentCaseNo: "BIUI_COLLAGE_R001-N-02",

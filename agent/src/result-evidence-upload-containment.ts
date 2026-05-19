@@ -240,23 +240,26 @@ export const containResultEvidenceUploadFailure = async (input: {
   const previousDetail = parseDetailJson(getCellText(targetRow, headers, "詳細紀錄JSON"));
   const screenshotReferences = extractScreenshotReferences(previousDetail);
   const issueCodes = [...new Set(errorCodes)];
+  const isVisualFallbackContainment = issueCodes.includes("RESULT_FRONTEND_OBSERVATION_VISUAL_FALLBACK_REQUIRED");
+  const containedFailCategory = isVisualFallbackContainment
+    ? "BLOCKED_NEEDS_VISUAL_REVIEW"
+    : "BLOCKED_RESULT_GATE_CONTAINMENT";
   const detail = {
     測試目的: textValue(previousDetail["測試目的"], "Result evidence gate upload containment."),
     設定條件: textValue(previousDetail["設定條件"], "See current-run result evidence gate containment metadata."),
     預期行為: textValue(previousDetail["預期行為"] ?? previousDetail["預期結果"], "Result upload should not terminate the whole run for a containable single-case evidence gate issue."),
-    實際行為:
-      "Agent upload preflight received a result evidence gate rejection for this single case. The row was contained as BLOCKED_RESULT_GATE_CONTAINMENT so the run can continue to later cases instead of failing the whole run.",
-    blocked_reason: `BLOCKED_RESULT_GATE_CONTAINMENT:${issueCodes.join(",")}`,
+    實際行為: isVisualFallbackContainment
+      ? "Agent upload preflight received a result evidence gate rejection because this frontend observation cited screenshot evidence without a complete visual fallback contract. The row was contained as BLOCKED_NEEDS_VISUAL_REVIEW so the run can continue while the screenshot remains explicitly reviewable."
+      : "Agent upload preflight received a result evidence gate rejection for this single case. The row was contained as BLOCKED_RESULT_GATE_CONTAINMENT so the run can continue to later cases instead of failing the whole run.",
+    blocked_reason: `${containedFailCategory}:${issueCodes.join(",")}`,
     evidenceSource: screenshotReferences.length > 0 ? "screenshotVisual" : "resultEvidenceGate",
     screenshotPath: screenshotReferences.length === 0 ? undefined : screenshotReferences.length === 1 ? screenshotReferences[0] : screenshotReferences,
-    visualObservation:
-      issueCodes.includes("RESULT_FRONTEND_OBSERVATION_VISUAL_FALLBACK_REQUIRED")
-        ? "Screenshot artifact exists for this current run, but the visible assertion was not machine-extracted into structured detail_json."
-        : undefined,
-    domEvidenceGap:
-      issueCodes.includes("RESULT_FRONTEND_OBSERVATION_VISUAL_FALLBACK_REQUIRED")
-        ? "DOM/ARIA/URL structured assertion was missing or insufficient for an automatic frontend-observation judgment."
-        : undefined,
+    visualObservation: isVisualFallbackContainment
+      ? "Screenshot artifact exists for this current run, but the visible assertion was not machine-extracted into structured detail_json."
+      : undefined,
+    domEvidenceGap: isVisualFallbackContainment
+      ? "DOM/ARIA/URL structured assertion was missing or insufficient for an automatic frontend-observation judgment."
+      : undefined,
     original_result_before_agent_upload_containment: previousStatus || null,
     original_fail_category_before_agent_upload_containment: previousFailCategory || null,
     evidence_gate_issue_codes: issueCodes,
@@ -271,7 +274,7 @@ export const containResultEvidenceUploadFailure = async (input: {
   };
 
   setCell(targetRow, headers, "結果", "BLOCKED");
-  setCell(targetRow, headers, "失敗分類", "BLOCKED_RESULT_GATE_CONTAINMENT");
+  setCell(targetRow, headers, "失敗分類", containedFailCategory);
   setCell(targetRow, headers, "詳細紀錄JSON", JSON.stringify(detail, null, 2));
   targetRow.commit();
 
@@ -283,7 +286,9 @@ export const containResultEvidenceUploadFailure = async (input: {
     schemaVersion: RESULT_EVIDENCE_UPLOAD_CONTAINMENT_VERSION,
     generatedAt,
     status: "updated",
-    reason: "RESULT_EVIDENCE_GATE_CONTAINED_AS_BLOCKED_RESULT_GATE_CONTAINMENT",
+    reason: isVisualFallbackContainment
+      ? "RESULT_EVIDENCE_GATE_CONTAINED_AS_BLOCKED_NEEDS_VISUAL_REVIEW"
+      : "RESULT_EVIDENCE_GATE_CONTAINED_AS_BLOCKED_RESULT_GATE_CONTAINMENT",
     updatedCaseNos: [caseNo],
     errorCodes: issueCodes,
     backupPath

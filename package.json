@@ -32,6 +32,7 @@
     "verify:runtime-containment-result": "tsx scripts/verify-runtime-containment-result.ts",
     "verify:result-upload-retry": "tsx scripts/verify-result-upload-retry.ts",
     "verify:zombie-run-guards": "tsx scripts/verify-zombie-run-guards.ts",
+    "verify:p0-visual-fallback-contract": "tsx scripts/verify-p0-visual-fallback-contract.ts",
     "verify:fail-bug-fallback": "tsx scripts/verify-fail-bug-fallback.ts",
     "verify:save-calculation-judgment": "tsx scripts/verify-save-calculation-judgment.ts",
     "verify:open-project-retry": "tsx scripts/verify-open-project-retry.ts",
