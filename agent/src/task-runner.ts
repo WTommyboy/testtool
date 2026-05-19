@@ -98,8 +98,17 @@ const ensureRunWorkspace = (config: AgentConfig, runId: string): string => {
 const copyIfExists = (source: string, target: string): boolean => {
   if (!fs.existsSync(source)) return false;
   fs.mkdirSync(path.dirname(target), { recursive: true });
-  fs.copyFileSync(source, target);
-  return true;
+  try {
+    fs.copyFileSync(source, target);
+    return true;
+  } catch {
+    try {
+      fs.writeFileSync(target, fs.readFileSync(source));
+      return true;
+    } catch {
+      return false;
+    }
+  }
 };
 
 const copyDirectoryRecursive = (sourceDir: string, targetDir: string): void => {
@@ -110,8 +119,7 @@ const copyDirectoryRecursive = (sourceDir: string, targetDir: string): void => {
     if (entry.isDirectory()) {
       copyDirectoryRecursive(source, target);
     } else if (entry.isFile()) {
-      fs.mkdirSync(path.dirname(target), { recursive: true });
-      fs.copyFileSync(source, target);
+      copyIfExists(source, target);
     }
   }
 };
@@ -164,17 +172,87 @@ const findPlatformSkillDir = (workspaceRoot: string): string | null => {
   return candidates.find((candidate) => fs.existsSync(path.join(candidate, "SKILL.md"))) ?? null;
 };
 
+const writeFallbackPlatformSkill = (runDir: string, reason: string): void => {
+  const skillDir = path.join(runDir, "agent-skills", "uat-tool");
+  const rulesDir = path.join(skillDir, "rules");
+  fs.mkdirSync(rulesDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(skillDir, "SKILL.md"),
+    [
+      "# UAT Tool Platform Skill Fallback",
+      "",
+      "This fallback file is generated when the local platform skill directory cannot be copied into the run workspace.",
+      "",
+      "Core rules:",
+      "- Execute one testcase at a time.",
+      "- Use current-run evidence only.",
+      "- Helper artifacts are evidence, not testcase PASS/FAIL.",
+      "- Do not bypass visible UI actions with internal state mutation.",
+      "- If evidence is insufficient, write BLOCKED/EVIDENCE_INSUFFICIENT rather than trusted PASS/FAIL.",
+      "",
+      `Fallback reason: ${reason}`
+    ].join("\n")
+  );
+  fs.writeFileSync(
+    path.join(rulesDir, "domain-routing.md"),
+    [
+      "# Domain Routing Fallback",
+      "",
+      "Route `domain=BI` to the downloaded run inputs, `rules/PROJECT_AGENTS_FULL.md`, and `rules/BI_TEST_RULES/` when present.",
+      "If a domain source is missing, continue with uploaded testcase xlsx/md and mark only the affected case blocked when evidence is insufficient."
+    ].join("\n")
+  );
+  fs.writeFileSync(
+    path.join(rulesDir, "helper-protocol.md"),
+    [
+      "# Helper Protocol Fallback",
+      "",
+      "- Helper output must match current runId and current caseId.",
+      "- Helper status never directly equals testcase PASS/FAIL.",
+      "- Use helper artifacts as supporting evidence and judge against the testcase contract.",
+      "- Missing helper evidence should produce BLOCKED/EVIDENCE_INSUFFICIENT, not guessed PASS/FAIL."
+    ].join("\n")
+  );
+};
+
+const writeFallbackProjectAgents = (target: string, source: string): void => {
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  fs.writeFileSync(
+    target,
+    [
+      "# BI Domain Reference Fallback",
+      "",
+      "The local workspace AGENTS.md could not be copied into this run workspace.",
+      "",
+      `Source attempted: ${source}`,
+      "",
+      "Use the downloaded testcase workbook, startup markdown, domain pack files, and BI_TEST_RULES copied/downloaded into this run workspace as the source of truth.",
+      "If a specific BI rule source is missing and the case cannot be judged safely, mark only that case BLOCKED/EVIDENCE_INSUFFICIENT."
+    ].join("\n")
+  );
+};
+
 const prepareCodexContext = (config: AgentConfig, runDir: string): void => {
   const copied: Record<string, string> = {};
+  const contextWarnings: string[] = [];
   const workspaceRoot = config.codex_workspace_root;
   const platformSkillSource = findPlatformSkillDir(workspaceRoot);
   if (platformSkillSource && copyDirectoryIfExists(platformSkillSource, path.join(runDir, "agent-skills", "uat-tool"))) {
     copied["agent-skills/uat-tool"] = platformSkillSource;
+  } else {
+    const reason = platformSkillSource ? `COPY_PLATFORM_SKILL_FAILED:${platformSkillSource}` : "PLATFORM_SKILL_SOURCE_NOT_FOUND";
+    contextWarnings.push(reason);
+    writeFallbackPlatformSkill(runDir, reason);
+    copied["agent-skills/uat-tool"] = "generated fallback";
   }
 
   const agentsSource = path.join(workspaceRoot, "AGENTS.md");
   if (copyIfExists(agentsSource, path.join(runDir, "rules", "PROJECT_AGENTS_FULL.md"))) {
     copied["rules/PROJECT_AGENTS_FULL.md"] = agentsSource;
+  } else if (fs.existsSync(agentsSource)) {
+    contextWarnings.push(`COPY_PROJECT_AGENTS_FAILED:${agentsSource}`);
+    writeFallbackProjectAgents(path.join(runDir, "rules", "PROJECT_AGENTS_FULL.md"), agentsSource);
+    copied["rules/PROJECT_AGENTS_FULL.md"] = "generated fallback";
   }
 
   const generatedAgents = [
@@ -225,15 +303,28 @@ const prepareCodexContext = (config: AgentConfig, runDir: string): void => {
 
   const rulesDir = path.join(workspaceRoot, "BI_TEST_RULES");
   if (fs.existsSync(rulesDir)) {
-    for (const entry of fs.readdirSync(rulesDir, { withFileTypes: true })) {
-      if (!entry.isFile() || !entry.name.endsWith(".md")) continue;
-      const source = path.join(rulesDir, entry.name);
-      const target = path.join(runDir, "rules", "BI_TEST_RULES", entry.name);
-      if (copyIfExists(source, target)) copied[`BI_TEST_RULES/${entry.name}`] = source;
+    try {
+      for (const entry of fs.readdirSync(rulesDir, { withFileTypes: true })) {
+        if (!entry.isFile() || !entry.name.endsWith(".md")) continue;
+        const source = path.join(rulesDir, entry.name);
+        const target = path.join(runDir, "rules", "BI_TEST_RULES", entry.name);
+        if (copyIfExists(source, target)) {
+          copied[`BI_TEST_RULES/${entry.name}`] = source;
+        } else {
+          contextWarnings.push(`COPY_BI_TEST_RULE_FAILED:${source}`);
+        }
+      }
+    } catch (error) {
+      contextWarnings.push(`COPY_BI_TEST_RULES_FAILED:${error instanceof Error ? error.message : String(error)}`);
     }
   }
 
-  const biMetadataCsv = copyBiDataContext(workspaceRoot, runDir, copied);
+  let biMetadataCsv: string | null = null;
+  try {
+    biMetadataCsv = copyBiDataContext(workspaceRoot, runDir, copied);
+  } catch (error) {
+    contextWarnings.push(`COPY_BI_DATA_FAILED:${error instanceof Error ? error.message : String(error)}`);
+  }
 
   writeJson(path.join(runDir, "input", "codex-context.json"), {
     codex_workspace_root: workspaceRoot,
@@ -241,7 +332,8 @@ const prepareCodexContext = (config: AgentConfig, runDir: string): void => {
     codex_reasoning_effort: config.codex_reasoning_effort,
     keep_chrome_warm: config.keep_chrome_warm,
     bi_metadata_csv: biMetadataCsv,
-    copied_context: copied
+    copied_context: copied,
+    context_warnings: contextWarnings
   });
 };
 
