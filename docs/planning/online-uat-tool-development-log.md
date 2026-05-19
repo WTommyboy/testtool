@@ -1765,3 +1765,9 @@ P0a v1 範圍釐清：containment 只處理唯一 self-check error 為 `RESULT_P
 - Domain data：`BI_OFFICIAL_UI_COLLAGE` 補 `dateRange.preset.lastWeek/currentWeek` 到 `ui-object-vocabulary.json` 與 `discovery/visual-alignment.json`，並補 `BIUI_COLLAGE_R001-L-05` 到 `case-scope-runtime-contracts.json`。這是 domain pack 層，不污染 platform vocabulary。
 - Verification：已跑 `npm run verify:p0-helper-browser-session-containment`、`npm run verify:p0-live-action-templates`、`npm run verify:bi-official-ui-object-vocabulary`、`npm run verify:official-observation-contract`、`npm run verify:runtime-containment-result`、`npm run verify:result-evidence-gate`、`npm run verify:agent-result-contract`、`npm run verify:p0-live-run-packet-regression`、`npm run verify:p0-108-blocked-triage`、`npm run typecheck --prefix agent`、`npm run build --prefix agent`。
 - Remaining scope：`I-04/J-10` project-create modal flow、`J-03/J-08` project-page visual/workflow assertions、`F-02` save/reopen final evidence、`J-12` five-project precondition builder 尚未在本 slice 中實作。下一輪 reduced smoke 目標是先確認 run-level `FAILED/PENDING` 消失，再看剩餘 BLOCKED 是否集中到這些已知分類。
+
+### 2026-05-20 - P0.28 service-level EPERM follow-up
+
+- 背景：reduced run `a18ad789-2ace-442a-a161-e1769bcc6e1e` 在第一題前就 failed。Archive 顯示 helper pre-run 讀 `agent/dist/bi-ui-helper-executor.js` 時發生 `EPERM`，之後 upload/result pre-check 又在 `node_modules/readable-stream/lib/internal/streams/async_iterator.js` 發生同類 `EPERM`。因此平台報告全 18 題都是 `PENDING`，不是 BI product/testcase 判定結果。
+- 處理：dev launchd service 已重啟成乾淨 process；新增 `npm run verify:agent-runtime-file-access`，用 child process 檢查 helper executor 可載入到 usage error、platform skill 目錄可列舉、ExcelJS/readable-stream 可 require。這是 service-level deployment hygiene smoke，目標是在 Tommy 再跑 live UAT 前先攔住本機 runtime file-access 問題。
+- 邊界：這不改 BI 判斷、不改 testcase、不把 EPERM 轉成產品 BLOCKED。若未來此 smoke 失敗，應先處理本機 service/runtime access，再開始 UAT。

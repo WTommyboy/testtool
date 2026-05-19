@@ -28,6 +28,7 @@
     "verify:agent-browser-session-isolation": "tsx scripts/verify-agent-browser-session-isolation.ts",
     "verify:agent-connection-resilience": "tsx scripts/verify-agent-connection-resilience.ts",
     "verify:agent-context-prep": "tsx scripts/verify-agent-context-prep.ts",
+    "verify:agent-runtime-file-access": "tsx scripts/verify-agent-runtime-file-access.ts",
     "verify:agent-result-contract": "tsx scripts/verify-agent-result-contract.ts",
     "verify:runtime-containment-result": "tsx scripts/verify-runtime-containment-result.ts",
     "verify:p0-helper-browser-session-containment": "tsx scripts/verify-p0-helper-browser-session-containment.ts",
