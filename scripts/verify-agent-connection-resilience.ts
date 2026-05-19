@@ -44,15 +44,25 @@ const makeCodexStub = (tempDir: string): string => {
 
 const main = async (): Promise<void> => {
   const cliSource = fs.readFileSync(path.join(process.cwd(), "agent", "src", "cli.ts"), "utf8");
-  assert.doesNotMatch(
+  assert.match(
     cliSource,
-    /activeTask\.cancel\(["']agent_connection_closed["']\)/,
-    "WebSocket close must not cancel the active task; explicit task.cancel remains the cancellation path"
+    /abortActiveTaskForConnectionLoss/,
+    "CLI must have an active-run containment path for WebSocket connection loss"
   );
   assert.match(
     cliSource,
     /task_continues_after_connection_closed/,
-    "CLI should log that the active task survives transient WebSocket close"
+    "CLI should still log connection-loss diagnostics before aborting the active task"
+  );
+  assert.match(
+    cliSource,
+    /agent_connection_closed/,
+    "CLI should cancel the active task on WebSocket close instead of allowing a zombie run"
+  );
+  assert.match(
+    cliSource,
+    /process\.exit\(1\)/,
+    "CLI should exit after active-run connection loss so launchd restarts a clean agent"
   );
 
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "uat-agent-connection-resilience-"));

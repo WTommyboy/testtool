@@ -2875,6 +2875,29 @@ router.post("/:id/output/result-xlsx", resultUpload.single("resultXlsx"), async 
   if (!run) {
     return res.status(404).json({ error: "RUN_NOT_FOUND" });
   }
+  const currentStatus = String(run.status ?? "");
+  if (TERMINAL_STATUSES.has(currentStatus)) {
+    if (req.file?.path) {
+      try {
+        fs.unlinkSync(req.file.path);
+      } catch {
+        // Best-effort cleanup; the important behavior is refusing terminal run ingest.
+      }
+    }
+    insertRunEvent(runId, "result.upload_rejected", {
+      reason: "RUN_ALREADY_TERMINAL",
+      status: currentStatus,
+      originalName: req.file?.originalname ?? null
+    });
+    insertRunLog(runId, "WARN", "Agent result xlsx upload rejected because run is already terminal", {
+      status: currentStatus,
+      originalName: req.file?.originalname ?? null
+    });
+    return res.status(409).json({
+      error: "RUN_ALREADY_TERMINAL",
+      status: currentStatus
+    });
+  }
 
   if (!req.file) {
     return res.status(400).json({

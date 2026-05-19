@@ -152,6 +152,36 @@ const handleAgentRunMessage = (agentId: string, message: AgentMessage): void => 
       snapshot,
       currentStatus
     });
+    if (isTerminalStatus(currentStatus)) {
+      try {
+        const cancelMessage = agentRegistry.send(
+          agentId,
+          "task.cancel",
+          {
+            run_id: snapshotRunId,
+            reason: `remote_run_${String(currentStatus).toLowerCase()}`
+          },
+          true
+        );
+        insertRunEvent(snapshotRunId, "task.cancelled", {
+          agentId,
+          reason: "remote_run_terminal_snapshot",
+          currentStatus,
+          messageId: cancelMessage.id
+        }, cancelMessage.seq);
+        insertRunLog(snapshotRunId, "WARN", "Cancel dispatched for terminal run snapshot", {
+          agentId,
+          currentStatus,
+          messageId: cancelMessage.id
+        });
+      } catch (error) {
+        insertRunLog(snapshotRunId, "ERROR", "Cancel dispatch for terminal run snapshot failed", {
+          agentId,
+          currentStatus,
+          error: error instanceof Error ? error.message : String(error)
+        });
+      }
+    }
     return;
   }
 
@@ -159,9 +189,12 @@ const handleAgentRunMessage = (agentId: string, message: AgentMessage): void => 
   if (!runId || !runExists(runId)) return;
 
   if (message.type === "run.started") {
-    setRunStatus(runId, "RUNNING");
-    insertRunEvent(runId, "run.started", { agentId, payload: message.payload }, message.seq);
-    insertRunLog(runId, "INFO", "Agent run started", { agentId, payload: message.payload });
+    const currentStatus = getRunStatus(runId);
+    if (!isTerminalStatus(currentStatus)) {
+      setRunStatus(runId, "RUNNING");
+    }
+    insertRunEvent(runId, "run.started", { agentId, payload: message.payload, currentStatus }, message.seq);
+    insertRunLog(runId, "INFO", "Agent run started", { agentId, payload: message.payload, currentStatus });
     return;
   }
 

@@ -237,6 +237,27 @@ const main = async (): Promise<void> => {
     ensureAgentDirectories(config);
     let stopping = false;
     let activeTask: { runId: string; cancel: (reason?: string) => void } | null = null;
+    let exitingAfterConnectionLoss = false;
+    const abortActiveTaskForConnectionLoss = (status: "closed" | "error", detail?: unknown): void => {
+      if (!activeTask || stopping || exitingAfterConnectionLoss) return;
+      exitingAfterConnectionLoss = true;
+      const reason = `agent_connection_${status}`;
+      try {
+        activeTask.cancel(reason);
+      } catch {
+        // The process exit below is the hard containment path.
+      }
+      printJson({
+        event: "task_cancelled",
+        runId: activeTask.runId,
+        reason,
+        detail: detail instanceof Error ? detail.message : detail
+      });
+      void closeChromeDebugSession(config).finally(() => {
+        process.exitCode = 1;
+        setTimeout(() => process.exit(1), 100).unref();
+      });
+    };
     const connection = new AgentConnection({
       config,
       onStatus: (status, detail) => {
@@ -247,6 +268,10 @@ const main = async (): Promise<void> => {
             runId: activeTask.runId,
             reason: "agent_connection_closed"
           });
+          abortActiveTaskForConnectionLoss(status, detail);
+        }
+        if (status === "error" && activeTask) {
+          abortActiveTaskForConnectionLoss(status, detail);
         }
       },
       onMessage: (message) => {
