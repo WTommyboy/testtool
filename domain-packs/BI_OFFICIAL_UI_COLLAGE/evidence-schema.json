@@ -334,6 +334,69 @@
         "action"
       ],
       "purpose": "Authorization evidence for irreversible/native dialog execution only."
+    },
+    "sidebar.myCustomGroup.state": {
+      "type": "object",
+      "requiredFields": [
+        "asserted"
+      ],
+      "purpose": "Domain evidence for sidebar.myCustomGroup."
+    },
+    "sidebar.collageReportGroup.state": {
+      "type": "object",
+      "requiredFields": [
+        "asserted"
+      ],
+      "purpose": "Domain evidence for sidebar.collageReportGroup."
+    },
+    "sidebar.collageProjects.count": {
+      "type": "object",
+      "requiredFields": [
+        "asserted"
+      ],
+      "purpose": "Domain evidence for sidebar.collageProjects.count."
+    },
+    "projectCreateModal.state": {
+      "type": "object",
+      "requiredFields": [
+        "asserted"
+      ],
+      "purpose": "Domain evidence for projectCreateModal.nameInput."
+    },
+    "metricRows.state": {
+      "type": "object",
+      "requiredFields": [
+        "asserted"
+      ],
+      "purpose": "Domain evidence for metricRows.addRowButton."
+    },
+    "formulaEditor.state": {
+      "type": "object",
+      "requiredFields": [
+        "asserted"
+      ],
+      "purpose": "Domain evidence for formulaEditor.openButton."
+    },
+    "save.toast.state": {
+      "type": "object",
+      "requiredFields": [
+        "asserted"
+      ],
+      "purpose": "Domain evidence for saveModal.saveButton."
+    },
+    "projectList.table.state": {
+      "type": "object",
+      "requiredFields": [
+        "asserted"
+      ],
+      "purpose": "Domain evidence for projectList.table."
+    },
+    "update.toast.state": {
+      "type": "object",
+      "requiredFields": [
+        "asserted"
+      ],
+      "purpose": "Domain evidence for update.toast."
     }
   },
   "conditionalEvidenceRules": [

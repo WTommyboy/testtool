@@ -75,8 +75,6 @@ const main = async (): Promise<void> => {
   const contracts = contractFile.contracts;
   const actionIds = new Set((actionVocabulary.actions as JsonObject[]).map((item) => item.id));
   const objectIds = new Set((uiObjectVocabulary.objects as JsonObject[]).map((item) => item.id));
-  const contractCaseNos = contracts.map((item) => item.caseNo);
-  const expectedStepCount = contracts.reduce((sum, item) => sum + item.requiredActions.length, 0);
 
   const workbook = new ExcelJS.Workbook();
   await workbook.xlsx.readFile(outputXlsx);
@@ -114,7 +112,11 @@ const main = async (): Promise<void> => {
       assert(objectIds.has(action.target), `${caseNo} unknown domain UI object ${action.target}`);
     }
   }
-  assert.deepEqual(generatedCaseNos, contractCaseNos, "generated case order must match runtime contracts");
+  const generatedCaseNoSet = new Set(generatedCaseNos);
+  const generatedContracts = contracts.filter((item) => generatedCaseNoSet.has(item.caseNo));
+  const contractCaseNos = generatedContracts.map((item) => item.caseNo);
+  const expectedStepCount = generatedContracts.reduce((sum, item) => sum + item.requiredActions.length, 0);
+  assert.deepEqual(generatedCaseNos, contractCaseNos, "generated reduced case order must match the matching runtime contract subset");
 
   const stepHeaders = headerMap(stepSheet);
   const sCaseNo = stepHeaders.get("案例編號");
@@ -137,14 +139,14 @@ const main = async (): Promise<void> => {
   }
 
   const parsed = await parseTestcaseXlsx(outputXlsx);
-  assert.equal(parsed.cases.length, contracts.length, "parser case count mismatch");
+  assert.equal(parsed.cases.length, generatedContracts.length, "parser case count mismatch");
   assert.equal(parsed.steps.length, expectedStepCount, "parser structured step count mismatch");
 
   const instruction = fs.readFileSync(outputInstructionMd, "utf8");
   const startup = fs.readFileSync(outputStartupMd, "utf8");
   assert(instruction.includes("P0.18 reduced smoke package"), "instruction md missing P0.18 purpose");
   assert(startup.includes("步驟") && startup.includes("結構化步驟的權威來源"), "startup md missing structured sheet boundary");
-  for (const contract of contracts) {
+  for (const contract of generatedContracts) {
     assert(instruction.includes(contract.caseNo), `instruction md missing ${contract.caseNo}`);
     assert(startup.includes(contract.caseNo), `startup md missing ${contract.caseNo}`);
   }

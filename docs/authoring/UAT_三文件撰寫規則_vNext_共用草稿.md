@@ -45,7 +45,9 @@
 - 驗證方法。
 - 執行結果與 detail_json。
 
-`xlsx` 不應塞入大量 helper 實作細節、程式碼、selector、API URL 或只有機器才讀得懂的參數。若需要 structured params,放到 `測試執行說明_*.md` 的 helper hints。
+`xlsx` 的 `測試案例` sheet 不應塞入大量 helper 實作細節、程式碼、selector、API URL 或只有機器才讀得懂的參數。若需要 structured params,優先放到 `測試執行說明_*.md` 的 helper hints。
+
+若本輪已建立 platform action vocabulary / domain UI object vocabulary,`xlsx` 可以額外包含 structured support sheets,例如 `步驟` 與 `Vocabulary Contract`。這些 sheet 是機器可讀契約,用來把人類可讀步驟對齊到 canonical action、domain UI object、expected outcome、evidence requirements 與 judgment policy。它們不取代 `測試案例` sheet 的 17 欄語意契約,也不應存放 testcase 當時的人工 oracle 答案。
 
 ### 2.2 `Codex_指派文字_*.md`
 
@@ -162,6 +164,13 @@ Agent 模式應寫:
 - `測試案例`
 - `Bug`
 
+若 domain pack 已提供 UI / action / evidence contract,建議額外加入:
+
+- `步驟`:逐步 action contract,每列一個 action。
+- `Vocabulary Contract`:每題 case scope / required actions / evidence / judgment policy 摘要。
+
+這兩個 structured support sheets 是 optional-but-recommended。若加入,三文件一致性檢查應驗證其中的 case id 都存在於 `測試案例` sheet,且 action / target / evidence 都能對應 platform vocabulary 與 domain pack vocabulary。
+
 ### 5.2 `測試案例` 必備欄位
 
 固定 17 欄:
@@ -218,6 +227,48 @@ Agent 模式應寫:
 - `沿用 <caseId>`
 
 不要把備註塞入狀態清理欄。背景說明放在 `前置條件` 或 `測試執行說明`。
+
+### 5.6 Structured support sheets
+
+當 testcase 需要降低 agent 語意猜測時,可加入 structured support sheets。
+
+`步驟` 建議欄位:
+
+```text
+案例編號, 步驟序號, 動作類型, 目標類型, 目標值, 輸入值, 預期值, 需要人工確認, 逾時毫秒, 重試次數, role, actionId, evidenceRequirements
+```
+
+要求:
+
+- `動作類型` 必須來自 platform action vocabulary,例如 `open / click / select / type / read / assertValue / assertToast / execute / compare / create`。
+- `目標類型=domain_ui_object` 時,`目標值` 必須來自該 domain pack 的 UI object vocabulary。
+- `role` 必須標示 action lifecycle,例如 `precondition / under_test / verification / cleanup`。
+- `預期值` 應表達 expected outcome,例如 `succeeded / visible / state_changed / value_matches / toast_visible / request_sent / disabled_or_no_change`。
+- `evidenceRequirements` 必須列出本 action 需要的 evidence source,不可只寫「截圖」或「人工確認」。
+
+`Vocabulary Contract` 建議欄位:
+
+```text
+caseNo, routeIntent, testTarget, requiresEditor, observationType, requiredActions, evidenceRequirements, judgmentPolicy
+```
+
+要求:
+
+- `requiredActions` 是該 case 的 action array,每個 action 至少含 `actionId / action / target / role / expectedOutcome / requiredForPass / evidenceRequirements`。
+- `judgmentPolicy` 必須明確列出 `passWhen / failWhen / blockedWhen` 或等價規則。
+- testcase-specific input value 與 expected outcome 可以放在這裡;domain UI object 的通用語意不可放在這裡,應放 domain pack。
+- 人工 oracle / 歷史 run 正確答案不可放進 structured sheets。oracle 是 fixture 或 review artifact,不是產品真理。
+
+### 5.7 排除與 PM-skip
+
+已確認本輪不執行的 case 預設不要放進 active testcase package。這類 case 可放在獨立 archive、後續補測包或規格備註,但不應在 active xlsx 以 `BLOCKED` 預填。
+
+若 PM 明確要求保留在 xlsx 內,必須:
+
+- 在指派文字與執行說明清楚標成 design-excluded / PM-skip。
+- 不計入 runtime BLOCKED。
+- 不要求 Agent 開 browser 跑該 case。
+- 不用 helper hints 或 structured actions 包裝成可執行 case。
 
 ---
 
@@ -294,6 +345,13 @@ PARTIAL 需補:
 ```md
 進入頁面後完成所有設定並確認結果正確。
 ```
+
+若 domain 已有 UI object vocabulary,步驟文字仍要保留真實 UI 可見文字,但不應只靠自由文字讓 Agent 猜。建議搭配 structured support sheets:
+
+- prose 步驟:給人看,描述「點擊『時間區間』按鈕」。
+- structured step:`action=click`, `target=dateRange.button`, `expectedOutcome=visible`, `evidenceRequirements=[interactionLog,dateRange.panel.state]`。
+
+同一個 action 的 expected outcome 不能只看 actual outcome。若 case 目標是驗證防呆或 disabled 狀態,`expectedOutcome` 應寫 `disabled_or_no_change` 或等價值,讓 result gate 知道「點了沒變」是預期行為,不是必然 FAIL。
 
 ### 7.2 evidence 類型
 

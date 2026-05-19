@@ -15,7 +15,10 @@
       "id": "live.homeLoggedIn",
       "path": "other/bi_v1/live_preflight_screenshots/bi_ui_home_logged_in.png",
       "screen": "officialHome",
-      "observedObjects": ["topbar.userButton", "sidebar.companySharedGroup"]
+      "observedObjects": [
+        "topbar.userButton",
+        "sidebar.companySharedGroup"
+      ]
     },
     {
       "id": "live.projectList",
@@ -90,7 +93,10 @@
       "id": "ui.fieldPicker",
       "path": "other/bi_v1/ui_screenshot/截圖 2026-05-14 晚上9.15.49.png",
       "screen": "collageEditor.fieldPicker",
-      "observedObjects": ["metricRows.fieldControl", "fieldPicker.option.newAccounts"]
+      "observedObjects": [
+        "metricRows.fieldControl",
+        "fieldPicker.option.newAccounts"
+      ]
     },
     {
       "id": "ui.datePanelOpen",
@@ -123,277 +129,606 @@
       "id": "ui.deleteConfirm",
       "path": "other/bi_v1/ui_screenshot/截圖 2026-05-14 晚上9.20.52.png",
       "screen": "collageProjectList.deleteConfirm",
-      "observedObjects": ["projectToolbar.deleteButton", "projectList.rowDeleteAction"]
+      "observedObjects": [
+        "projectToolbar.deleteButton",
+        "projectList.rowDeleteAction"
+      ]
     },
     {
       "id": "tommy.projectLimitToast",
       "path": "/Users/tommy/Desktop/screenshot/截圖 2026-05-18 清晨5.09.25.png",
       "screen": "collageProjectList.projectLimitToast",
-      "observedObjects": ["sidebar.collageProjectCreateButton", "projectLimit.toast"]
+      "observedObjects": [
+        "sidebar.collageProjectCreateButton",
+        "projectLimit.toast"
+      ]
     },
     {
       "id": "tommy.downloadToast",
       "path": "/Users/tommy/Desktop/screenshot/截圖 2026-05-18 清晨5.10.51.png",
       "screen": "collageEditor.downloadToast",
-      "observedObjects": ["download.toast"]
+      "observedObjects": [
+        "download.toast"
+      ]
     },
     {
       "id": "tommy.validationToastSingle",
       "path": "/Users/tommy/Desktop/screenshot/截圖 2026-05-18 清晨5.20.17.png",
       "screen": "collageEditor.validationToast.singleMissingColumn",
-      "observedObjects": ["validation.toast"]
+      "observedObjects": [
+        "validation.toast"
+      ]
     },
     {
       "id": "tommy.validationToastMultiple",
       "path": "/Users/tommy/Desktop/screenshot/截圖 2026-05-18 清晨5.21.23.png",
       "screen": "collageEditor.validationToast.multipleMissingColumns",
-      "observedObjects": ["validation.toast"]
+      "observedObjects": [
+        "validation.toast"
+      ]
+    },
+    {
+      "id": "ui.vocabularyAlignment",
+      "path": "domain-packs/BI_OFFICIAL_UI_COLLAGE/ui-object-vocabulary.json",
+      "observedObjects": [
+        "copyModal.cancelButton",
+        "copyModal.hintText",
+        "copyModal.projectSelect",
+        "copyModal.reportNameInput",
+        "copyModal.saveButton",
+        "dateRange.action.cancel",
+        "dateRange.action.confirm",
+        "dateRange.button",
+        "dateRange.dynamicEndOffsetInput",
+        "dateRange.dynamicStartOffsetInput",
+        "dateRange.panel",
+        "dateRange.preset.currentMonth",
+        "dateRange.preset.currentWeek",
+        "dateRange.preset.fromDateToToday",
+        "dateRange.preset.fromDateToYesterday",
+        "dateRange.preset.lastMonth",
+        "dateRange.preset.lastWeek",
+        "dateRange.preset.past30Days",
+        "dateRange.preset.past7Days",
+        "dateRange.preset.recent30Days",
+        "dateRange.preset.recent7Days",
+        "dateRange.preset.today",
+        "dateRange.preset.yesterday",
+        "dateRange.staticEndInput",
+        "dateRange.staticStartInput",
+        "dateRange.timeTypeTab.dynamic",
+        "dateRange.timeTypeTab.static",
+        "download.toast",
+        "editorToolbar.copyButton",
+        "editorToolbar.downloadButton",
+        "editorToolbar.saveButton",
+        "editorToolbar.updateButton",
+        "fieldPicker.option.newAccounts",
+        "formulaEditor.availableFields",
+        "formulaEditor.confirmButton",
+        "formulaEditor.expressionInput",
+        "formulaEditor.fieldNameInput",
+        "formulaEditor.openButton",
+        "metricRows.addRowButton",
+        "metricRows.deleteRowButton",
+        "metricRows.duplicateRowButton",
+        "metricRows.fieldControl",
+        "metricRows.sourceReportControl",
+        "preview.calculateButton",
+        "projectCreateModal.cancelButton",
+        "projectCreateModal.nameInput",
+        "projectCreateModal.saveButton",
+        "projectLimit.toast",
+        "projectList.header.dataPeriod",
+        "projectList.header.operation",
+        "projectList.header.reportName",
+        "projectList.pagination.pageSize",
+        "projectList.reportRow",
+        "projectList.rowDeleteAction",
+        "projectList.rowDeleteTooltip",
+        "projectList.table",
+        "projectToolbar.createButton",
+        "projectToolbar.deleteButton",
+        "projectToolbar.downloadButton",
+        "reportMode.option.collage",
+        "reportMode.option.metricTrend",
+        "reportMode.option.recordCentric",
+        "reportMode.radioGroup",
+        "reportPersistence.reopenState",
+        "save.toast",
+        "saveModal.cancelButton",
+        "saveModal.reportNameInput",
+        "saveModal.saveButton",
+        "sidebar.collageProjectCreateButton",
+        "sidebar.collageProjects.count",
+        "sidebar.collageReportGroup",
+        "sidebar.companySharedGroup",
+        "sidebar.myCustomGroup",
+        "sourceReportPicker.option.dailyReport",
+        "sourceReportPicker.searchInput",
+        "topbar.userButton",
+        "update.toast",
+        "validation.toast"
+      ]
     }
   ],
   "objectEvidence": {
     "topbar.userButton": {
       "status": "confirmed",
-      "sourceIds": ["live.homeLoggedIn", "live.projectList", "live.editorBlank"],
+      "sourceIds": [
+        "live.homeLoggedIn",
+        "live.projectList",
+        "live.editorBlank"
+      ],
       "screenContext": "Top-right app shell user/account button.",
-      "visibleText": ["logged-in user display name"],
-      "visualCues": ["user icon", "outlined header button"],
+      "visibleText": [
+        "logged-in user display name"
+      ],
+      "visualCues": [
+        "user icon",
+        "outlined header button"
+      ],
       "alignmentNotes": "Matches testcase language for user button/login display observation."
     },
     "sidebar.companySharedGroup": {
       "status": "confirmed",
-      "sourceIds": ["live.homeLoggedIn", "live.projectList"],
+      "sourceIds": [
+        "live.homeLoggedIn",
+        "live.projectList"
+      ],
       "screenContext": "Left navigation under the report section.",
-      "visibleText": ["公司共享"],
-      "visualCues": ["expand/collapse chevron", "nested report items"],
+      "visibleText": [
+        "公司共享"
+      ],
+      "visualCues": [
+        "expand/collapse chevron",
+        "nested report items"
+      ],
       "alignmentNotes": "The captured UI shows expandable/collapsible company shared navigation."
     },
     "projectToolbar.downloadButton": {
       "status": "confirmed",
-      "sourceIds": ["live.projectList", "ui.projectListSelectedRows"],
+      "sourceIds": [
+        "live.projectList",
+        "ui.projectListSelectedRows"
+      ],
       "screenContext": "Top-right toolbar above the project/report list.",
       "visibleText": [],
-      "visualCues": ["download icon button", "disabled when no selected rows", "enabled when rows selected"],
+      "visualCues": [
+        "download icon button",
+        "disabled when no selected rows",
+        "enabled when rows selected"
+      ],
       "alignmentNotes": "Icon-only toolbar button; text assertions should use icon/position/state rather than visible label."
     },
     "projectToolbar.deleteButton": {
       "status": "confirmed",
-      "sourceIds": ["live.projectList", "ui.projectListSelectedRows", "ui.deleteConfirm"],
+      "sourceIds": [
+        "live.projectList",
+        "ui.projectListSelectedRows",
+        "ui.deleteConfirm"
+      ],
       "screenContext": "Top-right toolbar above the project/report list.",
       "visibleText": [],
-      "visualCues": ["trash icon button", "disabled when no selected rows", "enabled when rows selected"],
+      "visualCues": [
+        "trash icon button",
+        "disabled when no selected rows",
+        "enabled when rows selected"
+      ],
       "alignmentNotes": "Toolbar delete is distinct from row-local delete text action."
     },
     "projectToolbar.createButton": {
       "status": "confirmed",
-      "sourceIds": ["live.projectList", "ui.projectListSelectedRows"],
+      "sourceIds": [
+        "live.projectList",
+        "ui.projectListSelectedRows"
+      ],
       "screenContext": "Top-right toolbar above the project/report list.",
       "visibleText": [],
-      "visualCues": ["plus icon button"],
+      "visualCues": [
+        "plus icon button"
+      ],
       "alignmentNotes": "Create is icon-only in the project list toolbar and creates a report, not a project."
     },
     "sidebar.collageProjectCreateButton": {
       "status": "confirmed",
-      "sourceIds": ["tommy.projectLimitToast"],
+      "sourceIds": [
+        "tommy.projectLimitToast"
+      ],
       "screenContext": "Left sidebar row for 拼貼報表.",
       "visibleText": [],
-      "visualCues": ["plus icon button aligned with 拼貼報表"],
+      "visualCues": [
+        "plus icon button aligned with 拼貼報表"
+      ],
       "alignmentNotes": "This is the project-limit trigger shown in Tommy's 2026-05-18 screenshot."
     },
     "projectLimit.toast": {
       "status": "confirmed",
-      "sourceIds": ["tommy.projectLimitToast"],
+      "sourceIds": [
+        "tommy.projectLimitToast"
+      ],
       "screenContext": "Expected transient message after project limit create attempt.",
-      "visibleText": ["已達最高5個專案"],
-      "visualCues": ["black floating tooltip/toast anchored near the collage report create control"],
+      "visibleText": [
+        "已達最高5個專案"
+      ],
+      "visualCues": [
+        "black floating tooltip/toast anchored near the collage report create control"
+      ],
       "alignmentNotes": "Confirmed by Tommy screenshot on 2026-05-18."
     },
     "projectList.rowDeleteAction": {
       "status": "confirmed",
-      "sourceIds": ["live.projectList", "ui.projectListSelectedRows", "ui.deleteConfirm"],
+      "sourceIds": [
+        "live.projectList",
+        "ui.projectListSelectedRows",
+        "ui.deleteConfirm"
+      ],
       "screenContext": "Right-side row operation column in the project/report list.",
-      "visibleText": ["刪除"],
-      "visualCues": ["row-local text action", "appears next to row-local 下載"],
+      "visibleText": [
+        "刪除"
+      ],
+      "visualCues": [
+        "row-local text action",
+        "appears next to row-local 下載"
+      ],
       "alignmentNotes": "Tommy confirmed row-local 下載 and 刪除 are clickable per-report actions, not toolbar icons."
     },
     "projectList.rowDeleteTooltip": {
       "status": "knownProductGap",
-      "sourceIds": ["live.projectList", "ui.projectListSelectedRows"],
+      "sourceIds": [
+        "live.projectList",
+        "ui.projectListSelectedRows"
+      ],
       "screenContext": "Tooltip/popover after hovering the row-local delete action.",
-      "visibleText": ["刪除"],
-      "visualCues": ["hover tooltip"],
+      "visibleText": [
+        "刪除"
+      ],
+      "visualCues": [
+        "hover tooltip"
+      ],
       "alignmentNotes": "Tommy confirmed the frontend currently does not implement this tooltip; this remains a product FAIL target for the tooltip testcase."
     },
     "reportMode.radioGroup": {
       "status": "confirmed",
-      "sourceIds": ["live.editorBlank"],
+      "sourceIds": [
+        "live.editorBlank"
+      ],
       "screenContext": "Left editor panel, 建構方式 section.",
-      "visibleText": ["建構方式", "拼貼模式", "精算模式 / 指標趨勢", "精算模式 / 明細檢視"],
-      "visualCues": ["radio inputs", "selected collage radio by default"],
+      "visibleText": [
+        "建構方式",
+        "拼貼模式",
+        "精算模式 / 指標趨勢",
+        "精算模式 / 明細檢視"
+      ],
+      "visualCues": [
+        "radio inputs",
+        "selected collage radio by default"
+      ],
       "alignmentNotes": "Matches the default mode observation needed by K-01."
     },
     "reportMode.option.collage": {
       "status": "confirmed",
-      "sourceIds": ["live.editorBlank"],
+      "sourceIds": [
+        "live.editorBlank"
+      ],
       "screenContext": "Left editor panel, first report mode radio option.",
-      "visibleText": ["拼貼模式"],
-      "visualCues": ["checked radio"],
+      "visibleText": [
+        "拼貼模式"
+      ],
+      "visualCues": [
+        "checked radio"
+      ],
       "alignmentNotes": "Visible text is 拼貼模式, not only a programmatic value."
     },
     "metricRows.sourceReportControl": {
       "status": "confirmed",
-      "sourceIds": ["live.editorBlank", "live.editorSaved", "ui.sourceReportPicker"],
+      "sourceIds": [
+        "live.editorBlank",
+        "live.editorSaved",
+        "ui.sourceReportPicker"
+      ],
       "screenContext": "Metric row formula area, first dropdown after the row label.",
-      "visibleText": ["請選擇報表", "每日報表"],
-      "visualCues": ["row-scoped dropdown", "appears before 的"],
+      "visibleText": [
+        "請選擇報表",
+        "每日報表"
+      ],
+      "visualCues": [
+        "row-scoped dropdown",
+        "appears before 的"
+      ],
       "alignmentNotes": "The source report control is row-scoped; locator should not pick sidebar report names."
     },
     "sourceReportPicker.searchInput": {
       "status": "confirmed",
-      "sourceIds": ["ui.sourceReportPicker"],
+      "sourceIds": [
+        "ui.sourceReportPicker"
+      ],
       "screenContext": "Opened source report picker popover.",
-      "visibleText": ["請輸入搜尋"],
-      "visualCues": ["search input at top of picker"],
+      "visibleText": [
+        "請輸入搜尋"
+      ],
+      "visualCues": [
+        "search input at top of picker"
+      ],
       "alignmentNotes": "Picker search is visible only after opening the source report dropdown."
     },
     "sourceReportPicker.option.dailyReport": {
       "status": "confirmed",
-      "sourceIds": ["ui.sourceReportPicker"],
+      "sourceIds": [
+        "ui.sourceReportPicker"
+      ],
       "screenContext": "Opened source report picker popover.",
-      "visibleText": ["每日報表"],
-      "visualCues": ["option under 共享報表 group"],
+      "visibleText": [
+        "每日報表"
+      ],
+      "visualCues": [
+        "option under 共享報表 group"
+      ],
       "alignmentNotes": "Daily report option is visible in the picker list."
     },
     "metricRows.fieldControl": {
       "status": "confirmed",
-      "sourceIds": ["live.editorBlank", "live.editorSaved", "ui.fieldPicker"],
+      "sourceIds": [
+        "live.editorBlank",
+        "live.editorSaved",
+        "ui.fieldPicker"
+      ],
       "screenContext": "Metric row formula area, field dropdown after 的.",
-      "visibleText": ["--", "新增帳號數", "MAU(帳號)"],
-      "visualCues": ["row-scoped dropdown", "field picker popover"],
+      "visibleText": [
+        "--",
+        "新增帳號數",
+        "MAU(帳號)"
+      ],
+      "visualCues": [
+        "row-scoped dropdown",
+        "field picker popover"
+      ],
       "alignmentNotes": "Field control depends on selected source report and can be stale after source changes."
     },
     "fieldPicker.option.newAccounts": {
       "status": "confirmed",
-      "sourceIds": ["ui.fieldPicker"],
+      "sourceIds": [
+        "ui.fieldPicker"
+      ],
       "screenContext": "Opened row-scoped field picker after selecting source report 每日報表.",
-      "visibleText": ["新增帳號數"],
-      "visualCues": ["picker option in the field dropdown"],
+      "visibleText": [
+        "新增帳號數"
+      ],
+      "visualCues": [
+        "picker option in the field dropdown"
+      ],
       "alignmentNotes": "This option must be selected through the row-scoped picker, not by a global body-text click."
     },
     "preview.calculateButton": {
       "status": "confirmed",
-      "sourceIds": ["live.editorBlank", "live.editorSaved"],
+      "sourceIds": [
+        "live.editorBlank",
+        "live.editorSaved"
+      ],
       "screenContext": "Bottom of the editor left panel.",
-      "visibleText": ["計算"],
-      "visualCues": ["dark primary button"],
+      "visibleText": [
+        "計算"
+      ],
+      "visualCues": [
+        "dark primary button"
+      ],
       "alignmentNotes": "Visible UI text is 計算; testcase wording 執行 should map to this object."
     },
     "dateRange.button": {
       "status": "confirmed",
-      "sourceIds": ["live.editorBlank", "live.datePanelOpen", "live.editorSaved", "ui.datePanelOpen"],
+      "sourceIds": [
+        "live.editorBlank",
+        "live.datePanelOpen",
+        "live.editorSaved",
+        "ui.datePanelOpen"
+      ],
       "screenContext": "Top of editor result/preview area.",
-      "visibleText": ["過去 7 天", "2026-03-01 ~ 2026-03-31", "2026-05-07 ~ 2026-05-14"],
-      "visualCues": ["calendar icon", "date range text button"],
+      "visibleText": [
+        "過去 7 天",
+        "2026-03-01 ~ 2026-03-31",
+        "2026-05-07 ~ 2026-05-14"
+      ],
+      "visualCues": [
+        "calendar icon",
+        "date range text button"
+      ],
       "alignmentNotes": "Testcase terms 時間設置/時間區間 should map to this button."
     },
     "dateRange.panel": {
       "status": "confirmed",
-      "sourceIds": ["live.datePanelOpen", "ui.datePanelOpen"],
+      "sourceIds": [
+        "live.datePanelOpen",
+        "ui.datePanelOpen"
+      ],
       "screenContext": "Popover below date range button.",
-      "visibleText": ["日期範圍", "昨日", "今日", "上週", "本週", "上月", "本月", "動態時間", "靜態時間", "取消", "確定"],
-      "visualCues": ["preset column", "two date panes", "footer actions"],
+      "visibleText": [
+        "日期範圍",
+        "昨日",
+        "今日",
+        "上週",
+        "本週",
+        "上月",
+        "本月",
+        "動態時間",
+        "靜態時間",
+        "取消",
+        "確定"
+      ],
+      "visualCues": [
+        "preset column",
+        "two date panes",
+        "footer actions"
+      ],
       "alignmentNotes": "Panel contains dynamic/static controls and does not use a modal dialog layout."
     },
     "dateRange.timeTypeTab.dynamic": {
       "status": "confirmed",
-      "sourceIds": ["live.datePanelOpen", "ui.datePanelOpen"],
+      "sourceIds": [
+        "live.datePanelOpen",
+        "ui.datePanelOpen"
+      ],
       "screenContext": "Date range panel, top of each date input area.",
-      "visibleText": ["動態時間"],
-      "visualCues": ["selected dark segment", "left and right date panes each have one"],
+      "visibleText": [
+        "動態時間"
+      ],
+      "visualCues": [
+        "selected dark segment",
+        "left and right date panes each have one"
+      ],
       "alignmentNotes": "UI text is 動態時間. The object represents the time type segment, not a browser tab."
     },
     "dateRange.timeTypeTab.static": {
       "status": "confirmed",
-      "sourceIds": ["live.datePanelOpen", "ui.datePanelOpen"],
+      "sourceIds": [
+        "live.datePanelOpen",
+        "ui.datePanelOpen"
+      ],
       "screenContext": "Date range panel, next to 動態時間.",
-      "visibleText": ["靜態時間"],
-      "visualCues": ["unselected light segment", "left and right date panes each have one"],
+      "visibleText": [
+        "靜態時間"
+      ],
+      "visualCues": [
+        "unselected light segment",
+        "left and right date panes each have one"
+      ],
       "alignmentNotes": "Static time segment is visible, but Tommy confirmed the frontend currently does not make it clickable."
     },
     "dateRange.preset.yesterday": {
       "status": "confirmed",
-      "sourceIds": ["live.datePanelOpen", "ui.datePanelOpen"],
+      "sourceIds": [
+        "live.datePanelOpen",
+        "ui.datePanelOpen"
+      ],
       "screenContext": "Date range panel preset column.",
-      "visibleText": ["昨日"],
-      "visualCues": ["preset button"],
+      "visibleText": [
+        "昨日"
+      ],
+      "visualCues": [
+        "preset button"
+      ],
       "alignmentNotes": "Visible preset text is 昨日."
     },
     "dateRange.preset.lastWeek": {
       "status": "confirmed",
-      "sourceIds": ["live.datePanelOpen", "ui.datePanelOpen"],
+      "sourceIds": [
+        "live.datePanelOpen",
+        "ui.datePanelOpen"
+      ],
       "screenContext": "Date range panel preset column.",
-      "visibleText": ["上週"],
-      "visualCues": ["preset button"],
+      "visibleText": [
+        "上週"
+      ],
+      "visualCues": [
+        "preset button"
+      ],
       "alignmentNotes": "Visible preset text is 上週."
     },
     "dateRange.preset.currentWeek": {
       "status": "confirmed",
-      "sourceIds": ["live.datePanelOpen", "ui.datePanelOpen"],
+      "sourceIds": [
+        "live.datePanelOpen",
+        "ui.datePanelOpen"
+      ],
       "screenContext": "Date range panel preset column.",
-      "visibleText": ["本週"],
-      "visualCues": ["preset button"],
+      "visibleText": [
+        "本週"
+      ],
+      "visualCues": [
+        "preset button"
+      ],
       "alignmentNotes": "Visible preset text is 本週."
     },
     "dateRange.preset.past30Days": {
       "status": "confirmed",
-      "sourceIds": ["live.datePanelOpen", "ui.datePanelOpen"],
+      "sourceIds": [
+        "live.datePanelOpen",
+        "ui.datePanelOpen"
+      ],
       "screenContext": "Date range panel preset column.",
-      "visibleText": ["過去 30 天"],
-      "visualCues": ["preset button"],
+      "visibleText": [
+        "過去 30 天"
+      ],
+      "visualCues": [
+        "preset button"
+      ],
       "alignmentNotes": "Visible text includes spaces: 過去 30 天."
     },
     "dateRange.preset.recent30Days": {
       "status": "confirmed",
-      "sourceIds": ["live.datePanelOpen", "ui.datePanelOpen"],
+      "sourceIds": [
+        "live.datePanelOpen",
+        "ui.datePanelOpen"
+      ],
       "screenContext": "Date range panel preset column.",
-      "visibleText": ["最近 30 天"],
-      "visualCues": ["preset button"],
+      "visibleText": [
+        "最近 30 天"
+      ],
+      "visualCues": [
+        "preset button"
+      ],
       "alignmentNotes": "Visible text includes spaces: 最近 30 天."
     },
     "dateRange.staticStartInput": {
       "status": "knownProductGap",
-      "sourceIds": ["live.datePanelOpen", "ui.datePanelOpen"],
+      "sourceIds": [
+        "live.datePanelOpen",
+        "ui.datePanelOpen"
+      ],
       "screenContext": "Date range panel after selecting 靜態時間 for the start side.",
       "visibleText": [],
-      "visualCues": ["static date input expected inside date panel"],
+      "visualCues": [
+        "static date input expected inside date panel"
+      ],
       "alignmentNotes": "Tommy confirmed 靜態時間 currently cannot be clicked, so the static start input is unreachable in the current product state."
     },
     "dateRange.staticEndInput": {
       "status": "knownProductGap",
-      "sourceIds": ["live.datePanelOpen", "ui.datePanelOpen"],
+      "sourceIds": [
+        "live.datePanelOpen",
+        "ui.datePanelOpen"
+      ],
       "screenContext": "Date range panel after selecting 靜態時間 for the end side.",
       "visibleText": [],
-      "visualCues": ["static date input expected inside date panel"],
+      "visualCues": [
+        "static date input expected inside date panel"
+      ],
       "alignmentNotes": "Tommy confirmed 靜態時間 currently cannot be clicked, so the static end input is unreachable in the current product state."
     },
     "dateRange.action.cancel": {
       "status": "confirmed",
-      "sourceIds": ["live.datePanelOpen", "ui.datePanelOpen"],
+      "sourceIds": [
+        "live.datePanelOpen",
+        "ui.datePanelOpen"
+      ],
       "screenContext": "Date range panel footer, lower right.",
-      "visibleText": ["取消"],
-      "visualCues": ["secondary footer button"],
+      "visibleText": [
+        "取消"
+      ],
+      "visualCues": [
+        "secondary footer button"
+      ],
       "alignmentNotes": "Cancel is directly visible in the panel footer."
     },
     "dateRange.action.confirm": {
       "status": "confirmed",
-      "sourceIds": ["ui.datePanelOpen"],
+      "sourceIds": [
+        "ui.datePanelOpen"
+      ],
       "screenContext": "Date range panel footer, lower right.",
-      "visibleText": ["確定"],
-      "visualCues": ["primary footer button"],
+      "visibleText": [
+        "確定"
+      ],
+      "visualCues": [
+        "primary footer button"
+      ],
       "alignmentNotes": "Confirm is visible in the full-width screenshot; some cropped screenshots only show cancel."
     },
     "validation.toast": {
       "status": "confirmed",
-      "sourceIds": ["tommy.validationToastSingle", "tommy.validationToastMultiple"],
+      "sourceIds": [
+        "tommy.validationToastSingle",
+        "tommy.validationToastMultiple"
+      ],
       "screenContext": "Expected validation message after clicking 計算 with incomplete setup.",
       "visibleText": [
         "第 1 欄位，欄位未設置完成",
@@ -403,120 +738,654 @@
       ],
       "textPattern": "第 {rowIndex} 欄位，欄位未設置完成",
       "multiMessageBehavior": "One toast is shown for each incomplete metric row; the row number changes with the missing row index.",
-      "visualCues": ["white floating toast", "red error icon", "stacked messages when multiple rows are incomplete"],
+      "visualCues": [
+        "white floating toast",
+        "red error icon",
+        "stacked messages when multiple rows are incomplete"
+      ],
       "alignmentNotes": "Confirmed by Tommy screenshots on 2026-05-18. Runtime must match the row-indexed message pattern, not one fixed literal."
     },
     "editorToolbar.downloadButton": {
       "status": "confirmed",
-      "sourceIds": ["live.editorBlank", "live.editorSaved"],
+      "sourceIds": [
+        "live.editorBlank",
+        "live.editorSaved"
+      ],
       "screenContext": "Top-right of editor header.",
       "visibleText": [],
-      "visualCues": ["download icon button", "disabled in blank editor", "enabled after preview result"],
+      "visualCues": [
+        "download icon button",
+        "disabled in blank editor",
+        "enabled after preview result"
+      ],
       "alignmentNotes": "Icon-only editor download/export control."
     },
     "editorToolbar.saveButton": {
       "status": "confirmed",
-      "sourceIds": ["live.editorBlank", "live.editorSaved"],
+      "sourceIds": [
+        "live.editorBlank",
+        "live.editorSaved"
+      ],
       "screenContext": "Top-right / action area of the collage editor.",
-      "visibleText": ["儲存報表"],
-      "visualCues": ["save report action button"],
+      "visibleText": [
+        "儲存報表"
+      ],
+      "visualCues": [
+        "save report action button"
+      ],
       "alignmentNotes": "Used to open the save-report modal. Confirming save still follows Tool Bridge policy."
     },
     "saveModal.reportNameInput": {
       "status": "notCaptured",
-      "sourceIds": ["live.editorBlank"],
+      "sourceIds": [
+        "live.editorBlank"
+      ],
       "screenContext": "Save-report modal after clicking 儲存報表.",
       "visibleText": [],
-      "visualCues": ["report name text input expected inside save modal"],
+      "visualCues": [
+        "report name text input expected inside save modal"
+      ],
       "alignmentNotes": "Not captured in the current screenshot set; runtime observes this modal live."
     },
     "saveModal.cancelButton": {
       "status": "notCaptured",
-      "sourceIds": ["live.editorBlank"],
+      "sourceIds": [
+        "live.editorBlank"
+      ],
       "screenContext": "Save-report modal footer.",
-      "visibleText": ["取消"],
-      "visualCues": ["secondary cancel button expected inside save modal"],
+      "visibleText": [
+        "取消"
+      ],
+      "visualCues": [
+        "secondary cancel button expected inside save modal"
+      ],
       "alignmentNotes": "Not captured in the current screenshot set; runtime observes this modal live."
     },
     "editorToolbar.copyButton": {
       "status": "confirmed",
-      "sourceIds": ["live.editorSaved"],
+      "sourceIds": [
+        "live.editorSaved"
+      ],
       "screenContext": "Existing-report editor action area.",
-      "visibleText": ["複製副本"],
-      "visualCues": ["copy report action button"],
+      "visibleText": [
+        "複製副本"
+      ],
+      "visualCues": [
+        "copy report action button"
+      ],
       "alignmentNotes": "Locator registry also records this as an existing-report editor action."
     },
     "copyModal.reportNameInput": {
       "status": "notCaptured",
-      "sourceIds": ["live.editorSaved"],
+      "sourceIds": [
+        "live.editorSaved"
+      ],
       "screenContext": "Copy-report modal after clicking 複製副本.",
       "visibleText": [],
-      "visualCues": ["report name input expected to default to a 副本 name"],
+      "visualCues": [
+        "report name input expected to default to a 副本 name"
+      ],
       "alignmentNotes": "Not captured in the current screenshot set; runtime observes this modal live."
     },
     "copyModal.projectSelect": {
       "status": "notCaptured",
-      "sourceIds": ["live.editorSaved"],
+      "sourceIds": [
+        "live.editorSaved"
+      ],
       "screenContext": "Copy-report modal project selector area.",
-      "visibleText": ["儲存專案", "請選擇專案"],
-      "visualCues": ["project picker or selected project text expected inside copy modal"],
+      "visibleText": [
+        "儲存專案",
+        "請選擇專案"
+      ],
+      "visualCues": [
+        "project picker or selected project text expected inside copy modal"
+      ],
       "alignmentNotes": "Not captured in the current screenshot set; runtime observes this modal live."
     },
     "copyModal.hintText": {
       "status": "notCaptured",
-      "sourceIds": ["live.editorSaved"],
+      "sourceIds": [
+        "live.editorSaved"
+      ],
       "screenContext": "Copy-report modal body text.",
       "visibleText": [],
-      "visualCues": ["hint/rule text expected near copy name and project fields"],
+      "visualCues": [
+        "hint/rule text expected near copy name and project fields"
+      ],
       "alignmentNotes": "Not captured in the current screenshot set; absence/presence should be judged by the testcase scope."
     },
     "copyModal.cancelButton": {
       "status": "notCaptured",
-      "sourceIds": ["live.editorSaved"],
+      "sourceIds": [
+        "live.editorSaved"
+      ],
       "screenContext": "Copy-report modal footer.",
-      "visibleText": ["取消"],
-      "visualCues": ["secondary cancel button expected inside copy modal"],
+      "visibleText": [
+        "取消"
+      ],
+      "visualCues": [
+        "secondary cancel button expected inside copy modal"
+      ],
       "alignmentNotes": "Not captured in the current screenshot set; runtime observes this modal live."
     },
     "copyModal.saveButton": {
       "status": "notCaptured",
-      "sourceIds": ["live.editorSaved"],
+      "sourceIds": [
+        "live.editorSaved"
+      ],
       "screenContext": "Copy-report modal footer.",
-      "visibleText": ["儲存", "確認"],
-      "visualCues": ["primary save/confirm button expected inside copy modal"],
+      "visibleText": [
+        "儲存",
+        "確認"
+      ],
+      "visualCues": [
+        "primary save/confirm button expected inside copy modal"
+      ],
       "alignmentNotes": "Not captured in the current screenshot set; runtime observes this modal live and requires Tool Bridge policy for save."
     },
     "editorToolbar.updateButton": {
       "status": "confirmed",
-      "sourceIds": ["live.editorSaved"],
+      "sourceIds": [
+        "live.editorSaved"
+      ],
       "screenContext": "Existing-report editor action area.",
-      "visibleText": ["更新設定"],
-      "visualCues": ["update settings action button"],
+      "visibleText": [
+        "更新設定"
+      ],
+      "visualCues": [
+        "update settings action button"
+      ],
       "alignmentNotes": "Locator registry records this as the update action for existing reports."
     },
     "projectList.reportRow": {
       "status": "confirmed",
-      "sourceIds": ["live.projectList"],
+      "sourceIds": [
+        "live.projectList"
+      ],
       "screenContext": "Selected collage project/report list table.",
-      "visibleText": ["報表名稱", "資料週期區間", "下載", "刪除"],
-      "visualCues": ["table/list row containing report name and operation controls"],
+      "visibleText": [
+        "報表名稱",
+        "資料週期區間",
+        "下載",
+        "刪除"
+      ],
+      "visualCues": [
+        "table/list row containing report name and operation controls"
+      ],
       "alignmentNotes": "Used for save/copy row-created and cancel no-row-created verification."
     },
     "reportPersistence.reopenState": {
       "status": "inferredFromSameSurface",
-      "sourceIds": ["live.editorSaved"],
+      "sourceIds": [
+        "live.editorSaved"
+      ],
       "screenContext": "Saved report editor after opening a report row from the project list.",
-      "visibleText": ["報表設定", "時間區間", "欄位選擇"],
-      "visualCues": ["editor controls can be read after reopening a saved report"],
+      "visibleText": [
+        "報表設定",
+        "時間區間",
+        "欄位選擇"
+      ],
+      "visualCues": [
+        "editor controls can be read after reopening a saved report"
+      ],
       "alignmentNotes": "This is not one visible control; it is a structured read-back evidence object."
     },
     "download.toast": {
       "status": "confirmed",
-      "sourceIds": ["tommy.downloadToast"],
+      "sourceIds": [
+        "tommy.downloadToast"
+      ],
       "screenContext": "Expected transient message after editor download click.",
-      "visibleText": ["數據已開始下載"],
-      "visualCues": ["white floating toast with green check icon"],
+      "visibleText": [
+        "數據已開始下載"
+      ],
+      "visualCues": [
+        "white floating toast with green check icon"
+      ],
       "alignmentNotes": "Confirmed by Tommy screenshot on 2026-05-18."
+    },
+    "sidebar.myCustomGroup": {
+      "status": "notCaptured",
+      "sourceIds": [
+        "ui.vocabularyAlignment"
+      ],
+      "screenContext": "officialHome / sidebar.myCustomGroup",
+      "visualCues": [
+        "我的自訂",
+        "我的自訂群組",
+        "my custom",
+        "custom reports",
+        "visible text 我的自訂",
+        "nearest expandable navigation group"
+      ]
+    },
+    "sidebar.collageReportGroup": {
+      "status": "notCaptured",
+      "sourceIds": [
+        "ui.vocabularyAlignment"
+      ],
+      "screenContext": "officialHome / sidebar.collageReportGroup",
+      "visualCues": [
+        "拼貼報表",
+        "我的自訂 > 拼貼報表",
+        "拼貼報表節點",
+        "collage report group",
+        "visible text 拼貼報表 under 我的自訂",
+        "expandable navigation group with adjacent project create plus"
+      ]
+    },
+    "sidebar.collageProjects.count": {
+      "status": "notCaptured",
+      "sourceIds": [
+        "ui.vocabularyAlignment"
+      ],
+      "screenContext": "officialHome / sidebar.collageReportGroup.children",
+      "visualCues": [
+        "拼貼專案數",
+        "拼貼報表專案數",
+        "project count",
+        "collage project count",
+        "count visible project rows under expanded 拼貼報表 group"
+      ]
+    },
+    "projectCreateModal.nameInput": {
+      "status": "notCaptured",
+      "sourceIds": [
+        "ui.vocabularyAlignment"
+      ],
+      "screenContext": "officialHome / projectCreateModal.nameInput",
+      "visualCues": [
+        "新增專案名稱",
+        "專案名稱輸入",
+        "project name input",
+        "name input after clicking sidebar collage project create button"
+      ]
+    },
+    "projectCreateModal.saveButton": {
+      "status": "notCaptured",
+      "sourceIds": [
+        "ui.vocabularyAlignment"
+      ],
+      "screenContext": "officialHome / projectCreateModal.saveButton",
+      "visualCues": [
+        "新增專案儲存",
+        "建立專案",
+        "project create save",
+        "儲存/確認 button after entering project name in create project UI"
+      ]
+    },
+    "projectCreateModal.cancelButton": {
+      "status": "notCaptured",
+      "sourceIds": [
+        "ui.vocabularyAlignment"
+      ],
+      "screenContext": "officialHome / projectCreateModal.cancelButton",
+      "visualCues": [
+        "新增專案取消",
+        "project create cancel",
+        "取消 button after clicking sidebar collage project create button"
+      ]
+    },
+    "reportMode.option.metricTrend": {
+      "status": "notCaptured",
+      "sourceIds": [
+        "ui.vocabularyAlignment"
+      ],
+      "screenContext": "collageEditor / reportMode.radioGroup",
+      "visualCues": [
+        "指標趨勢",
+        "精算模式/指標趨勢",
+        "metric trend",
+        "metric-centric mode",
+        "report-mode radio option whose label semantically matches 指標趨勢"
+      ]
+    },
+    "reportMode.option.recordCentric": {
+      "status": "notCaptured",
+      "sourceIds": [
+        "ui.vocabularyAlignment"
+      ],
+      "screenContext": "collageEditor / reportMode.radioGroup",
+      "visualCues": [
+        "明細檢視",
+        "精算模式/明細檢視",
+        "record-centric mode",
+        "detail view",
+        "report-mode radio option whose label semantically matches 明細檢視"
+      ]
+    },
+    "metricRows.addRowButton": {
+      "status": "notCaptured",
+      "sourceIds": [
+        "ui.vocabularyAlignment"
+      ],
+      "screenContext": "collageEditor / metricRows.addRowButton",
+      "visualCues": [
+        "+ 新增列",
+        "新增列",
+        "新增欄位列",
+        "add metric row",
+        "add row control near the metric/field rows"
+      ]
+    },
+    "metricRows.duplicateRowButton": {
+      "status": "notCaptured",
+      "sourceIds": [
+        "ui.vocabularyAlignment"
+      ],
+      "screenContext": "collageEditor / metricRows.duplicateRowButton",
+      "visualCues": [
+        "複製列",
+        "複製欄位列",
+        "copy row",
+        "duplicate row",
+        "row-local duplicate/copy control inside a metric row"
+      ]
+    },
+    "metricRows.deleteRowButton": {
+      "status": "notCaptured",
+      "sourceIds": [
+        "ui.vocabularyAlignment"
+      ],
+      "screenContext": "collageEditor / metricRows.deleteRowButton",
+      "visualCues": [
+        "刪除列",
+        "刪除欄位列",
+        "remove row",
+        "delete metric row",
+        "row-local delete/remove control inside a metric row"
+      ]
+    },
+    "formulaEditor.openButton": {
+      "status": "notCaptured",
+      "sourceIds": [
+        "ui.vocabularyAlignment"
+      ],
+      "screenContext": "collageEditor / formulaEditor.openButton",
+      "visualCues": [
+        "公式",
+        "公式編輯器",
+        "+ 新增運算欄位",
+        "新增運算欄位",
+        "button/control that opens the calculated-field/formula editor"
+      ]
+    },
+    "formulaEditor.availableFields": {
+      "status": "notCaptured",
+      "sourceIds": [
+        "ui.vocabularyAlignment"
+      ],
+      "screenContext": "collageEditor / formulaEditor.availableFields",
+      "visualCues": [
+        "可用欄位",
+        "公式可用欄位",
+        "available fields",
+        "field list visible inside the formula editor"
+      ]
+    },
+    "formulaEditor.expressionInput": {
+      "status": "notCaptured",
+      "sourceIds": [
+        "ui.vocabularyAlignment"
+      ],
+      "screenContext": "collageEditor / formulaEditor.expressionInput",
+      "visualCues": [
+        "公式輸入",
+        "公式欄位",
+        "expression input",
+        "formula input",
+        "main input/editable area for the calculated-field expression"
+      ]
+    },
+    "formulaEditor.fieldNameInput": {
+      "status": "notCaptured",
+      "sourceIds": [
+        "ui.vocabularyAlignment"
+      ],
+      "screenContext": "collageEditor / formulaEditor.fieldNameInput",
+      "visualCues": [
+        "欄位名稱",
+        "運算欄位名稱",
+        "calculated field name",
+        "name input inside the calculated-field/formula editor"
+      ]
+    },
+    "formulaEditor.confirmButton": {
+      "status": "notCaptured",
+      "sourceIds": [
+        "ui.vocabularyAlignment"
+      ],
+      "screenContext": "collageEditor / formulaEditor.confirmButton",
+      "visualCues": [
+        "公式確認",
+        "運算欄位確認",
+        "formula confirm",
+        "確認/確定 button inside the formula editor modal"
+      ]
+    },
+    "dateRange.preset.today": {
+      "status": "notCaptured",
+      "sourceIds": [
+        "ui.vocabularyAlignment"
+      ],
+      "screenContext": "collageEditor / dateRange.preset",
+      "visualCues": [
+        "今日",
+        "today",
+        "preset button text 今日 inside opened date panel"
+      ]
+    },
+    "dateRange.preset.lastMonth": {
+      "status": "notCaptured",
+      "sourceIds": [
+        "ui.vocabularyAlignment"
+      ],
+      "screenContext": "collageEditor / dateRange.preset",
+      "visualCues": [
+        "上月",
+        "last month",
+        "preset button text 上月 inside opened date panel"
+      ]
+    },
+    "dateRange.preset.currentMonth": {
+      "status": "notCaptured",
+      "sourceIds": [
+        "ui.vocabularyAlignment"
+      ],
+      "screenContext": "collageEditor / dateRange.preset",
+      "visualCues": [
+        "本月",
+        "current month",
+        "this month",
+        "preset button text 本月 inside opened date panel"
+      ]
+    },
+    "dateRange.preset.past7Days": {
+      "status": "notCaptured",
+      "sourceIds": [
+        "ui.vocabularyAlignment"
+      ],
+      "screenContext": "collageEditor / dateRange.preset",
+      "visualCues": [
+        "過去7天",
+        "過去 7 天",
+        "past 7 days",
+        "preset button text 過去 7 天 inside opened date panel"
+      ]
+    },
+    "dateRange.preset.recent7Days": {
+      "status": "notCaptured",
+      "sourceIds": [
+        "ui.vocabularyAlignment"
+      ],
+      "screenContext": "collageEditor / dateRange.preset",
+      "visualCues": [
+        "最近7天",
+        "最近 7 天",
+        "recent 7 days",
+        "preset button text 最近 7 天 inside opened date panel"
+      ]
+    },
+    "dateRange.preset.fromDateToYesterday": {
+      "status": "notCaptured",
+      "sourceIds": [
+        "ui.vocabularyAlignment"
+      ],
+      "screenContext": "collageEditor / dateRange.preset",
+      "visualCues": [
+        "自某日至昨日",
+        "自訂起日至昨日",
+        "from date to yesterday",
+        "preset button text 自某日至昨日 inside opened date panel"
+      ]
+    },
+    "dateRange.preset.fromDateToToday": {
+      "status": "notCaptured",
+      "sourceIds": [
+        "ui.vocabularyAlignment"
+      ],
+      "screenContext": "collageEditor / dateRange.preset",
+      "visualCues": [
+        "自某日至今",
+        "自訂起日至今",
+        "from date to today",
+        "preset button text 自某日至今 inside opened date panel"
+      ]
+    },
+    "dateRange.dynamicStartOffsetInput": {
+      "status": "notCaptured",
+      "sourceIds": [
+        "ui.vocabularyAlignment"
+      ],
+      "screenContext": "collageEditor / dateRange.dynamicOffsetInput",
+      "visualCues": [
+        "動態起日天數",
+        "起日期or天數 設置",
+        "起日期 or 天數設置",
+        "start offset days",
+        "dynamic start-side date/day input inside opened date panel"
+      ]
+    },
+    "dateRange.dynamicEndOffsetInput": {
+      "status": "notCaptured",
+      "sourceIds": [
+        "ui.vocabularyAlignment"
+      ],
+      "screenContext": "collageEditor / dateRange.dynamicOffsetInput",
+      "visualCues": [
+        "動態訖日天數",
+        "訖日期or天數 設置",
+        "訖日期 or 天數設置",
+        "end offset days",
+        "dynamic end-side date/day input inside opened date panel"
+      ]
+    },
+    "saveModal.saveButton": {
+      "status": "notCaptured",
+      "sourceIds": [
+        "ui.vocabularyAlignment"
+      ],
+      "screenContext": "collageEditor / save.modal",
+      "visualCues": [
+        "儲存 modal 儲存",
+        "報表儲存按鈕",
+        "save modal save",
+        "儲存/確認 button inside opened save modal"
+      ]
+    },
+    "projectList.table": {
+      "status": "notCaptured",
+      "sourceIds": [
+        "ui.vocabularyAlignment"
+      ],
+      "screenContext": "collageProjectList / projectList.table",
+      "visualCues": [
+        "報表清單",
+        "專案列表",
+        "報表列表",
+        "project report table",
+        "main table/list area below project title and toolbar"
+      ]
+    },
+    "projectList.header.reportName": {
+      "status": "notCaptured",
+      "sourceIds": [
+        "ui.vocabularyAlignment"
+      ],
+      "screenContext": "collageProjectList / projectList.table.header",
+      "visualCues": [
+        "報表名稱",
+        "報表名稱欄",
+        "report name column",
+        "project list table header text 報表名稱"
+      ]
+    },
+    "projectList.header.dataPeriod": {
+      "status": "notCaptured",
+      "sourceIds": [
+        "ui.vocabularyAlignment"
+      ],
+      "screenContext": "collageProjectList / projectList.table.header",
+      "visualCues": [
+        "資料週期區間",
+        "資料區間",
+        "date period column",
+        "project list table header text 資料週期區間"
+      ]
+    },
+    "projectList.header.operation": {
+      "status": "notCaptured",
+      "sourceIds": [
+        "ui.vocabularyAlignment"
+      ],
+      "screenContext": "collageProjectList / projectList.table.header",
+      "visualCues": [
+        "操作",
+        "操作欄",
+        "operation column",
+        "project list table header text 操作"
+      ]
+    },
+    "projectList.pagination.pageSize": {
+      "status": "notCaptured",
+      "sourceIds": [
+        "ui.vocabularyAlignment"
+      ],
+      "screenContext": "collageProjectList / projectList.pagination.pageSize",
+      "visualCues": [
+        "100筆/頁",
+        "100 筆/頁",
+        "每頁筆數",
+        "page size",
+        "pagination area near report list table",
+        "visible text 100筆/頁 or equivalent page-size control"
+      ]
+    },
+    "save.toast": {
+      "status": "notCaptured",
+      "sourceIds": [
+        "ui.vocabularyAlignment"
+      ],
+      "screenContext": "collageEditor / save.toast",
+      "visualCues": [
+        "儲存成功",
+        "報表儲存成功",
+        "save success toast",
+        "toast/status region after confirming save report"
+      ]
+    },
+    "update.toast": {
+      "status": "notCaptured",
+      "sourceIds": [
+        "ui.vocabularyAlignment"
+      ],
+      "screenContext": "collageEditor / update.toast",
+      "visualCues": [
+        "更新成功",
+        "更新設定成功",
+        "update success toast",
+        "toast/status region after confirming 更新設定"
+      ]
     }
   },
   "needsHumanConfirmation": [
@@ -551,6 +1420,138 @@
     {
       "objectId": "reportPersistence.reopenState",
       "reason": "This is structured read-back evidence rather than a single visible UI control."
+    },
+    {
+      "objectId": "sidebar.myCustomGroup",
+      "reason": "Vocabulary coverage added from testcase terminology; requires future visual confirmation in live UI discovery pass."
+    },
+    {
+      "objectId": "sidebar.collageReportGroup",
+      "reason": "Vocabulary coverage added from testcase terminology; requires future visual confirmation in live UI discovery pass."
+    },
+    {
+      "objectId": "sidebar.collageProjects.count",
+      "reason": "Vocabulary coverage added from testcase terminology; requires future visual confirmation in live UI discovery pass."
+    },
+    {
+      "objectId": "projectCreateModal.nameInput",
+      "reason": "Vocabulary coverage added from testcase terminology; requires future visual confirmation in live UI discovery pass."
+    },
+    {
+      "objectId": "projectCreateModal.saveButton",
+      "reason": "Vocabulary coverage added from testcase terminology; requires future visual confirmation in live UI discovery pass."
+    },
+    {
+      "objectId": "projectCreateModal.cancelButton",
+      "reason": "Vocabulary coverage added from testcase terminology; requires future visual confirmation in live UI discovery pass."
+    },
+    {
+      "objectId": "reportMode.option.metricTrend",
+      "reason": "Vocabulary coverage added from testcase terminology; requires future visual confirmation in live UI discovery pass."
+    },
+    {
+      "objectId": "reportMode.option.recordCentric",
+      "reason": "Vocabulary coverage added from testcase terminology; requires future visual confirmation in live UI discovery pass."
+    },
+    {
+      "objectId": "metricRows.addRowButton",
+      "reason": "Vocabulary coverage added from testcase terminology; requires future visual confirmation in live UI discovery pass."
+    },
+    {
+      "objectId": "metricRows.duplicateRowButton",
+      "reason": "Vocabulary coverage added from testcase terminology; requires future visual confirmation in live UI discovery pass."
+    },
+    {
+      "objectId": "metricRows.deleteRowButton",
+      "reason": "Vocabulary coverage added from testcase terminology; requires future visual confirmation in live UI discovery pass."
+    },
+    {
+      "objectId": "formulaEditor.openButton",
+      "reason": "Vocabulary coverage added from testcase terminology; requires future visual confirmation in live UI discovery pass."
+    },
+    {
+      "objectId": "formulaEditor.availableFields",
+      "reason": "Vocabulary coverage added from testcase terminology; requires future visual confirmation in live UI discovery pass."
+    },
+    {
+      "objectId": "formulaEditor.expressionInput",
+      "reason": "Vocabulary coverage added from testcase terminology; requires future visual confirmation in live UI discovery pass."
+    },
+    {
+      "objectId": "formulaEditor.fieldNameInput",
+      "reason": "Vocabulary coverage added from testcase terminology; requires future visual confirmation in live UI discovery pass."
+    },
+    {
+      "objectId": "formulaEditor.confirmButton",
+      "reason": "Vocabulary coverage added from testcase terminology; requires future visual confirmation in live UI discovery pass."
+    },
+    {
+      "objectId": "dateRange.preset.today",
+      "reason": "Vocabulary coverage added from testcase terminology; requires future visual confirmation in live UI discovery pass."
+    },
+    {
+      "objectId": "dateRange.preset.lastMonth",
+      "reason": "Vocabulary coverage added from testcase terminology; requires future visual confirmation in live UI discovery pass."
+    },
+    {
+      "objectId": "dateRange.preset.currentMonth",
+      "reason": "Vocabulary coverage added from testcase terminology; requires future visual confirmation in live UI discovery pass."
+    },
+    {
+      "objectId": "dateRange.preset.past7Days",
+      "reason": "Vocabulary coverage added from testcase terminology; requires future visual confirmation in live UI discovery pass."
+    },
+    {
+      "objectId": "dateRange.preset.recent7Days",
+      "reason": "Vocabulary coverage added from testcase terminology; requires future visual confirmation in live UI discovery pass."
+    },
+    {
+      "objectId": "dateRange.preset.fromDateToYesterday",
+      "reason": "Vocabulary coverage added from testcase terminology; requires future visual confirmation in live UI discovery pass."
+    },
+    {
+      "objectId": "dateRange.preset.fromDateToToday",
+      "reason": "Vocabulary coverage added from testcase terminology; requires future visual confirmation in live UI discovery pass."
+    },
+    {
+      "objectId": "dateRange.dynamicStartOffsetInput",
+      "reason": "Vocabulary coverage added from testcase terminology; requires future visual confirmation in live UI discovery pass."
+    },
+    {
+      "objectId": "dateRange.dynamicEndOffsetInput",
+      "reason": "Vocabulary coverage added from testcase terminology; requires future visual confirmation in live UI discovery pass."
+    },
+    {
+      "objectId": "saveModal.saveButton",
+      "reason": "Vocabulary coverage added from testcase terminology; requires future visual confirmation in live UI discovery pass."
+    },
+    {
+      "objectId": "projectList.table",
+      "reason": "Vocabulary coverage added from testcase terminology; requires future visual confirmation in live UI discovery pass."
+    },
+    {
+      "objectId": "projectList.header.reportName",
+      "reason": "Vocabulary coverage added from testcase terminology; requires future visual confirmation in live UI discovery pass."
+    },
+    {
+      "objectId": "projectList.header.dataPeriod",
+      "reason": "Vocabulary coverage added from testcase terminology; requires future visual confirmation in live UI discovery pass."
+    },
+    {
+      "objectId": "projectList.header.operation",
+      "reason": "Vocabulary coverage added from testcase terminology; requires future visual confirmation in live UI discovery pass."
+    },
+    {
+      "objectId": "projectList.pagination.pageSize",
+      "reason": "Vocabulary coverage added from testcase terminology; requires future visual confirmation in live UI discovery pass."
+    },
+    {
+      "objectId": "save.toast",
+      "reason": "Vocabulary coverage added from testcase terminology; requires future visual confirmation in live UI discovery pass."
+    },
+    {
+      "objectId": "update.toast",
+      "reason": "Vocabulary coverage added from testcase terminology; requires future visual confirmation in live UI discovery pass."
     }
   ]
 }

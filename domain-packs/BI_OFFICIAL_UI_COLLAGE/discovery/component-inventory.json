@@ -218,8 +218,13 @@
       "page": "collageEditor",
       "type": "button",
       "purpose": "Editor action that opens the save report modal.",
-      "candidateSignals": ["visible text 儲存報表", "save action in editor toolbar"],
-      "assertAfterAction": ["save modal opens, or disabled state is recorded"]
+      "candidateSignals": [
+        "visible text 儲存報表",
+        "save action in editor toolbar"
+      ],
+      "assertAfterAction": [
+        "save modal opens, or disabled state is recorded"
+      ]
     },
     {
       "id": "save.modal",
@@ -244,194 +249,616 @@
       "page": "collageEditor",
       "type": "button",
       "purpose": "Existing-report editor action that opens the copy report modal.",
-      "candidateSignals": ["visible text 複製副本", "copy action in existing-report editor toolbar"],
-      "assertAfterAction": ["copy modal opens with default copy name and project selector"]
+      "candidateSignals": [
+        "visible text 複製副本",
+        "copy action in existing-report editor toolbar"
+      ],
+      "assertAfterAction": [
+        "copy modal opens with default copy name and project selector"
+      ]
     },
     {
       "id": "copy.modal",
       "page": "collageEditor",
       "type": "modalOrNativeDialog",
       "purpose": "Copy-report modal for reading default copy values or saving a copied report.",
-      "candidateSignals": ["copy dialog visible", "report name input contains 副本", "project selector visible"],
-      "preconditions": ["existing report editor is open"],
-      "assertAfterAction": ["cancel closes modal without row creation, or save creates a new report row"]
+      "candidateSignals": [
+        "copy dialog visible",
+        "report name input contains 副本",
+        "project selector visible"
+      ],
+      "preconditions": [
+        "existing report editor is open"
+      ],
+      "assertAfterAction": [
+        "cancel closes modal without row creation, or save creates a new report row"
+      ]
     },
     {
       "id": "editorToolbar.updateButton",
       "page": "collageEditor",
       "type": "button",
       "purpose": "Existing-report editor action that updates saved report settings.",
-      "candidateSignals": ["visible text 更新設定", "update action in existing-report editor toolbar"],
-      "preconditions": ["existing report editor is open", "Tool Bridge response for modifying existing report"],
-      "assertAfterAction": ["update success signal or reopened state proves persistence"]
+      "candidateSignals": [
+        "visible text 更新設定",
+        "update action in existing-report editor toolbar"
+      ],
+      "preconditions": [
+        "existing report editor is open",
+        "Tool Bridge response for modifying existing report"
+      ],
+      "assertAfterAction": [
+        "update success signal or reopened state proves persistence"
+      ]
     },
     {
       "id": "projectList.reportRow",
       "page": "collageProjectList",
       "type": "row",
       "purpose": "Report row in the selected collage project list.",
-      "candidateSignals": ["row text contains report name", "row operation controls contain 下載/刪除"],
-      "assertAfterAction": ["row visibility matches created/cancelled/deleted expectation"]
+      "candidateSignals": [
+        "row text contains report name",
+        "row operation controls contain 下載/刪除"
+      ],
+      "assertAfterAction": [
+        "row visibility matches created/cancelled/deleted expectation"
+      ]
     },
     {
       "id": "reportPersistence.reopenState",
       "page": "collageEditor",
       "type": "stateEvidence",
       "purpose": "Read-back state after reopening a saved report.",
-      "candidateSignals": ["stateDelta dateRangeText", "selected fields", "display mode"],
-      "assertAfterAction": ["reopened editor state matches the saved update target"]
+      "candidateSignals": [
+        "stateDelta dateRangeText",
+        "selected fields",
+        "display mode"
+      ],
+      "assertAfterAction": [
+        "reopened editor state matches the saved update target"
+      ]
     },
     {
       "id": "projectToolbar.downloadButton",
       "page": "collageProjectList",
       "type": "iconButton",
       "purpose": "Domain semantic child object for toolbar download state.",
-      "candidateSignals": ["toolbar ordered button index 0", "download icon near project list toolbar"],
-      "assertAfterAction": ["disabled/enabled state can be interpreted through projectToolbar semantic map"]
+      "candidateSignals": [
+        "toolbar ordered button index 0",
+        "download icon near project list toolbar"
+      ],
+      "assertAfterAction": [
+        "disabled/enabled state can be interpreted through projectToolbar semantic map"
+      ]
     },
     {
       "id": "projectToolbar.deleteButton",
       "page": "collageProjectList",
       "type": "iconButton",
       "purpose": "Domain semantic child object for toolbar delete state.",
-      "candidateSignals": ["toolbar ordered button index 1", "delete icon near project list toolbar"],
-      "assertAfterAction": ["disabled/enabled state can be interpreted through projectToolbar semantic map"]
+      "candidateSignals": [
+        "toolbar ordered button index 1",
+        "delete icon near project list toolbar"
+      ],
+      "assertAfterAction": [
+        "disabled/enabled state can be interpreted through projectToolbar semantic map"
+      ]
     },
     {
       "id": "projectToolbar.createButton",
       "page": "collageProjectList",
       "type": "iconButton",
       "purpose": "Domain semantic child object for report-list toolbar create action.",
-      "candidateSignals": ["toolbar ordered button index 2", "add/create icon near project list toolbar"],
-      "assertAfterAction": ["enabled state can be observed; this is not the project-limit trigger"]
+      "candidateSignals": [
+        "toolbar ordered button index 2",
+        "add/create icon near project list toolbar"
+      ],
+      "assertAfterAction": [
+        "enabled state can be observed; this is not the project-limit trigger"
+      ]
     },
     {
       "id": "sidebar.collageProjectCreateButton",
       "page": "officialHome",
       "type": "iconButton",
       "purpose": "Sidebar plus button next to 拼貼報表 for creating collage projects and triggering the project-limit toast.",
-      "candidateSignals": ["plus icon aligned with sidebar row text 拼貼報表", "same visible control used by create-project flow"],
-      "assertAfterAction": ["project-limit message visible when project count is already at the cap"]
+      "candidateSignals": [
+        "plus icon aligned with sidebar row text 拼貼報表",
+        "same visible control used by create-project flow"
+      ],
+      "assertAfterAction": [
+        "project-limit message visible when project count is already at the cap"
+      ]
     },
     {
       "id": "projectLimit.toast",
       "page": "collageProjectList",
       "type": "toast",
       "purpose": "Observe project limit notification after create action.",
-      "candidateSignals": ["toast/status body text after create click", "text contains 已達最高 or 專案"],
-      "assertAfterAction": ["project-limit message visible"]
+      "candidateSignals": [
+        "toast/status body text after create click",
+        "text contains 已達最高 or 專案"
+      ],
+      "assertAfterAction": [
+        "project-limit message visible"
+      ]
     },
     {
       "id": "projectList.rowDeleteAction",
       "page": "collageProjectList",
       "type": "rowActionText",
       "purpose": "Row-local delete action for an individual report.",
-      "candidateSignals": ["row operation column", "visible row text 刪除", "appears next to row-local 下載"],
-      "assertAfterAction": ["hover/click target can be identified separately from toolbar delete"]
+      "candidateSignals": [
+        "row operation column",
+        "visible row text 刪除",
+        "appears next to row-local 下載"
+      ],
+      "assertAfterAction": [
+        "hover/click target can be identified separately from toolbar delete"
+      ]
     },
     {
       "id": "projectList.rowDeleteTooltip",
       "page": "collageProjectList",
       "type": "tooltip",
       "purpose": "Tooltip layer expected by testcase after hovering the row-local delete action.",
-      "candidateSignals": ["tooltip/popover visible after hovering row delete action"],
-      "assertAfterAction": ["tooltip appears, or absence is captured as frontend product gap after real hover"]
+      "candidateSignals": [
+        "tooltip/popover visible after hovering row delete action"
+      ],
+      "assertAfterAction": [
+        "tooltip appears, or absence is captured as frontend product gap after real hover"
+      ]
     },
     {
       "id": "sourceReportPicker.searchInput",
       "page": "collageEditor",
       "type": "searchInput",
       "purpose": "Search inside opened source report picker.",
-      "candidateSignals": ["input inside source report picker", "search field visible after picker open"],
-      "assertAfterAction": ["typed search value filters visible options"]
+      "candidateSignals": [
+        "input inside source report picker",
+        "search field visible after picker open"
+      ],
+      "assertAfterAction": [
+        "typed search value filters visible options"
+      ]
     },
     {
       "id": "sourceReportPicker.option",
       "page": "collageEditor",
       "type": "pickerOption",
       "purpose": "Source report picker option selected by visible text.",
-      "candidateSignals": ["option text inside opened source report picker"],
-      "assertAfterAction": ["picker closes and row source text updates after selection"]
+      "candidateSignals": [
+        "option text inside opened source report picker"
+      ],
+      "assertAfterAction": [
+        "picker closes and row source text updates after selection"
+      ]
     },
     {
       "id": "fieldPicker.option",
       "page": "collageEditor",
       "type": "pickerOption",
       "purpose": "Field picker option selected by visible text after a row source report is selected.",
-      "candidateSignals": ["option text inside opened row-scoped field picker", "visible field labels such as 新增帳號數"],
-      "assertAfterAction": ["picker closes and row field text updates after selection"]
+      "candidateSignals": [
+        "option text inside opened row-scoped field picker",
+        "visible field labels such as 新增帳號數"
+      ],
+      "assertAfterAction": [
+        "picker closes and row field text updates after selection"
+      ]
     },
     {
       "id": "dateRange.button",
       "page": "collageEditor",
       "type": "button",
       "purpose": "Open official date range panel.",
-      "candidateSignals": ["button aria-label=時間設置", "button showing current date range"],
-      "assertAfterAction": ["date range panel visible", "preview request delta remains zero"]
+      "candidateSignals": [
+        "button aria-label=時間設置",
+        "button showing current date range"
+      ],
+      "assertAfterAction": [
+        "date range panel visible",
+        "preview request delta remains zero"
+      ]
     },
     {
       "id": "dateRange.timeTypeTab.dynamic",
       "page": "collageEditor",
       "type": "tabOrSegment",
       "purpose": "Dynamic time control inside date range panel.",
-      "candidateSignals": ["visible text 動態 or 動態時間 inside opened date panel"],
-      "assertAfterAction": ["dynamic state can be selected or read"]
+      "candidateSignals": [
+        "visible text 動態 or 動態時間 inside opened date panel"
+      ],
+      "assertAfterAction": [
+        "dynamic state can be selected or read"
+      ]
     },
     {
       "id": "dateRange.timeTypeTab.static",
       "page": "collageEditor",
       "type": "tabOrSegment",
       "purpose": "Static time control inside date range panel.",
-      "candidateSignals": ["visible text 靜態 or 靜態時間 inside opened date panel"],
-      "assertAfterAction": ["static state can be selected or failed click is captured"]
+      "candidateSignals": [
+        "visible text 靜態 or 靜態時間 inside opened date panel"
+      ],
+      "assertAfterAction": [
+        "static state can be selected or failed click is captured"
+      ]
     },
     {
       "id": "dateRange.preset",
       "page": "collageEditor",
       "type": "presetButton",
       "purpose": "Date preset button inside date range panel.",
-      "candidateSignals": ["visible preset text such as 昨日, 過去 30 天, 最近 30 天"],
-      "assertAfterAction": ["selected preset updates date range state or payload after confirmation/execution"]
+      "candidateSignals": [
+        "visible preset text such as 昨日, 過去 30 天, 最近 30 天"
+      ],
+      "assertAfterAction": [
+        "selected preset updates date range state or payload after confirmation/execution"
+      ]
     },
     {
       "id": "dateRange.staticDateInput",
       "page": "collageEditor",
       "type": "dateInput",
       "purpose": "Static start/end date inputs inside date range panel.",
-      "candidateSignals": ["date input visible after static time mode is selected"],
-      "assertAfterAction": ["input value matches scripted static date after visible UI entry"]
+      "candidateSignals": [
+        "date input visible after static time mode is selected"
+      ],
+      "assertAfterAction": [
+        "input value matches scripted static date after visible UI entry"
+      ]
     },
     {
       "id": "dateRange.action.cancel",
       "page": "collageEditor",
       "type": "button",
       "purpose": "Cancel button inside date range panel.",
-      "candidateSignals": ["visible text 取消 in date panel footer"],
-      "assertAfterAction": ["panel closes and date state remains unchanged"]
+      "candidateSignals": [
+        "visible text 取消 in date panel footer"
+      ],
+      "assertAfterAction": [
+        "panel closes and date state remains unchanged"
+      ]
     },
     {
       "id": "dateRange.action.confirm",
       "page": "collageEditor",
       "type": "button",
       "purpose": "Confirm button inside date range panel.",
-      "candidateSignals": ["visible text 確定 in date panel footer"],
-      "assertAfterAction": ["date state changes according to selection"]
+      "candidateSignals": [
+        "visible text 確定 in date panel footer"
+      ],
+      "assertAfterAction": [
+        "date state changes according to selection"
+      ]
     },
     {
       "id": "editorToolbar.downloadButton",
       "page": "collageEditor",
       "type": "iconButton",
       "purpose": "Editor download/export action after valid calculation.",
-      "candidateSignals": ["top-right editor download icon", "download action in editor toolbar"],
-      "assertAfterAction": ["download event and toast are associated with same click"]
+      "candidateSignals": [
+        "top-right editor download icon",
+        "download action in editor toolbar"
+      ],
+      "assertAfterAction": [
+        "download event and toast are associated with same click"
+      ]
     },
     {
       "id": "download.toast",
       "page": "collageEditor",
       "type": "toast",
       "purpose": "Download-started notification.",
-      "candidateSignals": ["toast/status text contains 數據已開始下載"],
-      "assertAfterAction": ["download-started toast visible after editor download click"]
+      "candidateSignals": [
+        "toast/status text contains 數據已開始下載"
+      ],
+      "assertAfterAction": [
+        "download-started toast visible after editor download click"
+      ]
+    },
+    {
+      "id": "sidebar.myCustomGroup",
+      "page": "officialHome",
+      "type": "navigationGroup",
+      "purpose": "Vocabulary-aligned component for sidebar.myCustomGroup.",
+      "candidateSignals": [
+        "visible text 我的自訂",
+        "nearest expandable navigation group",
+        "我的自訂",
+        "我的自訂群組",
+        "my custom"
+      ],
+      "assertAfterAction": [
+        "sidebar.myCustomGroup state/evidence can be read or asserted when the component is in scope"
+      ]
+    },
+    {
+      "id": "sidebar.collageReportGroup",
+      "page": "officialHome",
+      "type": "navigationGroup",
+      "purpose": "Vocabulary-aligned component for sidebar.collageReportGroup.",
+      "candidateSignals": [
+        "visible text 拼貼報表 under 我的自訂",
+        "expandable navigation group with adjacent project create plus",
+        "拼貼報表",
+        "我的自訂 > 拼貼報表",
+        "拼貼報表節點"
+      ],
+      "assertAfterAction": [
+        "sidebar.collageReportGroup state/evidence can be read or asserted when the component is in scope"
+      ]
+    },
+    {
+      "id": "sidebar.collageReportGroup.children",
+      "page": "officialHome",
+      "type": "stateEvidence",
+      "purpose": "Vocabulary-aligned component for sidebar.collageProjects.count.",
+      "candidateSignals": [
+        "count visible project rows under expanded 拼貼報表 group",
+        "拼貼專案數",
+        "拼貼報表專案數",
+        "project count"
+      ],
+      "assertAfterAction": [
+        "sidebar.collageProjects.count state/evidence can be read or asserted when the component is in scope"
+      ]
+    },
+    {
+      "id": "projectCreateModal.nameInput",
+      "page": "officialHome",
+      "type": "textInput",
+      "purpose": "Vocabulary-aligned component for projectCreateModal.nameInput.",
+      "candidateSignals": [
+        "name input after clicking sidebar collage project create button",
+        "新增專案名稱",
+        "專案名稱輸入",
+        "project name input"
+      ],
+      "assertAfterAction": [
+        "projectCreateModal.nameInput state/evidence can be read or asserted when the component is in scope"
+      ]
+    },
+    {
+      "id": "projectCreateModal.saveButton",
+      "page": "officialHome",
+      "type": "button",
+      "purpose": "Vocabulary-aligned component for projectCreateModal.saveButton.",
+      "candidateSignals": [
+        "儲存/確認 button after entering project name in create project UI",
+        "新增專案儲存",
+        "建立專案",
+        "project create save"
+      ],
+      "assertAfterAction": [
+        "projectCreateModal.saveButton state/evidence can be read or asserted when the component is in scope"
+      ]
+    },
+    {
+      "id": "projectCreateModal.cancelButton",
+      "page": "officialHome",
+      "type": "button",
+      "purpose": "Vocabulary-aligned component for projectCreateModal.cancelButton.",
+      "candidateSignals": [
+        "取消 button after clicking sidebar collage project create button",
+        "新增專案取消",
+        "project create cancel"
+      ],
+      "assertAfterAction": [
+        "projectCreateModal.cancelButton state/evidence can be read or asserted when the component is in scope"
+      ]
+    },
+    {
+      "id": "metricRows.addRowButton",
+      "page": "collageEditor",
+      "type": "button",
+      "purpose": "Vocabulary-aligned component for metricRows.addRowButton.",
+      "candidateSignals": [
+        "add row control near the metric/field rows",
+        "+ 新增列",
+        "新增列",
+        "新增欄位列"
+      ],
+      "assertAfterAction": [
+        "metricRows.addRowButton state/evidence can be read or asserted when the component is in scope"
+      ]
+    },
+    {
+      "id": "metricRows.duplicateRowButton",
+      "page": "collageEditor",
+      "type": "rowActionButton",
+      "purpose": "Vocabulary-aligned component for metricRows.duplicateRowButton.",
+      "candidateSignals": [
+        "row-local duplicate/copy control inside a metric row",
+        "複製列",
+        "複製欄位列",
+        "copy row"
+      ],
+      "assertAfterAction": [
+        "metricRows.duplicateRowButton state/evidence can be read or asserted when the component is in scope"
+      ]
+    },
+    {
+      "id": "metricRows.deleteRowButton",
+      "page": "collageEditor",
+      "type": "rowActionButton",
+      "purpose": "Vocabulary-aligned component for metricRows.deleteRowButton.",
+      "candidateSignals": [
+        "row-local delete/remove control inside a metric row",
+        "刪除列",
+        "刪除欄位列",
+        "remove row"
+      ],
+      "assertAfterAction": [
+        "metricRows.deleteRowButton state/evidence can be read or asserted when the component is in scope"
+      ]
+    },
+    {
+      "id": "formulaEditor.openButton",
+      "page": "collageEditor",
+      "type": "button",
+      "purpose": "Vocabulary-aligned component for formulaEditor.openButton.",
+      "candidateSignals": [
+        "button/control that opens the calculated-field/formula editor",
+        "公式",
+        "公式編輯器",
+        "+ 新增運算欄位"
+      ],
+      "assertAfterAction": [
+        "formulaEditor.openButton state/evidence can be read or asserted when the component is in scope"
+      ]
+    },
+    {
+      "id": "formulaEditor.availableFields",
+      "page": "collageEditor",
+      "type": "listOrPanel",
+      "purpose": "Vocabulary-aligned component for formulaEditor.availableFields.",
+      "candidateSignals": [
+        "field list visible inside the formula editor",
+        "可用欄位",
+        "公式可用欄位",
+        "available fields"
+      ],
+      "assertAfterAction": [
+        "formulaEditor.availableFields state/evidence can be read or asserted when the component is in scope"
+      ]
+    },
+    {
+      "id": "formulaEditor.expressionInput",
+      "page": "collageEditor",
+      "type": "textInput",
+      "purpose": "Vocabulary-aligned component for formulaEditor.expressionInput.",
+      "candidateSignals": [
+        "main input/editable area for the calculated-field expression",
+        "公式輸入",
+        "公式欄位",
+        "expression input"
+      ],
+      "assertAfterAction": [
+        "formulaEditor.expressionInput state/evidence can be read or asserted when the component is in scope"
+      ]
+    },
+    {
+      "id": "formulaEditor.fieldNameInput",
+      "page": "collageEditor",
+      "type": "textInput",
+      "purpose": "Vocabulary-aligned component for formulaEditor.fieldNameInput.",
+      "candidateSignals": [
+        "name input inside the calculated-field/formula editor",
+        "欄位名稱",
+        "運算欄位名稱",
+        "calculated field name"
+      ],
+      "assertAfterAction": [
+        "formulaEditor.fieldNameInput state/evidence can be read or asserted when the component is in scope"
+      ]
+    },
+    {
+      "id": "formulaEditor.confirmButton",
+      "page": "collageEditor",
+      "type": "button",
+      "purpose": "Vocabulary-aligned component for formulaEditor.confirmButton.",
+      "candidateSignals": [
+        "確認/確定 button inside the formula editor modal",
+        "公式確認",
+        "運算欄位確認",
+        "formula confirm"
+      ],
+      "assertAfterAction": [
+        "formulaEditor.confirmButton state/evidence can be read or asserted when the component is in scope"
+      ]
+    },
+    {
+      "id": "dateRange.dynamicOffsetInput",
+      "page": "collageEditor",
+      "type": "numberInput",
+      "purpose": "Vocabulary-aligned component for dateRange.dynamicStartOffsetInput.",
+      "candidateSignals": [
+        "dynamic start-side date/day input inside opened date panel",
+        "動態起日天數",
+        "起日期or天數 設置",
+        "起日期 or 天數設置"
+      ],
+      "assertAfterAction": [
+        "dateRange.dynamicStartOffsetInput state/evidence can be read or asserted when the component is in scope"
+      ]
+    },
+    {
+      "id": "projectList.table",
+      "page": "collageProjectList",
+      "type": "table",
+      "purpose": "Vocabulary-aligned component for projectList.table.",
+      "candidateSignals": [
+        "main table/list area below project title and toolbar",
+        "報表清單",
+        "專案列表",
+        "報表列表"
+      ],
+      "assertAfterAction": [
+        "projectList.table state/evidence can be read or asserted when the component is in scope"
+      ]
+    },
+    {
+      "id": "projectList.table.header",
+      "page": "collageProjectList",
+      "type": "tableHeader",
+      "purpose": "Vocabulary-aligned component for projectList.header.reportName.",
+      "candidateSignals": [
+        "project list table header text 報表名稱",
+        "報表名稱",
+        "報表名稱欄",
+        "report name column"
+      ],
+      "assertAfterAction": [
+        "projectList.header.reportName state/evidence can be read or asserted when the component is in scope"
+      ]
+    },
+    {
+      "id": "projectList.pagination.pageSize",
+      "page": "collageProjectList",
+      "type": "paginationControl",
+      "purpose": "Vocabulary-aligned component for projectList.pagination.pageSize.",
+      "candidateSignals": [
+        "pagination area near report list table",
+        "visible text 100筆/頁 or equivalent page-size control",
+        "100筆/頁",
+        "100 筆/頁",
+        "每頁筆數"
+      ],
+      "assertAfterAction": [
+        "projectList.pagination.pageSize state/evidence can be read or asserted when the component is in scope"
+      ]
+    },
+    {
+      "id": "save.toast",
+      "page": "collageEditor",
+      "type": "toast",
+      "purpose": "Vocabulary-aligned component for save.toast.",
+      "candidateSignals": [
+        "toast/status region after confirming save report",
+        "儲存成功",
+        "報表儲存成功",
+        "save success toast"
+      ],
+      "assertAfterAction": [
+        "save.toast state/evidence can be read or asserted when the component is in scope"
+      ]
+    },
+    {
+      "id": "update.toast",
+      "page": "collageEditor",
+      "type": "toast",
+      "purpose": "Vocabulary-aligned component for update.toast.",
+      "candidateSignals": [
+        "toast/status region after confirming 更新設定",
+        "更新成功",
+        "更新設定成功",
+        "update success toast"
+      ],
+      "assertAfterAction": [
+        "update.toast state/evidence can be read or asserted when the component is in scope"
+      ]
     }
   ]
 }

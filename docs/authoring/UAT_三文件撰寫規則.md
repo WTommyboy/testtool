@@ -9,6 +9,11 @@
 > 3. 各 domain-pack 邊界規則,例如 `other/bi_v1/BI正式UI_拼貼模式_邊界規則.md`
 >
 > 在 legacy 檔正式瘦身前,若新舊規則有衝突,以「共用 vNext -> BI 補充 -> domain-pack 邊界規則 -> 本輪指派文字」的順序判定。
+>
+> P0.28 後補充（2026-05-20）:
+> 新測試包應優先使用 vNext 的 structured package 寫法。若 domain pack 已有 platform action vocabulary、domain UI object vocabulary、case-scope contract 或 evidence schema,`測試案例.xlsx` 可附加 `步驟` / `Vocabulary Contract` sheets,把自然語言步驟對齊到 canonical action、domain UI object、expected outcome、evidence requirements 與 judgment policy。Legacy 本檔中較舊的 helper hints / metadata / date helper 寫法只作相容參考,不應阻止新包採用 structured support sheets。
+>
+> 已確認本輪不執行的 PM-skip / design-excluded case,預設應移出 active testcase package,不要以 `BLOCKED` 預填留在結果統計中。若 PM 要保留在 xlsx,必須明確標成不進 runtime、不計入 runtime BLOCKED,且不得附 helper hints 或 structured actions。
 
 本文件規範每輪 UAT 測試包必備三份文件的寫法：
 
@@ -409,47 +414,28 @@ testcase 仍維持人類可讀。不要要求文件作者撰寫 Playwright selec
 
 ### 2.4.1 預先 BLOCKED / PM-skip case
 
-若 Tommy 或 PM 在測試包設計階段決定某題本輪不執行,該題可保留在 case list 中,但必須以 **PM-skip** 方式表達。PM-skip 的 xlsx `結果` 仍填 `BLOCKED`,但它代表「本輪設計時跳過」,不是 Agent runtime evidence 不足。
+若 Tommy 或 PM 在測試包設計階段決定某題本輪不執行,預設做法是**移出 active testcase package**。移出的 case 可以放在 archive、後續補測包、版本說明或規格備註,但不要在 active xlsx 以 `BLOCKED` 預填。
 
 適用情境:
 
 - 需要 prod / RD raw data / 跨日資料,本輪資料或權限不足。
-- 工具缺口已知且會阻塞後續 case,因此先保留 case 供未來補測。
-- Tommy 明確決定本輪不執行,但不刪 row,避免編號與後續引用亂掉。
+- 工具缺口已知且會阻塞後續 case,因此本輪不應讓 Agent 嘗試。
+- Tommy 明確決定本輪不執行,且不需要把該題納入 runtime 統計。
 
-xlsx 對應 row 必須填齊:
+三文件必須同步:
+
+- active case 總數不含已移出的 PM-skip / design-excluded case。
+- 指派文字與執行說明可以用短說明交代「本版 active package 不含 PM-skip / design-excluded case」。
+- 不要在 active package 內保留不存在於 xlsx 的完整 caseId,避免 package consistency 誤判 `INSTRUCTION_CASE_SECTION_MISSING` 或 `CASE_SECTION_NOT_IN_XLSX`。
+
+只有在 PM 明確要求「保留 row 但不跑」時,才可使用 legacy PM-skip 寫法。此時必須:
 
 - `結果 = BLOCKED`
 - `執行方式 = N/A(本輪不執行)`
 - `測試日 = <決策日期>`
-- `驗證方法 = 本輪不執行;未來執行 evidence: <未來需要的 evidence 類型>`
-- `詳細紀錄JSON` 必須可 parse,且至少包含:
-
-```json
-{
-  "skip_reason": "本輪不執行的具體原因",
-  "skip_decided_by": "Tommy",
-  "skip_decided_at": "2026-05-05",
-  "preserved_for": "未來補測"
-}
-```
-
-若跳過原因是工具缺口,可額外加:
-
-```json
-{
-  "根因層級": "UAT Tool orchestration gap"
-}
-```
-
-三文件必須同步:
-
-- 指派文字與執行說明都列出 PM-skip case 編號與原因。
-- 總 case 數、實際執行 case 數、跳過 case 數必須一致。
-- 交付要求必須明寫 Agent/Codex 不可執行或改判這些 row；source xlsx 的預填終態由 Railway 匯入並由 Agent manifest 跳過。`output/result.xlsx` 仍是單題 result-contract workbook,不可把整份 source testcase row 複製成結果檔。
-- 報表統計應將 `detail_json.skip_decided_by = "Tommy"` 類 case 歸為 PM-skip,不要和 runtime BLOCKED 混在一起。
-
-PM-skip case **不要放 Helper hints block**。預先跳過不是 helper automation level,不需要也不允許用 Helper hints 表達。
+- `詳細紀錄JSON.skip_decided_by = "Tommy"` 或等價欄位
+- 報表統計必須把它歸為 PM-skip,不算 runtime BLOCKED
+- 不得附 Helper hints block 或 structured actions
 
 禁止寫法:
 
@@ -463,9 +449,9 @@ PM-skip case **不要放 Helper hints block**。預先跳過不是 helper automa
 
 正確寫法:
 
-- 執行說明該 case 章節寫「本輪不執行,已預寫 BLOCKED,Agent 原樣複製」。
-- 直接省略 `Helper hints` 區塊。
-- 若要保留未來補測步驟,放在「步驟」或「備註」中,不要放進 Helper hints。
+- 優先:將該 case 移出 active testcase package,在版本說明或 archive 註明未來補測。
+- legacy 保留 row:執行說明該 case 章節寫「本輪不執行,已預寫 PM-skip,不進 runtime BLOCKED」,並省略 `Helper hints` / structured sheets。
+- 若要保留未來補測步驟,放在 archive 或備註中,不要放進 Helper hints。
 
 ### 2.5 前置條件寫法
 
@@ -717,6 +703,22 @@ CSV 下載驗證的正式 evidence 路徑是 UI 觸發下載後的本機檔案�
 ```
 
 helper 對應資訊應寫在 `測試執行說明_*.md` 的 `Helper hints` 區塊，讓工具讀取。
+
+若 domain pack 已有 action vocabulary 與 UI object vocabulary,可在 xlsx 追加 structured support sheets,而不是把機器契約塞進 17 欄:
+
+- `步驟`:每列一個 canonical action,欄位至少包含 `案例編號 / 步驟序號 / 動作類型 / 目標類型 / 目標值 / 輸入值 / 預期值 / role / actionId / evidenceRequirements`。
+- `Vocabulary Contract`:每題一列,欄位至少包含 `caseNo / routeIntent / testTarget / requiresEditor / observationType / requiredActions / evidenceRequirements / judgmentPolicy`。
+
+要求:
+
+- `動作類型` 來自 platform action vocabulary。
+- `目標值` 來自 domain UI object vocabulary,不能在 testcase prose 裡臨時發明。
+- `role` 用 `precondition / under_test / verification / cleanup` 表達 action lifecycle。
+- `預期值` 表達 expected outcome；防呆/disabled 類 case 要寫出 `disabled_or_no_change` 或等價預期,避免把預期失敗的互動誤判成產品 FAIL。
+- `judgmentPolicy` 必須能區分 PASS / FAIL / BLOCKED,尤其要說明 flow evidence 與 outcome evidence 的關係。
+- 人工 oracle / 歷史 run 正確答案不可放進 active testcase contract。oracle 應是 fixture 或 review artifact,不是產品規格。
+
+PM-skip / design-excluded case 預設不要留在 active package。若只是為了未來補測保留脈絡,請放 archive 或另開補測包;不要在 active xlsx 預填 `BLOCKED`,避免讓工具與報告把「本輪不測」誤當 runtime blocked。
 
 ---
 
