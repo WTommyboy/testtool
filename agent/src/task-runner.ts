@@ -95,7 +95,7 @@ const ensureRunWorkspace = (config: AgentConfig, runId: string): string => {
   return runDir;
 };
 
-const copyIfExists = (source: string, target: string): boolean => {
+export const copyIfExists = (source: string, target: string): boolean => {
   if (!fs.existsSync(source)) return false;
   fs.mkdirSync(path.dirname(target), { recursive: true });
   try {
@@ -232,7 +232,10 @@ const writeFallbackProjectAgents = (target: string, source: string): void => {
   );
 };
 
-const prepareCodexContext = (config: AgentConfig, runDir: string): void => {
+export const prepareCodexContext = (config: AgentConfig, runDir: string): void => {
+  fs.mkdirSync(path.join(runDir, "input"), { recursive: true });
+  fs.mkdirSync(path.join(runDir, "rules"), { recursive: true });
+  fs.mkdirSync(path.join(runDir, "output"), { recursive: true });
   const copied: Record<string, string> = {};
   const contextWarnings: string[] = [];
   const workspaceRoot = config.codex_workspace_root;
