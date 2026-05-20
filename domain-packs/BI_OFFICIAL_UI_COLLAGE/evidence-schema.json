@@ -88,6 +88,14 @@
       ],
       "purpose": "Case-scoped visible-UI interaction log used to compare required action expectedOutcome against actualOutcome."
     },
+    "screenshot": {
+      "type": "object",
+      "requiredFields": [
+        "path",
+        "timestamp"
+      ],
+      "purpose": "Current-run screenshot artifact used as supporting evidence for frontend observation cases. It must not replace concrete DOM/action evidence."
+    },
     "browserMcp.preflight": {
       "type": "object",
       "requiredFields": [

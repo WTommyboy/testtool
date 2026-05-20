@@ -164,6 +164,27 @@
         "expandedAndCollapsedByVisibleUi": true
       }
     },
+    "projectCreateModal": {
+      "component": "projectCreateModal.panel",
+      "objectIds": [
+        "sidebar.collageProjectCreateButton",
+        "projectCreateModal.panel",
+        "projectCreateModal.nameInput",
+        "projectCreateModal.cancelButton"
+      ],
+      "requiredEvidence": [
+        "projectCreateModal.flow.state",
+        "projectCreateModal.state",
+        "interactionLog",
+        "screenshot"
+      ],
+      "successState": {
+        "openedByVisibleUi": true,
+        "nameInputVerifiedWhenRequired": true,
+        "cancelClicked": true,
+        "modalClosed": true
+      }
+    },
     "projectLimitToast": {
       "component": "sidebar.collageProjectCreateButton",
       "objectIds": [
@@ -201,6 +222,29 @@
       ],
       "successState": {
         "tooltipLifecycleCaptured": true
+      }
+    },
+    "deleteCancelFlow": {
+      "component": "projectList.rowDeleteAction",
+      "objectIds": [
+        "projectList.reportRow",
+        "projectList.rowDeleteAction",
+        "deleteConfirmModal.panel",
+        "deleteConfirmModal.cancelButton"
+      ],
+      "requiredEvidence": [
+        "projectList.deleteCancelFlow.state",
+        "deleteConfirmModal.state",
+        "projectList.reportRow.state",
+        "interactionLog",
+        "screenshot"
+      ],
+      "successState": {
+        "deleteClickedByVisibleUi": true,
+        "confirmModalVisible": true,
+        "cancelClicked": true,
+        "modalClosed": true,
+        "rowStillVisible": true
       }
     },
     "sourceReportPicker": {

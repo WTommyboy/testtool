@@ -280,6 +280,7 @@
         "metricRows.fieldControl",
         "metricRows.sourceReportControl",
         "preview.calculateButton",
+        "projectCreateModal.panel",
         "projectCreateModal.cancelButton",
         "projectCreateModal.nameInput",
         "projectCreateModal.saveButton",
@@ -1053,6 +1054,19 @@
         "count visible project rows under expanded 拼貼報表 group"
       ]
     },
+    "projectCreateModal.panel": {
+      "status": "notCaptured",
+      "sourceIds": [
+        "ui.vocabularyAlignment"
+      ],
+      "screenContext": "officialHome / projectCreateModal.panel",
+      "visualCues": [
+        "新增專案 modal",
+        "新增專案視窗",
+        "project create modal",
+        "[role=dialog], modal, ant-modal, or visible body section containing 新增專案 and 專案名稱"
+      ]
+    },
     "projectCreateModal.nameInput": {
       "status": "notCaptured",
       "sourceIds": [
@@ -1715,6 +1729,10 @@
     },
     {
       "objectId": "sidebar.collageProjects.count",
+      "reason": "Vocabulary coverage added from testcase terminology; requires future visual confirmation in live UI discovery pass."
+    },
+    {
+      "objectId": "projectCreateModal.panel",
       "reason": "Vocabulary coverage added from testcase terminology; requires future visual confirmation in live UI discovery pass."
     },
     {

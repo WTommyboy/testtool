@@ -86,7 +86,7 @@ const assertVocabularyCoverage = (contracts: StructuredCaseScopeContract[]): voi
   const actionIds = new Set((platform.actions ?? []).map((item: JsonObject) => item.id));
   const expectedOutcomes = new Set(platform.expectedOutcomes ?? []);
   const objectIds = new Set((objects.objects ?? []).map((item: JsonObject) => item.id));
-  assert.equal(contracts.length, 22, "P0 runtime wiring should cover the 15 reduced-smoke cases plus P0.26 K-09/L-05/L-08 and P0.27 M-06/M-09/M-10/M-11 action-template slices");
+  assert.equal(contracts.length, 29, "P0 runtime wiring should cover reduced-smoke cases plus P0.26/P0.27/P0.30 structured action-template slices");
   for (const contract of contracts) {
     for (const action of contract.requiredActions) {
       assert.ok(actionIds.has(action.action), `${contract.caseNo} action ${action.action} is not in platform vocabulary`);
@@ -104,7 +104,9 @@ const supportedObservationTypes = new Set([
   "datePanel",
   "validationMessage",
   "sidebarGroup",
+  "projectCreateModal",
   "rowDeleteTooltip",
+  "deleteCancelFlow",
   "projectLimitToast",
   "sourceReportPicker",
   "fieldPicker",
@@ -155,6 +157,8 @@ const assertRuntimeRouting = (contracts: StructuredCaseScopeContract[]): void =>
       assert.ok(
         plan.actions.some((item) =>
           item.template === "collage.observeFrontendState" ||
+          item.template === "collage.saveReport" ||
+          item.template === "collage.reopenReport" ||
           item.template === "collage.copyReportAndVerify" ||
           item.template === "collage.updateExistingReportAndReopen"
         ),

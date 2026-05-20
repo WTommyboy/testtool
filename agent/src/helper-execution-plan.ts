@@ -270,7 +270,9 @@ type FrontendObservationType =
   | "datePanel"
   | "validationMessage"
   | "sidebarGroup"
+  | "projectCreateModal"
   | "rowDeleteTooltip"
+  | "deleteCancelFlow"
   | "projectLimitToast"
   | "sourceReportPicker"
   | "fieldPicker"
@@ -293,6 +295,8 @@ const inferFrontendObservationType = (currentCase: CaseManifestCase | null): Fro
     .filter(Boolean)
     .join("\n");
   if (/使用者按鈕|登入者名稱|user\s*button|account\s*button/i.test(text)) return "userButton";
+  if (/新增專案\s*modal|新增專案.*名稱輸入|專案名稱輸入|拼貼報表旁新增專案|project\s*create\s*modal|create\s*project/i.test(text)) return "projectCreateModal";
+  if (/刪除確認|deleteConfirmModal|取消流程|取消刪除|刪除\s*modal|delete\s*cancel/i.test(text)) return "deleteCancelFlow";
   if (/側欄|公司共享|sidebar/i.test(text)) return "sidebarGroup";
   if (/hover|tooltip|列內.*刪除|row.*delete/i.test(text)) return "rowDeleteTooltip";
   if (/5\s*個上限|最高\s*5\s*個專案|上限阻擋|project.*limit/i.test(text)) return "projectLimitToast";
@@ -324,8 +328,12 @@ const observationRequiredEvidence = (observationType: FrontendObservationType): 
       return ["validation.message.state", "dom.state", "screenshot"];
     case "sidebarGroup":
       return ["sidebar.companySharedGroup.state", "interactionLog", "screenshot"];
+    case "projectCreateModal":
+      return ["projectCreateModal.flow.state", "projectCreateModal.state", "interactionLog", "screenshot"];
     case "rowDeleteTooltip":
       return ["projectList.rowActionTooltip.state", "interactionLog", "screenshot"];
+    case "deleteCancelFlow":
+      return ["projectList.deleteCancelFlow.state", "deleteConfirmModal.state", "projectList.reportRow.state", "interactionLog", "screenshot"];
     case "projectLimitToast":
       return ["projectLimit.toast.state", "interactionLog", "screenshot"];
     case "sourceReportPicker":
@@ -362,9 +370,13 @@ const fallbackObservationType = (value: string | null): FrontendObservationType 
     case "sidebarGroup":
     case "sidebarCompanySharedGroup":
       return "sidebarGroup";
+    case "projectCreateModal":
+      return "projectCreateModal";
     case "rowDeleteTooltip":
     case "rowActionTooltip":
       return "rowDeleteTooltip";
+    case "deleteCancelFlow":
+      return "deleteCancelFlow";
     case "projectLimitToast":
       return "projectLimitToast";
     case "sourceReportPicker":
@@ -422,6 +434,19 @@ const actionsForTemplate = (
       item.target.startsWith("projectList.")
     );
   }
+  if (template === "collage.saveReport") {
+    return contract.requiredActions.filter((item) =>
+      item.target.startsWith("saveModal.") ||
+      item.target.startsWith("save.") ||
+      item.target.startsWith("projectList.")
+    );
+  }
+  if (template === "collage.reopenReport") {
+    return contract.requiredActions.filter((item) =>
+      item.target.startsWith("projectList.") ||
+      item.target.startsWith("reportPersistence.")
+    );
+  }
   return [];
 };
 
@@ -465,13 +490,20 @@ const paramsForStructuredContract = (
     next.dateRange = null;
     next.dateVariants = variants;
   }
-  if (contract.routeIntent === "download_execution") {
-    next.skipDownload = false;
-    next.downloadScope = typeof next.downloadScope === "string" && next.downloadScope.trim() ? next.downloadScope : "editor_session";
+  if (contract.routeIntent === "download_execution" || contract.routeIntent === "report_mutation_flow") {
     if (typeof next.field !== "string" || !next.field.trim()) next.field = "新增帳號數";
     if (!Array.isArray(next.fields) || next.fields.length === 0) next.fields = [next.field];
     if (typeof next.source !== "string" || !next.source.trim()) next.source = "每日報表";
     if (typeof next.sourceReport !== "string" || !next.sourceReport.trim()) next.sourceReport = next.source;
+  }
+  if (contract.routeIntent === "report_mutation_flow") {
+    if (typeof next.dateRange !== "string" || !next.dateRange.trim()) next.dateRange = "2026/03/01~2026/03/31";
+    if (typeof next.display !== "string" || !next.display.trim()) next.display = "每天";
+    next.skipSave = false;
+  }
+  if (contract.routeIntent === "download_execution") {
+    next.skipDownload = false;
+    next.downloadScope = typeof next.downloadScope === "string" && next.downloadScope.trim() ? next.downloadScope : "editor_session";
   }
   return next;
 };
@@ -1144,6 +1176,45 @@ const buildActions = (currentCase: CaseManifestCase | null, helperHints: HelperH
           ]
         })
       ];
+    }
+    if (/F-02$/i.test(caseScopeContract.caseNo) || /M-07$/i.test(caseScopeContract.caseNo)) {
+      const needsReopen = /F-02$/i.test(caseScopeContract.caseNo);
+      const flowActions: HelperPlanAction[] = [
+        openProjectAction,
+        action("H2", "collage.createReport", "進入新增報表頁", structuredParams, {
+          requiredEvidence: ["dom.url", "dom.pageTitle", "dom.state", "screenshot"]
+        }),
+        action("H3", "collage.configureMetric", "設定有效欄位、日期與顯示", structuredParams, {
+          requiredEvidence: ["dom.state", "state.delta", "date.uiState", "date.representedRange", "screenshot"],
+          notes: [
+            "structured report lifecycle flow 必須建立有效 preview 前置條件。",
+            "若 testcase checklist 寫欄位=1欄，這是數量要求，不可當成欄位名稱；使用 domain default 每日報表/新增帳號數。"
+          ]
+        }),
+        action("H4", "collage.runPreviewAndCollectEvidence", "執行 preview 並收集 evidence", structuredParams, {
+          requiredEvidence: ["network.requestBody", "network.responseBody", "chart.datasets", "dom.previewState", "screenshot"],
+          screenshotPolicy: "required_if_possible"
+        }),
+        action("H5", "collage.saveReport", needsReopen ? "儲存同 case 臨時報表供 reopen 驗證" : "儲存同 case 臨時報表並驗證清單 row", structuredParams, {
+          requiresToolBridge: true,
+          requiredEvidence: ["toolBridge.response", ...structuredEvidenceList(caseScopeContract), "screenshot"],
+          screenshotPolicy: "required_if_possible",
+          notes: [
+            "helper 必須透過 visible UI 開啟儲存 modal、輸入本 case 臨時報表名稱並儲存。",
+            "儲存後必須 best-effort 返回/定位專案清單，輸出 projectList.readiness.state / projectList.reportRow.state evidence。"
+          ]
+        })
+      ];
+      if (needsReopen) {
+        flowActions.push(
+          action("H6", "collage.reopenReport", "從清單重開剛儲存的報表並收集還原 evidence", structuredParams, {
+            requiredEvidence: ["dom.state", "network.requestBody", "projectList.reportRow.state", "reportPersistence.reopenState", "screenshot"],
+            screenshotPolicy: "required_if_possible",
+            notes: ["F-02 必須用同 case saved report row/name 重開，不依賴既有報表。"]
+          })
+        );
+      }
+      return flowActions;
     }
     if (/M-10$/i.test(caseScopeContract.caseNo)) {
       return [

@@ -323,8 +323,10 @@ const helperSupportsStructuredObservationType = (value: string | null | undefine
   value === "validationMessage" ||
   value === "sidebarGroup" ||
   value === "sidebarCompanySharedGroup" ||
+  value === "projectCreateModal" ||
   value === "rowDeleteTooltip" ||
   value === "rowActionTooltip" ||
+  value === "deleteCancelFlow" ||
   value === "projectLimitToast" ||
   value === "sourceReportPicker" ||
   value === "fieldPicker" ||
@@ -469,6 +471,14 @@ export const evaluateCapabilityGate = (
     supportedHelperTemplates.push("collage.openProject");
     if (/M-06$/i.test(caseScope.caseScopeContract?.caseNo ?? "")) {
       supportedHelperTemplates.push("collage.createReport", "collage.observeFrontendState");
+    } else if (/F-02$/i.test(caseScope.caseScopeContract?.caseNo ?? "") || /M-07$/i.test(caseScope.caseScopeContract?.caseNo ?? "")) {
+      supportedHelperTemplates.push(
+        "collage.createReport",
+        "collage.configureMetric",
+        "collage.runPreviewAndCollectEvidence",
+        "collage.saveReport",
+        ...(/F-02$/i.test(caseScope.caseScopeContract?.caseNo ?? "") ? ["collage.reopenReport"] : [])
+      );
     } else {
       supportedHelperTemplates.push("collage.openReportFromProjectList");
       if (/M-09$/i.test(caseScope.caseScopeContract?.caseNo ?? "")) {

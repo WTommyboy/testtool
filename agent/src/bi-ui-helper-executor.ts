@@ -7920,6 +7920,28 @@ const readVisibleModalState = async (page: Page): Promise<Record<string, unknown
   });
 };
 
+const readProjectListRowsForObservation = async (page: Page): Promise<Record<string, unknown>> => {
+  return page.evaluate(() => {
+    const normalize = (value: string | null | undefined) => (value ?? "").trim().replace(/\s+/g, " ");
+    const isVisible = (element: Element): boolean => {
+      const rect = element.getBoundingClientRect();
+      const style = window.getComputedStyle(element);
+      return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden" && style.opacity !== "0";
+    };
+    const candidates = Array.from(document.querySelectorAll<HTMLElement>("tr, [role='row'], .ant-table-row, [class*='row'], [class*='Row']"))
+      .filter((element) => isVisible(element))
+      .map((element, index) => ({
+        index,
+        text: normalize(element.innerText || element.textContent).slice(0, 800)
+      }))
+      .filter((row) => row.text.length > 0 && /拼貼|報表|test|UAT|下載|刪除|\d{4}/i.test(row.text));
+    return {
+      rowCount: candidates.length,
+      sampleRows: candidates.slice(0, 12)
+    };
+  });
+};
+
 const clickModalCancelButton = async (page: Page): Promise<boolean> => {
   const clicked = await clickFirstVisible([
     page.locator("[role='dialog'] button").filter({ hasText: /^\s*取消\s*$/ }),
@@ -9021,7 +9043,9 @@ type FrontendObservationType =
   | "datePanel"
   | "validationMessage"
   | "sidebarGroup"
+  | "projectCreateModal"
   | "rowDeleteTooltip"
+  | "deleteCancelFlow"
   | "projectLimitToast"
   | "sourceReportPicker"
   | "fieldPicker"
@@ -9041,8 +9065,10 @@ const frontendObservationType = (options: CliOptions): FrontendObservationType |
     value === "validationMessage" ||
     value === "sidebarGroup" ||
     value === "sidebarCompanySharedGroup" ||
+    value === "projectCreateModal" ||
     value === "rowDeleteTooltip" ||
     value === "rowActionTooltip" ||
+    value === "deleteCancelFlow" ||
     value === "projectLimitToast" ||
     value === "sourceReportPicker" ||
     value === "fieldPicker" ||
@@ -9378,6 +9404,32 @@ const observeFrontendVisibleUiActions = async (
     return { actions, beforeDateText, afterDateText };
   }
 
+  if (observationType === "projectToolbar") {
+    const shouldSelectRow = targets.has("projectList.reportRow");
+    if (shouldSelectRow) {
+      let selected = false;
+      let method: string | null = null;
+      for (const locator of [
+        page.locator('input[type="checkbox"]').last(),
+        page.locator("[role=checkbox]").last(),
+        page.locator("tr, [class*=row], [class*=Row]").locator('input[type="checkbox"], [role=checkbox]').last()
+      ]) {
+        try {
+          await locator.click({ timeout: 5000 });
+          selected = true;
+          method = "visible-checkbox";
+          break;
+        } catch {
+          // Try next candidate.
+        }
+      }
+      actions.push({ action: "select", target: "projectList.reportRow", clicked: selected, method });
+      if (!selected) warnings.push("PROJECT_LIST_REPORT_ROW_NOT_SELECTABLE");
+      await page.waitForTimeout(700);
+    }
+    return { actions };
+  }
+
   if (observationType === "validationMessage") {
     const calculate = page.getByRole("button", { name: /計算|執行/ }).first();
     let clicked = false;
@@ -9414,6 +9466,50 @@ const observeFrontendVisibleUiActions = async (
     };
   }
 
+  if (observationType === "projectCreateModal") {
+    const flow: Record<string, unknown> = {
+      before: await readCreateProjectModalState(page).catch((error) => ({ error: error instanceof Error ? error.message : String(error) }))
+    };
+    let openClicked = false;
+    let openError: string | null = null;
+    try {
+      await clickCreateProjectButton(page);
+      openClicked = true;
+    } catch (error) {
+      openError = error instanceof Error ? error.message : String(error);
+    }
+    actions.push({ action: "click", target: "sidebar.collageProjectCreateButton", clicked: openClicked, ...(openError ? { error: openError } : {}) });
+    if (!openClicked) warnings.push("PROJECT_CREATE_BUTTON_NOT_CLICKABLE");
+    await page.waitForTimeout(700);
+    flow.modalOpened = await readCreateProjectModalState(page).catch((error) => ({ error: error instanceof Error ? error.message : String(error) }));
+    if (targets.has("projectCreateModal.nameInput")) {
+      const projectName = fitUiResourceName(firstStringParam(params, ["projectNamePattern", "projectName", "name"]) ?? `${sanitize(options.caseId)}P${timestampId()}`);
+      try {
+        const nameInput = await fillCreateProjectName(page, projectName);
+        flow.nameInput = nameInput;
+        actions.push({
+          action: "type",
+          target: "projectCreateModal.nameInput",
+          typed: nameInput.verified === true,
+          value: projectName,
+          observedValue: nameInput.observedValue ?? null
+        });
+        if (nameInput.verified !== true) warnings.push("PROJECT_CREATE_MODAL_NAME_INPUT_NOT_VERIFIED");
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        flow.nameInput = { error: message };
+        actions.push({ action: "type", target: "projectCreateModal.nameInput", typed: false, error: message.slice(0, 1200) });
+        warnings.push(`PROJECT_CREATE_MODAL_NAME_INPUT_FAILED:${message.slice(0, 500)}`);
+      }
+    }
+    const cancelClicked = await clickModalCancelButton(page).catch(() => false);
+    actions.push({ action: "cancel", target: "projectCreateModal.cancelButton", clicked: cancelClicked });
+    if (!cancelClicked) warnings.push("PROJECT_CREATE_MODAL_CANCEL_NOT_CLICKABLE");
+    await page.waitForTimeout(700);
+    flow.afterCancel = await readCreateProjectModalState(page).catch((error) => ({ error: error instanceof Error ? error.message : String(error) }));
+    return { actions, projectCreateModalFlow: flow };
+  }
+
   if (observationType === "rowDeleteTooltip") {
     let hovered = false;
     for (const locator of [
@@ -9432,6 +9528,38 @@ const observeFrontendVisibleUiActions = async (
     if (!hovered) warnings.push("ROW_DELETE_ACTION_NOT_HOVERABLE");
     await page.waitForTimeout(800);
     return { actions };
+  }
+
+  if (observationType === "deleteCancelFlow") {
+    const flow: Record<string, unknown> = {
+      before: await readVisibleModalState(page).catch((error) => ({ error: error instanceof Error ? error.message : String(error) })),
+      rowBefore: await readProjectListRowsForObservation(page).catch((error) => ({ error: error instanceof Error ? error.message : String(error) }))
+    };
+    let deleteClicked = false;
+    let deleteError: string | null = null;
+    for (const locator of [
+      page.getByText("刪除", { exact: true }).last(),
+      page.locator("button, a, [role=button], span, div").filter({ hasText: /^\\s*刪除\\s*$/ }).last()
+    ]) {
+      try {
+        await locator.click({ timeout: 6000 });
+        deleteClicked = true;
+        break;
+      } catch (error) {
+        deleteError = error instanceof Error ? error.message : String(error);
+      }
+    }
+    actions.push({ action: "click", target: "projectList.rowDeleteAction", clicked: deleteClicked, ...(deleteError && !deleteClicked ? { error: deleteError } : {}) });
+    if (!deleteClicked) warnings.push("PROJECT_LIST_ROW_DELETE_ACTION_NOT_CLICKABLE");
+    await page.waitForTimeout(800);
+    flow.modalOpened = await readVisibleModalState(page).catch((error) => ({ error: error instanceof Error ? error.message : String(error) }));
+    const cancelClicked = await clickModalCancelButton(page).catch(() => false);
+    actions.push({ action: "cancel", target: "deleteConfirmModal.cancelButton", clicked: cancelClicked });
+    if (!cancelClicked) warnings.push("DELETE_CONFIRM_MODAL_CANCEL_NOT_CLICKABLE");
+    await page.waitForTimeout(700);
+    flow.afterCancel = await readVisibleModalState(page).catch((error) => ({ error: error instanceof Error ? error.message : String(error) }));
+    flow.rowAfterCancel = await readProjectListRowsForObservation(page).catch((error) => ({ error: error instanceof Error ? error.message : String(error) }));
+    return { actions, deleteCancelFlow: flow };
   }
 
   if (observationType === "projectLimitToast") {
@@ -9680,6 +9808,11 @@ const readFrontendObservationState = async (
     }
 
     if (type === "projectToolbar") {
+      const targetList = Array.isArray(targets) ? targets.filter((item): item is string => typeof item === "string") : [];
+      const actionList = Array.isArray(actionData?.actions) ? actionData.actions as Array<Record<string, unknown>> : [];
+      const selectionExpected =
+        targetList.includes("projectList.reportRow") ||
+        actionList.some((item) => item.target === "projectList.reportRow");
       const buttonsByRow = new Map<number, typeof visibleButtons>();
       for (const button of visibleButtons) {
         const rowKey = Math.round(button.rect.y / 12) * 12;
@@ -9693,8 +9826,9 @@ const readFrontendObservationState = async (
           const triplet = row.slice(index, index + 3);
           const statePattern = [triplet[0]?.disabled, triplet[1]?.disabled, triplet[2]?.disabled];
           const hasExpectedNoSelectionPattern = statePattern[0] === true && statePattern[1] === true && statePattern[2] === false;
+          const hasExpectedSelectionPattern = statePattern[0] === false && statePattern[1] === false && statePattern[2] === false;
           const hasToolbarSize = triplet.every((button) => button.rect.width <= 96 && button.rect.height <= 72);
-          if (hasExpectedNoSelectionPattern && hasToolbarSize) {
+          if ((selectionExpected ? hasExpectedSelectionPattern || hasExpectedNoSelectionPattern : hasExpectedNoSelectionPattern) && hasToolbarSize) {
             toolbarCandidate = triplet;
             toolbarCandidateFound = true;
             break;
@@ -9710,6 +9844,26 @@ const readFrontendObservationState = async (
       const downloadDisabled = toolbarButtons[0]?.disabled === true;
       const deleteDisabled = toolbarButtons[1]?.disabled === true;
       const createEnabled = toolbarButtons[2] ? toolbarButtons[2].disabled === false : false;
+      const rowSelectionAction = actionList.find((item) => item.target === "projectList.reportRow") ?? null;
+      if (selectionExpected) {
+        const downloadEnabled = toolbarButtons[0]?.disabled === false;
+        const deleteEnabled = toolbarButtons[1]?.disabled === false;
+        return {
+          evidenceObject: "projectToolbar.selectionFlow.state",
+          semanticMap: "projectToolbar.buttonOrder",
+          toolbarCandidateFound,
+          rowSelection: rowSelectionAction,
+          buttons: toolbarButtons,
+          assertions: {
+            rowSelectedByVisibleUi: rowSelectionAction?.clicked === true,
+            downloadEnabledAfterSelection: downloadEnabled,
+            deleteEnabledAfterSelection: deleteEnabled,
+            createEnabledAfterSelection: createEnabled
+          },
+          interactionLog: actionList,
+          asserted: rowSelectionAction?.clicked === true && downloadEnabled && deleteEnabled && createEnabled
+        };
+      }
       return {
         evidenceObject: "projectToolbar.buttons.state",
         semanticMap: "projectToolbar.buttonOrder",
@@ -9786,6 +9940,50 @@ const readFrontendObservationState = async (
       };
     }
 
+    if (type === "projectCreateModal") {
+      const actionList = Array.isArray(actionData?.actions) ? actionData.actions as Array<Record<string, unknown>> : [];
+      const flow = actionData?.projectCreateModalFlow && typeof actionData.projectCreateModalFlow === "object" && !Array.isArray(actionData.projectCreateModalFlow)
+        ? actionData.projectCreateModalFlow as Record<string, unknown>
+        : {};
+      const modalOpened = flow.modalOpened && typeof flow.modalOpened === "object" && !Array.isArray(flow.modalOpened)
+        ? flow.modalOpened as Record<string, unknown>
+        : {};
+      const afterCancel = flow.afterCancel && typeof flow.afterCancel === "object" && !Array.isArray(flow.afterCancel)
+        ? flow.afterCancel as Record<string, unknown>
+        : {};
+      const nameInput = flow.nameInput && typeof flow.nameInput === "object" && !Array.isArray(flow.nameInput)
+        ? flow.nameInput as Record<string, unknown>
+        : null;
+      const openAction = actionList.find((item) => item.target === "sidebar.collageProjectCreateButton") ?? null;
+      const typeAction = actionList.find((item) => item.target === "projectCreateModal.nameInput") ?? null;
+      const cancelAction = actionList.find((item) => item.target === "projectCreateModal.cancelButton") ?? null;
+      const modalText = String(modalOpened.bodyTextExcerpt ?? "");
+      const modalVisible =
+        Number(modalOpened.dialogs && Array.isArray(modalOpened.dialogs) ? modalOpened.dialogs.length : modalOpened.dialogCount ?? 0) > 0 ||
+        /新增專案|專案名稱/.test(modalText);
+      const modalClosed =
+        Number(afterCancel.dialogs && Array.isArray(afterCancel.dialogs) ? afterCancel.dialogs.length : afterCancel.dialogCount ?? 0) === 0 ||
+        !/新增專案|專案名稱/.test(String(afterCancel.bodyTextExcerpt ?? ""));
+      const nameInputRequired = actionList.some((item) => item.target === "projectCreateModal.nameInput");
+      return {
+        evidenceObject: "projectCreateModal.flow.state",
+        createButtonClicked: openAction?.clicked === true,
+        modalVisible,
+        nameInputVerified: nameInputRequired ? nameInput?.verified === true || typeAction?.typed === true : null,
+        cancelClicked: cancelAction?.clicked === true,
+        modalClosed,
+        modalOpened,
+        afterCancel,
+        interactionLog: actionList,
+        asserted:
+          openAction?.clicked === true &&
+          modalVisible &&
+          (!nameInputRequired || nameInput?.verified === true || typeAction?.typed === true) &&
+          cancelAction?.clicked === true &&
+          modalClosed
+      };
+    }
+
     if (type === "rowDeleteTooltip") {
       const actionList = Array.isArray(actionData?.actions) ? actionData.actions as Array<Record<string, unknown>> : [];
       const hoverAction = actionList.find((item) => item.target === "projectList.rowDeleteAction") ?? null;
@@ -9801,6 +9999,51 @@ const readFrontendObservationState = async (
         visibleText,
         interactionLog: actionList,
         asserted: hoverAction?.hovered === true && Boolean(tooltipText)
+      };
+    }
+
+    if (type === "deleteCancelFlow") {
+      const actionList = Array.isArray(actionData?.actions) ? actionData.actions as Array<Record<string, unknown>> : [];
+      const flow = actionData?.deleteCancelFlow && typeof actionData.deleteCancelFlow === "object" && !Array.isArray(actionData.deleteCancelFlow)
+        ? actionData.deleteCancelFlow as Record<string, unknown>
+        : {};
+      const modalOpened = flow.modalOpened && typeof flow.modalOpened === "object" && !Array.isArray(flow.modalOpened)
+        ? flow.modalOpened as Record<string, unknown>
+        : {};
+      const afterCancel = flow.afterCancel && typeof flow.afterCancel === "object" && !Array.isArray(flow.afterCancel)
+        ? flow.afterCancel as Record<string, unknown>
+        : {};
+      const rowBefore = flow.rowBefore && typeof flow.rowBefore === "object" && !Array.isArray(flow.rowBefore)
+        ? flow.rowBefore as Record<string, unknown>
+        : {};
+      const rowAfterCancel = flow.rowAfterCancel && typeof flow.rowAfterCancel === "object" && !Array.isArray(flow.rowAfterCancel)
+        ? flow.rowAfterCancel as Record<string, unknown>
+        : {};
+      const deleteAction = actionList.find((item) => item.target === "projectList.rowDeleteAction") ?? null;
+      const cancelAction = actionList.find((item) => item.target === "deleteConfirmModal.cancelButton") ?? null;
+      const modalText = String(modalOpened.bodyTextExcerpt ?? "");
+      const modalVisible =
+        Number(modalOpened.dialogs && Array.isArray(modalOpened.dialogs) ? modalOpened.dialogs.length : modalOpened.dialogCount ?? 0) > 0 ||
+        /刪除|確認|確定/.test(modalText);
+      const modalClosed =
+        Number(afterCancel.dialogs && Array.isArray(afterCancel.dialogs) ? afterCancel.dialogs.length : afterCancel.dialogCount ?? 0) === 0 ||
+        !/確定要刪除|刪除確認/.test(String(afterCancel.bodyTextExcerpt ?? ""));
+      const rowCountBefore = Number(rowBefore.rowCount ?? 0);
+      const rowCountAfter = Number(rowAfterCancel.rowCount ?? 0);
+      const rowStillVisible = rowCountBefore > 0 && rowCountAfter >= rowCountBefore;
+      return {
+        evidenceObject: "projectList.deleteCancelFlow.state",
+        deleteClicked: deleteAction?.clicked === true,
+        modalVisible,
+        cancelClicked: cancelAction?.clicked === true,
+        modalClosed,
+        rowStillVisible,
+        modalOpened,
+        afterCancel,
+        rowBefore,
+        rowAfterCancel,
+        interactionLog: actionList,
+        asserted: deleteAction?.clicked === true && modalVisible && cancelAction?.clicked === true && modalClosed && rowStillVisible
       };
     }
 
@@ -10102,7 +10345,9 @@ const waitForFrontendObservationReadiness = async (
     datePanel: /時間|時間區間|欄位選擇|報表設定/i,
     validationMessage: /計算|執行|欄位選擇|報表設定/i,
     sidebarGroup: /公司共享|我的自訂|拼貼報表/i,
+    projectCreateModal: /新增|專案|拼貼報表|我的自訂/i,
     rowDeleteTooltip: /下載|刪除|拼貼報表|專案/i,
+    deleteCancelFlow: /下載|刪除|拼貼報表|專案/i,
     projectLimitToast: /新增|拼貼報表|專案/i,
     sourceReportPicker: /來源報表|每日報表|欄位|報表設定/i,
     fieldPicker: /欄位|來源報表|每日報表|報表設定/i,

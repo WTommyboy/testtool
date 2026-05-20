@@ -606,6 +606,21 @@
       ]
     },
     {
+      "id": "projectCreateModal.panel",
+      "page": "officialHome",
+      "type": "modal",
+      "purpose": "Vocabulary-aligned component for projectCreateModal.panel.",
+      "candidateSignals": [
+        "新增專案 modal",
+        "新增專案視窗",
+        "project create modal",
+        "[role=dialog], modal, ant-modal, or visible body section containing 新增專案 and 專案名稱"
+      ],
+      "assertAfterAction": [
+        "projectCreateModal.panel state/evidence can be read or asserted when the component is in scope"
+      ]
+    },
+    {
       "id": "projectCreateModal.nameInput",
       "page": "officialHome",
       "type": "textInput",

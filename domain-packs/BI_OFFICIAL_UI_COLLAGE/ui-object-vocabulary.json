@@ -23,12 +23,34 @@
       "component": "topbar.userButton",
       "objectType": "button",
       "purpose": "Logged-in user display button in the app shell.",
-      "aliases": ["使用者按鈕", "登入者名稱", "account button", "user display"],
-      "supportedActions": ["read", "assertVisible", "assertText", "assertDisabled"],
-      "stateAttributes": ["innerText", "visible", "disabled", "aria-disabled", "computedStyle.pointerEvents"],
-      "evidenceObjects": ["topbar.userButton.state"],
-      "locatorHints": ["top-right app shell button containing the expected user display name"],
-      "hazards": ["button may be disabled while still valid for display-only observation"]
+      "aliases": [
+        "使用者按鈕",
+        "登入者名稱",
+        "account button",
+        "user display"
+      ],
+      "supportedActions": [
+        "read",
+        "assertVisible",
+        "assertText",
+        "assertDisabled"
+      ],
+      "stateAttributes": [
+        "innerText",
+        "visible",
+        "disabled",
+        "aria-disabled",
+        "computedStyle.pointerEvents"
+      ],
+      "evidenceObjects": [
+        "topbar.userButton.state"
+      ],
+      "locatorHints": [
+        "top-right app shell button containing the expected user display name"
+      ],
+      "hazards": [
+        "button may be disabled while still valid for display-only observation"
+      ]
     },
     {
       "id": "sidebar.companySharedGroup",
@@ -36,12 +58,35 @@
       "component": "sidebar.companySharedGroup",
       "objectType": "navigationGroup",
       "purpose": "Company shared group in the left BI navigation.",
-      "aliases": ["公司共享", "共享群組", "company shared"],
-      "supportedActions": ["click", "open", "close", "assertVisible", "assertHidden", "assertStateChanged"],
-      "stateAttributes": ["innerText", "aria-expanded", "expandedClass", "nestedItemsVisible"],
-      "evidenceObjects": ["sidebar.companySharedGroup.state"],
-      "locatorHints": ["visible text 公司共享", "nearest expandable navigation group"],
-      "hazards": ["sidebar rerenders after expansion; old element references should be discarded"]
+      "aliases": [
+        "公司共享",
+        "共享群組",
+        "company shared"
+      ],
+      "supportedActions": [
+        "click",
+        "open",
+        "close",
+        "assertVisible",
+        "assertHidden",
+        "assertStateChanged"
+      ],
+      "stateAttributes": [
+        "innerText",
+        "aria-expanded",
+        "expandedClass",
+        "nestedItemsVisible"
+      ],
+      "evidenceObjects": [
+        "sidebar.companySharedGroup.state"
+      ],
+      "locatorHints": [
+        "visible text 公司共享",
+        "nearest expandable navigation group"
+      ],
+      "hazards": [
+        "sidebar rerenders after expansion; old element references should be discarded"
+      ]
     },
     {
       "id": "sidebar.myCustomGroup",
@@ -49,12 +94,36 @@
       "component": "sidebar.myCustomGroup",
       "objectType": "navigationGroup",
       "purpose": "My custom report group in the left BI navigation.",
-      "aliases": ["我的自訂", "我的自訂群組", "my custom", "custom reports"],
-      "supportedActions": ["click", "open", "close", "assertVisible", "assertHidden", "assertStateChanged"],
-      "stateAttributes": ["innerText", "aria-expanded", "expandedClass", "nestedItemsVisible"],
-      "evidenceObjects": ["sidebar.myCustomGroup.state"],
-      "locatorHints": ["visible text 我的自訂", "nearest expandable navigation group"],
-      "hazards": ["opening this group is a navigation precondition; do not confuse it with report mode selection"]
+      "aliases": [
+        "我的自訂",
+        "我的自訂群組",
+        "my custom",
+        "custom reports"
+      ],
+      "supportedActions": [
+        "click",
+        "open",
+        "close",
+        "assertVisible",
+        "assertHidden",
+        "assertStateChanged"
+      ],
+      "stateAttributes": [
+        "innerText",
+        "aria-expanded",
+        "expandedClass",
+        "nestedItemsVisible"
+      ],
+      "evidenceObjects": [
+        "sidebar.myCustomGroup.state"
+      ],
+      "locatorHints": [
+        "visible text 我的自訂",
+        "nearest expandable navigation group"
+      ],
+      "hazards": [
+        "opening this group is a navigation precondition; do not confuse it with report mode selection"
+      ]
     },
     {
       "id": "sidebar.collageReportGroup",
@@ -62,12 +131,36 @@
       "component": "sidebar.collageReportGroup",
       "objectType": "navigationGroup",
       "purpose": "Collage report group under 我的自訂 in the left BI navigation.",
-      "aliases": ["拼貼報表", "我的自訂 > 拼貼報表", "拼貼報表節點", "collage report group"],
-      "supportedActions": ["click", "open", "close", "assertVisible", "assertHidden", "assertStateChanged"],
-      "stateAttributes": ["innerText", "aria-expanded", "expandedClass", "nestedItemsVisible"],
-      "evidenceObjects": ["sidebar.collageReportGroup.state"],
-      "locatorHints": ["visible text 拼貼報表 under 我的自訂", "expandable navigation group with adjacent project create plus"],
-      "hazards": ["this is the sidebar navigation group, not the editor report mode radio"]
+      "aliases": [
+        "拼貼報表",
+        "我的自訂 > 拼貼報表",
+        "拼貼報表節點",
+        "collage report group"
+      ],
+      "supportedActions": [
+        "click",
+        "open",
+        "close",
+        "assertVisible",
+        "assertHidden",
+        "assertStateChanged"
+      ],
+      "stateAttributes": [
+        "innerText",
+        "aria-expanded",
+        "expandedClass",
+        "nestedItemsVisible"
+      ],
+      "evidenceObjects": [
+        "sidebar.collageReportGroup.state"
+      ],
+      "locatorHints": [
+        "visible text 拼貼報表 under 我的自訂",
+        "expandable navigation group with adjacent project create plus"
+      ],
+      "hazards": [
+        "this is the sidebar navigation group, not the editor report mode radio"
+      ]
     },
     {
       "id": "sidebar.collageProjects.count",
@@ -75,12 +168,31 @@
       "component": "sidebar.collageReportGroup.children",
       "objectType": "stateEvidence",
       "purpose": "Count of visible collage projects under 我的自訂 > 拼貼報表.",
-      "aliases": ["拼貼專案數", "拼貼報表專案數", "project count", "collage project count"],
-      "supportedActions": ["read", "assertValue", "compare"],
-      "stateAttributes": ["count", "visibleProjectNames", "expanded"],
-      "evidenceObjects": ["sidebar.collageProjects.count"],
-      "locatorHints": ["count visible project rows under expanded 拼貼報表 group"],
-      "hazards": ["count is only valid after 我的自訂 and 拼貼報表 are expanded and the list is fully loaded"]
+      "aliases": [
+        "拼貼專案數",
+        "拼貼報表專案數",
+        "project count",
+        "collage project count"
+      ],
+      "supportedActions": [
+        "read",
+        "assertValue",
+        "compare"
+      ],
+      "stateAttributes": [
+        "count",
+        "visibleProjectNames",
+        "expanded"
+      ],
+      "evidenceObjects": [
+        "sidebar.collageProjects.count"
+      ],
+      "locatorHints": [
+        "count visible project rows under expanded 拼貼報表 group"
+      ],
+      "hazards": [
+        "count is only valid after 我的自訂 and 拼貼報表 are expanded and the list is fully loaded"
+      ]
     },
     {
       "id": "projectToolbar.downloadButton",
@@ -88,12 +200,34 @@
       "component": "projectToolbar.actionButtons",
       "objectType": "iconButton",
       "purpose": "Project/report list toolbar download action.",
-      "aliases": ["專案頁下載", "toolbar download", "下載 icon"],
-      "supportedActions": ["read", "click", "assertDisabled", "assertEnabled", "download"],
-      "stateAttributes": ["disabled", "aria-disabled", "computedStyle.pointerEvents", "computedStyle.opacity"],
-      "evidenceObjects": ["projectToolbar.buttons.state"],
-      "locatorHints": ["toolbar ordered button index 0", "icon-only button above project/report list"],
-      "hazards": ["accessible name may be absent; use domain semantic button order when names are unavailable"]
+      "aliases": [
+        "專案頁下載",
+        "toolbar download",
+        "下載 icon"
+      ],
+      "supportedActions": [
+        "read",
+        "click",
+        "assertDisabled",
+        "assertEnabled",
+        "download"
+      ],
+      "stateAttributes": [
+        "disabled",
+        "aria-disabled",
+        "computedStyle.pointerEvents",
+        "computedStyle.opacity"
+      ],
+      "evidenceObjects": [
+        "projectToolbar.buttons.state"
+      ],
+      "locatorHints": [
+        "toolbar ordered button index 0",
+        "icon-only button above project/report list"
+      ],
+      "hazards": [
+        "accessible name may be absent; use domain semantic button order when names are unavailable"
+      ]
     },
     {
       "id": "projectToolbar.deleteButton",
@@ -101,12 +235,34 @@
       "component": "projectToolbar.actionButtons",
       "objectType": "iconButton",
       "purpose": "Project/report list toolbar delete action.",
-      "aliases": ["專案頁刪除", "toolbar delete", "刪除 icon"],
-      "supportedActions": ["read", "click", "assertDisabled", "assertEnabled", "delete"],
-      "stateAttributes": ["disabled", "aria-disabled", "computedStyle.pointerEvents", "computedStyle.opacity"],
-      "evidenceObjects": ["projectToolbar.buttons.state"],
-      "locatorHints": ["toolbar ordered button index 1", "icon-only button above project/report list"],
-      "hazards": ["delete is irreversible and must follow Tool Bridge policy when execution reaches confirm/delete path"]
+      "aliases": [
+        "專案頁刪除",
+        "toolbar delete",
+        "刪除 icon"
+      ],
+      "supportedActions": [
+        "read",
+        "click",
+        "assertDisabled",
+        "assertEnabled",
+        "delete"
+      ],
+      "stateAttributes": [
+        "disabled",
+        "aria-disabled",
+        "computedStyle.pointerEvents",
+        "computedStyle.opacity"
+      ],
+      "evidenceObjects": [
+        "projectToolbar.buttons.state"
+      ],
+      "locatorHints": [
+        "toolbar ordered button index 1",
+        "icon-only button above project/report list"
+      ],
+      "hazards": [
+        "delete is irreversible and must follow Tool Bridge policy when execution reaches confirm/delete path"
+      ]
     },
     {
       "id": "projectToolbar.createButton",
@@ -114,12 +270,35 @@
       "component": "projectToolbar.actionButtons",
       "objectType": "iconButton",
       "purpose": "Report-list toolbar create action for adding a report inside the selected collage project.",
-      "aliases": ["新增報表", "新增按鈕", "toolbar create", "report create"],
-      "supportedActions": ["read", "click", "assertEnabled", "assertDisabled", "assertToast"],
-      "stateAttributes": ["disabled", "aria-disabled", "computedStyle.pointerEvents", "computedStyle.opacity"],
-      "evidenceObjects": ["projectToolbar.buttons.state"],
-      "locatorHints": ["toolbar ordered button index 2", "create/add icon above project/report list"],
-      "hazards": ["this creates a report, not a collage project; do not use it for project-limit toast assertions"]
+      "aliases": [
+        "新增報表",
+        "新增按鈕",
+        "toolbar create",
+        "report create"
+      ],
+      "supportedActions": [
+        "read",
+        "click",
+        "assertEnabled",
+        "assertDisabled",
+        "assertToast"
+      ],
+      "stateAttributes": [
+        "disabled",
+        "aria-disabled",
+        "computedStyle.pointerEvents",
+        "computedStyle.opacity"
+      ],
+      "evidenceObjects": [
+        "projectToolbar.buttons.state"
+      ],
+      "locatorHints": [
+        "toolbar ordered button index 2",
+        "create/add icon above project/report list"
+      ],
+      "hazards": [
+        "this creates a report, not a collage project; do not use it for project-limit toast assertions"
+      ]
     },
     {
       "id": "sidebar.collageProjectCreateButton",
@@ -127,12 +306,31 @@
       "component": "sidebar.collageProjectCreateButton",
       "objectType": "iconButton",
       "purpose": "Sidebar plus button next to the 拼貼報表 group for creating a collage project.",
-      "aliases": ["拼貼報表旁新增專案", "左側新增專案", "sidebar project create", "project limit trigger"],
-      "supportedActions": ["click", "assertToast"],
-      "stateAttributes": ["visible", "enabled", "toastAfterClick"],
-      "evidenceObjects": ["projectLimit.toast.state"],
-      "locatorHints": ["plus icon aligned with sidebar row text 拼貼報表", "same control used by createProject helper"],
-      "hazards": ["when project limit is reached, clicking this sidebar plus produces 已達最高5個專案 instead of opening the create-project modal"]
+      "aliases": [
+        "拼貼報表旁新增專案",
+        "左側新增專案",
+        "sidebar project create",
+        "project limit trigger"
+      ],
+      "supportedActions": [
+        "click",
+        "assertToast"
+      ],
+      "stateAttributes": [
+        "visible",
+        "enabled",
+        "toastAfterClick"
+      ],
+      "evidenceObjects": [
+        "projectLimit.toast.state"
+      ],
+      "locatorHints": [
+        "plus icon aligned with sidebar row text 拼貼報表",
+        "same control used by createProject helper"
+      ],
+      "hazards": [
+        "when project limit is reached, clicking this sidebar plus produces 已達最高5個專案 instead of opening the create-project modal"
+      ]
     },
     {
       "id": "projectLimit.toast",
@@ -140,12 +338,68 @@
       "component": "projectLimit.toast",
       "objectType": "toast",
       "purpose": "Project limit notification after attempting to create over the allowed limit.",
-      "aliases": ["已達最高5個專案", "專案上限提示", "project limit toast"],
-      "supportedActions": ["read", "assertVisible", "assertText", "assertToast"],
-      "stateAttributes": ["visibleText", "visible", "lifecycle"],
-      "evidenceObjects": ["projectLimit.toast.state"],
-      "locatorHints": ["toast/status region after create action", "body text delta containing project limit message"],
-      "hazards": ["toast is transient; evidence must be captured immediately after click"]
+      "aliases": [
+        "已達最高5個專案",
+        "專案上限提示",
+        "project limit toast"
+      ],
+      "supportedActions": [
+        "read",
+        "assertVisible",
+        "assertText",
+        "assertToast"
+      ],
+      "stateAttributes": [
+        "visibleText",
+        "visible",
+        "lifecycle"
+      ],
+      "evidenceObjects": [
+        "projectLimit.toast.state"
+      ],
+      "locatorHints": [
+        "toast/status region after create action",
+        "body text delta containing project limit message"
+      ],
+      "hazards": [
+        "toast is transient; evidence must be captured immediately after click"
+      ]
+    },
+    {
+      "id": "projectCreateModal.panel",
+      "component": "projectCreateModal.panel",
+      "aliases": [
+        "新增專案 modal",
+        "新增專案視窗",
+        "project create modal"
+      ],
+      "supportedActions": [
+        "read",
+        "assertVisible",
+        "assertHidden"
+      ],
+      "stateAttributes": [
+        "visible",
+        "titleText",
+        "bodyText",
+        "dialogCount"
+      ],
+      "evidenceObjects": [
+        "projectCreateModal.state",
+        "projectCreateModal.flow.state"
+      ],
+      "notes": [
+        "Opened from sidebar.collageProjectCreateButton; create/save is out of scope unless a case explicitly requests project creation."
+      ],
+      "page": "officialHome",
+      "objectType": "modal",
+      "purpose": "Visible create collage project modal/panel after clicking the sidebar collage project create button.",
+      "locatorHints": [
+        "[role=dialog], modal, ant-modal, or visible body section containing 新增專案 and 專案名稱"
+      ],
+      "hazards": [
+        "Opening and cancelling are safe; confirming creation changes project state and must be explicitly scoped by testcase/tool bridge."
+      ]
     },
     {
       "id": "projectCreateModal.nameInput",
@@ -153,12 +407,32 @@
       "component": "projectCreateModal.nameInput",
       "objectType": "textInput",
       "purpose": "Project-name input in the create collage project modal/page.",
-      "aliases": ["新增專案名稱", "專案名稱輸入", "project name input"],
-      "supportedActions": ["type", "clear", "assertValue", "read"],
-      "stateAttributes": ["value", "placeholder", "visible", "disabled"],
-      "evidenceObjects": ["projectCreateModal.state"],
-      "locatorHints": ["name input after clicking sidebar collage project create button"],
-      "hazards": ["project names are testcase data; do not encode a particular project name in this vocabulary"]
+      "aliases": [
+        "新增專案名稱",
+        "專案名稱輸入",
+        "project name input"
+      ],
+      "supportedActions": [
+        "type",
+        "clear",
+        "assertValue",
+        "read"
+      ],
+      "stateAttributes": [
+        "value",
+        "placeholder",
+        "visible",
+        "disabled"
+      ],
+      "evidenceObjects": [
+        "projectCreateModal.state"
+      ],
+      "locatorHints": [
+        "name input after clicking sidebar collage project create button"
+      ],
+      "hazards": [
+        "project names are testcase data; do not encode a particular project name in this vocabulary"
+      ]
     },
     {
       "id": "projectCreateModal.saveButton",
@@ -166,12 +440,32 @@
       "component": "projectCreateModal.saveButton",
       "objectType": "button",
       "purpose": "Save/confirm button in the create collage project modal/page.",
-      "aliases": ["新增專案儲存", "建立專案", "project create save"],
-      "supportedActions": ["confirm", "create", "assertEnabled", "assertDisabled"],
-      "stateAttributes": ["visibleText", "enabled", "disabled"],
-      "evidenceObjects": ["projectCreateModal.state", "sidebar.collageProjects.count"],
-      "locatorHints": ["儲存/確認 button after entering project name in create project UI"],
-      "hazards": ["creates a project; project-limit and cleanup cases must track count/name side effects"]
+      "aliases": [
+        "新增專案儲存",
+        "建立專案",
+        "project create save"
+      ],
+      "supportedActions": [
+        "confirm",
+        "create",
+        "assertEnabled",
+        "assertDisabled"
+      ],
+      "stateAttributes": [
+        "visibleText",
+        "enabled",
+        "disabled"
+      ],
+      "evidenceObjects": [
+        "projectCreateModal.state",
+        "sidebar.collageProjects.count"
+      ],
+      "locatorHints": [
+        "儲存/確認 button after entering project name in create project UI"
+      ],
+      "hazards": [
+        "creates a project; project-limit and cleanup cases must track count/name side effects"
+      ]
     },
     {
       "id": "projectCreateModal.cancelButton",
@@ -179,12 +473,29 @@
       "component": "projectCreateModal.cancelButton",
       "objectType": "button",
       "purpose": "Cancel button in the create collage project modal/page.",
-      "aliases": ["新增專案取消", "project create cancel"],
-      "supportedActions": ["click", "cancel", "assertHidden", "assertStateUnchanged"],
-      "stateAttributes": ["visibleText", "enabled"],
-      "evidenceObjects": ["projectCreateModal.state"],
-      "locatorHints": ["取消 button after clicking sidebar collage project create button"],
-      "hazards": ["cancel must not create a new project row"]
+      "aliases": [
+        "新增專案取消",
+        "project create cancel"
+      ],
+      "supportedActions": [
+        "click",
+        "cancel",
+        "assertHidden",
+        "assertStateUnchanged"
+      ],
+      "stateAttributes": [
+        "visibleText",
+        "enabled"
+      ],
+      "evidenceObjects": [
+        "projectCreateModal.state"
+      ],
+      "locatorHints": [
+        "取消 button after clicking sidebar collage project create button"
+      ],
+      "hazards": [
+        "cancel must not create a new project row"
+      ]
     },
     {
       "id": "projectList.rowDeleteAction",
@@ -192,12 +503,36 @@
       "component": "projectList.rowDeleteAction",
       "objectType": "rowActionText",
       "purpose": "Row-local delete text action for an individual report in the project/report list.",
-      "aliases": ["列內刪除", "報表列刪除", "row delete action"],
-      "supportedActions": ["read", "click", "hover", "delete", "assertVisible", "assertTooltip"],
-      "stateAttributes": ["visibleText", "visible", "hovered", "rowIndex", "nearestRowText"],
-      "evidenceObjects": ["projectList.rowActionTooltip.state"],
-      "locatorHints": ["row operation column text 刪除", "row-local action area next to 下載"],
-      "hazards": ["row-local delete is clickable and affects that row only; destructive click paths must follow irreversible-action policy"]
+      "aliases": [
+        "列內刪除",
+        "報表列刪除",
+        "row delete action"
+      ],
+      "supportedActions": [
+        "read",
+        "click",
+        "hover",
+        "delete",
+        "assertVisible",
+        "assertTooltip"
+      ],
+      "stateAttributes": [
+        "visibleText",
+        "visible",
+        "hovered",
+        "rowIndex",
+        "nearestRowText"
+      ],
+      "evidenceObjects": [
+        "projectList.rowActionTooltip.state"
+      ],
+      "locatorHints": [
+        "row operation column text 刪除",
+        "row-local action area next to 下載"
+      ],
+      "hazards": [
+        "row-local delete is clickable and affects that row only; destructive click paths must follow irreversible-action policy"
+      ]
     },
     {
       "id": "projectList.rowDeleteTooltip",
@@ -205,12 +540,31 @@
       "component": "projectList.rowDeleteTooltip",
       "objectType": "tooltip",
       "purpose": "Tooltip expected after hovering the row-local delete action.",
-      "aliases": ["刪除 tooltip", "row delete tooltip"],
-      "supportedActions": ["assertTooltip", "assertText", "assertHidden"],
-      "stateAttributes": ["visibleText", "visible", "appearsAfterHover", "disappearsAfterMouseOut"],
-      "evidenceObjects": ["projectList.rowActionTooltip.state"],
-      "locatorHints": ["tooltip/popover layer after hover", "visible text semantically matching delete"],
-      "hazards": ["tooltip is currently a known product gap; absence after real hover is product FAIL evidence for the tooltip testcase"]
+      "aliases": [
+        "刪除 tooltip",
+        "row delete tooltip"
+      ],
+      "supportedActions": [
+        "assertTooltip",
+        "assertText",
+        "assertHidden"
+      ],
+      "stateAttributes": [
+        "visibleText",
+        "visible",
+        "appearsAfterHover",
+        "disappearsAfterMouseOut"
+      ],
+      "evidenceObjects": [
+        "projectList.rowActionTooltip.state"
+      ],
+      "locatorHints": [
+        "tooltip/popover layer after hover",
+        "visible text semantically matching delete"
+      ],
+      "hazards": [
+        "tooltip is currently a known product gap; absence after real hover is product FAIL evidence for the tooltip testcase"
+      ]
     },
     {
       "id": "deleteConfirmModal.panel",
@@ -218,12 +572,33 @@
       "component": "deleteConfirmModal.panel",
       "objectType": "modal",
       "purpose": "Delete confirmation modal after clicking a row-local report delete action.",
-      "aliases": ["刪除確認 modal", "刪除確認彈窗", "確定要刪除嗎", "delete confirm modal"],
-      "supportedActions": ["read", "assertVisible", "assertText", "assertHidden"],
-      "stateAttributes": ["visibleText", "visible", "targetRowText"],
-      "evidenceObjects": ["deleteConfirmModal.state"],
-      "locatorHints": ["modal/dialog visible after clicking a row-local 刪除 action", "contains cancel/confirm actions"],
-      "hazards": ["opening is safe; confirming delete is irreversible and requires explicit PM authorization"]
+      "aliases": [
+        "刪除確認 modal",
+        "刪除確認彈窗",
+        "確定要刪除嗎",
+        "delete confirm modal"
+      ],
+      "supportedActions": [
+        "read",
+        "assertVisible",
+        "assertText",
+        "assertHidden"
+      ],
+      "stateAttributes": [
+        "visibleText",
+        "visible",
+        "targetRowText"
+      ],
+      "evidenceObjects": [
+        "deleteConfirmModal.state"
+      ],
+      "locatorHints": [
+        "modal/dialog visible after clicking a row-local 刪除 action",
+        "contains cancel/confirm actions"
+      ],
+      "hazards": [
+        "opening is safe; confirming delete is irreversible and requires explicit PM authorization"
+      ]
     },
     {
       "id": "deleteConfirmModal.cancelButton",
@@ -231,12 +606,29 @@
       "component": "deleteConfirmModal.cancelButton",
       "objectType": "button",
       "purpose": "Cancel button inside the delete confirmation modal.",
-      "aliases": ["刪除確認取消", "delete confirm cancel"],
-      "supportedActions": ["click", "cancel", "assertHidden", "assertStateUnchanged"],
-      "stateAttributes": ["visibleText", "enabled"],
-      "evidenceObjects": ["deleteConfirmModal.state"],
-      "locatorHints": ["取消 button inside delete confirmation modal"],
-      "hazards": ["cancel should close the modal and leave row count/name unchanged"]
+      "aliases": [
+        "刪除確認取消",
+        "delete confirm cancel"
+      ],
+      "supportedActions": [
+        "click",
+        "cancel",
+        "assertHidden",
+        "assertStateUnchanged"
+      ],
+      "stateAttributes": [
+        "visibleText",
+        "enabled"
+      ],
+      "evidenceObjects": [
+        "deleteConfirmModal.state"
+      ],
+      "locatorHints": [
+        "取消 button inside delete confirmation modal"
+      ],
+      "hazards": [
+        "cancel should close the modal and leave row count/name unchanged"
+      ]
     },
     {
       "id": "deleteConfirmModal.confirmButton",
@@ -244,12 +636,29 @@
       "component": "deleteConfirmModal.confirmButton",
       "objectType": "button",
       "purpose": "Confirm button inside the delete confirmation modal.",
-      "aliases": ["刪除確認確定", "delete confirm accept", "delete confirm button"],
-      "supportedActions": ["confirm", "delete"],
-      "stateAttributes": ["visibleText", "enabled"],
-      "evidenceObjects": ["deleteConfirmModal.state", "projectList.reportRow.state"],
-      "locatorHints": ["確定 button inside delete confirmation modal"],
-      "hazards": ["irreversible path; must not be clicked without explicit PM authorization"]
+      "aliases": [
+        "刪除確認確定",
+        "delete confirm accept",
+        "delete confirm button"
+      ],
+      "supportedActions": [
+        "confirm",
+        "delete"
+      ],
+      "stateAttributes": [
+        "visibleText",
+        "enabled"
+      ],
+      "evidenceObjects": [
+        "deleteConfirmModal.state",
+        "projectList.reportRow.state"
+      ],
+      "locatorHints": [
+        "確定 button inside delete confirmation modal"
+      ],
+      "hazards": [
+        "irreversible path; must not be clicked without explicit PM authorization"
+      ]
     },
     {
       "id": "reportMode.radioGroup",
@@ -257,12 +666,34 @@
       "component": "reportMode.radioGroup",
       "objectType": "radioGroup",
       "purpose": "Report mode selector on the editor/new-report page.",
-      "aliases": ["建構方式", "報表模式", "report mode"],
-      "supportedActions": ["read", "assertSelected", "assertChecked", "assertText"],
-      "stateAttributes": ["inputName", "value", "checked", "aria-checked", "nearestLabel"],
-      "evidenceObjects": ["reportMode.radio.state"],
-      "locatorHints": ["input name=report-mode", "radio values mapped by semanticMaps.reportModeRadio"],
-      "hazards": ["label text may differ from mode meaning; use value+label mapping together"]
+      "aliases": [
+        "建構方式",
+        "報表模式",
+        "report mode"
+      ],
+      "supportedActions": [
+        "read",
+        "assertSelected",
+        "assertChecked",
+        "assertText"
+      ],
+      "stateAttributes": [
+        "inputName",
+        "value",
+        "checked",
+        "aria-checked",
+        "nearestLabel"
+      ],
+      "evidenceObjects": [
+        "reportMode.radio.state"
+      ],
+      "locatorHints": [
+        "input name=report-mode",
+        "radio values mapped by semanticMaps.reportModeRadio"
+      ],
+      "hazards": [
+        "label text may differ from mode meaning; use value+label mapping together"
+      ]
     },
     {
       "id": "reportMode.option.collage",
@@ -270,12 +701,31 @@
       "component": "reportMode.radioGroup",
       "objectType": "radioOption",
       "purpose": "Collage mode radio option.",
-      "aliases": ["拼貼模式", "collage mode"],
-      "supportedActions": ["read", "select", "assertSelected", "assertChecked"],
-      "stateAttributes": ["value", "label", "checked"],
-      "evidenceObjects": ["reportMode.radio.state"],
-      "locatorHints": ["report-mode radio value 1", "nearest label 拼貼模式"],
-      "hazards": ["default state should be observed before any mode switch"]
+      "aliases": [
+        "拼貼模式",
+        "collage mode"
+      ],
+      "supportedActions": [
+        "read",
+        "select",
+        "assertSelected",
+        "assertChecked"
+      ],
+      "stateAttributes": [
+        "value",
+        "label",
+        "checked"
+      ],
+      "evidenceObjects": [
+        "reportMode.radio.state"
+      ],
+      "locatorHints": [
+        "report-mode radio value 1",
+        "nearest label 拼貼模式"
+      ],
+      "hazards": [
+        "default state should be observed before any mode switch"
+      ]
     },
     {
       "id": "reportMode.option.metricTrend",
@@ -283,12 +733,32 @@
       "component": "reportMode.radioGroup",
       "objectType": "radioOption",
       "purpose": "Metric-centric/metric trend report mode option when visible from the shared editor shell.",
-      "aliases": ["指標趨勢", "精算模式/指標趨勢", "metric trend", "metric-centric mode"],
-      "supportedActions": ["read", "select", "assertSelected", "assertChecked"],
-      "stateAttributes": ["value", "label", "checked"],
-      "evidenceObjects": ["reportMode.radio.state"],
-      "locatorHints": ["report-mode radio option whose label semantically matches 指標趨勢"],
-      "hazards": ["do not treat the slash-form testcase label as one literal UI node if the UI renders separate labels"]
+      "aliases": [
+        "指標趨勢",
+        "精算模式/指標趨勢",
+        "metric trend",
+        "metric-centric mode"
+      ],
+      "supportedActions": [
+        "read",
+        "select",
+        "assertSelected",
+        "assertChecked"
+      ],
+      "stateAttributes": [
+        "value",
+        "label",
+        "checked"
+      ],
+      "evidenceObjects": [
+        "reportMode.radio.state"
+      ],
+      "locatorHints": [
+        "report-mode radio option whose label semantically matches 指標趨勢"
+      ],
+      "hazards": [
+        "do not treat the slash-form testcase label as one literal UI node if the UI renders separate labels"
+      ]
     },
     {
       "id": "reportMode.option.recordCentric",
@@ -296,12 +766,32 @@
       "component": "reportMode.radioGroup",
       "objectType": "radioOption",
       "purpose": "Record-centric/detail view report mode option when visible from the shared editor shell.",
-      "aliases": ["明細檢視", "精算模式/明細檢視", "record-centric mode", "detail view"],
-      "supportedActions": ["read", "select", "assertSelected", "assertChecked"],
-      "stateAttributes": ["value", "label", "checked"],
-      "evidenceObjects": ["reportMode.radio.state"],
-      "locatorHints": ["report-mode radio option whose label semantically matches 明細檢視"],
-      "hazards": ["do not switch modes during collage-only cases unless the testcase explicitly requires a mode switch"]
+      "aliases": [
+        "明細檢視",
+        "精算模式/明細檢視",
+        "record-centric mode",
+        "detail view"
+      ],
+      "supportedActions": [
+        "read",
+        "select",
+        "assertSelected",
+        "assertChecked"
+      ],
+      "stateAttributes": [
+        "value",
+        "label",
+        "checked"
+      ],
+      "evidenceObjects": [
+        "reportMode.radio.state"
+      ],
+      "locatorHints": [
+        "report-mode radio option whose label semantically matches 明細檢視"
+      ],
+      "hazards": [
+        "do not switch modes during collage-only cases unless the testcase explicitly requires a mode switch"
+      ]
     },
     {
       "id": "metricRows.sourceReportControl",
@@ -309,12 +799,33 @@
       "component": "metricRows.sourceReportControl",
       "objectType": "rowScopedPickerControl",
       "purpose": "Row-scoped control for choosing a source report.",
-      "aliases": ["來源報表", "報表選擇", "source report picker"],
-      "supportedActions": ["open", "select", "assertText", "assertStateChanged"],
-      "stateAttributes": ["rowIndex", "visibleText", "selectedValue"],
-      "evidenceObjects": ["sourceControl.after", "sourceReportPicker.state"],
-      "locatorHints": ["row-local picker near source/report label", "do not use global report text click without row scoping"],
-      "hazards": ["same report names can appear outside the target row"]
+      "aliases": [
+        "來源報表",
+        "報表選擇",
+        "source report picker"
+      ],
+      "supportedActions": [
+        "open",
+        "select",
+        "assertText",
+        "assertStateChanged"
+      ],
+      "stateAttributes": [
+        "rowIndex",
+        "visibleText",
+        "selectedValue"
+      ],
+      "evidenceObjects": [
+        "sourceControl.after",
+        "sourceReportPicker.state"
+      ],
+      "locatorHints": [
+        "row-local picker near source/report label",
+        "do not use global report text click without row scoping"
+      ],
+      "hazards": [
+        "same report names can appear outside the target row"
+      ]
     },
     {
       "id": "sourceReportPicker.searchInput",
@@ -322,12 +833,32 @@
       "component": "sourceReportPicker.searchInput",
       "objectType": "searchInput",
       "purpose": "Search box inside the source report picker.",
-      "aliases": ["報表搜尋", "picker 搜尋框", "搜尋每日"],
-      "supportedActions": ["type", "search", "assertValue", "assertText"],
-      "stateAttributes": ["value", "visible", "filteredOptionCount"],
-      "evidenceObjects": ["sourceReportPicker.state"],
-      "locatorHints": ["input inside opened source report picker", "search field visible after picker open"],
-      "hazards": ["picker must be open before search input can be observed"]
+      "aliases": [
+        "報表搜尋",
+        "picker 搜尋框",
+        "搜尋每日"
+      ],
+      "supportedActions": [
+        "type",
+        "search",
+        "assertValue",
+        "assertText"
+      ],
+      "stateAttributes": [
+        "value",
+        "visible",
+        "filteredOptionCount"
+      ],
+      "evidenceObjects": [
+        "sourceReportPicker.state"
+      ],
+      "locatorHints": [
+        "input inside opened source report picker",
+        "search field visible after picker open"
+      ],
+      "hazards": [
+        "picker must be open before search input can be observed"
+      ]
     },
     {
       "id": "sourceReportPicker.option.dailyReport",
@@ -335,12 +866,33 @@
       "component": "sourceReportPicker.option",
       "objectType": "pickerOption",
       "purpose": "Daily report option inside the source report picker.",
-      "aliases": ["每日報表", "daily report"],
-      "supportedActions": ["read", "select", "assertVisible", "assertText", "assertStateChanged"],
-      "stateAttributes": ["visibleText", "visible", "selected"],
-      "evidenceObjects": ["sourceReportPicker.state", "sourceControl.after"],
-      "locatorHints": ["option text 每日報表 inside the opened picker", "filtered result after searching 每日"],
-      "hazards": ["option selection should close picker and update the row-local source report control"]
+      "aliases": [
+        "每日報表",
+        "daily report"
+      ],
+      "supportedActions": [
+        "read",
+        "select",
+        "assertVisible",
+        "assertText",
+        "assertStateChanged"
+      ],
+      "stateAttributes": [
+        "visibleText",
+        "visible",
+        "selected"
+      ],
+      "evidenceObjects": [
+        "sourceReportPicker.state",
+        "sourceControl.after"
+      ],
+      "locatorHints": [
+        "option text 每日報表 inside the opened picker",
+        "filtered result after searching 每日"
+      ],
+      "hazards": [
+        "option selection should close picker and update the row-local source report control"
+      ]
     },
     {
       "id": "metricRows.fieldControl",
@@ -348,12 +900,33 @@
       "component": "metricRows.fieldControl",
       "objectType": "rowScopedPickerControl",
       "purpose": "Row-scoped control for choosing a metric field after source report selection.",
-      "aliases": ["欄位", "主欄位", "field picker"],
-      "supportedActions": ["open", "select", "assertText", "assertStateChanged"],
-      "stateAttributes": ["rowIndex", "visibleText", "selectedValue", "pickerSignature"],
-      "evidenceObjects": ["fieldControl.after", "fieldPicker.signature"],
-      "locatorHints": ["row-local field picker after selecting source report"],
-      "hazards": ["field picker can be stale after source report changes"]
+      "aliases": [
+        "欄位",
+        "主欄位",
+        "field picker"
+      ],
+      "supportedActions": [
+        "open",
+        "select",
+        "assertText",
+        "assertStateChanged"
+      ],
+      "stateAttributes": [
+        "rowIndex",
+        "visibleText",
+        "selectedValue",
+        "pickerSignature"
+      ],
+      "evidenceObjects": [
+        "fieldControl.after",
+        "fieldPicker.signature"
+      ],
+      "locatorHints": [
+        "row-local field picker after selecting source report"
+      ],
+      "hazards": [
+        "field picker can be stale after source report changes"
+      ]
     },
     {
       "id": "fieldPicker.option.newAccounts",
@@ -361,12 +934,35 @@
       "component": "fieldPicker.option",
       "objectType": "pickerOption",
       "purpose": "The 新增帳號數 field option inside the row-scoped field picker after selecting 每日報表.",
-      "aliases": ["新增帳號數", "NEW_ACCOUNTS", "new accounts"],
-      "supportedActions": ["read", "select", "assertVisible", "assertText", "assertStateChanged"],
-      "stateAttributes": ["visibleText", "visible", "selected", "sourceReport"],
-      "evidenceObjects": ["fieldPicker.state", "fieldPicker.signature", "fieldControl.after"],
-      "locatorHints": ["option text 新增帳號數 inside the opened field picker after source report 每日報表"],
-      "hazards": ["option selection must be row-scoped; do not click a global text match outside the opened picker"]
+      "aliases": [
+        "新增帳號數",
+        "NEW_ACCOUNTS",
+        "new accounts"
+      ],
+      "supportedActions": [
+        "read",
+        "select",
+        "assertVisible",
+        "assertText",
+        "assertStateChanged"
+      ],
+      "stateAttributes": [
+        "visibleText",
+        "visible",
+        "selected",
+        "sourceReport"
+      ],
+      "evidenceObjects": [
+        "fieldPicker.state",
+        "fieldPicker.signature",
+        "fieldControl.after"
+      ],
+      "locatorHints": [
+        "option text 新增帳號數 inside the opened field picker after source report 每日報表"
+      ],
+      "hazards": [
+        "option selection must be row-scoped; do not click a global text match outside the opened picker"
+      ]
     },
     {
       "id": "metricRows.addRowButton",
@@ -374,12 +970,31 @@
       "component": "metricRows.addRowButton",
       "objectType": "button",
       "purpose": "Add a new metric row in the collage editor.",
-      "aliases": ["+ 新增列", "新增列", "新增欄位列", "add metric row"],
-      "supportedActions": ["click", "create", "assertStateChanged"],
-      "stateAttributes": ["visibleText", "enabled", "rowCountDelta"],
-      "evidenceObjects": ["metricRows.state"],
-      "locatorHints": ["add row control near the metric/field rows"],
-      "hazards": ["plus-only labels are ambiguous; testcase prose should identify this as the metric row add control"]
+      "aliases": [
+        "+ 新增列",
+        "新增列",
+        "新增欄位列",
+        "add metric row"
+      ],
+      "supportedActions": [
+        "click",
+        "create",
+        "assertStateChanged"
+      ],
+      "stateAttributes": [
+        "visibleText",
+        "enabled",
+        "rowCountDelta"
+      ],
+      "evidenceObjects": [
+        "metricRows.state"
+      ],
+      "locatorHints": [
+        "add row control near the metric/field rows"
+      ],
+      "hazards": [
+        "plus-only labels are ambiguous; testcase prose should identify this as the metric row add control"
+      ]
     },
     {
       "id": "metricRows.duplicateRowButton",
@@ -387,12 +1002,32 @@
       "component": "metricRows.duplicateRowButton",
       "objectType": "rowActionButton",
       "purpose": "Duplicate/copy the current metric row.",
-      "aliases": ["複製列", "複製欄位列", "copy row", "duplicate row"],
-      "supportedActions": ["click", "create", "assertStateChanged"],
-      "stateAttributes": ["rowIndex", "enabled", "rowCountDelta", "copiedRowText"],
-      "evidenceObjects": ["metricRows.state"],
-      "locatorHints": ["row-local duplicate/copy control inside a metric row"],
-      "hazards": ["must be scoped to the intended row; do not confuse with report-level 複製副本"]
+      "aliases": [
+        "複製列",
+        "複製欄位列",
+        "copy row",
+        "duplicate row"
+      ],
+      "supportedActions": [
+        "click",
+        "create",
+        "assertStateChanged"
+      ],
+      "stateAttributes": [
+        "rowIndex",
+        "enabled",
+        "rowCountDelta",
+        "copiedRowText"
+      ],
+      "evidenceObjects": [
+        "metricRows.state"
+      ],
+      "locatorHints": [
+        "row-local duplicate/copy control inside a metric row"
+      ],
+      "hazards": [
+        "must be scoped to the intended row; do not confuse with report-level 複製副本"
+      ]
     },
     {
       "id": "metricRows.deleteRowButton",
@@ -400,12 +1035,31 @@
       "component": "metricRows.deleteRowButton",
       "objectType": "rowActionButton",
       "purpose": "Delete/remove the current metric row.",
-      "aliases": ["刪除列", "刪除欄位列", "remove row", "delete metric row"],
-      "supportedActions": ["click", "delete", "assertStateChanged"],
-      "stateAttributes": ["rowIndex", "enabled", "rowCountDelta"],
-      "evidenceObjects": ["metricRows.state"],
-      "locatorHints": ["row-local delete/remove control inside a metric row"],
-      "hazards": ["row deletion is editor-local setup cleanup; do not confuse with destructive project/report delete"]
+      "aliases": [
+        "刪除列",
+        "刪除欄位列",
+        "remove row",
+        "delete metric row"
+      ],
+      "supportedActions": [
+        "click",
+        "delete",
+        "assertStateChanged"
+      ],
+      "stateAttributes": [
+        "rowIndex",
+        "enabled",
+        "rowCountDelta"
+      ],
+      "evidenceObjects": [
+        "metricRows.state"
+      ],
+      "locatorHints": [
+        "row-local delete/remove control inside a metric row"
+      ],
+      "hazards": [
+        "row deletion is editor-local setup cleanup; do not confuse with destructive project/report delete"
+      ]
     },
     {
       "id": "formulaEditor.openButton",
@@ -413,12 +1067,31 @@
       "component": "formulaEditor.openButton",
       "objectType": "button",
       "purpose": "Legacy/generic object for opening a formula/calculated-field editor. Official inline formula cases should prefer formulaEditor.inlineExpressionArea.",
-      "aliases": ["公式", "公式編輯器", "+ 新增運算欄位", "新增運算欄位", "calculated field"],
-      "supportedActions": ["click", "open", "assertVisible"],
-      "stateAttributes": ["visibleText", "enabled"],
-      "evidenceObjects": ["formulaEditor.state"],
-      "locatorHints": ["button/control that opens the calculated-field/formula editor"],
-      "hazards": ["official BI collage currently uses an inline formula builder on the metric row; do not assume a modal exists unless live evidence proves it"]
+      "aliases": [
+        "公式",
+        "公式編輯器",
+        "+ 新增運算欄位",
+        "新增運算欄位",
+        "calculated field"
+      ],
+      "supportedActions": [
+        "click",
+        "open",
+        "assertVisible"
+      ],
+      "stateAttributes": [
+        "visibleText",
+        "enabled"
+      ],
+      "evidenceObjects": [
+        "formulaEditor.state"
+      ],
+      "locatorHints": [
+        "button/control that opens the calculated-field/formula editor"
+      ],
+      "hazards": [
+        "official BI collage currently uses an inline formula builder on the metric row; do not assume a modal exists unless live evidence proves it"
+      ]
     },
     {
       "id": "formulaEditor.inlineExpressionArea",
@@ -426,12 +1099,39 @@
       "component": "formulaEditor.inlineExpressionArea",
       "objectType": "editableExpressionArea",
       "purpose": "Row-scoped inline expression area for a custom calculated field; clicking it opens the visible keypad/formula builder.",
-      "aliases": ["運算式區", "請點擊或輸入運算式與插入欄位資料", "自訂欄位運算式", "inline formula area", "expression area"],
-      "supportedActions": ["click", "open", "read", "assertVisible", "assertStateChanged"],
-      "stateAttributes": ["rowIndex", "visibleText", "placeholder", "openedKeypad", "expressionText", "tokenTexts"],
-      "evidenceObjects": ["formulaEditor.inlineBuilder.state"],
-      "locatorHints": ["inside the target 自訂欄位 row", "placeholder text 請點擊或輸入運算式與插入欄位資料", "near the equals sign after the row name"],
-      "hazards": ["must be row-scoped; clicking/filling this area directly is not enough to prove formula token selection"]
+      "aliases": [
+        "運算式區",
+        "請點擊或輸入運算式與插入欄位資料",
+        "自訂欄位運算式",
+        "inline formula area",
+        "expression area"
+      ],
+      "supportedActions": [
+        "click",
+        "open",
+        "read",
+        "assertVisible",
+        "assertStateChanged"
+      ],
+      "stateAttributes": [
+        "rowIndex",
+        "visibleText",
+        "placeholder",
+        "openedKeypad",
+        "expressionText",
+        "tokenTexts"
+      ],
+      "evidenceObjects": [
+        "formulaEditor.inlineBuilder.state"
+      ],
+      "locatorHints": [
+        "inside the target 自訂欄位 row",
+        "placeholder text 請點擊或輸入運算式與插入欄位資料",
+        "near the equals sign after the row name"
+      ],
+      "hazards": [
+        "must be row-scoped; clicking/filling this area directly is not enough to prove formula token selection"
+      ]
     },
     {
       "id": "formulaEditor.keypad",
@@ -439,12 +1139,33 @@
       "component": "formulaEditor.keypad",
       "objectType": "inlinePanel",
       "purpose": "Inline keypad/operator panel opened from the calculated-field expression area.",
-      "aliases": ["公式鍵盤", "運算鍵盤", "inline keypad", "operator keypad"],
-      "supportedActions": ["read", "assertVisible", "assertText"],
-      "stateAttributes": ["visible", "visibleTexts", "operatorButtons", "numberButtons"],
-      "evidenceObjects": ["formulaEditor.inlineBuilder.state"],
-      "locatorHints": ["panel below the target formula row", "contains buttons 0-9, +, -, *, /, (, ), DEL, 清空, 插入欄位"],
-      "hazards": ["panel position is inline and may shift; reacquire after every insertion or row rerender"]
+      "aliases": [
+        "公式鍵盤",
+        "運算鍵盤",
+        "inline keypad",
+        "operator keypad"
+      ],
+      "supportedActions": [
+        "read",
+        "assertVisible",
+        "assertText"
+      ],
+      "stateAttributes": [
+        "visible",
+        "visibleTexts",
+        "operatorButtons",
+        "numberButtons"
+      ],
+      "evidenceObjects": [
+        "formulaEditor.inlineBuilder.state"
+      ],
+      "locatorHints": [
+        "panel below the target formula row",
+        "contains buttons 0-9, +, -, *, /, (, ), DEL, 清空, 插入欄位"
+      ],
+      "hazards": [
+        "panel position is inline and may shift; reacquire after every insertion or row rerender"
+      ]
     },
     {
       "id": "formulaEditor.insertFieldButton",
@@ -452,12 +1173,32 @@
       "component": "formulaEditor.insertFieldButton",
       "objectType": "button",
       "purpose": "Button inside the inline formula keypad that exposes source-report and field pickers.",
-      "aliases": ["插入欄位", "insert field", "insert field token"],
-      "supportedActions": ["click", "open", "assertVisible", "assertStateChanged"],
-      "stateAttributes": ["visibleText", "enabled", "pickerOpened"],
-      "evidenceObjects": ["formulaEditor.inlineBuilder.state", "formulaEditor.tokenPicker.state"],
-      "locatorHints": ["button text 插入欄位 inside the inline keypad panel"],
-      "hazards": ["this is the trusted entry for field tokens; direct text fill must not substitute for it in judgment evidence"]
+      "aliases": [
+        "插入欄位",
+        "insert field",
+        "insert field token"
+      ],
+      "supportedActions": [
+        "click",
+        "open",
+        "assertVisible",
+        "assertStateChanged"
+      ],
+      "stateAttributes": [
+        "visibleText",
+        "enabled",
+        "pickerOpened"
+      ],
+      "evidenceObjects": [
+        "formulaEditor.inlineBuilder.state",
+        "formulaEditor.tokenPicker.state"
+      ],
+      "locatorHints": [
+        "button text 插入欄位 inside the inline keypad panel"
+      ],
+      "hazards": [
+        "this is the trusted entry for field tokens; direct text fill must not substitute for it in judgment evidence"
+      ]
     },
     {
       "id": "formulaEditor.sourceReportPicker",
@@ -465,12 +1206,37 @@
       "component": "formulaEditor.sourceReportPicker",
       "objectType": "picker",
       "purpose": "Inline formula token source-report picker shown after clicking 插入欄位.",
-      "aliases": ["公式來源報表", "請選擇報表", "formula source picker", "source report token picker"],
-      "supportedActions": ["open", "select", "search", "read", "assertText", "assertStateChanged"],
-      "stateAttributes": ["visibleText", "selectedText", "visibleOptions", "searchValue"],
-      "evidenceObjects": ["formulaEditor.tokenPicker.state"],
-      "locatorHints": ["picker inside formula builder row", "first dropdown after clicking 插入欄位", "options include shared report names such as 每日報表 when available"],
-      "hazards": ["source report labels are testcase/domain data; object definition must not encode one required source"]
+      "aliases": [
+        "公式來源報表",
+        "請選擇報表",
+        "formula source picker",
+        "source report token picker"
+      ],
+      "supportedActions": [
+        "open",
+        "select",
+        "search",
+        "read",
+        "assertText",
+        "assertStateChanged"
+      ],
+      "stateAttributes": [
+        "visibleText",
+        "selectedText",
+        "visibleOptions",
+        "searchValue"
+      ],
+      "evidenceObjects": [
+        "formulaEditor.tokenPicker.state"
+      ],
+      "locatorHints": [
+        "picker inside formula builder row",
+        "first dropdown after clicking 插入欄位",
+        "options include shared report names such as 每日報表 when available"
+      ],
+      "hazards": [
+        "source report labels are testcase/domain data; object definition must not encode one required source"
+      ]
     },
     {
       "id": "formulaEditor.fieldPicker",
@@ -478,12 +1244,37 @@
       "component": "formulaEditor.fieldPicker",
       "objectType": "picker",
       "purpose": "Inline formula token field picker whose options depend on the selected source report.",
-      "aliases": ["公式欄位選擇", "公式欄位 picker", "formula field picker", "field token picker"],
-      "supportedActions": ["open", "select", "search", "read", "assertText", "assertStateChanged"],
-      "stateAttributes": ["visibleText", "selectedText", "visibleOptions", "sourceReport", "pickerSignature"],
-      "evidenceObjects": ["formulaEditor.tokenPicker.state"],
-      "locatorHints": ["second picker after formula source report selection", "field options next to source-report dropdown in the inline formula builder"],
-      "hazards": ["field picker can be stale after changing source report; verify picker options or signature before selecting"]
+      "aliases": [
+        "公式欄位選擇",
+        "公式欄位 picker",
+        "formula field picker",
+        "field token picker"
+      ],
+      "supportedActions": [
+        "open",
+        "select",
+        "search",
+        "read",
+        "assertText",
+        "assertStateChanged"
+      ],
+      "stateAttributes": [
+        "visibleText",
+        "selectedText",
+        "visibleOptions",
+        "sourceReport",
+        "pickerSignature"
+      ],
+      "evidenceObjects": [
+        "formulaEditor.tokenPicker.state"
+      ],
+      "locatorHints": [
+        "second picker after formula source report selection",
+        "field options next to source-report dropdown in the inline formula builder"
+      ],
+      "hazards": [
+        "field picker can be stale after changing source report; verify picker options or signature before selecting"
+      ]
     },
     {
       "id": "formulaEditor.operatorButton",
@@ -491,12 +1282,35 @@
       "component": "formulaEditor.operatorButton",
       "objectType": "keypadButton",
       "purpose": "Operator button inside the inline formula keypad.",
-      "aliases": ["運算符號", "加減乘除", "operator button", "+", "-", "*", "/"],
-      "supportedActions": ["click", "assertVisible", "assertStateChanged"],
-      "stateAttributes": ["operator", "visibleText", "enabled", "expressionDelta"],
-      "evidenceObjects": ["formulaEditor.inlineBuilder.state"],
-      "locatorHints": ["operator button inside formula keypad with exact visible text +, -, *, /, (, )"],
-      "hazards": ["operator values are action parameters; do not infer formula correctness from a final request body without interaction log"]
+      "aliases": [
+        "運算符號",
+        "加減乘除",
+        "operator button",
+        "+",
+        "-",
+        "*",
+        "/"
+      ],
+      "supportedActions": [
+        "click",
+        "assertVisible",
+        "assertStateChanged"
+      ],
+      "stateAttributes": [
+        "operator",
+        "visibleText",
+        "enabled",
+        "expressionDelta"
+      ],
+      "evidenceObjects": [
+        "formulaEditor.inlineBuilder.state"
+      ],
+      "locatorHints": [
+        "operator button inside formula keypad with exact visible text +, -, *, /, (, )"
+      ],
+      "hazards": [
+        "operator values are action parameters; do not infer formula correctness from a final request body without interaction log"
+      ]
     },
     {
       "id": "formulaEditor.numberButton",
@@ -504,12 +1318,34 @@
       "component": "formulaEditor.numberButton",
       "objectType": "keypadButton",
       "purpose": "Number button inside the inline formula keypad.",
-      "aliases": ["數字鍵", "公式數字", "number button", "0", "1", "2"],
-      "supportedActions": ["click", "assertVisible", "assertStateChanged"],
-      "stateAttributes": ["number", "visibleText", "enabled", "expressionDelta"],
-      "evidenceObjects": ["formulaEditor.inlineBuilder.state"],
-      "locatorHints": ["number button 0-9 inside formula keypad"],
-      "hazards": ["number values are testcase formula data and should be recorded as action parameters"]
+      "aliases": [
+        "數字鍵",
+        "公式數字",
+        "number button",
+        "0",
+        "1",
+        "2"
+      ],
+      "supportedActions": [
+        "click",
+        "assertVisible",
+        "assertStateChanged"
+      ],
+      "stateAttributes": [
+        "number",
+        "visibleText",
+        "enabled",
+        "expressionDelta"
+      ],
+      "evidenceObjects": [
+        "formulaEditor.inlineBuilder.state"
+      ],
+      "locatorHints": [
+        "number button 0-9 inside formula keypad"
+      ],
+      "hazards": [
+        "number values are testcase formula data and should be recorded as action parameters"
+      ]
     },
     {
       "id": "formulaEditor.clearButton",
@@ -517,12 +1353,30 @@
       "component": "formulaEditor.clearButton",
       "objectType": "button",
       "purpose": "Clear button inside the inline formula keypad.",
-      "aliases": ["清空", "clear formula", "clear expression"],
-      "supportedActions": ["click", "clear", "assertStateChanged"],
-      "stateAttributes": ["visibleText", "enabled", "expressionCleared"],
-      "evidenceObjects": ["formulaEditor.inlineBuilder.state"],
-      "locatorHints": ["button text 清空 inside formula keypad"],
-      "hazards": ["clearing is a setup/cleanup action and should be followed by expression state verification"]
+      "aliases": [
+        "清空",
+        "clear formula",
+        "clear expression"
+      ],
+      "supportedActions": [
+        "click",
+        "clear",
+        "assertStateChanged"
+      ],
+      "stateAttributes": [
+        "visibleText",
+        "enabled",
+        "expressionCleared"
+      ],
+      "evidenceObjects": [
+        "formulaEditor.inlineBuilder.state"
+      ],
+      "locatorHints": [
+        "button text 清空 inside formula keypad"
+      ],
+      "hazards": [
+        "clearing is a setup/cleanup action and should be followed by expression state verification"
+      ]
     },
     {
       "id": "formulaEditor.deleteButton",
@@ -530,12 +1384,29 @@
       "component": "formulaEditor.deleteButton",
       "objectType": "button",
       "purpose": "Delete/backspace button inside the inline formula keypad.",
-      "aliases": ["DEL", "刪除公式字元", "backspace formula"],
-      "supportedActions": ["click", "assertStateChanged"],
-      "stateAttributes": ["visibleText", "enabled", "expressionDelta"],
-      "evidenceObjects": ["formulaEditor.inlineBuilder.state"],
-      "locatorHints": ["button text DEL inside formula keypad"],
-      "hazards": ["delete only mutates the current expression; it is not a report/project delete action"]
+      "aliases": [
+        "DEL",
+        "刪除公式字元",
+        "backspace formula"
+      ],
+      "supportedActions": [
+        "click",
+        "assertStateChanged"
+      ],
+      "stateAttributes": [
+        "visibleText",
+        "enabled",
+        "expressionDelta"
+      ],
+      "evidenceObjects": [
+        "formulaEditor.inlineBuilder.state"
+      ],
+      "locatorHints": [
+        "button text DEL inside formula keypad"
+      ],
+      "hazards": [
+        "delete only mutates the current expression; it is not a report/project delete action"
+      ]
     },
     {
       "id": "formulaEditor.availableFields",
@@ -543,12 +1414,30 @@
       "component": "formulaEditor.availableFields",
       "objectType": "listOrPanel",
       "purpose": "Legacy modal-style available field list. Official inline builder cases should use formulaEditor.sourceReportPicker and formulaEditor.fieldPicker.",
-      "aliases": ["可用欄位", "公式可用欄位", "available fields"],
-      "supportedActions": ["read", "select", "assertVisible", "assertText"],
-      "stateAttributes": ["visibleTexts", "optionCount"],
-      "evidenceObjects": ["formulaEditor.state"],
-      "locatorHints": ["field list visible inside the formula editor"],
-      "hazards": ["not visible in the official inline formula screenshots; do not route new official UI cases here without live evidence"]
+      "aliases": [
+        "可用欄位",
+        "公式可用欄位",
+        "available fields"
+      ],
+      "supportedActions": [
+        "read",
+        "select",
+        "assertVisible",
+        "assertText"
+      ],
+      "stateAttributes": [
+        "visibleTexts",
+        "optionCount"
+      ],
+      "evidenceObjects": [
+        "formulaEditor.state"
+      ],
+      "locatorHints": [
+        "field list visible inside the formula editor"
+      ],
+      "hazards": [
+        "not visible in the official inline formula screenshots; do not route new official UI cases here without live evidence"
+      ]
     },
     {
       "id": "formulaEditor.expressionInput",
@@ -556,12 +1445,32 @@
       "component": "formulaEditor.expressionInput",
       "objectType": "textInput",
       "purpose": "Legacy modal expression input. Official inline builder cases should use formulaEditor.inlineExpressionArea plus token/keypad actions.",
-      "aliases": ["公式輸入", "公式欄位", "expression input", "formula input"],
-      "supportedActions": ["type", "clear", "assertValue", "read"],
-      "stateAttributes": ["value", "visible", "disabled"],
-      "evidenceObjects": ["formulaEditor.state"],
-      "locatorHints": ["main input/editable area for the calculated-field expression"],
-      "hazards": ["direct_fill_inline or typed formula text cannot support product PASS/FAIL when the testcase requires visible formula-builder interaction"]
+      "aliases": [
+        "公式輸入",
+        "公式欄位",
+        "expression input",
+        "formula input"
+      ],
+      "supportedActions": [
+        "type",
+        "clear",
+        "assertValue",
+        "read"
+      ],
+      "stateAttributes": [
+        "value",
+        "visible",
+        "disabled"
+      ],
+      "evidenceObjects": [
+        "formulaEditor.state"
+      ],
+      "locatorHints": [
+        "main input/editable area for the calculated-field expression"
+      ],
+      "hazards": [
+        "direct_fill_inline or typed formula text cannot support product PASS/FAIL when the testcase requires visible formula-builder interaction"
+      ]
     },
     {
       "id": "formulaEditor.fieldNameInput",
@@ -569,12 +1478,31 @@
       "component": "formulaEditor.fieldNameInput",
       "objectType": "textInput",
       "purpose": "Calculated-field name input inside the formula editor.",
-      "aliases": ["欄位名稱", "運算欄位名稱", "calculated field name"],
-      "supportedActions": ["type", "clear", "assertValue", "read"],
-      "stateAttributes": ["value", "visible", "disabled"],
-      "evidenceObjects": ["formulaEditor.state"],
-      "locatorHints": ["name input inside the calculated-field/formula editor"],
-      "hazards": ["field name values are testcase data and should not be hardcoded into the vocabulary"]
+      "aliases": [
+        "欄位名稱",
+        "運算欄位名稱",
+        "calculated field name"
+      ],
+      "supportedActions": [
+        "type",
+        "clear",
+        "assertValue",
+        "read"
+      ],
+      "stateAttributes": [
+        "value",
+        "visible",
+        "disabled"
+      ],
+      "evidenceObjects": [
+        "formulaEditor.state"
+      ],
+      "locatorHints": [
+        "name input inside the calculated-field/formula editor"
+      ],
+      "hazards": [
+        "field name values are testcase data and should not be hardcoded into the vocabulary"
+      ]
     },
     {
       "id": "formulaEditor.confirmButton",
@@ -582,12 +1510,31 @@
       "component": "formulaEditor.confirmButton",
       "objectType": "button",
       "purpose": "Legacy modal confirm button inside a calculated-field/formula editor. Official inline builder applies expression edits without a separate modal confirm.",
-      "aliases": ["公式確認", "運算欄位確認", "formula confirm"],
-      "supportedActions": ["click", "confirm", "assertHidden", "assertStateChanged"],
-      "stateAttributes": ["visibleText", "enabled"],
-      "evidenceObjects": ["formulaEditor.state", "metricRows.state"],
-      "locatorHints": ["確認/確定 button inside the formula editor modal"],
-      "hazards": ["do not require this object for official inline formula cases unless the product actually shows a modal confirm"]
+      "aliases": [
+        "公式確認",
+        "運算欄位確認",
+        "formula confirm"
+      ],
+      "supportedActions": [
+        "click",
+        "confirm",
+        "assertHidden",
+        "assertStateChanged"
+      ],
+      "stateAttributes": [
+        "visibleText",
+        "enabled"
+      ],
+      "evidenceObjects": [
+        "formulaEditor.state",
+        "metricRows.state"
+      ],
+      "locatorHints": [
+        "確認/確定 button inside the formula editor modal"
+      ],
+      "hazards": [
+        "do not require this object for official inline formula cases unless the product actually shows a modal confirm"
+      ]
     },
     {
       "id": "preview.calculateButton",
@@ -595,12 +1542,33 @@
       "component": "preview.button",
       "objectType": "button",
       "purpose": "Calculate/preview button in the editor.",
-      "aliases": ["計算", "執行", "preview button"],
-      "supportedActions": ["click", "execute", "assertRequest", "assertNoRequest", "assertToast"],
-      "stateAttributes": ["visibleText", "enabled", "disabled"],
-      "evidenceObjects": ["preview.result", "validation.message.state"],
-      "locatorHints": ["visible text 計算 or 執行 in editor action area"],
-      "hazards": ["invalid setup should produce validation and no preview request; valid setup should emit preview request"]
+      "aliases": [
+        "計算",
+        "執行",
+        "preview button"
+      ],
+      "supportedActions": [
+        "click",
+        "execute",
+        "assertRequest",
+        "assertNoRequest",
+        "assertToast"
+      ],
+      "stateAttributes": [
+        "visibleText",
+        "enabled",
+        "disabled"
+      ],
+      "evidenceObjects": [
+        "preview.result",
+        "validation.message.state"
+      ],
+      "locatorHints": [
+        "visible text 計算 or 執行 in editor action area"
+      ],
+      "hazards": [
+        "invalid setup should produce validation and no preview request; valid setup should emit preview request"
+      ]
     },
     {
       "id": "dateRange.button",
@@ -608,12 +1576,33 @@
       "component": "dateRange.button",
       "objectType": "button",
       "purpose": "Trigger button for opening the official date range panel.",
-      "aliases": ["時間設置", "時間區間", "時間區間按鈕", "date range button"],
-      "supportedActions": ["click", "open", "assertText", "assertStateChanged"],
-      "stateAttributes": ["aria-label", "visibleText", "expanded"],
-      "evidenceObjects": ["dateRange.panel.state"],
-      "locatorHints": ["button aria-label=時間設置", "button showing current date range"],
-      "hazards": ["opening the panel should not emit preview request"]
+      "aliases": [
+        "時間設置",
+        "時間區間",
+        "時間區間按鈕",
+        "date range button"
+      ],
+      "supportedActions": [
+        "click",
+        "open",
+        "assertText",
+        "assertStateChanged"
+      ],
+      "stateAttributes": [
+        "aria-label",
+        "visibleText",
+        "expanded"
+      ],
+      "evidenceObjects": [
+        "dateRange.panel.state"
+      ],
+      "locatorHints": [
+        "button aria-label=時間設置",
+        "button showing current date range"
+      ],
+      "hazards": [
+        "opening the panel should not emit preview request"
+      ]
     },
     {
       "id": "dateRange.panel",
@@ -621,12 +1610,34 @@
       "component": "dateRange.panel",
       "objectType": "popoverPanel",
       "purpose": "Official date range selection panel.",
-      "aliases": ["日期面板", "時間面板", "區間設置工具", "date range panel"],
-      "supportedActions": ["read", "open", "close", "assertVisible", "assertHidden", "assertNoRequest"],
-      "stateAttributes": ["visibleTexts", "openedByVisibleUi", "requestDelta"],
-      "evidenceObjects": ["dateRange.panel.state"],
-      "locatorHints": ["panel containing presets, dynamic/static controls, 取消, 確定"],
-      "hazards": ["panel overlays other controls until closed"]
+      "aliases": [
+        "日期面板",
+        "時間面板",
+        "區間設置工具",
+        "date range panel"
+      ],
+      "supportedActions": [
+        "read",
+        "open",
+        "close",
+        "assertVisible",
+        "assertHidden",
+        "assertNoRequest"
+      ],
+      "stateAttributes": [
+        "visibleTexts",
+        "openedByVisibleUi",
+        "requestDelta"
+      ],
+      "evidenceObjects": [
+        "dateRange.panel.state"
+      ],
+      "locatorHints": [
+        "panel containing presets, dynamic/static controls, 取消, 確定"
+      ],
+      "hazards": [
+        "panel overlays other controls until closed"
+      ]
     },
     {
       "id": "dateRange.timeTypeTab.dynamic",
@@ -634,12 +1645,33 @@
       "component": "dateRange.timeTypeTab.dynamic",
       "objectType": "tabOrSegment",
       "purpose": "Dynamic time type control inside the date range panel.",
-      "aliases": ["動態時間", "動態", "動態區間", "dynamic time"],
-      "supportedActions": ["click", "select", "assertSelected", "assertStateChanged"],
-      "stateAttributes": ["visibleText", "selected", "aria-selected", "className"],
-      "evidenceObjects": ["dateRange.timeTypeTab.state"],
-      "locatorHints": ["dynamic time control inside opened date panel"],
-      "hazards": ["may be implemented as button/segment rather than semantic tab"]
+      "aliases": [
+        "動態時間",
+        "動態",
+        "動態區間",
+        "dynamic time"
+      ],
+      "supportedActions": [
+        "click",
+        "select",
+        "assertSelected",
+        "assertStateChanged"
+      ],
+      "stateAttributes": [
+        "visibleText",
+        "selected",
+        "aria-selected",
+        "className"
+      ],
+      "evidenceObjects": [
+        "dateRange.timeTypeTab.state"
+      ],
+      "locatorHints": [
+        "dynamic time control inside opened date panel"
+      ],
+      "hazards": [
+        "may be implemented as button/segment rather than semantic tab"
+      ]
     },
     {
       "id": "dateRange.timeTypeTab.static",
@@ -647,12 +1679,35 @@
       "component": "dateRange.timeTypeTab.static",
       "objectType": "tabOrSegment",
       "purpose": "Static time type control inside the date range panel.",
-      "aliases": ["靜態時間", "靜態", "static time"],
-      "supportedActions": ["click", "select", "assertSelected", "assertStateChanged", "assertDisabled"],
-      "stateAttributes": ["visibleText", "selected", "aria-selected", "className", "disabled", "aria-disabled"],
-      "evidenceObjects": ["dateRange.timeTypeTab.state"],
-      "locatorHints": ["static time control inside opened date panel"],
-      "hazards": ["if real click does not switch selected state, frontend flow cases should judge by authored scope"]
+      "aliases": [
+        "靜態時間",
+        "靜態",
+        "static time"
+      ],
+      "supportedActions": [
+        "click",
+        "select",
+        "assertSelected",
+        "assertStateChanged",
+        "assertDisabled"
+      ],
+      "stateAttributes": [
+        "visibleText",
+        "selected",
+        "aria-selected",
+        "className",
+        "disabled",
+        "aria-disabled"
+      ],
+      "evidenceObjects": [
+        "dateRange.timeTypeTab.state"
+      ],
+      "locatorHints": [
+        "static time control inside opened date panel"
+      ],
+      "hazards": [
+        "if real click does not switch selected state, frontend flow cases should judge by authored scope"
+      ]
     },
     {
       "id": "dateRange.preset.yesterday",
@@ -660,12 +1715,31 @@
       "component": "dateRange.preset",
       "objectType": "presetButton",
       "purpose": "Yesterday preset inside the date range panel.",
-      "aliases": ["昨日", "yesterday"],
-      "supportedActions": ["click", "select", "assertSelected", "assertStateChanged"],
-      "stateAttributes": ["visibleText", "selected", "className"],
-      "evidenceObjects": ["dateRange.panel.state", "dateRange.cancelFlow.state"],
-      "locatorHints": ["preset button text 昨日 inside opened date panel"],
-      "hazards": ["used as a temporary change in cancel-flow assertions"]
+      "aliases": [
+        "昨日",
+        "yesterday"
+      ],
+      "supportedActions": [
+        "click",
+        "select",
+        "assertSelected",
+        "assertStateChanged"
+      ],
+      "stateAttributes": [
+        "visibleText",
+        "selected",
+        "className"
+      ],
+      "evidenceObjects": [
+        "dateRange.panel.state",
+        "dateRange.cancelFlow.state"
+      ],
+      "locatorHints": [
+        "preset button text 昨日 inside opened date panel"
+      ],
+      "hazards": [
+        "used as a temporary change in cancel-flow assertions"
+      ]
     },
     {
       "id": "dateRange.preset.today",
@@ -673,12 +1747,32 @@
       "component": "dateRange.preset",
       "objectType": "presetButton",
       "purpose": "Today preset inside the date range panel.",
-      "aliases": ["今日", "today"],
-      "supportedActions": ["click", "select", "assertSelected", "assertStateChanged", "assertRequest"],
-      "stateAttributes": ["visibleText", "selected", "className"],
-      "evidenceObjects": ["dateRange.panel.state", "preview.result"],
-      "locatorHints": ["preset button text 今日 inside opened date panel"],
-      "hazards": ["today is relative to the run date; result judgment must compute absolute expected dates from run context"]
+      "aliases": [
+        "今日",
+        "today"
+      ],
+      "supportedActions": [
+        "click",
+        "select",
+        "assertSelected",
+        "assertStateChanged",
+        "assertRequest"
+      ],
+      "stateAttributes": [
+        "visibleText",
+        "selected",
+        "className"
+      ],
+      "evidenceObjects": [
+        "dateRange.panel.state",
+        "preview.result"
+      ],
+      "locatorHints": [
+        "preset button text 今日 inside opened date panel"
+      ],
+      "hazards": [
+        "today is relative to the run date; result judgment must compute absolute expected dates from run context"
+      ]
     },
     {
       "id": "dateRange.preset.lastWeek",
@@ -686,12 +1780,31 @@
       "component": "dateRange.preset",
       "objectType": "presetButton",
       "purpose": "Last week preset inside the date range panel.",
-      "aliases": ["上週", "last week"],
-      "supportedActions": ["click", "select", "assertSelected", "assertStateChanged"],
-      "stateAttributes": ["visibleText", "selected", "className"],
-      "evidenceObjects": ["dateRange.panel.state", "dateRange.presetSwitch.state"],
-      "locatorHints": ["preset button text 上週 inside opened date panel"],
-      "hazards": ["paired preset tests must capture after-label evidence for each selected preset"]
+      "aliases": [
+        "上週",
+        "last week"
+      ],
+      "supportedActions": [
+        "click",
+        "select",
+        "assertSelected",
+        "assertStateChanged"
+      ],
+      "stateAttributes": [
+        "visibleText",
+        "selected",
+        "className"
+      ],
+      "evidenceObjects": [
+        "dateRange.panel.state",
+        "dateRange.presetSwitch.state"
+      ],
+      "locatorHints": [
+        "preset button text 上週 inside opened date panel"
+      ],
+      "hazards": [
+        "paired preset tests must capture after-label evidence for each selected preset"
+      ]
     },
     {
       "id": "dateRange.preset.currentWeek",
@@ -699,12 +1812,32 @@
       "component": "dateRange.preset",
       "objectType": "presetButton",
       "purpose": "Current week preset inside the date range panel.",
-      "aliases": ["本週", "current week", "this week"],
-      "supportedActions": ["click", "select", "assertSelected", "assertStateChanged"],
-      "stateAttributes": ["visibleText", "selected", "className"],
-      "evidenceObjects": ["dateRange.panel.state", "dateRange.presetSwitch.state"],
-      "locatorHints": ["preset button text 本週 inside opened date panel"],
-      "hazards": ["paired preset tests must capture after-label evidence for each selected preset"]
+      "aliases": [
+        "本週",
+        "current week",
+        "this week"
+      ],
+      "supportedActions": [
+        "click",
+        "select",
+        "assertSelected",
+        "assertStateChanged"
+      ],
+      "stateAttributes": [
+        "visibleText",
+        "selected",
+        "className"
+      ],
+      "evidenceObjects": [
+        "dateRange.panel.state",
+        "dateRange.presetSwitch.state"
+      ],
+      "locatorHints": [
+        "preset button text 本週 inside opened date panel"
+      ],
+      "hazards": [
+        "paired preset tests must capture after-label evidence for each selected preset"
+      ]
     },
     {
       "id": "dateRange.preset.lastMonth",
@@ -712,12 +1845,33 @@
       "component": "dateRange.preset",
       "objectType": "presetButton",
       "purpose": "Last month preset inside the date range panel.",
-      "aliases": ["上月", "last month"],
-      "supportedActions": ["click", "select", "assertSelected", "assertStateChanged", "assertRequest"],
-      "stateAttributes": ["visibleText", "selected", "className"],
-      "evidenceObjects": ["dateRange.panel.state", "dateRange.presetSwitch.state", "preview.result"],
-      "locatorHints": ["preset button text 上月 inside opened date panel"],
-      "hazards": ["month length varies; expected row count must use the actual previous calendar month"]
+      "aliases": [
+        "上月",
+        "last month"
+      ],
+      "supportedActions": [
+        "click",
+        "select",
+        "assertSelected",
+        "assertStateChanged",
+        "assertRequest"
+      ],
+      "stateAttributes": [
+        "visibleText",
+        "selected",
+        "className"
+      ],
+      "evidenceObjects": [
+        "dateRange.panel.state",
+        "dateRange.presetSwitch.state",
+        "preview.result"
+      ],
+      "locatorHints": [
+        "preset button text 上月 inside opened date panel"
+      ],
+      "hazards": [
+        "month length varies; expected row count must use the actual previous calendar month"
+      ]
     },
     {
       "id": "dateRange.preset.currentMonth",
@@ -725,12 +1879,34 @@
       "component": "dateRange.preset",
       "objectType": "presetButton",
       "purpose": "Current month preset inside the date range panel.",
-      "aliases": ["本月", "current month", "this month"],
-      "supportedActions": ["click", "select", "assertSelected", "assertStateChanged", "assertRequest"],
-      "stateAttributes": ["visibleText", "selected", "className"],
-      "evidenceObjects": ["dateRange.panel.state", "dateRange.presetSwitch.state", "preview.result"],
-      "locatorHints": ["preset button text 本月 inside opened date panel"],
-      "hazards": ["expected range ends at run date, not end of month"]
+      "aliases": [
+        "本月",
+        "current month",
+        "this month"
+      ],
+      "supportedActions": [
+        "click",
+        "select",
+        "assertSelected",
+        "assertStateChanged",
+        "assertRequest"
+      ],
+      "stateAttributes": [
+        "visibleText",
+        "selected",
+        "className"
+      ],
+      "evidenceObjects": [
+        "dateRange.panel.state",
+        "dateRange.presetSwitch.state",
+        "preview.result"
+      ],
+      "locatorHints": [
+        "preset button text 本月 inside opened date panel"
+      ],
+      "hazards": [
+        "expected range ends at run date, not end of month"
+      ]
     },
     {
       "id": "dateRange.preset.past7Days",
@@ -738,12 +1914,33 @@
       "component": "dateRange.preset",
       "objectType": "presetButton",
       "purpose": "Past 7 days preset that ends at yesterday.",
-      "aliases": ["過去7天", "過去 7 天", "past 7 days"],
-      "supportedActions": ["click", "select", "assertSelected", "assertStateChanged", "assertRequest"],
-      "stateAttributes": ["visibleText", "selected", "className"],
-      "evidenceObjects": ["dateRange.panel.state", "preview.result"],
-      "locatorHints": ["preset button text 過去 7 天 inside opened date panel"],
-      "hazards": ["must not be normalized to 最近 7 天; these differ by one day"]
+      "aliases": [
+        "過去7天",
+        "過去 7 天",
+        "past 7 days"
+      ],
+      "supportedActions": [
+        "click",
+        "select",
+        "assertSelected",
+        "assertStateChanged",
+        "assertRequest"
+      ],
+      "stateAttributes": [
+        "visibleText",
+        "selected",
+        "className"
+      ],
+      "evidenceObjects": [
+        "dateRange.panel.state",
+        "preview.result"
+      ],
+      "locatorHints": [
+        "preset button text 過去 7 天 inside opened date panel"
+      ],
+      "hazards": [
+        "must not be normalized to 最近 7 天; these differ by one day"
+      ]
     },
     {
       "id": "dateRange.preset.recent7Days",
@@ -751,12 +1948,33 @@
       "component": "dateRange.preset",
       "objectType": "presetButton",
       "purpose": "Recent 7 days preset that ends at today.",
-      "aliases": ["最近7天", "最近 7 天", "recent 7 days"],
-      "supportedActions": ["click", "select", "assertSelected", "assertStateChanged", "assertRequest"],
-      "stateAttributes": ["visibleText", "selected", "className"],
-      "evidenceObjects": ["dateRange.panel.state", "preview.result"],
-      "locatorHints": ["preset button text 最近 7 天 inside opened date panel"],
-      "hazards": ["must not be normalized to 過去 7 天; these differ by one day"]
+      "aliases": [
+        "最近7天",
+        "最近 7 天",
+        "recent 7 days"
+      ],
+      "supportedActions": [
+        "click",
+        "select",
+        "assertSelected",
+        "assertStateChanged",
+        "assertRequest"
+      ],
+      "stateAttributes": [
+        "visibleText",
+        "selected",
+        "className"
+      ],
+      "evidenceObjects": [
+        "dateRange.panel.state",
+        "preview.result"
+      ],
+      "locatorHints": [
+        "preset button text 最近 7 天 inside opened date panel"
+      ],
+      "hazards": [
+        "must not be normalized to 過去 7 天; these differ by one day"
+      ]
     },
     {
       "id": "dateRange.preset.fromDateToYesterday",
@@ -764,12 +1982,34 @@
       "component": "dateRange.preset",
       "objectType": "presetButton",
       "purpose": "Custom dynamic preset from a chosen date to yesterday.",
-      "aliases": ["自某日至昨日", "自訂起日至昨日", "from date to yesterday"],
-      "supportedActions": ["click", "select", "assertSelected", "assertStateChanged", "assertRequest"],
-      "stateAttributes": ["visibleText", "selected", "className", "startDateValue"],
-      "evidenceObjects": ["dateRange.panel.state", "preview.result"],
-      "locatorHints": ["preset button text 自某日至昨日 inside opened date panel"],
-      "hazards": ["requires entering a start date after selecting the preset"]
+      "aliases": [
+        "自某日至昨日",
+        "自訂起日至昨日",
+        "from date to yesterday"
+      ],
+      "supportedActions": [
+        "click",
+        "select",
+        "assertSelected",
+        "assertStateChanged",
+        "assertRequest"
+      ],
+      "stateAttributes": [
+        "visibleText",
+        "selected",
+        "className",
+        "startDateValue"
+      ],
+      "evidenceObjects": [
+        "dateRange.panel.state",
+        "preview.result"
+      ],
+      "locatorHints": [
+        "preset button text 自某日至昨日 inside opened date panel"
+      ],
+      "hazards": [
+        "requires entering a start date after selecting the preset"
+      ]
     },
     {
       "id": "dateRange.preset.fromDateToToday",
@@ -777,12 +2017,34 @@
       "component": "dateRange.preset",
       "objectType": "presetButton",
       "purpose": "Custom dynamic preset from a chosen date to today.",
-      "aliases": ["自某日至今", "自訂起日至今", "from date to today"],
-      "supportedActions": ["click", "select", "assertSelected", "assertStateChanged", "assertRequest"],
-      "stateAttributes": ["visibleText", "selected", "className", "startDateValue"],
-      "evidenceObjects": ["dateRange.panel.state", "preview.result"],
-      "locatorHints": ["preset button text 自某日至今 inside opened date panel"],
-      "hazards": ["requires entering a start date after selecting the preset"]
+      "aliases": [
+        "自某日至今",
+        "自訂起日至今",
+        "from date to today"
+      ],
+      "supportedActions": [
+        "click",
+        "select",
+        "assertSelected",
+        "assertStateChanged",
+        "assertRequest"
+      ],
+      "stateAttributes": [
+        "visibleText",
+        "selected",
+        "className",
+        "startDateValue"
+      ],
+      "evidenceObjects": [
+        "dateRange.panel.state",
+        "preview.result"
+      ],
+      "locatorHints": [
+        "preset button text 自某日至今 inside opened date panel"
+      ],
+      "hazards": [
+        "requires entering a start date after selecting the preset"
+      ]
     },
     {
       "id": "dateRange.preset.past30Days",
@@ -790,12 +2052,33 @@
       "component": "dateRange.preset",
       "objectType": "presetButton",
       "purpose": "Past 30 days preset inside the date range panel.",
-      "aliases": ["過去30天", "過去 30 天", "past 30 days"],
-      "supportedActions": ["click", "select", "assertSelected", "assertStateChanged", "assertRequest"],
-      "stateAttributes": ["visibleText", "selected", "className"],
-      "evidenceObjects": ["dateRange.panel.state", "preview.result"],
-      "locatorHints": ["preset button text 過去 30 天 inside opened date panel"],
-      "hazards": ["spacing in visible label may differ from testcase prose; use alias normalization for locator only, not result judgment"]
+      "aliases": [
+        "過去30天",
+        "過去 30 天",
+        "past 30 days"
+      ],
+      "supportedActions": [
+        "click",
+        "select",
+        "assertSelected",
+        "assertStateChanged",
+        "assertRequest"
+      ],
+      "stateAttributes": [
+        "visibleText",
+        "selected",
+        "className"
+      ],
+      "evidenceObjects": [
+        "dateRange.panel.state",
+        "preview.result"
+      ],
+      "locatorHints": [
+        "preset button text 過去 30 天 inside opened date panel"
+      ],
+      "hazards": [
+        "spacing in visible label may differ from testcase prose; use alias normalization for locator only, not result judgment"
+      ]
     },
     {
       "id": "dateRange.preset.recent30Days",
@@ -803,12 +2086,33 @@
       "component": "dateRange.preset",
       "objectType": "presetButton",
       "purpose": "Recent 30 days preset inside the date range panel.",
-      "aliases": ["最近30天", "最近 30 天", "recent 30 days"],
-      "supportedActions": ["click", "select", "assertSelected", "assertStateChanged", "assertRequest"],
-      "stateAttributes": ["visibleText", "selected", "className"],
-      "evidenceObjects": ["dateRange.panel.state", "preview.result"],
-      "locatorHints": ["preset button text 最近 30 天 inside opened date panel"],
-      "hazards": ["paired preset comparisons should compare payload/date result, not only visible label"]
+      "aliases": [
+        "最近30天",
+        "最近 30 天",
+        "recent 30 days"
+      ],
+      "supportedActions": [
+        "click",
+        "select",
+        "assertSelected",
+        "assertStateChanged",
+        "assertRequest"
+      ],
+      "stateAttributes": [
+        "visibleText",
+        "selected",
+        "className"
+      ],
+      "evidenceObjects": [
+        "dateRange.panel.state",
+        "preview.result"
+      ],
+      "locatorHints": [
+        "preset button text 最近 30 天 inside opened date panel"
+      ],
+      "hazards": [
+        "paired preset comparisons should compare payload/date result, not only visible label"
+      ]
     },
     {
       "id": "dateRange.staticStartInput",
@@ -816,12 +2120,32 @@
       "component": "dateRange.staticDateInput",
       "objectType": "dateInput",
       "purpose": "Static date start input after switching the date panel to static time mode.",
-      "aliases": ["靜態起日", "開始日期", "start date"],
-      "supportedActions": ["type", "select", "assertValue", "assertStateChanged"],
-      "stateAttributes": ["value", "visible", "disabled"],
-      "evidenceObjects": ["dateRange.timeTypeTab.state", "dateRange.panel.state"],
-      "locatorHints": ["start date input inside static date panel mode"],
-      "hazards": ["must only be used after real UI evidence shows static mode is selected"]
+      "aliases": [
+        "靜態起日",
+        "開始日期",
+        "start date"
+      ],
+      "supportedActions": [
+        "type",
+        "select",
+        "assertValue",
+        "assertStateChanged"
+      ],
+      "stateAttributes": [
+        "value",
+        "visible",
+        "disabled"
+      ],
+      "evidenceObjects": [
+        "dateRange.timeTypeTab.state",
+        "dateRange.panel.state"
+      ],
+      "locatorHints": [
+        "start date input inside static date panel mode"
+      ],
+      "hazards": [
+        "must only be used after real UI evidence shows static mode is selected"
+      ]
     },
     {
       "id": "dateRange.staticEndInput",
@@ -829,12 +2153,32 @@
       "component": "dateRange.staticDateInput",
       "objectType": "dateInput",
       "purpose": "Static date end input after switching the date panel to static time mode.",
-      "aliases": ["靜態訖日", "結束日期", "end date"],
-      "supportedActions": ["type", "select", "assertValue", "assertStateChanged"],
-      "stateAttributes": ["value", "visible", "disabled"],
-      "evidenceObjects": ["dateRange.timeTypeTab.state", "dateRange.panel.state"],
-      "locatorHints": ["end date input inside static date panel mode"],
-      "hazards": ["must only be used after real UI evidence shows static mode is selected"]
+      "aliases": [
+        "靜態訖日",
+        "結束日期",
+        "end date"
+      ],
+      "supportedActions": [
+        "type",
+        "select",
+        "assertValue",
+        "assertStateChanged"
+      ],
+      "stateAttributes": [
+        "value",
+        "visible",
+        "disabled"
+      ],
+      "evidenceObjects": [
+        "dateRange.timeTypeTab.state",
+        "dateRange.panel.state"
+      ],
+      "locatorHints": [
+        "end date input inside static date panel mode"
+      ],
+      "hazards": [
+        "must only be used after real UI evidence shows static mode is selected"
+      ]
     },
     {
       "id": "dateRange.dynamicStartOffsetInput",
@@ -842,12 +2186,33 @@
       "component": "dateRange.dynamicOffsetInput",
       "objectType": "numberInput",
       "purpose": "Dynamic start offset input inside the date range panel.",
-      "aliases": ["動態起日天數", "起日期or天數 設置", "起日期 or 天數設置", "start offset days"],
-      "supportedActions": ["type", "select", "assertValue", "assertStateChanged"],
-      "stateAttributes": ["value", "visible", "disabled", "unitLabel"],
-      "evidenceObjects": ["dateRange.panel.state"],
-      "locatorHints": ["dynamic start-side date/day input inside opened date panel"],
-      "hazards": ["offset inputs are relative to run date and must be converted to absolute dates for result judgment"]
+      "aliases": [
+        "動態起日天數",
+        "起日期or天數 設置",
+        "起日期 or 天數設置",
+        "start offset days"
+      ],
+      "supportedActions": [
+        "type",
+        "select",
+        "assertValue",
+        "assertStateChanged"
+      ],
+      "stateAttributes": [
+        "value",
+        "visible",
+        "disabled",
+        "unitLabel"
+      ],
+      "evidenceObjects": [
+        "dateRange.panel.state"
+      ],
+      "locatorHints": [
+        "dynamic start-side date/day input inside opened date panel"
+      ],
+      "hazards": [
+        "offset inputs are relative to run date and must be converted to absolute dates for result judgment"
+      ]
     },
     {
       "id": "dateRange.dynamicEndOffsetInput",
@@ -855,12 +2220,33 @@
       "component": "dateRange.dynamicOffsetInput",
       "objectType": "numberInput",
       "purpose": "Dynamic end offset input inside the date range panel.",
-      "aliases": ["動態訖日天數", "訖日期or天數 設置", "訖日期 or 天數設置", "end offset days"],
-      "supportedActions": ["type", "select", "assertValue", "assertStateChanged"],
-      "stateAttributes": ["value", "visible", "disabled", "unitLabel"],
-      "evidenceObjects": ["dateRange.panel.state"],
-      "locatorHints": ["dynamic end-side date/day input inside opened date panel"],
-      "hazards": ["offset inputs are relative to run date and must be converted to absolute dates for result judgment"]
+      "aliases": [
+        "動態訖日天數",
+        "訖日期or天數 設置",
+        "訖日期 or 天數設置",
+        "end offset days"
+      ],
+      "supportedActions": [
+        "type",
+        "select",
+        "assertValue",
+        "assertStateChanged"
+      ],
+      "stateAttributes": [
+        "value",
+        "visible",
+        "disabled",
+        "unitLabel"
+      ],
+      "evidenceObjects": [
+        "dateRange.panel.state"
+      ],
+      "locatorHints": [
+        "dynamic end-side date/day input inside opened date panel"
+      ],
+      "hazards": [
+        "offset inputs are relative to run date and must be converted to absolute dates for result judgment"
+      ]
     },
     {
       "id": "dateRange.action.cancel",
@@ -868,12 +2254,30 @@
       "component": "dateRange.action.cancel",
       "objectType": "button",
       "purpose": "Cancel button in the date range panel.",
-      "aliases": ["日期面板取消", "區間設置工具取消", "date panel cancel"],
-      "supportedActions": ["click", "cancel", "assertHidden", "assertStateUnchanged"],
-      "stateAttributes": ["visibleText", "enabled"],
-      "evidenceObjects": ["dateRange.cancelFlow.state"],
-      "locatorHints": ["取消 button in the date panel footer"],
-      "hazards": ["cancel should close panel without applying temporary date changes"]
+      "aliases": [
+        "日期面板取消",
+        "區間設置工具取消",
+        "date panel cancel"
+      ],
+      "supportedActions": [
+        "click",
+        "cancel",
+        "assertHidden",
+        "assertStateUnchanged"
+      ],
+      "stateAttributes": [
+        "visibleText",
+        "enabled"
+      ],
+      "evidenceObjects": [
+        "dateRange.cancelFlow.state"
+      ],
+      "locatorHints": [
+        "取消 button in the date panel footer"
+      ],
+      "hazards": [
+        "cancel should close panel without applying temporary date changes"
+      ]
     },
     {
       "id": "dateRange.action.confirm",
@@ -881,12 +2285,32 @@
       "component": "dateRange.action.confirm",
       "objectType": "button",
       "purpose": "Confirm button in the date range panel.",
-      "aliases": ["日期面板確定", "日期面板確認", "區間設置工具確定", "區間設置工具確認", "date panel confirm"],
-      "supportedActions": ["click", "confirm", "assertStateChanged"],
-      "stateAttributes": ["visibleText", "enabled"],
-      "evidenceObjects": ["dateRange.panel.state", "dateRange.timeTypeTab.state"],
-      "locatorHints": ["確定 button in the date panel footer"],
-      "hazards": ["confirm applies the current date range selection"]
+      "aliases": [
+        "日期面板確定",
+        "日期面板確認",
+        "區間設置工具確定",
+        "區間設置工具確認",
+        "date panel confirm"
+      ],
+      "supportedActions": [
+        "click",
+        "confirm",
+        "assertStateChanged"
+      ],
+      "stateAttributes": [
+        "visibleText",
+        "enabled"
+      ],
+      "evidenceObjects": [
+        "dateRange.panel.state",
+        "dateRange.timeTypeTab.state"
+      ],
+      "locatorHints": [
+        "確定 button in the date panel footer"
+      ],
+      "hazards": [
+        "confirm applies the current date range selection"
+      ]
     },
     {
       "id": "validation.toast",
@@ -894,12 +2318,42 @@
       "component": "validation.messageArea",
       "objectType": "toastOrMessage",
       "purpose": "Validation message after invalid editor action.",
-      "aliases": ["欄位未設置完成", "第 N 欄位，欄位未設置完成", "超過 90 天上限", "不可超過 20 個字", "請勿使用符號與特殊字元", "僅可輸入文字與數字", "名稱已存在", "validation toast", "防呆提示"],
-      "supportedActions": ["read", "assertToast", "assertText", "assertNoRequest"],
-      "stateAttributes": ["visibleText", "visibleMessages", "messagePattern", "rowIndexes", "visible", "requestDelta"],
-      "evidenceObjects": ["validation.message.state"],
-      "locatorHints": ["toast/status/body text after invalid calculation click", "message pattern 第 {rowIndex} 欄位，欄位未設置完成"],
-      "hazards": ["toast is transient and must be captured in the same interaction window", "multiple incomplete rows produce multiple validation toasts with different row numbers"]
+      "aliases": [
+        "欄位未設置完成",
+        "第 N 欄位，欄位未設置完成",
+        "超過 90 天上限",
+        "不可超過 20 個字",
+        "請勿使用符號與特殊字元",
+        "僅可輸入文字與數字",
+        "名稱已存在",
+        "validation toast",
+        "防呆提示"
+      ],
+      "supportedActions": [
+        "read",
+        "assertToast",
+        "assertText",
+        "assertNoRequest"
+      ],
+      "stateAttributes": [
+        "visibleText",
+        "visibleMessages",
+        "messagePattern",
+        "rowIndexes",
+        "visible",
+        "requestDelta"
+      ],
+      "evidenceObjects": [
+        "validation.message.state"
+      ],
+      "locatorHints": [
+        "toast/status/body text after invalid calculation click",
+        "message pattern 第 {rowIndex} 欄位，欄位未設置完成"
+      ],
+      "hazards": [
+        "toast is transient and must be captured in the same interaction window",
+        "multiple incomplete rows produce multiple validation toasts with different row numbers"
+      ]
     },
     {
       "id": "editorToolbar.downloadButton",
@@ -907,12 +2361,33 @@
       "component": "editorToolbar.downloadButton",
       "objectType": "iconButton",
       "purpose": "Editor top-right download/export button after calculation.",
-      "aliases": ["editor 下載", "右上下載", "download after calculate"],
-      "supportedActions": ["click", "download", "assertDownload", "assertToast"],
-      "stateAttributes": ["disabled", "aria-disabled", "visible", "enabled"],
-      "evidenceObjects": ["editorToolbar.download.state", "download.toast.state"],
-      "locatorHints": ["editor top-right icon button with download semantics"],
-      "hazards": ["requires valid setup and calculation before download should be enabled"]
+      "aliases": [
+        "editor 下載",
+        "右上下載",
+        "download after calculate"
+      ],
+      "supportedActions": [
+        "click",
+        "download",
+        "assertDownload",
+        "assertToast"
+      ],
+      "stateAttributes": [
+        "disabled",
+        "aria-disabled",
+        "visible",
+        "enabled"
+      ],
+      "evidenceObjects": [
+        "editorToolbar.download.state",
+        "download.toast.state"
+      ],
+      "locatorHints": [
+        "editor top-right icon button with download semantics"
+      ],
+      "hazards": [
+        "requires valid setup and calculation before download should be enabled"
+      ]
     },
     {
       "id": "editorToolbar.saveButton",
@@ -920,12 +2395,31 @@
       "component": "editorToolbar.saveButton",
       "objectType": "button",
       "purpose": "Editor save-report button that opens the save/copy modal.",
-      "aliases": ["儲存報表", "save report"],
-      "supportedActions": ["click", "open", "assertEnabled", "assertDisabled"],
-      "stateAttributes": ["visibleText", "enabled", "disabled"],
-      "evidenceObjects": ["saveModal.cancelFlow.state", "saveModal.saveFlow.state"],
-      "locatorHints": ["editor top-right/button text 儲存報表"],
-      "hazards": ["opening is safe; confirming save can create or overwrite a report and must follow Tool Bridge policy"]
+      "aliases": [
+        "儲存報表",
+        "save report"
+      ],
+      "supportedActions": [
+        "click",
+        "open",
+        "assertEnabled",
+        "assertDisabled"
+      ],
+      "stateAttributes": [
+        "visibleText",
+        "enabled",
+        "disabled"
+      ],
+      "evidenceObjects": [
+        "saveModal.cancelFlow.state",
+        "saveModal.saveFlow.state"
+      ],
+      "locatorHints": [
+        "editor top-right/button text 儲存報表"
+      ],
+      "hazards": [
+        "opening is safe; confirming save can create or overwrite a report and must follow Tool Bridge policy"
+      ]
     },
     {
       "id": "saveModal.reportNameInput",
@@ -933,12 +2427,31 @@
       "component": "save.modal",
       "objectType": "textInput",
       "purpose": "Report-name input inside the save report modal.",
-      "aliases": ["報表名稱", "save modal name input"],
-      "supportedActions": ["type", "assertValue", "read"],
-      "stateAttributes": ["value", "placeholder", "visible", "disabled"],
-      "evidenceObjects": ["saveModal.cancelFlow.state", "saveModal.saveFlow.state"],
-      "locatorHints": ["visible text input inside opened save modal, excluding project-name inputs"],
-      "hazards": ["input value is case-specific; cancel-flow test must not submit it"]
+      "aliases": [
+        "報表名稱",
+        "save modal name input"
+      ],
+      "supportedActions": [
+        "type",
+        "assertValue",
+        "read"
+      ],
+      "stateAttributes": [
+        "value",
+        "placeholder",
+        "visible",
+        "disabled"
+      ],
+      "evidenceObjects": [
+        "saveModal.cancelFlow.state",
+        "saveModal.saveFlow.state"
+      ],
+      "locatorHints": [
+        "visible text input inside opened save modal, excluding project-name inputs"
+      ],
+      "hazards": [
+        "input value is case-specific; cancel-flow test must not submit it"
+      ]
     },
     {
       "id": "saveModal.cancelButton",
@@ -946,12 +2459,29 @@
       "component": "save.modal",
       "objectType": "button",
       "purpose": "Cancel button inside the save report modal.",
-      "aliases": ["儲存取消", "save modal cancel"],
-      "supportedActions": ["click", "cancel", "assertHidden", "assertStateUnchanged"],
-      "stateAttributes": ["visibleText", "enabled"],
-      "evidenceObjects": ["saveModal.cancelFlow.state"],
-      "locatorHints": ["取消 button inside opened save modal"],
-      "hazards": ["cancel should close the modal and must not create a report row"]
+      "aliases": [
+        "儲存取消",
+        "save modal cancel"
+      ],
+      "supportedActions": [
+        "click",
+        "cancel",
+        "assertHidden",
+        "assertStateUnchanged"
+      ],
+      "stateAttributes": [
+        "visibleText",
+        "enabled"
+      ],
+      "evidenceObjects": [
+        "saveModal.cancelFlow.state"
+      ],
+      "locatorHints": [
+        "取消 button inside opened save modal"
+      ],
+      "hazards": [
+        "cancel should close the modal and must not create a report row"
+      ]
     },
     {
       "id": "saveModal.saveButton",
@@ -959,12 +2489,32 @@
       "component": "save.modal",
       "objectType": "button",
       "purpose": "Save/confirm button inside the save report modal.",
-      "aliases": ["儲存 modal 儲存", "報表儲存按鈕", "save modal save"],
-      "supportedActions": ["confirm", "create", "assertEnabled", "assertDisabled"],
-      "stateAttributes": ["visibleText", "enabled", "disabled"],
-      "evidenceObjects": ["saveModal.saveFlow.state", "save.toast.state"],
-      "locatorHints": ["儲存/確認 button inside opened save modal"],
-      "hazards": ["creates a report and must follow Tool Bridge policy"]
+      "aliases": [
+        "儲存 modal 儲存",
+        "報表儲存按鈕",
+        "save modal save"
+      ],
+      "supportedActions": [
+        "confirm",
+        "create",
+        "assertEnabled",
+        "assertDisabled"
+      ],
+      "stateAttributes": [
+        "visibleText",
+        "enabled",
+        "disabled"
+      ],
+      "evidenceObjects": [
+        "saveModal.saveFlow.state",
+        "save.toast.state"
+      ],
+      "locatorHints": [
+        "儲存/確認 button inside opened save modal"
+      ],
+      "hazards": [
+        "creates a report and must follow Tool Bridge policy"
+      ]
     },
     {
       "id": "editorToolbar.copyButton",
@@ -972,12 +2522,30 @@
       "component": "editorToolbar.copyButton",
       "objectType": "button",
       "purpose": "Existing-report editor action for opening the copy-report modal.",
-      "aliases": ["複製副本", "copy report"],
-      "supportedActions": ["click", "open", "create"],
-      "stateAttributes": ["visibleText", "enabled", "disabled"],
-      "evidenceObjects": ["copyModal.cancelFlow.state", "copyModal.saveFlow.state"],
-      "locatorHints": ["editor button/text 複製副本 visible only for existing reports"],
-      "hazards": ["opening copy modal is safe; saving creates a report and requires Tool Bridge policy"]
+      "aliases": [
+        "複製副本",
+        "copy report"
+      ],
+      "supportedActions": [
+        "click",
+        "open",
+        "create"
+      ],
+      "stateAttributes": [
+        "visibleText",
+        "enabled",
+        "disabled"
+      ],
+      "evidenceObjects": [
+        "copyModal.cancelFlow.state",
+        "copyModal.saveFlow.state"
+      ],
+      "locatorHints": [
+        "editor button/text 複製副本 visible only for existing reports"
+      ],
+      "hazards": [
+        "opening copy modal is safe; saving creates a report and requires Tool Bridge policy"
+      ]
     },
     {
       "id": "copyModal.reportNameInput",
@@ -985,12 +2553,31 @@
       "component": "copy.modal",
       "objectType": "textInput",
       "purpose": "Report-name input inside the copy-report modal.",
-      "aliases": ["副本名稱", "copy report name"],
-      "supportedActions": ["read", "type", "assertValue", "assertText"],
-      "stateAttributes": ["value", "placeholder", "visible"],
-      "evidenceObjects": ["copyModal.cancelFlow.state", "copyModal.saveFlow.state"],
-      "locatorHints": ["visible text input inside opened copy modal"],
-      "hazards": ["default value should include the source report name plus 副本 when the UI supports it"]
+      "aliases": [
+        "副本名稱",
+        "copy report name"
+      ],
+      "supportedActions": [
+        "read",
+        "type",
+        "assertValue",
+        "assertText"
+      ],
+      "stateAttributes": [
+        "value",
+        "placeholder",
+        "visible"
+      ],
+      "evidenceObjects": [
+        "copyModal.cancelFlow.state",
+        "copyModal.saveFlow.state"
+      ],
+      "locatorHints": [
+        "visible text input inside opened copy modal"
+      ],
+      "hazards": [
+        "default value should include the source report name plus 副本 when the UI supports it"
+      ]
     },
     {
       "id": "copyModal.projectSelect",
@@ -998,12 +2585,30 @@
       "component": "copy.modal",
       "objectType": "pickerControl",
       "purpose": "Project selector/default project display in the copy-report modal.",
-      "aliases": ["儲存專案", "請選擇專案", "copy modal project"],
-      "supportedActions": ["read", "select", "assertText"],
-      "stateAttributes": ["visibleText", "selectedValue"],
-      "evidenceObjects": ["copyModal.cancelFlow.state", "copyModal.saveFlow.state"],
-      "locatorHints": ["project select text inside opened copy modal"],
-      "hazards": ["saving a copy into another project changes where list verification must look"]
+      "aliases": [
+        "儲存專案",
+        "請選擇專案",
+        "copy modal project"
+      ],
+      "supportedActions": [
+        "read",
+        "select",
+        "assertText"
+      ],
+      "stateAttributes": [
+        "visibleText",
+        "selectedValue"
+      ],
+      "evidenceObjects": [
+        "copyModal.cancelFlow.state",
+        "copyModal.saveFlow.state"
+      ],
+      "locatorHints": [
+        "project select text inside opened copy modal"
+      ],
+      "hazards": [
+        "saving a copy into another project changes where list verification must look"
+      ]
     },
     {
       "id": "copyModal.hintText",
@@ -1011,12 +2616,27 @@
       "component": "copy.modal",
       "objectType": "staticText",
       "purpose": "Copy-modal hint or rule text about copy name/project behavior.",
-      "aliases": ["複製提示", "副本提示", "儲存規則"],
-      "supportedActions": ["read", "assertText"],
-      "stateAttributes": ["visibleText"],
-      "evidenceObjects": ["copyModal.cancelFlow.state"],
-      "locatorHints": ["visible modal body text after clicking 複製副本"],
-      "hazards": ["wording may be absent in current UI; absence should be judged by testcase scope"]
+      "aliases": [
+        "複製提示",
+        "副本提示",
+        "儲存規則"
+      ],
+      "supportedActions": [
+        "read",
+        "assertText"
+      ],
+      "stateAttributes": [
+        "visibleText"
+      ],
+      "evidenceObjects": [
+        "copyModal.cancelFlow.state"
+      ],
+      "locatorHints": [
+        "visible modal body text after clicking 複製副本"
+      ],
+      "hazards": [
+        "wording may be absent in current UI; absence should be judged by testcase scope"
+      ]
     },
     {
       "id": "copyModal.cancelButton",
@@ -1024,12 +2644,29 @@
       "component": "copy.modal",
       "objectType": "button",
       "purpose": "Cancel button inside the copy-report modal.",
-      "aliases": ["複製取消", "copy modal cancel"],
-      "supportedActions": ["click", "cancel", "assertHidden", "assertStateUnchanged"],
-      "stateAttributes": ["visibleText", "enabled"],
-      "evidenceObjects": ["copyModal.cancelFlow.state"],
-      "locatorHints": ["取消 button inside opened copy modal"],
-      "hazards": ["cancel should close the modal and must not create a report row"]
+      "aliases": [
+        "複製取消",
+        "copy modal cancel"
+      ],
+      "supportedActions": [
+        "click",
+        "cancel",
+        "assertHidden",
+        "assertStateUnchanged"
+      ],
+      "stateAttributes": [
+        "visibleText",
+        "enabled"
+      ],
+      "evidenceObjects": [
+        "copyModal.cancelFlow.state"
+      ],
+      "locatorHints": [
+        "取消 button inside opened copy modal"
+      ],
+      "hazards": [
+        "cancel should close the modal and must not create a report row"
+      ]
     },
     {
       "id": "copyModal.saveButton",
@@ -1037,12 +2674,27 @@
       "component": "copy.modal",
       "objectType": "button",
       "purpose": "Save/confirm button inside the copy-report modal.",
-      "aliases": ["複製儲存", "copy modal save"],
-      "supportedActions": ["confirm", "create"],
-      "stateAttributes": ["visibleText", "enabled"],
-      "evidenceObjects": ["copyModal.saveFlow.state"],
-      "locatorHints": ["儲存/確認 button inside opened copy modal"],
-      "hazards": ["creates a report and must follow Tool Bridge policy"]
+      "aliases": [
+        "複製儲存",
+        "copy modal save"
+      ],
+      "supportedActions": [
+        "confirm",
+        "create"
+      ],
+      "stateAttributes": [
+        "visibleText",
+        "enabled"
+      ],
+      "evidenceObjects": [
+        "copyModal.saveFlow.state"
+      ],
+      "locatorHints": [
+        "儲存/確認 button inside opened copy modal"
+      ],
+      "hazards": [
+        "creates a report and must follow Tool Bridge policy"
+      ]
     },
     {
       "id": "editorToolbar.updateButton",
@@ -1050,12 +2702,31 @@
       "component": "editorToolbar.updateButton",
       "objectType": "button",
       "purpose": "Existing-report editor action for updating/saving current settings.",
-      "aliases": ["更新設定", "update settings"],
-      "supportedActions": ["click", "confirm", "assertToast", "assertStateChanged"],
-      "stateAttributes": ["visibleText", "enabled", "disabled"],
-      "evidenceObjects": ["editorToolbar.update.state", "reportPersistence.reopenState"],
-      "locatorHints": ["editor button/text 更新設定 visible only for existing reports"],
-      "hazards": ["modifies an existing report and requires Tool Bridge policy"]
+      "aliases": [
+        "更新設定",
+        "update settings"
+      ],
+      "supportedActions": [
+        "click",
+        "confirm",
+        "assertToast",
+        "assertStateChanged"
+      ],
+      "stateAttributes": [
+        "visibleText",
+        "enabled",
+        "disabled"
+      ],
+      "evidenceObjects": [
+        "editorToolbar.update.state",
+        "reportPersistence.reopenState"
+      ],
+      "locatorHints": [
+        "editor button/text 更新設定 visible only for existing reports"
+      ],
+      "hazards": [
+        "modifies an existing report and requires Tool Bridge policy"
+      ]
     },
     {
       "id": "projectList.reportRow",
@@ -1063,12 +2734,35 @@
       "component": "projectList.reportRow",
       "objectType": "row",
       "purpose": "A report row in the selected collage project list.",
-      "aliases": ["報表列", "report row", "清單新報表"],
-      "supportedActions": ["read", "open", "select", "assertVisible", "assertHidden"],
-      "stateAttributes": ["rowText", "visible", "selected", "operationControls"],
-      "evidenceObjects": ["projectList.reportRow.state", "reportListEvidence", "projectToolbar.selectionFlow.state"],
-      "locatorHints": ["row text containing the report name in the project list"],
-      "hazards": ["report names are case-specific; list may need refresh/reselect after save"]
+      "aliases": [
+        "報表列",
+        "report row",
+        "清單新報表"
+      ],
+      "supportedActions": [
+        "read",
+        "open",
+        "select",
+        "assertVisible",
+        "assertHidden"
+      ],
+      "stateAttributes": [
+        "rowText",
+        "visible",
+        "selected",
+        "operationControls"
+      ],
+      "evidenceObjects": [
+        "projectList.reportRow.state",
+        "reportListEvidence",
+        "projectToolbar.selectionFlow.state"
+      ],
+      "locatorHints": [
+        "row text containing the report name in the project list"
+      ],
+      "hazards": [
+        "report names are case-specific; list may need refresh/reselect after save"
+      ]
     },
     {
       "id": "projectList.table",
@@ -1076,12 +2770,34 @@
       "component": "projectList.table",
       "objectType": "table",
       "purpose": "Project/report list table on a collage project page.",
-      "aliases": ["報表清單", "專案列表", "報表列表", "project report table"],
-      "supportedActions": ["read", "assertVisible", "assertText", "assertValue"],
-      "stateAttributes": ["headers", "rowCount", "visibleRows", "paginationText"],
-      "evidenceObjects": ["projectList.table.state", "reportListEvidence"],
-      "locatorHints": ["main table/list area below project title and toolbar"],
-      "hazards": ["row names are testcase data; table object should not encode a particular report name"]
+      "aliases": [
+        "報表清單",
+        "專案列表",
+        "報表列表",
+        "project report table"
+      ],
+      "supportedActions": [
+        "read",
+        "assertVisible",
+        "assertText",
+        "assertValue"
+      ],
+      "stateAttributes": [
+        "headers",
+        "rowCount",
+        "visibleRows",
+        "paginationText"
+      ],
+      "evidenceObjects": [
+        "projectList.table.state",
+        "reportListEvidence"
+      ],
+      "locatorHints": [
+        "main table/list area below project title and toolbar"
+      ],
+      "hazards": [
+        "row names are testcase data; table object should not encode a particular report name"
+      ]
     },
     {
       "id": "projectList.header.reportName",
@@ -1089,12 +2805,29 @@
       "component": "projectList.table.header",
       "objectType": "tableHeader",
       "purpose": "Report name column header in the project/report list.",
-      "aliases": ["報表名稱", "報表名稱欄", "report name column"],
-      "supportedActions": ["read", "assertText", "assertVisible"],
-      "stateAttributes": ["visibleText", "columnIndex"],
-      "evidenceObjects": ["projectList.table.state"],
-      "locatorHints": ["project list table header text 報表名稱"],
-      "hazards": ["same label can appear in save/copy modals; locator must be scoped to project list table"]
+      "aliases": [
+        "報表名稱",
+        "報表名稱欄",
+        "report name column"
+      ],
+      "supportedActions": [
+        "read",
+        "assertText",
+        "assertVisible"
+      ],
+      "stateAttributes": [
+        "visibleText",
+        "columnIndex"
+      ],
+      "evidenceObjects": [
+        "projectList.table.state"
+      ],
+      "locatorHints": [
+        "project list table header text 報表名稱"
+      ],
+      "hazards": [
+        "same label can appear in save/copy modals; locator must be scoped to project list table"
+      ]
     },
     {
       "id": "projectList.header.dataPeriod",
@@ -1102,12 +2835,29 @@
       "component": "projectList.table.header",
       "objectType": "tableHeader",
       "purpose": "Data period/date range column header in the project/report list.",
-      "aliases": ["資料週期區間", "資料區間", "date period column"],
-      "supportedActions": ["read", "assertText", "assertVisible"],
-      "stateAttributes": ["visibleText", "columnIndex"],
-      "evidenceObjects": ["projectList.table.state"],
-      "locatorHints": ["project list table header text 資料週期區間"],
-      "hazards": ["header observation should not imply date correctness unless the testcase also verifies row values"]
+      "aliases": [
+        "資料週期區間",
+        "資料區間",
+        "date period column"
+      ],
+      "supportedActions": [
+        "read",
+        "assertText",
+        "assertVisible"
+      ],
+      "stateAttributes": [
+        "visibleText",
+        "columnIndex"
+      ],
+      "evidenceObjects": [
+        "projectList.table.state"
+      ],
+      "locatorHints": [
+        "project list table header text 資料週期區間"
+      ],
+      "hazards": [
+        "header observation should not imply date correctness unless the testcase also verifies row values"
+      ]
     },
     {
       "id": "projectList.header.operation",
@@ -1115,12 +2865,29 @@
       "component": "projectList.table.header",
       "objectType": "tableHeader",
       "purpose": "Operation/actions column header in the project/report list.",
-      "aliases": ["操作", "操作欄", "operation column"],
-      "supportedActions": ["read", "assertText", "assertVisible"],
-      "stateAttributes": ["visibleText", "columnIndex"],
-      "evidenceObjects": ["projectList.table.state"],
-      "locatorHints": ["project list table header text 操作"],
-      "hazards": ["operation header is not itself clickable; row-local actions live under row action objects"]
+      "aliases": [
+        "操作",
+        "操作欄",
+        "operation column"
+      ],
+      "supportedActions": [
+        "read",
+        "assertText",
+        "assertVisible"
+      ],
+      "stateAttributes": [
+        "visibleText",
+        "columnIndex"
+      ],
+      "evidenceObjects": [
+        "projectList.table.state"
+      ],
+      "locatorHints": [
+        "project list table header text 操作"
+      ],
+      "hazards": [
+        "operation header is not itself clickable; row-local actions live under row action objects"
+      ]
     },
     {
       "id": "projectList.pagination.pageSize",
@@ -1128,12 +2895,32 @@
       "component": "projectList.pagination.pageSize",
       "objectType": "paginationControl",
       "purpose": "Page-size display/control for the project/report list.",
-      "aliases": ["100筆/頁", "100 筆/頁", "每頁筆數", "page size"],
-      "supportedActions": ["read", "select", "assertText"],
-      "stateAttributes": ["visibleText", "selectedValue", "optionCount"],
-      "evidenceObjects": ["projectList.table.state"],
-      "locatorHints": ["pagination area near report list table", "visible text 100筆/頁 or equivalent page-size control"],
-      "hazards": ["page-size text is presentation evidence; do not use it as row-count evidence"]
+      "aliases": [
+        "100筆/頁",
+        "100 筆/頁",
+        "每頁筆數",
+        "page size"
+      ],
+      "supportedActions": [
+        "read",
+        "select",
+        "assertText"
+      ],
+      "stateAttributes": [
+        "visibleText",
+        "selectedValue",
+        "optionCount"
+      ],
+      "evidenceObjects": [
+        "projectList.table.state"
+      ],
+      "locatorHints": [
+        "pagination area near report list table",
+        "visible text 100筆/頁 or equivalent page-size control"
+      ],
+      "hazards": [
+        "page-size text is presentation evidence; do not use it as row-count evidence"
+      ]
     },
     {
       "id": "reportPersistence.reopenState",
@@ -1141,12 +2928,33 @@
       "component": "reportPersistence.reopenState",
       "objectType": "stateEvidence",
       "purpose": "Read-back state after leaving and reopening a saved report.",
-      "aliases": ["重開還原", "reopen persistence", "設定還原"],
-      "supportedActions": ["read", "compare", "assertValue", "assertStateChanged"],
-      "stateAttributes": ["dateRangeText", "selectedFields", "displayMode", "networkRequest"],
-      "evidenceObjects": ["reportPersistence.reopenState", "reopen-report-evidence"],
-      "locatorHints": ["stateDelta after reopening the same report row"],
-      "hazards": ["result judgment must compare authored before/after targets, not just that the editor reopened"]
+      "aliases": [
+        "重開還原",
+        "reopen persistence",
+        "設定還原"
+      ],
+      "supportedActions": [
+        "read",
+        "compare",
+        "assertValue",
+        "assertStateChanged"
+      ],
+      "stateAttributes": [
+        "dateRangeText",
+        "selectedFields",
+        "displayMode",
+        "networkRequest"
+      ],
+      "evidenceObjects": [
+        "reportPersistence.reopenState",
+        "reopen-report-evidence"
+      ],
+      "locatorHints": [
+        "stateDelta after reopening the same report row"
+      ],
+      "hazards": [
+        "result judgment must compare authored before/after targets, not just that the editor reopened"
+      ]
     },
     {
       "id": "save.toast",
@@ -1154,12 +2962,31 @@
       "component": "save.toast",
       "objectType": "toast",
       "purpose": "Save-report success notification.",
-      "aliases": ["儲存成功", "報表儲存成功", "save success toast"],
-      "supportedActions": ["read", "assertToast", "assertText"],
-      "stateAttributes": ["visibleText", "visible", "lifecycle"],
-      "evidenceObjects": ["save.toast.state", "saveModal.saveFlow.state"],
-      "locatorHints": ["toast/status region after confirming save report"],
-      "hazards": ["toast must be correlated to the same save click and not a previous action"]
+      "aliases": [
+        "儲存成功",
+        "報表儲存成功",
+        "save success toast"
+      ],
+      "supportedActions": [
+        "read",
+        "assertToast",
+        "assertText"
+      ],
+      "stateAttributes": [
+        "visibleText",
+        "visible",
+        "lifecycle"
+      ],
+      "evidenceObjects": [
+        "save.toast.state",
+        "saveModal.saveFlow.state"
+      ],
+      "locatorHints": [
+        "toast/status region after confirming save report"
+      ],
+      "hazards": [
+        "toast must be correlated to the same save click and not a previous action"
+      ]
     },
     {
       "id": "update.toast",
@@ -1167,12 +2994,31 @@
       "component": "update.toast",
       "objectType": "toast",
       "purpose": "Update-settings success notification.",
-      "aliases": ["更新成功", "更新設定成功", "update success toast"],
-      "supportedActions": ["read", "assertToast", "assertText"],
-      "stateAttributes": ["visibleText", "visible", "lifecycle"],
-      "evidenceObjects": ["update.toast.state", "editorToolbar.update.state"],
-      "locatorHints": ["toast/status region after confirming 更新設定"],
-      "hazards": ["update modifies existing report settings; pair toast with reopen/state persistence evidence"]
+      "aliases": [
+        "更新成功",
+        "更新設定成功",
+        "update success toast"
+      ],
+      "supportedActions": [
+        "read",
+        "assertToast",
+        "assertText"
+      ],
+      "stateAttributes": [
+        "visibleText",
+        "visible",
+        "lifecycle"
+      ],
+      "evidenceObjects": [
+        "update.toast.state",
+        "editorToolbar.update.state"
+      ],
+      "locatorHints": [
+        "toast/status region after confirming 更新設定"
+      ],
+      "hazards": [
+        "update modifies existing report settings; pair toast with reopen/state persistence evidence"
+      ]
     },
     {
       "id": "download.toast",
@@ -1180,12 +3026,30 @@
       "component": "download.toast",
       "objectType": "toast",
       "purpose": "Download-started notification in the editor.",
-      "aliases": ["數據已開始下載", "下載提示", "download toast"],
-      "supportedActions": ["read", "assertToast", "assertText"],
-      "stateAttributes": ["visibleText", "visible", "lifecycle"],
-      "evidenceObjects": ["download.toast.state"],
-      "locatorHints": ["toast/status region after clicking editor download"],
-      "hazards": ["download event and toast should be correlated to the same click"]
+      "aliases": [
+        "數據已開始下載",
+        "下載提示",
+        "download toast"
+      ],
+      "supportedActions": [
+        "read",
+        "assertToast",
+        "assertText"
+      ],
+      "stateAttributes": [
+        "visibleText",
+        "visible",
+        "lifecycle"
+      ],
+      "evidenceObjects": [
+        "download.toast.state"
+      ],
+      "locatorHints": [
+        "toast/status region after clicking editor download"
+      ],
+      "hazards": [
+        "download event and toast should be correlated to the same click"
+      ]
     }
   ]
 }

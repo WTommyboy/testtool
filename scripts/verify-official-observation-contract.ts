@@ -274,9 +274,13 @@ const main = (): void => {
     "browserMcp.preflight",
     "topbar.userButton.state",
     "projectToolbar.buttons.state",
+    "projectToolbar.selectionFlow.state",
     "reportMode.radio.state",
     "dateRange.panel.state",
-    "validation.message.state"
+    "validation.message.state",
+    "projectCreateModal.flow.state",
+    "projectList.deleteCancelFlow.state",
+    "deleteConfirmModal.state"
   ];
   const evidenceObjects = evidenceObjectIds(evidenceSchema);
   for (const evidenceObject of requiredEvidenceObjects) {
@@ -291,7 +295,9 @@ const main = (): void => {
     "datePanel",
     "validationMessage",
     "sidebarGroup",
+    "projectCreateModal",
     "rowDeleteTooltip",
+    "deleteCancelFlow",
     "projectLimitToast",
     "sourceReportPicker",
     "fieldPicker",
