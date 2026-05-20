@@ -497,3 +497,24 @@ web/src/
 
 本次重構不是 UI 小改,而是把 UAT Tool 從「本機嘗試跑測平台」轉成「雲端控制台 + 本機執行 Agent + 結果資料庫」架構。M0 的核心是先排除最大技術風險;M1 的核心是做出完整可 demo 的第一版;M2 之後才補穩定性與產品化。
 
+---
+
+## 12. 2026-05-20 Domain Contract 實作補充
+
+P0.30 後,工具的長期方向仍是「平台可通用的通用,不可通用的放 domain pack」,不是在每個 domain pack 內塞小 helper 或小 agent。
+
+目前已落地的邊界:
+
+- 平台層: action vocabulary、case-scope contract validation、planner/capability/result-gate wiring、runtime containment、browser/session/upload isolation。
+- Domain pack 層: UI object vocabulary、component inventory、visual alignment、action-contracts、evidence-schema、lint-rules、case-scope runtime contracts。
+- Testcase/run 層: case-specific values、風險等級、測試標的、judgment policy、前置狀態、expected outcome。
+
+P0.30 `BI_OFFICIAL_UI_COLLAGE` 已把 shared lifecycle flows 正式接進 dev runtime:
+
+- `projectCreateModal`: 開啟新增專案 modal、必要時輸入名稱、取消、驗證 modal close。
+- `projectToolbar.selectionFlow`: 區分未勾選 disabled 與勾選後 enabled,避免 J-02/J-03 scope 混淆。
+- `deleteCancelFlow`: 點 row delete、確認 modal 出現、取消、驗證 modal close 與 list row count 未減少。
+- `reportLifecycle`: 建立有效 preview 前置、儲存、回清單找 row、必要時 reopen。
+- `datePanel`: date preset / from-date preset 觀察與套用 evidence。
+
+這仍是 Gen1/Gen2 compatibility bridge。MX/Gen4 要把上述 runtime branch 收斂成通用 action interpreter:讀 domain action contract,執行 visible-UI action,收集 interaction/evidence,再由 result/judgment contract 判 PASS/FAIL/BLOCKED。BI 專用的是 vocabulary/object/evidence data;平台不應硬編 BI 文案或欄位名稱。
