@@ -859,6 +859,51 @@
       "assertAfterAction": [
         "update.toast state/evidence can be read or asserted when the component is in scope"
       ]
+    },
+    {
+      "id": "deleteConfirmModal.panel",
+      "page": "collageProjectList",
+      "type": "modal",
+      "purpose": "Vocabulary-aligned component for deleteConfirmModal.panel.",
+      "candidateSignals": [
+        "modal/dialog visible after clicking a row-local 刪除 action",
+        "contains cancel/confirm actions",
+        "刪除確認 modal",
+        "刪除確認彈窗",
+        "確定要刪除嗎"
+      ],
+      "assertAfterAction": [
+        "deleteConfirmModal.panel state/evidence can be read or asserted when the component is in scope"
+      ]
+    },
+    {
+      "id": "deleteConfirmModal.cancelButton",
+      "page": "collageProjectList",
+      "type": "button",
+      "purpose": "Vocabulary-aligned component for deleteConfirmModal.cancelButton.",
+      "candidateSignals": [
+        "取消 button inside delete confirmation modal",
+        "刪除確認取消",
+        "delete confirm cancel"
+      ],
+      "assertAfterAction": [
+        "deleteConfirmModal.cancelButton state/evidence can be read or asserted when the component is in scope"
+      ]
+    },
+    {
+      "id": "deleteConfirmModal.confirmButton",
+      "page": "collageProjectList",
+      "type": "button",
+      "purpose": "Vocabulary-aligned component for deleteConfirmModal.confirmButton.",
+      "candidateSignals": [
+        "確定 button inside delete confirmation modal",
+        "刪除確認確定",
+        "delete confirm accept",
+        "delete confirm button"
+      ],
+      "assertAfterAction": [
+        "deleteConfirmModal.confirmButton state/evidence can be read or asserted when the component is in scope"
+      ]
     }
   ]
 }

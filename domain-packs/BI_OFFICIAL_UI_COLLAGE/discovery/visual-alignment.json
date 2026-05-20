@@ -198,6 +198,9 @@
         "dateRange.staticStartInput",
         "dateRange.timeTypeTab.dynamic",
         "dateRange.timeTypeTab.static",
+        "deleteConfirmModal.cancelButton",
+        "deleteConfirmModal.confirmButton",
+        "deleteConfirmModal.panel",
         "download.toast",
         "editorToolbar.copyButton",
         "editorToolbar.downloadButton",
@@ -1386,6 +1389,46 @@
         "update success toast",
         "toast/status region after confirming 更新設定"
       ]
+    },
+    "deleteConfirmModal.panel": {
+      "status": "notCaptured",
+      "sourceIds": [
+        "ui.vocabularyAlignment"
+      ],
+      "screenContext": "collageProjectList / deleteConfirmModal.panel",
+      "visualCues": [
+        "刪除確認 modal",
+        "刪除確認彈窗",
+        "確定要刪除嗎",
+        "delete confirm modal",
+        "modal/dialog visible after clicking a row-local 刪除 action",
+        "contains cancel/confirm actions"
+      ]
+    },
+    "deleteConfirmModal.cancelButton": {
+      "status": "notCaptured",
+      "sourceIds": [
+        "ui.vocabularyAlignment"
+      ],
+      "screenContext": "collageProjectList / deleteConfirmModal.cancelButton",
+      "visualCues": [
+        "刪除確認取消",
+        "delete confirm cancel",
+        "取消 button inside delete confirmation modal"
+      ]
+    },
+    "deleteConfirmModal.confirmButton": {
+      "status": "notCaptured",
+      "sourceIds": [
+        "ui.vocabularyAlignment"
+      ],
+      "screenContext": "collageProjectList / deleteConfirmModal.confirmButton",
+      "visualCues": [
+        "刪除確認確定",
+        "delete confirm accept",
+        "delete confirm button",
+        "確定 button inside delete confirmation modal"
+      ]
     }
   },
   "needsHumanConfirmation": [
@@ -1551,6 +1594,18 @@
     },
     {
       "objectId": "update.toast",
+      "reason": "Vocabulary coverage added from testcase terminology; requires future visual confirmation in live UI discovery pass."
+    },
+    {
+      "objectId": "deleteConfirmModal.panel",
+      "reason": "Vocabulary coverage added from testcase terminology; requires future visual confirmation in live UI discovery pass."
+    },
+    {
+      "objectId": "deleteConfirmModal.cancelButton",
+      "reason": "Vocabulary coverage added from testcase terminology; requires future visual confirmation in live UI discovery pass."
+    },
+    {
+      "objectId": "deleteConfirmModal.confirmButton",
       "reason": "Vocabulary coverage added from testcase terminology; requires future visual confirmation in live UI discovery pass."
     }
   ]

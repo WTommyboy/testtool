@@ -213,6 +213,45 @@
       "hazards": ["tooltip is currently a known product gap; absence after real hover is product FAIL evidence for the tooltip testcase"]
     },
     {
+      "id": "deleteConfirmModal.panel",
+      "page": "collageProjectList",
+      "component": "deleteConfirmModal.panel",
+      "objectType": "modal",
+      "purpose": "Delete confirmation modal after clicking a row-local report delete action.",
+      "aliases": ["刪除確認 modal", "刪除確認彈窗", "確定要刪除嗎", "delete confirm modal"],
+      "supportedActions": ["read", "assertVisible", "assertText", "assertHidden"],
+      "stateAttributes": ["visibleText", "visible", "targetRowText"],
+      "evidenceObjects": ["deleteConfirmModal.state"],
+      "locatorHints": ["modal/dialog visible after clicking a row-local 刪除 action", "contains cancel/confirm actions"],
+      "hazards": ["opening is safe; confirming delete is irreversible and requires explicit PM authorization"]
+    },
+    {
+      "id": "deleteConfirmModal.cancelButton",
+      "page": "collageProjectList",
+      "component": "deleteConfirmModal.cancelButton",
+      "objectType": "button",
+      "purpose": "Cancel button inside the delete confirmation modal.",
+      "aliases": ["刪除確認取消", "delete confirm cancel"],
+      "supportedActions": ["click", "cancel", "assertHidden", "assertStateUnchanged"],
+      "stateAttributes": ["visibleText", "enabled"],
+      "evidenceObjects": ["deleteConfirmModal.state"],
+      "locatorHints": ["取消 button inside delete confirmation modal"],
+      "hazards": ["cancel should close the modal and leave row count/name unchanged"]
+    },
+    {
+      "id": "deleteConfirmModal.confirmButton",
+      "page": "collageProjectList",
+      "component": "deleteConfirmModal.confirmButton",
+      "objectType": "button",
+      "purpose": "Confirm button inside the delete confirmation modal.",
+      "aliases": ["刪除確認確定", "delete confirm accept", "delete confirm button"],
+      "supportedActions": ["confirm", "delete"],
+      "stateAttributes": ["visibleText", "enabled"],
+      "evidenceObjects": ["deleteConfirmModal.state", "projectList.reportRow.state"],
+      "locatorHints": ["確定 button inside delete confirmation modal"],
+      "hazards": ["irreversible path; must not be clicked without explicit PM authorization"]
+    },
+    {
       "id": "reportMode.radioGroup",
       "page": "collageEditor",
       "component": "reportMode.radioGroup",

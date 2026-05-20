@@ -397,6 +397,13 @@
         "asserted"
       ],
       "purpose": "Domain evidence for update.toast."
+    },
+    "deleteConfirmModal.state": {
+      "type": "object",
+      "requiredFields": [
+        "asserted"
+      ],
+      "purpose": "Domain evidence for deleteConfirmModal.panel."
     }
   },
   "conditionalEvidenceRules": [
