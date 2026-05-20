@@ -1,0 +1,218 @@
+{
+  "schemaVersion": "domain-action-contract-v0.1",
+  "domain": "BI_OFFICIAL_UI_COLLAGE",
+  "action": "projectList",
+  "status": "draft_contract",
+  "purpose": "Shared project-list table journeys for report row lookup, toolbar selection evidence, row-local action evidence, and delete-confirm cancel behavior.",
+  "capabilities": [
+    "collage.projectList.ensureReportRowVisible",
+    "collage.projectList.toolbarSelectionState",
+    "collage.projectList.deleteCancelFlow",
+    "collage.projectList.rowActionTooltip"
+  ],
+  "paramsSchema": {
+    "type": "object",
+    "required": [
+      "flow"
+    ],
+    "properties": {
+      "flow": {
+        "type": "string",
+        "enum": [
+          "ensureReportRowVisible",
+          "toolbarSelectionState",
+          "deleteCancelFlow",
+          "rowActionTooltip"
+        ]
+      },
+      "reportName": {
+        "type": "string",
+        "description": "Visible report row name when the flow is row-scoped."
+      },
+      "expectedSelectionCount": {
+        "type": "integer",
+        "minimum": 0
+      }
+    },
+    "additionalProperties": true
+  },
+  "sharedFlows": {
+    "ensureReportRowVisible": {
+      "usedBy": [
+        "BIUI_COLLAGE_R001-F-02",
+        "BIUI_COLLAGE_R001-F-07",
+        "BIUI_COLLAGE_R001-M-10",
+        "BIUI_COLLAGE_R001-M-11"
+      ],
+      "declarativePlan": [
+        {
+          "op": "ensurePage",
+          "page": "projectList"
+        },
+        {
+          "op": "waitFor",
+          "target": "projectList.table"
+        },
+        {
+          "op": "readRows",
+          "target": "projectList.reportRow",
+          "saveAs": "projectList.readiness.state"
+        },
+        {
+          "op": "findRowByText",
+          "target": "projectList.reportRow",
+          "valueFrom": "params.reportName",
+          "saveAs": "projectList.reportRow.state"
+        }
+      ],
+      "requiredEvidence": [
+        "projectList.readiness.state",
+        "projectList.reportRow.state"
+      ]
+    },
+    "toolbarSelectionState": {
+      "usedBy": [
+        "BIUI_COLLAGE_R001-J-03"
+      ],
+      "declarativePlan": [
+        {
+          "op": "ensurePage",
+          "page": "projectList"
+        },
+        {
+          "op": "readToolbarButtons",
+          "target": "projectToolbar.downloadButton",
+          "saveAs": "projectToolbar.buttons.state"
+        },
+        {
+          "op": "selectReportRows",
+          "target": "projectList.reportRow",
+          "countFrom": "params.expectedSelectionCount"
+        },
+        {
+          "op": "readToolbarButtons",
+          "target": "projectToolbar.downloadButton",
+          "saveAs": "projectToolbar.selectionFlow.state"
+        }
+      ],
+      "requiredEvidence": [
+        "projectToolbar.buttons.state",
+        "projectToolbar.selectionFlow.state",
+        "interactionLog"
+      ]
+    },
+    "deleteCancelFlow": {
+      "usedBy": [
+        "BIUI_COLLAGE_R001-J-08"
+      ],
+      "declarativePlan": [
+        {
+          "op": "ensurePage",
+          "page": "projectList"
+        },
+        {
+          "op": "findRowByText",
+          "target": "projectList.reportRow",
+          "valueFrom": "params.reportName",
+          "saveAs": "projectList.reportRow.before"
+        },
+        {
+          "op": "click",
+          "target": "projectList.rowDeleteAction",
+          "rowTextFrom": "params.reportName"
+        },
+        {
+          "op": "assertVisible",
+          "target": "deleteConfirmModal.panel"
+        },
+        {
+          "op": "cancel",
+          "target": "deleteConfirmModal.cancelButton"
+        },
+        {
+          "op": "assertHidden",
+          "target": "deleteConfirmModal.panel"
+        },
+        {
+          "op": "findRowByText",
+          "target": "projectList.reportRow",
+          "valueFrom": "params.reportName",
+          "saveAs": "projectList.reportRow.afterCancel"
+        }
+      ],
+      "requiredEvidence": [
+        "deleteConfirmModal.state",
+        "projectList.deleteCancelFlow.state",
+        "projectList.reportRow.state",
+        "interactionLog"
+      ]
+    },
+    "rowActionTooltip": {
+      "usedBy": [
+        "BIUI_COLLAGE_R001-J-08 tooltip-only variants"
+      ],
+      "declarativePlan": [
+        {
+          "op": "hover",
+          "target": "projectList.rowDeleteAction",
+          "rowTextFrom": "params.reportName"
+        },
+        {
+          "op": "observe",
+          "target": "projectList.rowDeleteTooltip",
+          "saveAs": "projectList.rowActionTooltip.state"
+        }
+      ],
+      "requiredEvidence": [
+        "projectList.rowActionTooltip.state"
+      ]
+    }
+  },
+  "locatorPolicy": {
+    "rowScope": "all row actions must be scoped by the report row text or selected row index",
+    "toolbarState": "icon-only toolbar buttons must be mapped by semantic order and disabled/enabled DOM state",
+    "deleteCancel": "cancel path must prove modal opened, cancel clicked, modal closed, and row still exists",
+    "readOnlyDomAllowedFor": [
+      "row text",
+      "row count",
+      "toolbar button disabled/enabled state",
+      "modal visibility",
+      "tooltip text"
+    ],
+    "forbidden": [
+      "hover tooltip as substitute for delete-confirm cancel evidence",
+      "global delete icon click without row scope",
+      "screenshot-only PASS when DOM/ARIA state can be read"
+    ]
+  },
+  "requiredEvidence": [
+    "projectList.readiness.state",
+    "projectList.reportRow.state",
+    "projectToolbar.buttons.state",
+    "projectToolbar.selectionFlow.state",
+    "deleteConfirmModal.state",
+    "projectList.deleteCancelFlow.state",
+    "projectList.rowActionTooltip.state",
+    "interactionLog",
+    "locatorAttempts"
+  ],
+  "blockerCodes": [
+    "PROJECT_LIST_NOT_REACHED",
+    "PROJECT_LIST_TABLE_NOT_READY",
+    "PROJECT_LIST_REPORT_ROW_NOT_FOUND",
+    "PROJECT_LIST_ROW_ACTION_NOT_FOUND",
+    "PROJECT_LIST_DELETE_CONFIRM_NOT_OPENED",
+    "PROJECT_LIST_DELETE_CANCEL_NOT_VERIFIED",
+    "PROJECT_TOOLBAR_STATE_NOT_STRUCTURED"
+  ],
+  "judgmentPolicy": {
+    "failWhen": [
+      "row-local under-test action dispatches but the expected modal/state transition does not happen",
+      "selection changes but toolbar enabled/disabled state contradicts expected frontend behavior"
+    ],
+    "blockedWhen": [
+      "project list or row cannot be reached with current-run evidence",
+      "only screenshot evidence exists and the evidence contract requires structured DOM/ARIA state"
+    ]
+  }
+}

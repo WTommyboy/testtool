@@ -78,6 +78,16 @@
         "status"
       ]
     },
+    "interactionLog": {
+      "type": "array",
+      "requiredFields": [
+        "action",
+        "target",
+        "actualOutcome",
+        "timestamp"
+      ],
+      "purpose": "Case-scoped visible-UI interaction log used to compare required action expectedOutcome against actualOutcome."
+    },
     "browserMcp.preflight": {
       "type": "object",
       "requiredFields": [
@@ -287,6 +297,50 @@
       ],
       "purpose": "Report-list row visibility evidence after save/copy/cancel flows."
     },
+    "projectList.readiness.state": {
+      "type": "object",
+      "requiredFields": [
+        "url",
+        "tableVisible",
+        "rowCount",
+        "sampleRows",
+        "asserted"
+      ],
+      "purpose": "Project-list readiness evidence before row lookup, especially after save/copy/update navigation."
+    },
+    "projectToolbar.selectionFlow.state": {
+      "type": "object",
+      "requiredFields": [
+        "beforeButtons",
+        "selectedRows",
+        "afterButtons",
+        "asserted"
+      ],
+      "purpose": "Structured evidence that project-list toolbar buttons changed enabled/disabled state after row selection."
+    },
+    "deleteConfirmModal.state": {
+      "type": "object",
+      "requiredFields": [
+        "openedByVisibleUi",
+        "visibleText",
+        "cancelClicked",
+        "modalClosed",
+        "asserted"
+      ],
+      "purpose": "Delete confirmation modal evidence for cancel/confirm flows."
+    },
+    "projectList.deleteCancelFlow.state": {
+      "type": "object",
+      "requiredFields": [
+        "reportName",
+        "rowBefore",
+        "modalOpened",
+        "cancelClicked",
+        "rowAfterCancel",
+        "asserted"
+      ],
+      "purpose": "Row-local delete cancel evidence proving the modal opened, cancel was clicked, and the report row remained."
+    },
     "reportListEvidence": {
       "type": "object",
       "requiredFields": [
@@ -363,6 +417,18 @@
       ],
       "purpose": "Domain evidence for projectCreateModal.nameInput."
     },
+    "projectCreateModal.flow.state": {
+      "type": "object",
+      "requiredFields": [
+        "openedByVisibleUi",
+        "projectName",
+        "modalClosed",
+        "projectCountBefore",
+        "projectCountAfter",
+        "asserted"
+      ],
+      "purpose": "Shared project-create modal flow evidence for open, cancel, save, or project-limit validation paths."
+    },
     "metricRows.state": {
       "type": "object",
       "requiredFields": [
@@ -375,7 +441,71 @@
       "requiredFields": [
         "asserted"
       ],
-      "purpose": "Domain evidence for formulaEditor.openButton."
+      "purpose": "Legacy modal/generic formula editor evidence. Official inline formula-builder cases should emit formulaEditor.inlineBuilder.state and formulaEditor.tokenPicker.state."
+    },
+    "dateRange.button.state": {
+      "type": "object",
+      "requiredFields": [
+        "beforeText",
+        "afterText",
+        "asserted"
+      ],
+      "purpose": "Date-range button before/after label evidence for preset and cancel flows."
+    },
+    "dateRange.applyPreset.state": {
+      "type": "object",
+      "requiredFields": [
+        "openedByVisibleUi",
+        "presetLabel",
+        "clicked",
+        "confirmed",
+        "buttonTextAfter",
+        "asserted"
+      ],
+      "purpose": "Shared date-preset evidence proving the visible preset was clicked, confirmed, and reflected in UI state."
+    },
+    "formulaEditor.inlineBuilder.state": {
+      "type": "object",
+      "requiredFields": [
+        "openedByVisibleUi",
+        "entryMethod",
+        "keypadVisible",
+        "expressionBefore",
+        "expressionAfter",
+        "interactionLog",
+        "asserted"
+      ],
+      "optionalFields": [
+        "rowIndex",
+        "placeholderText",
+        "operatorSequence",
+        "numberSequence",
+        "insertedTokens",
+        "directFillAttempted",
+        "directFillRejectedForJudgment"
+      ],
+      "purpose": "Trusted evidence for official inline formula-builder operation. Product PASS/FAIL for formula setup requires visible token/keypad interactions; direct_fill_inline alone is a tool limitation, not product evidence."
+    },
+    "formulaEditor.tokenPicker.state": {
+      "type": "object",
+      "requiredFields": [
+        "openedByVisibleUi",
+        "sourceReport",
+        "field",
+        "sourcePickerOptions",
+        "fieldPickerOptions",
+        "fieldPickerSignature",
+        "tokenInserted",
+        "asserted"
+      ],
+      "optionalFields": [
+        "searchValue",
+        "visibleTokenText",
+        "insertedTokenValue",
+        "sourcePickerSelectedText",
+        "fieldPickerSelectedText"
+      ],
+      "purpose": "Evidence that a formula field token was inserted through the official source-report picker and field picker, not by direct text fill."
     },
     "save.toast.state": {
       "type": "object",

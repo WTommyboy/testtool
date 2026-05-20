@@ -1,0 +1,221 @@
+{
+  "schemaVersion": "domain-action-contract-v0.1",
+  "domain": "BI_OFFICIAL_UI_COLLAGE",
+  "action": "setCalculatedFormula",
+  "status": "draft_contract",
+  "purpose": "Configure official collage calculated-field formulas through the visible inline formula builder.",
+  "capabilities": [
+    "collage.formula.inlineExpressionArea",
+    "collage.formula.inlineKeypad",
+    "collage.formula.sourceReportPicker",
+    "collage.formula.fieldPicker",
+    "collage.formula.tokenInsertion",
+    "collage.formula.directFillRejectedForJudgment"
+  ],
+  "paramsSchema": {
+    "type": "object",
+    "required": [
+      "formulaSteps"
+    ],
+    "properties": {
+      "targetRowIndex": {
+        "type": "integer",
+        "minimum": 0,
+        "description": "Optional zero-based calculated-field row. If omitted, the active/first custom calculated field row is used."
+      },
+      "calculatedFieldName": {
+        "type": "string",
+        "minLength": 1,
+        "description": "Visible calculated-field row name when the testcase requires a specific name."
+      },
+      "formulaSteps": {
+        "type": "array",
+        "minItems": 1,
+        "items": {
+          "type": "object",
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "fieldToken",
+                "operator",
+                "number"
+              ]
+            },
+            "sourceReport": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Required when kind=fieldToken. Visible source report label in the inline formula picker."
+            },
+            "field": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Required when kind=fieldToken. Visible field label under the selected source report."
+            },
+            "operator": {
+              "type": "string",
+              "enum": [
+                "+",
+                "-",
+                "*",
+                "/",
+                "(",
+                ")"
+              ],
+              "description": "Required when kind=operator."
+            },
+            "number": {
+              "type": "string",
+              "pattern": "^[0-9]+(\\.[0-9]+)?$",
+              "description": "Required when kind=number. Runtime may press one digit at a time."
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "expectedExpressionText": {
+        "type": "string",
+        "description": "Optional visible/display expression used only for post-entry assertion."
+      }
+    },
+    "additionalProperties": true
+  },
+  "declarativePlan": [
+    {
+      "op": "ensurePage",
+      "page": "collageEditor"
+    },
+    {
+      "op": "openInlineExpressionArea",
+      "target": "formulaEditor.inlineExpressionArea",
+      "rowFrom": "params.targetRowIndex"
+    },
+    {
+      "op": "assertVisible",
+      "target": "formulaEditor.keypad"
+    },
+    {
+      "op": "forEach",
+      "itemsFrom": "params.formulaSteps",
+      "as": "step",
+      "steps": [
+        {
+          "op": "when",
+          "condition": "step.kind == fieldToken",
+          "steps": [
+            {
+              "op": "click",
+              "target": "formulaEditor.insertFieldButton"
+            },
+            {
+              "op": "select",
+              "target": "formulaEditor.sourceReportPicker",
+              "valueFrom": "step.sourceReport"
+            },
+            {
+              "op": "waitForPickerSignatureChange",
+              "target": "formulaEditor.fieldPicker",
+              "sourceValueFrom": "step.sourceReport"
+            },
+            {
+              "op": "select",
+              "target": "formulaEditor.fieldPicker",
+              "valueFrom": "step.field"
+            },
+            {
+              "op": "assertTokenInserted",
+              "sourceReportFrom": "step.sourceReport",
+              "fieldFrom": "step.field"
+            }
+          ]
+        },
+        {
+          "op": "when",
+          "condition": "step.kind == operator",
+          "steps": [
+            {
+              "op": "click",
+              "target": "formulaEditor.operatorButton",
+              "valueFrom": "step.operator"
+            },
+            {
+              "op": "assertExpressionDelta",
+              "valueFrom": "step.operator"
+            }
+          ]
+        },
+        {
+          "op": "when",
+          "condition": "step.kind == number",
+          "steps": [
+            {
+              "op": "pressNumberSequence",
+              "target": "formulaEditor.numberButton",
+              "valueFrom": "step.number"
+            },
+            {
+              "op": "assertExpressionDelta",
+              "valueFrom": "step.number"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "op": "readFormulaExpression",
+      "saveAs": "formulaEditor.inlineBuilder.state.expressionAfter"
+    },
+    {
+      "op": "assertTrustedEntryMethod",
+      "allowed": [
+        "inline_insert_field_picker",
+        "inline_keypad_operator",
+        "inline_keypad_number"
+      ]
+    }
+  ],
+  "locatorPolicy": {
+    "rowScopedOnly": true,
+    "afterRerender": "reacquire formula row, keypad, and picker locators",
+    "readOnlyDomAllowedFor": [
+      "expression visible text",
+      "token labels",
+      "picker option labels",
+      "picker source signature",
+      "button disabled/visible state"
+    ],
+    "forbidden": [
+      "direct product API setup",
+      "internal JavaScript setters",
+      "DOM mutation",
+      "force:true clicks",
+      "direct_fill_inline as product PASS/FAIL evidence"
+    ]
+  },
+  "requiredEvidence": [
+    "formulaEditor.inlineBuilder.state",
+    "formulaEditor.tokenPicker.state",
+    "locatorAttempts"
+  ],
+  "blockerCodes": [
+    "FORMULA_INLINE_EXPRESSION_AREA_NOT_FOUND",
+    "FORMULA_KEYPAD_NOT_VISIBLE",
+    "FORMULA_INSERT_FIELD_BUTTON_NOT_FOUND",
+    "FORMULA_SOURCE_REPORT_OPTION_NOT_FOUND",
+    "FORMULA_FIELD_OPTION_NOT_FOUND",
+    "FORMULA_FIELD_PICKER_SOURCE_MISMATCH",
+    "FORMULA_TOKEN_INSERTION_NOT_OBSERVED",
+    "FORMULA_OPERATOR_BUTTON_NOT_FOUND",
+    "FORMULA_NUMBER_BUTTON_NOT_FOUND",
+    "FORMULA_DIRECT_FILL_INLINE_UNTRUSTED"
+  ],
+  "successState": {
+    "formulaOpenedByVisibleUi": true,
+    "allFieldTokensInsertedThroughPicker": true,
+    "operatorsAndNumbersEnteredThroughKeypad": true,
+    "directFillInlineNotUsedForJudgment": true
+  }
+}

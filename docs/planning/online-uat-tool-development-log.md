@@ -1771,3 +1771,20 @@ P0a v1 範圍釐清：containment 只處理唯一 self-check error 為 `RESULT_P
 - 背景：reduced run `a18ad789-2ace-442a-a161-e1769bcc6e1e` 在第一題前就 failed。Archive 顯示 helper pre-run 讀 `agent/dist/bi-ui-helper-executor.js` 時發生 `EPERM`，之後 upload/result pre-check 又在 `node_modules/readable-stream/lib/internal/streams/async_iterator.js` 發生同類 `EPERM`。因此平台報告全 18 題都是 `PENDING`，不是 BI product/testcase 判定結果。
 - 處理：dev launchd service 已重啟成乾淨 process；新增 `npm run verify:agent-runtime-file-access`，用 child process 檢查 helper executor 可載入到 usage error、platform skill 目錄可列舉、ExcelJS/readable-stream 可 require。這是 service-level deployment hygiene smoke，目標是在 Tommy 再跑 live UAT 前先攔住本機 runtime file-access 問題。
 - 邊界：這不改 BI 判斷、不改 testcase、不把 EPERM 轉成產品 BLOCKED。若未來此 smoke 失敗，應先處理本機 service/runtime access，再開始 UAT。
+
+### 2026-05-20 - P0.29 BI official inline formula-builder alignment
+
+- 背景：Tommy 提供 2026-05-20 E 群公式設定截圖後，確認正式 BI 拼貼 UI 的運算欄位不是舊的公式 modal；正確流程是在自訂欄位列點 inline expression area，開啟 keypad，透過「插入欄位」picker 選 source report + field，再用 keypad operator/number 組公式。
+- Domain pack：`BI_OFFICIAL_UI_COLLAGE` 已補 `formulaEditor.inlineExpressionArea`、`formulaEditor.keypad`、`formulaEditor.insertFieldButton`、`formulaEditor.sourceReportPicker`、`formulaEditor.fieldPicker`、operator/number/clear/delete buttons，並新增 `action-contracts/setCalculatedFormula.json`。`ui-contract.json`、`ui-object-vocabulary.json`、`component-inventory.json`、`evidence-schema.json`、`lint-rules.json`、`visual-alignment.json` 已同步。
+- 判定邊界：visible token/keypad interaction evidence 是產品 PASS/FAIL 的前提；`direct_fill_inline`、DOM mutation、internal JS setter 只能作為工具限制 evidence，不可支撐產品 PASS/FAIL。
+- Testcase：產出 v1.13 三文件，將 `BIUI_COLLAGE_R001-E-01` 到 `E-04` 改為 inline formula builder 契約；xlsx 補 `baseFields[]`、`formulaSteps[]`、structured `步驟`、`Vocabulary Contract`。`E-03` 除數修為 `退費追蹤 / 退費總金額`。
+- 驗證：`npm run verify:domain-pack -- --name BI_OFFICIAL_UI_COLLAGE` PASS；`npm run verify:bi-official-ui-object-vocabulary` PASS；v1.13 package consistency 仍有其他既有 warning，但 E-01~E-04 相關 warning 已清為 0。
+- 邊界：這是 domain pack + testcase contract alignment，不是新增 BI 小 helper，不是平台 runtime patch，也不是最終 Gen4 action interpreter。
+
+### 2026-05-20 - P0.30 shared lifecycle action contracts
+
+- 背景：reduced run `b9b0a41d-e8a6-4423-afd2-28a6bd158688` 已完整跑完 16 題，但還有 `BLOCKED=10`，且集中在 save/list/reopen、copy/save/row lookup、project create modal、delete confirm cancel、toolbar selection state、date preset apply/verify 等共用流程。
+- Authoring：`docs/authoring/domain-pack-templates/domain_pack_completion_checklist.md`、`domain_intake_template.md`、`claude_testcase_request_template.md`、`boundary_rules_template.md` 已補 shared lifecycle 檢核。未來新 domain pack 生成時，若多題共用同一 user journey，必須產出 domain action contract、evidence contract、lint rule、smoke fixture。
+- Domain pack：`BI_OFFICIAL_UI_COLLAGE` 新增 `action-contracts/reportLifecycle.json`、`projectLifecycle.json`、`projectList.json`、`dateRangePanel.json`，並在 `ui-contract.json` 註冊。`evidence-schema.json` 新增 `interactionLog` 與 lifecycle-specific evidence objects；`lint-rules.json` 新增 report/project/date/delete lifecycle 缺 contract/evidence 的 warning rules。
+- 驗證：新增 `npm run verify:shared-lifecycle-action-contracts`。目前 `verify:shared-lifecycle-action-contracts`、`verify:domain-pack -- --name BI_OFFICIAL_UI_COLLAGE`、`verify:bi-official-ui-object-vocabulary` 皆通過。
+- 邊界：這是 contract/data preparation，不是 runtime wiring。下一步若要降低 live BLOCKED，需要把 `reportLifecycle/projectLifecycle/projectList/dateRangePanel` 接到 planner/helper executor/result gate。

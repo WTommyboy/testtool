@@ -56,6 +56,7 @@
     "verify:p0-live-action-templates": "tsx scripts/verify-p0-live-action-templates.ts",
     "verify:p0-108-blocked-triage": "tsx scripts/verify-p0-108-blocked-triage.ts",
     "verify:official-observation-contract": "tsx scripts/verify-official-observation-contract.ts",
+    "verify:shared-lifecycle-action-contracts": "tsx scripts/verify-shared-lifecycle-action-contracts.ts",
     "verify:all": "npm run typecheck && npm run build --prefix agent && npm run build --prefix web && npm run verify:date-ui-evidence && npm run verify:date-ui-dom-smoke && npm run verify:helper-report-gate && npm run verify:capability-gate && npm run verify:case-advance-policy && npm run verify:tool-bridge && npm run verify:agent-connection-resilience && npm run verify:agent-roundtrip",
     "verify:tool-bridge": "tsx scripts/verify-tool-bridge.ts",
     "postinstall": "playwright install chromium"

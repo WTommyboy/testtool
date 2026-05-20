@@ -698,7 +698,7 @@
       "id": "formulaEditor.openButton",
       "page": "collageEditor",
       "type": "button",
-      "purpose": "Vocabulary-aligned component for formulaEditor.openButton.",
+      "purpose": "Legacy/generic component for opening a calculated-field editor. Official inline formula cases should prefer formulaEditor.inlineExpressionArea.",
       "candidateSignals": [
         "button/control that opens the calculated-field/formula editor",
         "公式",
@@ -710,10 +710,138 @@
       ]
     },
     {
+      "id": "formulaEditor.inlineExpressionArea",
+      "page": "collageEditor",
+      "type": "editableExpressionArea",
+      "purpose": "Row-scoped inline expression area that opens the official calculated-field keypad/formula builder.",
+      "candidateSignals": [
+        "placeholder text 請點擊或輸入運算式與插入欄位資料",
+        "inside target 自訂欄位 row",
+        "near equals sign after 自訂欄位 name"
+      ],
+      "assertAfterAction": [
+        "clicking the expression area opens formulaEditor.keypad",
+        "expression text/token state can be read after each token/operator input"
+      ]
+    },
+    {
+      "id": "formulaEditor.keypad",
+      "page": "collageEditor",
+      "type": "inlinePanel",
+      "purpose": "Inline formula keypad/operator panel opened from the calculated-field expression area.",
+      "candidateSignals": [
+        "buttons 0 through 9",
+        "operator buttons + - * / ( )",
+        "buttons 插入欄位, 清空, DEL"
+      ],
+      "assertAfterAction": [
+        "keypad visible after clicking formulaEditor.inlineExpressionArea",
+        "button text set includes digits, operators, 插入欄位, 清空, DEL"
+      ]
+    },
+    {
+      "id": "formulaEditor.insertFieldButton",
+      "page": "collageEditor",
+      "type": "button",
+      "purpose": "Inline keypad button that opens source-report and field pickers for formula token insertion.",
+      "candidateSignals": [
+        "visible button text 插入欄位",
+        "inside formulaEditor.keypad"
+      ],
+      "assertAfterAction": [
+        "formulaEditor.sourceReportPicker and formulaEditor.fieldPicker become visible or focusable"
+      ]
+    },
+    {
+      "id": "formulaEditor.sourceReportPicker",
+      "page": "collageEditor",
+      "type": "picker",
+      "purpose": "Source-report picker used while inserting a field token into the inline formula builder.",
+      "candidateSignals": [
+        "dropdown text 請選擇報表",
+        "opened options include report names",
+        "located inside or adjacent to the inline formula builder panel"
+      ],
+      "assertAfterAction": [
+        "selected source report is visible before choosing field token",
+        "field picker options are refreshed after source report selection"
+      ]
+    },
+    {
+      "id": "formulaEditor.fieldPicker",
+      "page": "collageEditor",
+      "type": "picker",
+      "purpose": "Field picker used while inserting a source-scoped field token into the inline formula builder.",
+      "candidateSignals": [
+        "second dropdown after source-report picker",
+        "opened options contain fields for selected source report",
+        "located inside or adjacent to the inline formula builder panel"
+      ],
+      "assertAfterAction": [
+        "selected field token appears in the expression area",
+        "field picker signature matches selected source report"
+      ]
+    },
+    {
+      "id": "formulaEditor.operatorButton",
+      "page": "collageEditor",
+      "type": "keypadButton",
+      "purpose": "Operator button inside the inline formula keypad.",
+      "candidateSignals": [
+        "visible text +",
+        "visible text -",
+        "visible text *",
+        "visible text /",
+        "visible text ( or )"
+      ],
+      "assertAfterAction": [
+        "expression state changes by the clicked operator"
+      ]
+    },
+    {
+      "id": "formulaEditor.numberButton",
+      "page": "collageEditor",
+      "type": "keypadButton",
+      "purpose": "Number button inside the inline formula keypad.",
+      "candidateSignals": [
+        "visible number buttons 0-9",
+        "inside formulaEditor.keypad"
+      ],
+      "assertAfterAction": [
+        "expression state changes by the clicked number"
+      ]
+    },
+    {
+      "id": "formulaEditor.clearButton",
+      "page": "collageEditor",
+      "type": "button",
+      "purpose": "Clear button inside the inline formula keypad.",
+      "candidateSignals": [
+        "visible button text 清空",
+        "inside formulaEditor.keypad"
+      ],
+      "assertAfterAction": [
+        "expression area becomes empty or returns to placeholder state"
+      ]
+    },
+    {
+      "id": "formulaEditor.deleteButton",
+      "page": "collageEditor",
+      "type": "button",
+      "purpose": "Delete/backspace button inside the inline formula keypad.",
+      "candidateSignals": [
+        "visible button text DEL",
+        "inside formulaEditor.keypad"
+      ],
+      "assertAfterAction": [
+        "expression state removes the last token/operator/number"
+      ]
+    },
+    {
       "id": "formulaEditor.availableFields",
       "page": "collageEditor",
       "type": "listOrPanel",
-      "purpose": "Vocabulary-aligned component for formulaEditor.availableFields.",
+      "purpose": "Legacy modal-style available field list. Official inline formula cases should use formulaEditor.sourceReportPicker and formulaEditor.fieldPicker.",
       "candidateSignals": [
         "field list visible inside the formula editor",
         "可用欄位",
@@ -728,7 +856,7 @@
       "id": "formulaEditor.expressionInput",
       "page": "collageEditor",
       "type": "textInput",
-      "purpose": "Vocabulary-aligned component for formulaEditor.expressionInput.",
+      "purpose": "Legacy modal expression input. Official inline formula cases should use formulaEditor.inlineExpressionArea plus token/keypad actions.",
       "candidateSignals": [
         "main input/editable area for the calculated-field expression",
         "公式輸入",
@@ -758,7 +886,7 @@
       "id": "formulaEditor.confirmButton",
       "page": "collageEditor",
       "type": "button",
-      "purpose": "Vocabulary-aligned component for formulaEditor.confirmButton.",
+      "purpose": "Legacy modal confirm button. Official inline formula cases should not require a separate modal confirm unless live UI shows one.",
       "candidateSignals": [
         "確認/確定 button inside the formula editor modal",
         "公式確認",

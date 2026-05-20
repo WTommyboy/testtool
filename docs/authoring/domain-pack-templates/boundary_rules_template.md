@@ -92,6 +92,26 @@ List domain-specific semantics that must be authored in this domain pack:
 | Visual fallback / screenshot alignment | `discovery/visual-alignment.json` |  |
 | Known product gaps / hazards | `AGENTS.md` or domain references |  |
 
+### Shared Lifecycle Ownership
+
+List repeated user journeys that should be owned by domain action contracts, not by per-case prose or runtime shortcuts:
+
+| Lifecycle | Domain action contract | Required UI objects | Required evidence | Failure boundary |
+| --- | --- | --- | --- | --- |
+| Create -> modal -> cancel/save |  |  |  |  |
+| Save -> list -> find row -> reopen |  |  |  |  |
+| Copy -> save -> verify row |  |  |  |  |
+| Delete -> confirm -> cancel/confirm |  |  |  |  |
+| Picker/date preset -> apply -> verify |  |  |  |  |
+| Download/export -> artifact/toast/result |  |  |  |  |
+
+Rules:
+
+- If two or more cases need the same journey, create or reuse a shared lifecycle action contract.
+- The lifecycle contract must define all required evidence, including negative/cancel evidence when the expected result is no state change.
+- Product FAIL vs tool BLOCKED boundary must be explicit. Example: visible enabled button dispatches but no state change in a functional-flow case may be FAIL; missing target locator or no interaction log is BLOCKED.
+- Testcase prose may reference the lifecycle and supply values, but must not redefine locator logic or fallback behavior.
+
 ### Testcase-Only Ownership
 
 List values or expectations that belong only in this testcase package:

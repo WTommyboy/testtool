@@ -1,0 +1,219 @@
+{
+  "schemaVersion": "domain-action-contract-v0.1",
+  "domain": "BI_OFFICIAL_UI_COLLAGE",
+  "action": "dateRangePanel",
+  "status": "draft_contract",
+  "purpose": "Shared official date-range panel journeys for preset switching, static/dynamic tab validation, start-date custom presets, and cancel/no-change behavior.",
+  "capabilities": [
+    "collage.dateRangePanel.applyPresetAndVerify",
+    "collage.dateRangePanel.applyStartDatePresetAndVerify",
+    "collage.dateRangePanel.staticTimeTypeTab",
+    "collage.dateRangePanel.cancelNoChange"
+  ],
+  "paramsSchema": {
+    "type": "object",
+    "required": [
+      "flow"
+    ],
+    "properties": {
+      "flow": {
+        "type": "string",
+        "enum": [
+          "applyPresetAndVerify",
+          "applyStartDatePresetAndVerify",
+          "staticTimeTypeTab",
+          "cancelNoChange"
+        ]
+      },
+      "presetLabel": {
+        "type": "string",
+        "description": "Visible date preset label, such as 上週 or 本週."
+      },
+      "startDate": {
+        "type": "string",
+        "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+        "description": "Visible start date to type/select for custom start-date presets."
+      },
+      "expectedButtonLabel": {
+        "type": "string",
+        "description": "Expected date-range button text after confirmation."
+      }
+    },
+    "additionalProperties": true
+  },
+  "sharedFlows": {
+    "applyPresetAndVerify": {
+      "usedBy": [
+        "BIUI_COLLAGE_R001-L-05"
+      ],
+      "declarativePlan": [
+        {
+          "op": "click",
+          "target": "dateRange.button"
+        },
+        {
+          "op": "assertVisible",
+          "target": "dateRange.panel"
+        },
+        {
+          "op": "click",
+          "target": "dateRange.preset",
+          "labelFrom": "params.presetLabel"
+        },
+        {
+          "op": "confirm",
+          "target": "dateRange.action.confirm"
+        },
+        {
+          "op": "assertText",
+          "target": "dateRange.button",
+          "valueFrom": "params.expectedButtonLabel"
+        }
+      ],
+      "requiredEvidence": [
+        "dateRange.panel.state",
+        "dateRange.applyPreset.state",
+        "interactionLog"
+      ]
+    },
+    "applyStartDatePresetAndVerify": {
+      "usedBy": [
+        "BIUI_COLLAGE_R001-L-10"
+      ],
+      "declarativePlan": [
+        {
+          "op": "click",
+          "target": "dateRange.button"
+        },
+        {
+          "op": "click",
+          "target": "dateRange.preset",
+          "labelFrom": "params.presetLabel"
+        },
+        {
+          "op": "type",
+          "target": "dateRange.dynamicStartOffsetInput",
+          "valueFrom": "params.startDate"
+        },
+        {
+          "op": "confirm",
+          "target": "dateRange.action.confirm"
+        },
+        {
+          "op": "assertText",
+          "target": "dateRange.button",
+          "valueFrom": "params.expectedButtonLabel"
+        }
+      ],
+      "requiredEvidence": [
+        "dateRange.panel.state",
+        "dateRange.applyPreset.state",
+        "dateRange.button.state",
+        "interactionLog"
+      ]
+    },
+    "staticTimeTypeTab": {
+      "usedBy": [
+        "BIUI_COLLAGE_R001-B-08",
+        "BIUI_COLLAGE_R001-B-09"
+      ],
+      "declarativePlan": [
+        {
+          "op": "click",
+          "target": "dateRange.button"
+        },
+        {
+          "op": "click",
+          "target": "dateRange.timeTypeTab.static"
+        },
+        {
+          "op": "assertStateChanged",
+          "target": "dateRange.timeTypeTab.static"
+        }
+      ],
+      "requiredEvidence": [
+        "dateRange.timeTypeTab.state",
+        "dateRange.panel.state",
+        "interactionLog"
+      ]
+    },
+    "cancelNoChange": {
+      "usedBy": [
+        "BIUI_COLLAGE_R001-L-03"
+      ],
+      "declarativePlan": [
+        {
+          "op": "read",
+          "target": "dateRange.button",
+          "saveAs": "dateRange.button.before"
+        },
+        {
+          "op": "click",
+          "target": "dateRange.button"
+        },
+        {
+          "op": "applyTemporaryDateChange"
+        },
+        {
+          "op": "cancel",
+          "target": "dateRange.action.cancel"
+        },
+        {
+          "op": "assertUnchanged",
+          "target": "dateRange.button",
+          "compareTo": "dateRange.button.before"
+        }
+      ],
+      "requiredEvidence": [
+        "dateRange.cancelFlow.state",
+        "dateRange.button.state",
+        "interactionLog"
+      ]
+    }
+  },
+  "locatorPolicy": {
+    "openBeforeSelect": "always open the official date panel from the visible date-range button before selecting presets",
+    "presetSelection": "preset click must be followed by label/state or request-body evidence, not only a successful click call",
+    "afterRerender": "reacquire date panel, preset, input, cancel, and confirm locators",
+    "readOnlyDomAllowedFor": [
+      "button label",
+      "panel visible texts",
+      "selected tab state",
+      "input value",
+      "request dateRange after preview"
+    ],
+    "forbidden": [
+      "using internal date setter functions",
+      "treating request body correctness as proof that the visible preset/tab was clicked when the case target is UI flow",
+      "declaring PASS from screenshot-only evidence when DOM state is readable"
+    ]
+  },
+  "requiredEvidence": [
+    "dateRange.panel.state",
+    "dateRange.applyPreset.state",
+    "dateRange.button.state",
+    "dateRange.timeTypeTab.state",
+    "dateRange.cancelFlow.state",
+    "interactionLog",
+    "locatorAttempts"
+  ],
+  "blockerCodes": [
+    "DATE_RANGE_BUTTON_NOT_FOUND",
+    "DATE_RANGE_PANEL_NOT_OPENED",
+    "DATE_RANGE_PRESET_NOT_FOUND",
+    "DATE_RANGE_PRESET_CLICK_NO_STATE_CHANGE",
+    "DATE_RANGE_START_INPUT_NOT_FOUND",
+    "DATE_RANGE_CONFIRM_NOT_CLICKABLE",
+    "DATE_RANGE_BUTTON_LABEL_NOT_VERIFIED"
+  ],
+  "judgmentPolicy": {
+    "failWhen": [
+      "the under-test visible preset/tab exists and is clicked but state does not change in a functional-flow case",
+      "confirmed visible date selection produces a request date range that contradicts the expected preset"
+    ],
+    "blockedWhen": [
+      "date panel or target preset/input cannot be located with current-run evidence",
+      "the case requires a product state that cannot be reached due missing prerequisite setup"
+    ]
+  }
+}

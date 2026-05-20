@@ -43,6 +43,24 @@
       "message": "Formula cases must identify each base field by source report and field so the helper can configure the correct official UI row."
     },
     {
+      "id": "BI_OFFICIAL_COLLAGE_FORMULA_INLINE_TOKEN_PATH_REQUIRED",
+      "severity": "warning_until_gen3_gate",
+      "appliesWhen": {
+        "domain": "BI_OFFICIAL_UI_COLLAGE",
+        "operationTemplates": [
+          "collage_formula_preview",
+          "collage_formula_save",
+          "collage.configureCalculatedMetricAndPreview"
+        ]
+      },
+      "require": [
+        "helperHints.params.formulaSteps[] or testcase steps explicitly use formulaEditor.inlineExpressionArea",
+        "formula field tokens identify sourceReport + field",
+        "requiredEvidence includes formula.uiState.inlineBuilder or formula.uiState.tokenPicker; domain evidence maps these to formulaEditor.inlineBuilder.state / formulaEditor.tokenPicker.state"
+      ],
+      "message": "Official collage formula cases must describe the inline formula-builder path: click expression area, click 插入欄位, select source report, select field, then press operator/number keypad buttons. direct_fill_inline is not product PASS/FAIL evidence."
+    },
+    {
       "id": "BI_OFFICIAL_COLLAGE_TOOL_BRIDGE_CONDITIONAL",
       "severity": "error",
       "appliesWhen": {
@@ -89,6 +107,94 @@
         "requiredEvidence references a frontend observation evidence object"
       ],
       "message": "Official UI observation cases must declare which UI state is under test. They should not fall back to preview-only selected-field or network evidence."
+    },
+    {
+      "id": "BI_OFFICIAL_COLLAGE_SHARED_LIFECYCLE_ACTION_REQUIRED",
+      "severity": "warning_until_gen3_gate",
+      "appliesWhen": {
+        "domain": "BI_OFFICIAL_UI_COLLAGE",
+        "caseGroups": [
+          "F",
+          "G",
+          "J",
+          "L",
+          "M"
+        ],
+        "stepsContainAny": [
+          "儲存",
+          "重新開啟",
+          "複製",
+          "刪除",
+          "新增專案",
+          "時間",
+          "日期",
+          "下載"
+        ]
+      },
+      "require": [
+        "one of actionContract=reportLifecycle/projectLifecycle/projectList/dateRangePanel/observeFrontendState",
+        "requiredEvidence references the lifecycle evidence object, not only a screenshot or helper status"
+      ],
+      "message": "Cases using repeated save/list/reopen/copy/delete/project/date journeys must bind to a shared lifecycle action contract before live execution."
+    },
+    {
+      "id": "BI_OFFICIAL_COLLAGE_REPORT_LIFECYCLE_ROW_EVIDENCE_REQUIRED",
+      "severity": "warning_until_gen3_gate",
+      "appliesWhen": {
+        "domain": "BI_OFFICIAL_UI_COLLAGE",
+        "stepsContainAny": [
+          "儲存",
+          "複製",
+          "更新設定",
+          "重新開啟",
+          "下載"
+        ]
+      },
+      "require": [
+        "actionContract=reportLifecycle or actionContract=projectList",
+        "requiredEvidence includes projectList.readiness.state",
+        "requiredEvidence includes projectList.reportRow.state when the case verifies persistence or row-local download"
+      ],
+      "message": "Report persistence cases must not judge from save/copy API success alone; they need current-run project-list readiness and row visibility/read-back evidence."
+    },
+    {
+      "id": "BI_OFFICIAL_COLLAGE_DELETE_CANCEL_FLOW_REQUIRED",
+      "severity": "warning_until_gen3_gate",
+      "appliesWhen": {
+        "domain": "BI_OFFICIAL_UI_COLLAGE",
+        "stepsContainAny": [
+          "刪除",
+          "取消刪除",
+          "delete"
+        ]
+      },
+      "require": [
+        "actionContract=projectList",
+        "requiredEvidence includes deleteConfirmModal.state",
+        "requiredEvidence includes projectList.deleteCancelFlow.state"
+      ],
+      "message": "Delete-cancel cases must click the row-local delete action, observe the confirmation modal, cancel it, and prove the row remains; tooltip-only evidence is insufficient."
+    },
+    {
+      "id": "BI_OFFICIAL_COLLAGE_DATE_LIFECYCLE_EVIDENCE_REQUIRED",
+      "severity": "warning_until_gen3_gate",
+      "appliesWhen": {
+        "domain": "BI_OFFICIAL_UI_COLLAGE",
+        "stepsContainAny": [
+          "上週",
+          "本週",
+          "自某日至昨日",
+          "自某日至今",
+          "靜態時間",
+          "取消後設定不變"
+        ]
+      },
+      "require": [
+        "actionContract=dateRangePanel or actionContract=observeFrontendState",
+        "requiredEvidence includes dateRange.panel.state",
+        "requiredEvidence includes dateRange.applyPreset.state/dateRange.timeTypeTab.state/dateRange.cancelFlow.state as appropriate"
+      ],
+      "message": "Date-panel cases must prove the visible panel action and resulting button/request state. Request-body correctness alone is not enough for UI-flow cases."
     }
   ]
 }

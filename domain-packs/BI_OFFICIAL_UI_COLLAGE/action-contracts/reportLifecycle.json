@@ -1,0 +1,236 @@
+{
+  "schemaVersion": "domain-action-contract-v0.1",
+  "domain": "BI_OFFICIAL_UI_COLLAGE",
+  "action": "reportLifecycle",
+  "status": "draft_contract",
+  "purpose": "Shared report persistence journeys for official collage cases that save, return to the project list, find a report row, reopen, copy, or update report settings.",
+  "capabilities": [
+    "collage.reportLifecycle.saveReturnFindReopen",
+    "collage.reportLifecycle.copySaveVerifyRow",
+    "collage.reportLifecycle.updateSaveReopen",
+    "collage.projectList.ensureReportRowVisible"
+  ],
+  "paramsSchema": {
+    "type": "object",
+    "required": [
+      "flow",
+      "reportName"
+    ],
+    "properties": {
+      "flow": {
+        "type": "string",
+        "enum": [
+          "saveReturnFindReopen",
+          "copySaveVerifyRow",
+          "updateSaveReopen"
+        ]
+      },
+      "reportName": {
+        "type": "string",
+        "minLength": 1,
+        "description": "Case-scoped report name to save, copy, find, or reopen."
+      },
+      "projectName": {
+        "type": "string",
+        "description": "Visible project name. If omitted, runtime may use the active project from the case precondition."
+      },
+      "expectedState": {
+        "type": "object",
+        "description": "Optional case-specific state expected after reopen, such as date range or selected metric rows."
+      }
+    },
+    "additionalProperties": true
+  },
+  "sharedFlows": {
+    "saveReturnFindReopen": {
+      "usedBy": [
+        "BIUI_COLLAGE_R001-F-02",
+        "BIUI_COLLAGE_R001-F-07",
+        "BIUI_COLLAGE_R001-M-11"
+      ],
+      "declarativePlan": [
+        {
+          "op": "ensurePage",
+          "page": "collageEditor"
+        },
+        {
+          "op": "click",
+          "target": "editorToolbar.saveButton"
+        },
+        {
+          "op": "fill",
+          "target": "saveModal.reportNameInput",
+          "valueFrom": "params.reportName"
+        },
+        {
+          "op": "confirm",
+          "target": "saveModal.saveButton",
+          "requiresToolBridge": true
+        },
+        {
+          "op": "observe",
+          "target": "save.toast",
+          "saveAs": "save.toast.state"
+        },
+        {
+          "op": "navigateBackToProjectList"
+        },
+        {
+          "op": "ensureProjectListReady",
+          "saveAs": "projectList.readiness.state"
+        },
+        {
+          "op": "ensureReportRowVisible",
+          "target": "projectList.reportRow",
+          "valueFrom": "params.reportName",
+          "saveAs": "projectList.reportRow.state"
+        },
+        {
+          "op": "open",
+          "target": "projectList.reportRow",
+          "valueFrom": "params.reportName"
+        },
+        {
+          "op": "observe",
+          "target": "reportPersistence.reopenState",
+          "saveAs": "reportPersistence.reopenState"
+        }
+      ],
+      "requiredEvidence": [
+        "saveModal.saveFlow.state",
+        "save.toast.state",
+        "projectList.readiness.state",
+        "projectList.reportRow.state",
+        "reportPersistence.reopenState"
+      ]
+    },
+    "copySaveVerifyRow": {
+      "usedBy": [
+        "BIUI_COLLAGE_R001-M-10"
+      ],
+      "declarativePlan": [
+        {
+          "op": "ensurePage",
+          "page": "collageEditor"
+        },
+        {
+          "op": "click",
+          "target": "editorToolbar.copyButton"
+        },
+        {
+          "op": "fill",
+          "target": "copyModal.reportNameInput",
+          "valueFrom": "params.reportName"
+        },
+        {
+          "op": "confirm",
+          "target": "copyModal.saveButton",
+          "requiresToolBridge": true
+        },
+        {
+          "op": "ensureProjectListReady",
+          "saveAs": "projectList.readiness.state"
+        },
+        {
+          "op": "ensureReportRowVisible",
+          "target": "projectList.reportRow",
+          "valueFrom": "params.reportName",
+          "saveAs": "projectList.reportRow.state"
+        }
+      ],
+      "requiredEvidence": [
+        "copyModal.saveFlow.state",
+        "projectList.readiness.state",
+        "projectList.reportRow.state"
+      ]
+    },
+    "updateSaveReopen": {
+      "usedBy": [
+        "BIUI_COLLAGE_R001-M-11"
+      ],
+      "declarativePlan": [
+        {
+          "op": "ensurePage",
+          "page": "collageEditor"
+        },
+        {
+          "op": "applyCaseModification",
+          "targetFrom": "caseScope.requiredActions"
+        },
+        {
+          "op": "confirm",
+          "target": "editorToolbar.updateButton",
+          "requiresToolBridge": true
+        },
+        {
+          "op": "navigateBackToProjectList"
+        },
+        {
+          "op": "ensureReportRowVisible",
+          "target": "projectList.reportRow",
+          "valueFrom": "params.reportName"
+        },
+        {
+          "op": "open",
+          "target": "projectList.reportRow",
+          "valueFrom": "params.reportName"
+        },
+        {
+          "op": "compareState",
+          "target": "reportPersistence.reopenState",
+          "expectedFrom": "params.expectedState"
+        }
+      ],
+      "requiredEvidence": [
+        "editorToolbar.update.state",
+        "projectList.reportRow.state",
+        "reportPersistence.reopenState"
+      ]
+    }
+  },
+  "locatorPolicy": {
+    "afterSaveOrCopy": "treat current page as unknown; verify editor vs project list before clicking more controls",
+    "projectListSearch": "row lookup must be scoped to the active project list and report name",
+    "afterRerender": "reacquire back button, project list, row, and toolbar locators",
+    "readOnlyDomAllowedFor": [
+      "current URL",
+      "visible report rows",
+      "toast text",
+      "opened editor state",
+      "before/after report settings"
+    ],
+    "forbidden": [
+      "declaring PASS from save API 200 without report row/read-back evidence",
+      "using a copied/saved report name from a previous case",
+      "skipping project-list row verification when the case requires persistence"
+    ]
+  },
+  "requiredEvidence": [
+    "saveModal.saveFlow.state",
+    "copyModal.saveFlow.state",
+    "projectList.readiness.state",
+    "projectList.reportRow.state",
+    "reportPersistence.reopenState",
+    "toolBridge.response",
+    "locatorAttempts"
+  ],
+  "blockerCodes": [
+    "REPORT_LIFECYCLE_EDITOR_NOT_REACHED",
+    "REPORT_LIFECYCLE_SAVE_MODAL_NOT_OPENED",
+    "REPORT_LIFECYCLE_SAVE_NOT_CONFIRMED",
+    "REPORT_LIFECYCLE_PROJECT_LIST_NOT_REACHED",
+    "REPORT_LIFECYCLE_REPORT_ROW_NOT_FOUND",
+    "REPORT_LIFECYCLE_REOPEN_STATE_MISSING",
+    "REPORT_LIFECYCLE_TOOL_BRIDGE_NOT_AUTHORIZED"
+  ],
+  "judgmentPolicy": {
+    "failWhen": [
+      "under-test save/copy/update action completes by visible UI and the expected report row or reopened state is absent",
+      "visible back-to-project-list control is enabled but dispatches no route/state change in a functional-flow case"
+    ],
+    "blockedWhen": [
+      "editor, modal, project list, or row target cannot be located with current-run evidence",
+      "Tool Bridge authorization is required but not available"
+    ]
+  }
+}

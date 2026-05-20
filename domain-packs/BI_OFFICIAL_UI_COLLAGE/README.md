@@ -22,10 +22,18 @@ Optional locator guidance:
 Optional UI / action / evidence contract files:
 
 - `ui-contract.json`
+- `ui-object-vocabulary.json`
 - `action-contracts/setMetricRows.json`
+- `action-contracts/setCalculatedFormula.json`
+- `action-contracts/observeFrontendState.json`
+- `action-contracts/reportLifecycle.json`
+- `action-contracts/projectLifecycle.json`
+- `action-contracts/projectList.json`
+- `action-contracts/dateRangePanel.json`
 - `evidence-schema.json`
 - `lint-rules.json`
 - `discovery/page-map.json`
 - `discovery/component-inventory.json`
+- `discovery/visual-alignment.json`
 
 The optional locator filename is legacy; its content is for official UI collage flows, not DEMO001. The contract files are Gen1 seeds for Domain UI Discovery and later Gen3/Gen4 helper templates/interpreter work.

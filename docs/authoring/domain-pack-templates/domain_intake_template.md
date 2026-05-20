@@ -141,6 +141,26 @@ Use this section to decide what belongs in the domain pack instead of platform r
 - Required download/export actions:
 - Actions that must never fallback to unrelated helpers:
 
+### Shared Lifecycle Actions
+
+Identify repeated user journeys that appear in more than one case. These must become domain action contracts instead of being repeated as prose-only testcase steps.
+
+| Lifecycle | Cases / groups using it | Required domain UI objects | Required evidence | PASS/FAIL/BLOCKED boundary |
+| --- | --- | --- | --- | --- |
+| Create -> modal -> cancel/save |  |  |  |  |
+| Save -> project list -> find row -> reopen |  |  |  |  |
+| Copy -> save -> verify copied row |  |  |  |  |
+| Delete -> confirm modal -> cancel/confirm |  |  |  |  |
+| Picker/date preset -> apply -> verify state |  |  |  |  |
+| Download/export -> artifact/toast/result verify |  |  |  |  |
+
+Shared lifecycle rule:
+
+- If a lifecycle is used by multiple cases, put the sequence, evidence contract, and blocked/fail boundary in `action-contracts/*.json`.
+- Keep testcase rows focused on case-specific values and expected outcomes.
+- Do not let runtime helpers invent or skip lifecycle steps that the domain pack has not declared.
+- If the lifecycle cannot yet be automated, record the gap here and in `lint-rules.json` so live runs fail early or mark the correct BLOCKED category.
+
 ### Evidence Mapping
 
 - DOM / ARIA evidence:

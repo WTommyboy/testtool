@@ -1,0 +1,194 @@
+{
+  "schemaVersion": "domain-action-contract-v0.1",
+  "domain": "BI_OFFICIAL_UI_COLLAGE",
+  "action": "projectLifecycle",
+  "status": "draft_contract",
+  "purpose": "Shared project-sidebar and project-list journeys for official collage project creation, project-limit validation, and project-modal cancel/save behavior.",
+  "capabilities": [
+    "collage.projectLifecycle.openCreateModal",
+    "collage.projectLifecycle.cancelCreateProject",
+    "collage.projectLifecycle.saveTemporaryProject",
+    "collage.projectLifecycle.projectLimitToast"
+  ],
+  "paramsSchema": {
+    "type": "object",
+    "required": [
+      "flow"
+    ],
+    "properties": {
+      "flow": {
+        "type": "string",
+        "enum": [
+          "openCreateModal",
+          "cancelCreateProject",
+          "saveTemporaryProject",
+          "projectLimitToast"
+        ]
+      },
+      "projectName": {
+        "type": "string",
+        "description": "Case-scoped temporary project name when the flow saves a project."
+      },
+      "requiredProjectCount": {
+        "type": "integer",
+        "minimum": 0,
+        "description": "Optional precondition target, such as 5 projects for limit cases."
+      }
+    },
+    "additionalProperties": true
+  },
+  "sharedFlows": {
+    "openCreateModal": {
+      "usedBy": [
+        "BIUI_COLLAGE_R001-I-04",
+        "BIUI_COLLAGE_R001-J-10"
+      ],
+      "declarativePlan": [
+        {
+          "op": "ensurePage",
+          "page": "projectList"
+        },
+        {
+          "op": "click",
+          "target": "sidebar.collageProjectCreateButton"
+        },
+        {
+          "op": "observe",
+          "target": "projectCreateModal.nameInput",
+          "saveAs": "projectCreateModal.flow.state"
+        }
+      ],
+      "requiredEvidence": [
+        "projectCreateModal.flow.state",
+        "interactionLog"
+      ]
+    },
+    "cancelCreateProject": {
+      "usedBy": [
+        "BIUI_COLLAGE_R001-J-10"
+      ],
+      "declarativePlan": [
+        {
+          "op": "click",
+          "target": "sidebar.collageProjectCreateButton"
+        },
+        {
+          "op": "fill",
+          "target": "projectCreateModal.nameInput",
+          "valueFrom": "params.projectName"
+        },
+        {
+          "op": "cancel",
+          "target": "projectCreateModal.cancelButton"
+        },
+        {
+          "op": "assertHidden",
+          "target": "projectCreateModal.nameInput"
+        },
+        {
+          "op": "assertProjectNotCreated",
+          "valueFrom": "params.projectName"
+        }
+      ],
+      "requiredEvidence": [
+        "projectCreateModal.flow.state",
+        "sidebar.collageProjects.count",
+        "interactionLog"
+      ]
+    },
+    "saveTemporaryProject": {
+      "usedBy": [
+        "project-limit precondition builder"
+      ],
+      "declarativePlan": [
+        {
+          "op": "click",
+          "target": "sidebar.collageProjectCreateButton"
+        },
+        {
+          "op": "fill",
+          "target": "projectCreateModal.nameInput",
+          "valueFrom": "params.projectName"
+        },
+        {
+          "op": "confirm",
+          "target": "projectCreateModal.saveButton"
+        },
+        {
+          "op": "assertProjectVisible",
+          "valueFrom": "params.projectName"
+        }
+      ],
+      "requiredEvidence": [
+        "projectCreateModal.flow.state",
+        "sidebar.collageProjects.count",
+        "interactionLog"
+      ]
+    },
+    "projectLimitToast": {
+      "usedBy": [
+        "BIUI_COLLAGE_R001-J-12"
+      ],
+      "declarativePlan": [
+        {
+          "op": "ensureProjectCount",
+          "valueFrom": "params.requiredProjectCount"
+        },
+        {
+          "op": "click",
+          "target": "sidebar.collageProjectCreateButton"
+        },
+        {
+          "op": "observe",
+          "target": "projectLimit.toast",
+          "saveAs": "projectLimit.toast.state"
+        }
+      ],
+      "requiredEvidence": [
+        "sidebar.collageProjects.count",
+        "projectLimit.toast.state",
+        "interactionLog"
+      ]
+    }
+  },
+  "locatorPolicy": {
+    "projectCreateButtonScope": "use sidebar collage project group create button, not company-shared group expand/collapse",
+    "safeProjectCreation": "temporary project creation is allowed only through explicit testcase or precondition builder policy",
+    "afterRerender": "reacquire sidebar group, create button, modal, and project count locators",
+    "readOnlyDomAllowedFor": [
+      "project count",
+      "project names",
+      "modal visibility",
+      "toast text"
+    ],
+    "forbidden": [
+      "using company shared group observation as evidence for project create modal",
+      "counting projects from stale sidebar text after modal save/cancel",
+      "silently creating projects when the case does not allow precondition setup"
+    ]
+  },
+  "requiredEvidence": [
+    "projectCreateModal.flow.state",
+    "sidebar.collageProjects.count",
+    "projectLimit.toast.state",
+    "interactionLog",
+    "locatorAttempts"
+  ],
+  "blockerCodes": [
+    "PROJECT_CREATE_BUTTON_NOT_FOUND",
+    "PROJECT_CREATE_MODAL_NOT_OPENED",
+    "PROJECT_CREATE_MODAL_CANCEL_NOT_CONFIRMED",
+    "PROJECT_COUNT_PRECONDITION_NOT_MET",
+    "PROJECT_LIMIT_TOAST_NOT_OBSERVED"
+  ],
+  "judgmentPolicy": {
+    "failWhen": [
+      "project-create button is visible/enabled but does not open the modal in a functional-flow case",
+      "limit precondition is met and clicking create does not show the expected project-limit toast"
+    ],
+    "blockedWhen": [
+      "sidebar/project group cannot be reached",
+      "required project-count precondition cannot be established by allowed steps"
+    ]
+  }
+}

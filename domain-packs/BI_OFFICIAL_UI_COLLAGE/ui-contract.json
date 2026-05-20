@@ -65,6 +65,7 @@
         "metricRows.sourceReportControl",
         "metricRows.fieldControl",
         "fieldPicker.popover",
+        "formulaEditor.inlineBuilder",
         "dateRange.control",
         "dateRange.panel",
         "display.control",
@@ -252,6 +253,27 @@
         "expected validation message visible",
         "invalid operation does not trigger preview request"
       ]
+    },
+    {
+      "id": "formulaEditor.inlineBuilder",
+      "type": "inlineFormulaBuilder",
+      "purpose": "Build calculated-field formulas through the official inline expression area, keypad, source-report picker, and field picker.",
+      "locatorStrategies": [
+        "row-scoped expression placeholder text 請點擊或輸入運算式與插入欄位資料",
+        "inline keypad panel containing digits, +, -, *, /, (, ), 插入欄位, 清空, DEL",
+        "source-report picker followed by source-scoped field picker after clicking 插入欄位"
+      ],
+      "stateAssertions": [
+        "keypad opens after visible click on the expression area",
+        "field tokens are inserted through source-report and field pickers",
+        "operators and numbers are entered by keypad buttons",
+        "direct text fill is not sufficient evidence for product PASS or FAIL"
+      ],
+      "interactionHazards": [
+        "panel is inline rather than modal and may rerender after token insertion",
+        "source report and field labels are testcase data, not UI object ids",
+        "request body formula can look correct even when visible formula-builder flow was bypassed"
+      ]
     }
   ],
   "actions": [
@@ -265,6 +287,19 @@
         "collage.metricRows.sourceReport",
         "collage.metricRows.field",
         "collage.metricRows.stalePickerDetection"
+      ]
+    },
+    {
+      "id": "setCalculatedFormula",
+      "contractFile": "action-contracts/setCalculatedFormula.json",
+      "purpose": "Configure a calculated-field formula through the official inline formula builder.",
+      "capabilities": [
+        "collage.formula.inlineExpressionArea",
+        "collage.formula.inlineKeypad",
+        "collage.formula.sourceReportPicker",
+        "collage.formula.fieldPicker",
+        "collage.formula.tokenInsertion",
+        "collage.formula.directFillRejectedForJudgment"
       ]
     },
     {
@@ -284,6 +319,50 @@
         "collage.observation.dateTimeTypeTab",
         "collage.observation.datePanelCancel",
         "collage.observation.editorDownload"
+      ]
+    },
+    {
+      "id": "reportLifecycle",
+      "contractFile": "action-contracts/reportLifecycle.json",
+      "purpose": "Run shared report persistence flows such as save -> project list -> row lookup -> reopen, copy-save row verification, and update/reopen.",
+      "capabilities": [
+        "collage.reportLifecycle.saveReturnFindReopen",
+        "collage.reportLifecycle.copySaveVerifyRow",
+        "collage.reportLifecycle.updateSaveReopen",
+        "collage.projectList.ensureReportRowVisible"
+      ]
+    },
+    {
+      "id": "projectLifecycle",
+      "contractFile": "action-contracts/projectLifecycle.json",
+      "purpose": "Run shared project sidebar/create-modal flows and project-limit validation.",
+      "capabilities": [
+        "collage.projectLifecycle.openCreateModal",
+        "collage.projectLifecycle.cancelCreateProject",
+        "collage.projectLifecycle.saveTemporaryProject",
+        "collage.projectLifecycle.projectLimitToast"
+      ]
+    },
+    {
+      "id": "projectList",
+      "contractFile": "action-contracts/projectList.json",
+      "purpose": "Run shared project-list table flows for row lookup, toolbar selection state, row action tooltip, and delete-confirm cancel.",
+      "capabilities": [
+        "collage.projectList.ensureReportRowVisible",
+        "collage.projectList.toolbarSelectionState",
+        "collage.projectList.deleteCancelFlow",
+        "collage.projectList.rowActionTooltip"
+      ]
+    },
+    {
+      "id": "dateRangePanel",
+      "contractFile": "action-contracts/dateRangePanel.json",
+      "purpose": "Run shared date-range panel flows for preset switching, custom start-date presets, static/dynamic tab, and cancel/no-change behavior.",
+      "capabilities": [
+        "collage.dateRangePanel.applyPresetAndVerify",
+        "collage.dateRangePanel.applyStartDatePresetAndVerify",
+        "collage.dateRangePanel.staticTimeTypeTab",
+        "collage.dateRangePanel.cancelNoChange"
       ]
     }
   ],
@@ -403,6 +482,41 @@
         }
       ],
       "evidenceObject": "validation.message.state"
+    },
+    "formulaInlineBuilder": {
+      "component": "formulaEditor.inlineBuilder",
+      "entryObject": "formulaEditor.inlineExpressionArea",
+      "trustedInputObjects": [
+        "formulaEditor.insertFieldButton",
+        "formulaEditor.sourceReportPicker",
+        "formulaEditor.fieldPicker",
+        "formulaEditor.operatorButton",
+        "formulaEditor.numberButton"
+      ],
+      "controlObjects": [
+        "formulaEditor.keypad",
+        "formulaEditor.clearButton",
+        "formulaEditor.deleteButton"
+      ],
+      "trustedEntryMethods": [
+        "inline_insert_field_picker",
+        "inline_keypad_operator",
+        "inline_keypad_number"
+      ],
+      "untrustedEntryMethods": [
+        "direct_fill_inline",
+        "dom_mutation",
+        "internal_js_setter"
+      ],
+      "judgmentPolicy": {
+        "productPassFailRequiresTrustedEntryMethod": true,
+        "untrustedEntryMethodResult": "BLOCKED_TOOL_LIMITATION",
+        "requestBodyFormulaAloneCanSupport": "backend/request outcome only; not visible UI flow"
+      },
+      "evidenceObjects": [
+        "formulaEditor.inlineBuilder.state",
+        "formulaEditor.tokenPicker.state"
+      ]
     }
   },
   "evidenceContract": {
@@ -410,7 +524,8 @@
     "policy": [
       "Helper emits current-run evidence only and never judges PASS, FAIL, or BLOCKED.",
       "Raw DOM and screenshots are artifacts for review, not the stable contract.",
-      "Tool Bridge response is conditional evidence and is required only when irreversible/native dialog execution is reached."
+      "Tool Bridge response is conditional evidence and is required only when irreversible/native dialog execution is reached.",
+      "Formula setup evidence must distinguish trusted inline token/keypad operation from direct_fill_inline fallback."
     ]
   },
   "lintRules": {

@@ -168,6 +168,59 @@
       ]
     },
     {
+      "id": "tommy.formulaInitial",
+      "path": "/Users/tommy/Desktop/screenshot/截圖 2026-05-20 下午2.20.29.png",
+      "screen": "collageEditor.formula.initialExpressionArea",
+      "observedObjects": [
+        "formulaEditor.inlineExpressionArea"
+      ]
+    },
+    {
+      "id": "tommy.formulaKeypad",
+      "path": "/Users/tommy/Desktop/screenshot/截圖 2026-05-20 下午2.20.45.png",
+      "screen": "collageEditor.formula.inlineKeypad",
+      "observedObjects": [
+        "formulaEditor.inlineExpressionArea",
+        "formulaEditor.keypad",
+        "formulaEditor.insertFieldButton",
+        "formulaEditor.operatorButton",
+        "formulaEditor.numberButton",
+        "formulaEditor.clearButton",
+        "formulaEditor.deleteButton"
+      ]
+    },
+    {
+      "id": "tommy.formulaSourcePicker",
+      "path": "/Users/tommy/Desktop/screenshot/截圖 2026-05-20 下午2.21.26.png",
+      "screen": "collageEditor.formula.sourceReportPicker",
+      "observedObjects": [
+        "formulaEditor.keypad",
+        "formulaEditor.insertFieldButton",
+        "formulaEditor.sourceReportPicker"
+      ]
+    },
+    {
+      "id": "tommy.formulaFieldPicker",
+      "path": "/Users/tommy/Desktop/screenshot/截圖 2026-05-20 下午2.21.49.png",
+      "screen": "collageEditor.formula.fieldPicker",
+      "observedObjects": [
+        "formulaEditor.keypad",
+        "formulaEditor.sourceReportPicker",
+        "formulaEditor.fieldPicker"
+      ]
+    },
+    {
+      "id": "tommy.formulaExpressionBuilt",
+      "path": "/Users/tommy/Desktop/screenshot/截圖 2026-05-20 下午2.23.26.png",
+      "screen": "collageEditor.formula.expressionBuilt",
+      "observedObjects": [
+        "formulaEditor.inlineExpressionArea",
+        "formulaEditor.keypad",
+        "formulaEditor.operatorButton",
+        "formulaEditor.numberButton"
+      ]
+    },
+    {
       "id": "ui.vocabularyAlignment",
       "path": "domain-packs/BI_OFFICIAL_UI_COLLAGE/ui-object-vocabulary.json",
       "observedObjects": [
@@ -209,9 +262,18 @@
         "fieldPicker.option.newAccounts",
         "formulaEditor.availableFields",
         "formulaEditor.confirmButton",
+        "formulaEditor.clearButton",
+        "formulaEditor.deleteButton",
         "formulaEditor.expressionInput",
         "formulaEditor.fieldNameInput",
+        "formulaEditor.fieldPicker",
+        "formulaEditor.inlineExpressionArea",
+        "formulaEditor.insertFieldButton",
+        "formulaEditor.keypad",
+        "formulaEditor.numberButton",
         "formulaEditor.openButton",
+        "formulaEditor.operatorButton",
+        "formulaEditor.sourceReportPicker",
         "metricRows.addRowButton",
         "metricRows.deleteRowButton",
         "metricRows.duplicateRowButton",
@@ -1112,6 +1174,185 @@
         "新增運算欄位",
         "button/control that opens the calculated-field/formula editor"
       ]
+    },
+    "formulaEditor.inlineExpressionArea": {
+      "status": "confirmed",
+      "sourceIds": [
+        "tommy.formulaInitial",
+        "tommy.formulaKeypad",
+        "tommy.formulaExpressionBuilt"
+      ],
+      "screenContext": "Collage editor left panel, target 自訂欄位 row expression area after the equals sign.",
+      "visibleText": [
+        "請點擊或輸入運算式與插入欄位資料",
+        "自訂欄位1"
+      ],
+      "visualCues": [
+        "placeholder text below the 自訂欄位1 row",
+        "clicking the expression area opens the inline keypad",
+        "built expressions remain visually attached to the same calculated field row"
+      ],
+      "alignmentNotes": "Confirmed by Tommy's 2026-05-20 screenshots. This is the official inline formula-builder entry point, not a modal open button."
+    },
+    "formulaEditor.keypad": {
+      "status": "confirmed",
+      "sourceIds": [
+        "tommy.formulaKeypad",
+        "tommy.formulaSourcePicker",
+        "tommy.formulaFieldPicker",
+        "tommy.formulaExpressionBuilt"
+      ],
+      "screenContext": "Inline panel below the calculated-field expression area.",
+      "visibleText": [
+        "7",
+        "8",
+        "9",
+        "+",
+        "-",
+        "*",
+        "/",
+        "(",
+        ")",
+        "DEL",
+        "插入欄位",
+        "清空"
+      ],
+      "visualCues": [
+        "number keypad on the left",
+        "operator keypad in the middle",
+        "插入欄位 and 清空 buttons on the right"
+      ],
+      "alignmentNotes": "Formula actions should use these visible keypad controls for operators and numbers."
+    },
+    "formulaEditor.insertFieldButton": {
+      "status": "confirmed",
+      "sourceIds": [
+        "tommy.formulaKeypad",
+        "tommy.formulaSourcePicker"
+      ],
+      "screenContext": "Right side of the inline formula keypad.",
+      "visibleText": [
+        "插入欄位"
+      ],
+      "visualCues": [
+        "button inside formula keypad",
+        "opens source-report and field pickers for inserting formula tokens"
+      ],
+      "alignmentNotes": "This button is the trusted visible-UI entry for formula field tokens."
+    },
+    "formulaEditor.sourceReportPicker": {
+      "status": "confirmed",
+      "sourceIds": [
+        "tommy.formulaSourcePicker",
+        "tommy.formulaFieldPicker"
+      ],
+      "screenContext": "Inline formula token picker, first dropdown after clicking 插入欄位.",
+      "visibleText": [
+        "請選擇報表",
+        "每日報表",
+        "雙平台營收占比",
+        "退費追蹤",
+        "beanfun!導流",
+        "商品銷售明細表"
+      ],
+      "visualCues": [
+        "source report dropdown appears above/inside the keypad panel",
+        "opened dropdown groups options under 共享報表"
+      ],
+      "alignmentNotes": "Source report labels are selectable testcase parameters. The object is the picker, not a specific report."
+    },
+    "formulaEditor.fieldPicker": {
+      "status": "confirmed",
+      "sourceIds": [
+        "tommy.formulaFieldPicker"
+      ],
+      "screenContext": "Inline formula token picker, second dropdown after a source report is selected.",
+      "visibleText": [
+        "---",
+        "新增帳號數",
+        "MAU(帳號)",
+        "MAX CCU",
+        "AVG CCU"
+      ],
+      "visualCues": [
+        "field dropdown options change after source report selection",
+        "each option displays a field label and a numeric type label when opened"
+      ],
+      "alignmentNotes": "Field picker must be source-scoped; stale picker detection remains required."
+    },
+    "formulaEditor.operatorButton": {
+      "status": "confirmed",
+      "sourceIds": [
+        "tommy.formulaKeypad",
+        "tommy.formulaExpressionBuilt"
+      ],
+      "screenContext": "Middle column of the inline formula keypad.",
+      "visibleText": [
+        "+",
+        "-",
+        "*",
+        "/",
+        "(",
+        ")"
+      ],
+      "visualCues": [
+        "operator keypad buttons next to number keypad",
+        "operator symbols appear in the built expression after clicks"
+      ],
+      "alignmentNotes": "Operator buttons are trusted formula-builder interactions."
+    },
+    "formulaEditor.numberButton": {
+      "status": "confirmed",
+      "sourceIds": [
+        "tommy.formulaKeypad",
+        "tommy.formulaExpressionBuilt"
+      ],
+      "screenContext": "Left side of the inline formula keypad.",
+      "visibleText": [
+        "0",
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8",
+        "9"
+      ],
+      "visualCues": [
+        "number keypad buttons",
+        "numeric constants appear in the built expression after clicks"
+      ],
+      "alignmentNotes": "Number buttons are trusted formula-builder interactions for constants such as /2."
+    },
+    "formulaEditor.clearButton": {
+      "status": "confirmed",
+      "sourceIds": [
+        "tommy.formulaKeypad"
+      ],
+      "screenContext": "Right side of the inline formula keypad.",
+      "visibleText": [
+        "清空"
+      ],
+      "visualCues": [
+        "clear button inside formula keypad"
+      ],
+      "alignmentNotes": "Clear is a setup/cleanup control for the current expression."
+    },
+    "formulaEditor.deleteButton": {
+      "status": "confirmed",
+      "sourceIds": [
+        "tommy.formulaKeypad"
+      ],
+      "screenContext": "Bottom of the operator keypad area.",
+      "visibleText": [
+        "DEL"
+      ],
+      "visualCues": [
+        "delete/backspace button inside formula keypad"
+      ],
+      "alignmentNotes": "DEL edits the formula expression only; it is not destructive report/project delete."
     },
     "formulaEditor.availableFields": {
       "status": "notCaptured",

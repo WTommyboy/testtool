@@ -39,6 +39,8 @@
 - [ ] `domain-packs/<DOMAIN>/ui-contract.json`, if the domain has visible UI flows.
 - [ ] `domain-packs/<DOMAIN>/ui-object-vocabulary.json`, if testcase steps target named UI objects.
 - [ ] `domain-packs/<DOMAIN>/action-contracts/*.json`, if testcase steps need reusable domain operations.
+- [ ] Shared lifecycle action contracts exist for repeated cross-case user journeys, not only single UI controls.
+  Examples: create -> modal -> cancel/save, save -> list -> find row -> reopen, copy -> save -> verify row, delete -> confirm -> cancel/confirm, picker preset -> apply -> verify label/request.
 - [ ] `domain-packs/<DOMAIN>/evidence-schema.json`, if PASS/FAIL/BLOCKED depends on structured evidence.
 - [ ] `domain-packs/<DOMAIN>/lint-rules.json`, if package consistency should catch missing action/object contracts before live run.
 - [ ] `domain-packs/<DOMAIN>/discovery/page-map.json`, if URL/page/modal boundaries matter.
@@ -52,6 +54,13 @@
 - [ ] Platform/domain/testcase placement was checked against `agent-skills/uat-tool/rules/platform-domain-boundary.md`.
 - [ ] Generic action verbs are referenced from `contracts/platform-action-vocabulary.v1.json`; no domain action verbs were invented in testcase prose only.
 - [ ] Domain-specific UI object ids, aliases, locator hints, state attributes, hazards, and known product gaps live in the domain pack, not platform runtime.
+- [ ] Repeated lifecycle flows have been identified across the testcase set and assigned to domain action contracts with required evidence.
+- [ ] Each shared lifecycle contract declares:
+  - [ ] precondition page/state
+  - [ ] step sequence using platform actions and domain UI object ids
+  - [ ] required evidence objects
+  - [ ] PASS/FAIL/BLOCKED judgment boundary
+  - [ ] safe handling for create/update/delete or irreversible steps
 - [ ] Testcase-specific input values and expected outcomes remain in the testcase package, not the domain vocabulary.
 - [ ] Any temporary bridge is named, scoped, and has a follow-up contract that will replace it.
 - [ ] `AGENTS.md` has scope and out-of-scope.
@@ -102,11 +111,14 @@ Expected:
 
 - [ ] Minimal smoke testcase package exists.
 - [ ] Smoke uses low-risk observation cases first.
+- [ ] Smoke includes at least one case for each high-risk shared lifecycle contract that appears in the package.
 - [ ] Mac Agent downloads domain pack files.
 - [ ] Codex sees the domain `AGENTS.md`.
 - [ ] Codex sees domain UI/action/evidence/lint files when present.
 - [ ] A frontend observation smoke proves DOM/ARIA path or explicit visual fallback contract.
 - [ ] A workflow smoke proves required action coverage, not only page navigation.
+- [ ] A lifecycle smoke proves repeated flows do not stop at partial evidence.
+  Examples: save evidence must include row visibility or an explicit row-search failure; delete-cancel evidence must include modal open, cancel click, and row unchanged; date preset evidence must include before/after label or request body.
 - [ ] One case completes and uploads `result.xlsx`.
 - [ ] Result parser ingests the case.
 - [ ] Final aggregate can be downloaded.
