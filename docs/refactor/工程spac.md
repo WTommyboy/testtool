@@ -2606,3 +2606,10 @@ Status update 2026-05-20 P0.29 BI official inline formula-builder alignment: Tom
 - Domain/evidence：`observeFrontendState` contract 補 `projectCreateModal` 與 `deleteCancelFlow` observationType；`projectCreateModal.panel` 已補進 UI object vocabulary、component inventory、visual alignment；`screenshot` 明確成為 supporting evidence object，但仍不能取代 DOM/action evidence。
 - 驗證：`npm run verify:domain-pack -- --name BI_OFFICIAL_UI_COLLAGE`、`npm run verify:official-observation-contract`、`npm run verify:p0-runtime-wiring`、`npm run verify:p0-live-action-templates`、`npm run verify:bi-official-ui-object-vocabulary`、`npm run verify:shared-lifecycle-action-contracts`、`npm run typecheck`、`npm run build --prefix agent`、`git diff --check` 皆通過。
 - 下一步判讀：下一輪 reduced/live UAT 若仍出現 BLOCKED，應先按分類判讀：產品真的不可操作、testcase 前置狀態不足、domain contract 缺物件/證據、runtime action 失敗、result gate 證據不足。不要把所有 BLOCKED 都歸為 helper bug，也不要用 screenshot-only 自動改判 PASS/FAIL。
+
+### 2026-05-20 - P0.31 result evidence gate / upload lifecycle containment fix
+
+- 背景：reduced v1.14 run `5dbc8fa5-1843-4980-9729-3bd7ac4136b7` 已跑完 J-12，但在 L-05 自動停止。L-05 helper artifacts 已產生，Codex 也寫出單題 `BLOCKED / EVIDENCE_INSUFFICIENT`，但 server result evidence gate 將 `clicked=false, confirmed=false` 誤視為 native confirm / Tool Bridge claim，回 `TOOL_BRIDGE_RESPONSE_MISSING`。Agent 嘗試把 row 改為 `BLOCKED_RESULT_GATE_CONTAINMENT` 後重傳，但 server 第一次 422 時已把 run terminalize 成 `FAILED`，retry 因 `RUN_ALREADY_TERMINAL` 409 被拒。
+- 修正：result gate 遮罩一般 UI interaction boolean (`clicked/confirmed/handled/accepted/dismissed=true|false|null`)，避免 observation evidence 被誤判為不可逆/native-dialog 操作。Result upload endpoint 遇 `ResultEvidenceGateError` 時不再立即 `FAILED`；它保留 run non-terminal，回 422 與 gate report 給 Agent 做既有單題 containment/retry。非 evidence-gate ingest error 仍 terminalize。
+- 邊界：這是平台層 evidence gate + run lifecycle isolation，不是 BI-specific testcase 修正。L-05 仍要依實際 UI evidence 判 `PASS/FAIL/BLOCKED`；本 patch 只保證一個可 contain 的 gate dispute 不會把剩餘 cases 留成 PENDING。
+- 驗證：`npm run verify:result-evidence-gate`、`npm run verify:result-evidence-upload-containment`、`npm run verify:zombie-run-guards`、`npm run typecheck`、`npm run build`、`npm run build --prefix agent` 通過。

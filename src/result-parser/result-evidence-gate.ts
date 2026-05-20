@@ -182,6 +182,7 @@ const TOOL_BRIDGE_AUTH_OR_DESTRUCTIVE_PATTERN =
   /(?:Tommy|PM|授權|同意|approved|authorized|authorization|request_id|tool[-_ ]response|刪除|删除|delete|trash|remove|覆寫|覆蓋儲存|overwrite|儲存|保存|save|SSO|login|auth|登入|未授權|不可逆)/i;
 const NEGATIVE_OR_MISSING_TOOL_BRIDGE_CLAIM_PATTERNS = [
   /TOOL_BRIDGE_RESPONSE_MISSING/gi,
+  /\b(?:clicked|confirmed|handled|accepted|dismissed)\b\s*(?::|=)?\s*(?:true|false|null)\b/gi,
   /(?:tool\s*bridge|toolbridge|tool_bridge).{0,24}(?:response|回覆).{0,24}(?:missing|缺少|缺乏|未取得|沒有取得|無法取得|不足)/gi,
   /(?:missing|without|缺少|缺乏|未取得|沒有取得|無法取得|不足).{0,40}(?:tool\s*bridge|toolbridge|tool_bridge).{0,24}(?:response|回覆|evidence|證據|紀錄)/gi,
   /(?:未附|未提供|未包含|未寫入|未记录|未記錄).{0,40}(?:tool\s*bridge|toolbridge|tool_bridge).{0,24}(?:response|回覆|evidence|證據|紀錄)/gi,

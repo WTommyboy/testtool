@@ -2933,15 +2933,19 @@ router.post("/:id/output/result-xlsx", resultUpload.single("resultXlsx"), async 
       ...result
     });
   } catch (error) {
-    setRunStatusWithMeta(runId, "FAILED");
+    const isResultEvidenceGateError = error instanceof ResultEvidenceGateError;
+    if (!isResultEvidenceGateError) {
+      setRunStatusWithMeta(runId, "FAILED");
+    }
     insertRunEvent(runId, "result.ingest_failed", {
       filePath: req.file.path,
       error: error instanceof Error ? error.message : String(error),
       ...(error instanceof ResultEvidenceGateError ? { resultEvidenceGate: error.report } : {})
     });
-    insertRunLog(runId, "ERROR", "Agent result xlsx ingest failed", {
+    insertRunLog(runId, isResultEvidenceGateError ? "WARN" : "ERROR", "Agent result xlsx ingest failed", {
       filePath: req.file.path,
       error: error instanceof Error ? error.message : String(error),
+      runTerminalized: !isResultEvidenceGateError,
       ...(error instanceof ResultEvidenceGateError ? { resultEvidenceGate: error.report } : {})
     });
     return res.status(error instanceof ResultEvidenceGateError ? 422 : 400).json({

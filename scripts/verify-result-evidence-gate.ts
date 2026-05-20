@@ -653,6 +653,45 @@ const main = async (): Promise<void> => {
     assert.equal(invalidJsonReport.status, "error");
     assert.ok(hasIssue(invalidJsonReport, "DETAIL_JSON_PARSE_ERROR"));
 
+    const datePresetClickedFalse = path.join(tempRoot, "date-preset-clicked-false-result.xlsx");
+    await writeWorkbook(datePresetClickedFalse, [
+      {
+        caseNo: "BIUI_COLLAGE_R001-L-05",
+        status: "BLOCKED",
+        testType: "功能流程",
+        failCategory: "EVIDENCE_INSUFFICIENT",
+        detailJson: JSON.stringify({
+          測試目的: "驗證時間區間 preset『上週』與『本週』切換後，按鈕標籤是否正確反映。",
+          設定條件: "已由 current-run helper 進入拼貼新增報表頁，初始 date button 顯示『過去 7 天』。",
+          預期行為: "可點選『上週』並確認後，按鈕顯示『上週』；再切換『本週』並確認後，按鈕顯示『本週』。",
+          實際行為:
+            "helper 可成功切換『本週』（afterDateText=本週），但『上週』目標不可點擊（clicked=false, confirmed=false, stateChanged=false），無法完成完整雙 preset 驗證流程。",
+          blocked_reason: "DATE_PANEL_PRESET_NOT_CLICKABLE:dateRange.preset.lastWeek",
+          currentRunEvidence: {
+            runId: "fixture-run",
+            caseNo: "BIUI_COLLAGE_R001-L-05",
+            helperPreRunSummary: "output/helper-pre-run-summary.json",
+            helperReport: "output/helper-artifacts/BIUI_COLLAGE_R001-L-05/helper-report.jsonl",
+            frontendObservationEvidence: "output/helper-artifacts/BIUI_COLLAGE_R001-L-05/frontend-observation-evidence.json",
+            screenshot: "output/helper-artifacts/BIUI_COLLAGE_R001-L-05/BIUI_COLLAGE_R001-L-05-observe-datePanel.png",
+            helperWarnings: [
+              "DATE_PANEL_PRESET_NOT_CLICKABLE:dateRange.preset.lastWeek",
+              "FRONTEND_OBSERVATION_ASSERTION_FALSE_REQUIRES_CODEX_JUDGMENT"
+            ]
+          }
+        })
+      }
+    ]);
+    const datePresetClickedFalseReport = await runGate(datePresetClickedFalse, {
+      currentCaseNo: "BIUI_COLLAGE_R001-L-05",
+      expectedCaseNos: ["BIUI_COLLAGE_R001-L-05"]
+    });
+    assert.equal(
+      datePresetClickedFalseReport.status,
+      "ok",
+      `date preset clicked=false / confirmed=false interaction evidence should not require Tool Bridge response; issues=${JSON.stringify(datePresetClickedFalseReport.issues)}`
+    );
+
     console.log(
       JSON.stringify(
         {
@@ -681,7 +720,8 @@ const main = async (): Promise<void> => {
             "nativeDialogReached executionState requires Tool Bridge response",
             "missing Tool Bridge response prose does not require a second Tool Bridge response",
             "Tool Bridge action claim can be satisfied by current-run server event evidence",
-            "invalid detail_json is blocked"
+            "invalid detail_json is blocked",
+            "date preset clicked=false / confirmed=false interaction evidence does not require Tool Bridge response"
           ]
         },
         null,

@@ -41,6 +41,11 @@ const main = (): void => {
     /TERMINAL_STATUSES\.has\(currentStatus\)[\s\S]*?RUN_ALREADY_TERMINAL[\s\S]*?result\.upload_rejected/s,
     "Result upload endpoint must reject result.xlsx uploads after the run is terminal."
   );
+  assert.match(
+    runsSource,
+    /const isResultEvidenceGateError = error instanceof ResultEvidenceGateError;[\s\S]*?if \(!isResultEvidenceGateError\) \{[\s\S]*?setRunStatusWithMeta\(runId, ["']FAILED["']\)/,
+    "Result evidence gate upload errors must not terminalize the run before the Agent can apply case-level containment and retry."
+  );
 
   process.stdout.write("Zombie run guard smoke passed.\n");
 };
