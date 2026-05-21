@@ -8656,15 +8656,23 @@ const updateExistingReportAndReopen = async (options: CliOptions, page: Page, st
   } finally {
     page.off("dialog", dialogHandler);
   }
-  const backReport = await clickBackToProjectList(options, page, startedAt).catch((error) => createReport(
-    options,
-    "blocked",
-    startedAt,
-    { error: error instanceof Error ? error.message : String(error) },
-    {},
-    ["UPDATE_REOPEN_BACK_TO_LIST_FAILED"]
-  ));
-  const reopenStep = backReport.status === "ok"
+  const updateClicked = updateObserved?.result.clicked === true;
+  const updateButtonWasVisible = /更新設定|更新|儲存設定/.test(String(updateObserved?.result.bodyTextExcerpt ?? ""));
+  const recommendedFailureClassification = dateResult.ok === true && !updateClicked && updateButtonWasVisible
+    ? "FAIL_INTERACTION_FAILED"
+    : null;
+  const shouldAttemptReopen = updateClicked && !dialogChainRequiresApproval;
+  const backReport = shouldAttemptReopen
+    ? await clickBackToProjectList(options, page, startedAt).catch((error) => createReport(
+        options,
+        "blocked",
+        startedAt,
+        { error: error instanceof Error ? error.message : String(error) },
+        {},
+        ["UPDATE_REOPEN_BACK_TO_LIST_FAILED"]
+      ))
+    : null;
+  const reopenStep = backReport?.status === "ok"
     ? await reopenReport(options, page, startedAt).catch((error) => createReport(
         options,
         "blocked",
@@ -8674,7 +8682,9 @@ const updateExistingReportAndReopen = async (options: CliOptions, page: Page, st
         ["UPDATE_REOPEN_REOPEN_FAILED"]
       ))
     : null;
-  const stateAfterReopen = await readStateDelta(page, { ...options.params, dateRange: targetDateRange }).catch((error) => ({ readError: error instanceof Error ? error.message : String(error) }));
+  const stateAfterReopen = reopenStep?.status === "ok"
+    ? await readStateDelta(page, { ...options.params, dateRange: targetDateRange }).catch((error) => ({ readError: error instanceof Error ? error.message : String(error) }))
+    : { skipped: true, reason: updateClicked ? "REOPEN_NOT_COMPLETED" : "UPDATE_SETTING_BUTTON_NOT_CLICKED" };
   const uiProfileAfter = await captureUiDomProfile(options, page, "updateReopen.after");
   const shot = await screenshot(options, page, "update-reopen");
   const stateAfterReopenRecord = stateAfterReopen && typeof stateAfterReopen === "object" && !Array.isArray(stateAfterReopen)
@@ -8683,14 +8693,18 @@ const updateExistingReportAndReopen = async (options: CliOptions, page: Page, st
   const stateAfterReopenChecks = stateAfterReopenRecord.checks && typeof stateAfterReopenRecord.checks === "object" && !Array.isArray(stateAfterReopenRecord.checks)
     ? stateAfterReopenRecord.checks as Record<string, unknown>
     : {};
-  const persisted = stateAfterReopenChecks.dateRange === true || stateAfterReopenChecks.field === true;
+  const persisted = reopenStep?.status === "ok" && (stateAfterReopenChecks.dateRange === true || stateAfterReopenChecks.field === true);
   if (!shot) warnings.push("SCREENSHOT_UNAVAILABLE");
   if (dateResult.ok !== true) warnings.push(`UPDATE_REOPEN_DATE_MODIFY_NOT_VERIFIED:${dateResult.warning ?? "unknown"}`);
-  if (updateObserved?.result.clicked !== true) warnings.push("UPDATE_SETTING_BUTTON_NOT_CLICKED");
+  if (!updateClicked) warnings.push("UPDATE_SETTING_BUTTON_NOT_CLICKED");
+  if (!shouldAttemptReopen) {
+    warnings.push(updateClicked ? "UPDATE_REOPEN_SKIPPED_AFTER_DIALOG_CHAIN" : "UPDATE_REOPEN_SKIPPED_AFTER_UPDATE_NOT_CLICKED");
+  }
   if (dialogChainRequiresApproval) warnings.push("UPDATE_REOPEN_NATIVE_DIALOG_CHAIN_BLOCKED");
   if (persisted !== true) warnings.push("UPDATE_REOPEN_PERSISTENCE_ASSERTION_FALSE_REQUIRES_CODEX_JUDGMENT");
   const evidence = {
     workflowStatus: dateResult.ok === true && updateObserved?.result.clicked === true && !dialogChainRequiresApproval ? "completed" : "blocked",
+    recommendedFailureClassification,
     approvedToolRequestId: options.approvedToolRequestId,
     reportName,
     targetDateRange,
@@ -8706,7 +8720,7 @@ const updateExistingReportAndReopen = async (options: CliOptions, page: Page, st
       network: updateObserved ? { requests: updateObserved.requests, responses: updateObserved.responses } : null,
       dialogs
     },
-    backToList: reportSummary(backReport),
+    backToList: backReport ? reportSummary(backReport) : null,
     reopen: reopenStep ? reportSummary(reopenStep) : null,
     persisted
   };
@@ -8719,7 +8733,9 @@ const updateExistingReportAndReopen = async (options: CliOptions, page: Page, st
     {
       updateReopenEvidence: evidence,
       "reportPersistence.reopenState": stateAfterReopen,
-      "editorToolbar.update.state": updateObserved?.result ?? null
+      "editorToolbar.update.state": updateObserved?.result
+        ? { ...updateObserved.result, recommendedFailureClassification }
+        : null
     },
     { updateReopenEvidence: updateReopenEvidencePath(options), ...(shot ? { screenshot: shot } : {}) },
     warnings

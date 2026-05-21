@@ -22,7 +22,7 @@ const writeInputWorkbook = async (filePath: string): Promise<void> => {
 
 const writeCommonRunFiles = async (
   runDir: string,
-  options: { browserClosed: boolean; consistencyError?: boolean }
+  options: { browserClosed: boolean; consistencyError?: boolean; browserClosedReason?: "targetClosed" | "leaseMissing" }
 ): Promise<void> => {
   const reportPath = path.join(runDir, "output", "helper-artifacts", caseNo, "collage.createReport-latest.json");
   fs.mkdirSync(path.dirname(reportPath), { recursive: true });
@@ -44,7 +44,9 @@ const writeCommonRunFiles = async (
     status: "blocked",
     helperCanJudgeResult: false,
     reason: options.browserClosed
-      ? "CREATE_REPORT_BUTTON_NOT_CLICKABLE: Target page, context or browser has been closed"
+      ? options.browserClosedReason === "leaseMissing"
+        ? "BROWSER_SESSION_LEASE_MISSING: input/browser-session.json is absent for this case"
+        : "CREATE_REPORT_BUTTON_NOT_CLICKABLE: Target page, context or browser has been closed"
       : "CREATE_REPORT_BUTTON_NOT_CLICKABLE: selector timeout, create button is not visible",
     evidenceMetadata: {
       source: "mac-agent-bi-ui-helper",
@@ -90,7 +92,7 @@ const writeCommonRunFiles = async (
         stdoutExcerpt: "",
         stderrExcerpt: "",
         reportPath,
-        warnings: []
+        warnings: options.browserClosed && options.browserClosedReason === "leaseMissing" ? ["BROWSER_SESSION_LEASE_MISSING"] : []
       }
     ]
   }, null, 2));
@@ -104,6 +106,13 @@ const main = async (): Promise<void> => {
     await writeCommonRunFiles(containedRoot, { browserClosed: true });
     const summary = JSON.parse(fs.readFileSync(path.join(containedRoot, "output", "helper-pre-run-summary.json"), "utf8"));
     assert.equal(helperSummaryHasBrowserTargetClosed(summary), true);
+
+    const leaseMissingRoot = fs.mkdtempSync(path.join(os.tmpdir(), "uat-helper-browser-containment-lease-"));
+    cleanupRoots.push(leaseMissingRoot);
+    await writeCommonRunFiles(leaseMissingRoot, { browserClosed: true, browserClosedReason: "leaseMissing" });
+    const leaseMissingSummary = JSON.parse(fs.readFileSync(path.join(leaseMissingRoot, "output", "helper-pre-run-summary.json"), "utf8"));
+    assert.equal(helperSummaryHasBrowserTargetClosed(leaseMissingSummary), true, "BROWSER_SESSION_LEASE_MISSING must trigger helper pre-run browser recovery");
+
     const report = await writeHelperBrowserSessionContainmentResultIfNeeded({
       runId: path.basename(containedRoot),
       roundId: "BIUI_COLLAGE_R001",

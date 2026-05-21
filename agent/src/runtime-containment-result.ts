@@ -96,6 +96,7 @@ export const isBrowserTargetClosedText = (text: string): boolean => {
     /\bbrowser (?:has been )?closed\b/i,
     /\bcontext (?:has been )?closed\b/i,
     /\bpage (?:has been )?closed\b/i,
+    /BROWSER_SESSION_LEASE_MISSING/i,
     /BROWSER_SESSION_TARGET_MISSING/i,
     /BROWSER_SESSION_STALE/i
   ].some((pattern) => pattern.test(text));

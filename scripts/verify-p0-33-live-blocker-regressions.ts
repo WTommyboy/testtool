@@ -86,6 +86,7 @@ const writeBlockedEvidenceWorkbook = async (filePath: string): Promise<void> => 
   sheet.addRow(["BIUI_COLLAGE_R001-B-05", "BLOCKED", "EVIDENCE_INSUFFICIENT", JSON.stringify({ 測試目的: "B-05 deterministic pass fixture", currentRunEvidence: { old: true } })]);
   sheet.addRow(["BIUI_COLLAGE_R001-J-03", "BLOCKED", "BLOCKED_NEEDS_VISUAL_REVIEW", JSON.stringify({ 測試目的: "J-03 deterministic pass fixture", currentRunEvidence: { old: true } })]);
   sheet.addRow(["BIUI_COLLAGE_R001-L-05", "BLOCKED", "EVIDENCE_INSUFFICIENT", JSON.stringify({ 測試目的: "L-05 deterministic fail fixture", currentRunEvidence: { old: true } })]);
+  sheet.addRow(["BIUI_COLLAGE_R001-M-11", "BLOCKED", "EVIDENCE_INSUFFICIENT", JSON.stringify({ 測試目的: "M-11 deterministic report mutation fail fixture", currentRunEvidence: { old: true } })]);
   sheet.addRow(["BIUI_COLLAGE_R001-I-04", "BLOCKED", "EVIDENCE_INSUFFICIENT", JSON.stringify({ 測試目的: "negative fixture", currentRunEvidence: { old: true } })]);
   workbook.addWorksheet("Bug").addRow(["嚴重度", "Bug ID", "關聯編號", "標題", "描述", "建議", "狀態", "Evidence"]);
   await workbook.xlsx.writeFile(filePath);
@@ -171,6 +172,32 @@ const writeDeterministicEvidenceFixture = (runDir: string): void => {
       ]
     }
   }, null, 2));
+
+  const m11Dir = path.join(runDir, "output", "helper-artifacts-archive", "2026-05-21T00-03-00-000Z", "BIUI_COLLAGE_R001-M-11");
+  fs.mkdirSync(m11Dir, { recursive: true });
+  fs.writeFileSync(path.join(m11Dir, "update-reopen-evidence.json"), JSON.stringify({
+    workflowStatus: "blocked",
+    reportName: "BIUICOL05219999",
+    targetDateRange: "昨日",
+    recommendedFailureClassification: "FAIL_INTERACTION_FAILED",
+    dateRangeUpdate: {
+      ok: true,
+      requested: "昨日",
+      finalButtonText: "昨日"
+    },
+    updateAction: {
+      result: {
+        clicked: false,
+        successTextObserved: false,
+        bodyTextExcerpt: "自訂報表 複製副本 更新設定 計算 昨日"
+      },
+      network: { requests: [], responses: [] },
+      dialogs: []
+    },
+    backToList: null,
+    reopen: null,
+    persisted: false
+  }, null, 2));
 };
 
 const main = async (): Promise<void> => {
@@ -226,7 +253,8 @@ const main = async (): Promise<void> => {
     "自某日至昨日",
     "自某日至今",
     "fillFromDatePresetStartValue",
-    "recommendedFailureClassification"
+    "recommendedFailureClassification",
+    "UPDATE_REOPEN_SKIPPED_AFTER_UPDATE_NOT_CLICKED"
   ]) {
     assert(executorSource.includes(snippet), `executor missing P0.33 snippet: ${snippet}`);
   }
@@ -313,11 +341,14 @@ const main = async (): Promise<void> => {
   assert(enrichment.rows.some((item) => item.caseNo === "BIUI_COLLAGE_R001-B-05" && item.action === "deterministic_helper_pass"), "B-05 deterministic date evidence must promote BLOCKED to PASS");
   assert(enrichment.rows.some((item) => item.caseNo === "BIUI_COLLAGE_R001-J-03" && item.action === "deterministic_helper_pass"), "J-03 deterministic frontend observation must promote BLOCKED to PASS");
   assert(enrichment.rows.some((item) => item.caseNo === "BIUI_COLLAGE_R001-L-05" && item.action === "deterministic_helper_fail"), "L-05 deterministic frontend interaction failure must promote BLOCKED to FAIL");
+  assert(enrichment.rows.some((item) => item.caseNo === "BIUI_COLLAGE_R001-M-11" && item.action === "deterministic_helper_fail"), "M-11 deterministic report mutation failure must promote BLOCKED to FAIL");
   const statuses = await readWorkbookStatuses(fixtureResult);
   assert.equal(statuses["BIUI_COLLAGE_R001-B-05"]?.status, "PASS", "B-05 should become PASS");
   assert.equal(statuses["BIUI_COLLAGE_R001-J-03"]?.status, "PASS", "J-03 should become PASS");
   assert.equal(statuses["BIUI_COLLAGE_R001-L-05"]?.status, "FAIL", "L-05 should become FAIL");
   assert.equal(statuses["BIUI_COLLAGE_R001-L-05"]?.verdict, "FAIL_INTERACTION_FAILED", "L-05 should carry a deterministic failure classification");
+  assert.equal(statuses["BIUI_COLLAGE_R001-M-11"]?.status, "FAIL", "M-11 should become FAIL");
+  assert.equal(statuses["BIUI_COLLAGE_R001-M-11"]?.verdict, "FAIL_INTERACTION_FAILED", "M-11 should carry a deterministic failure classification");
   assert.equal(statuses["BIUI_COLLAGE_R001-I-04"]?.status, "BLOCKED", "negative non-deterministic observation should remain BLOCKED");
 
   console.log(JSON.stringify({
@@ -332,7 +363,8 @@ const main = async (): Promise<void> => {
       "G-05/M-10 allow visible-first existing report selection",
       "M-11 uses current-run saved-report state instead of stale TOOL_A01 pattern",
       "B-05/J-03 deterministic helper evidence promotes BLOCKED to PASS",
-      "L-05 deterministic helper failure promotes BLOCKED to FAIL"
+      "L-05 deterministic helper failure promotes BLOCKED to FAIL",
+      "M-11 deterministic report mutation failure promotes BLOCKED to FAIL"
     ]
   }, null, 2));
 };
