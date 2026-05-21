@@ -124,6 +124,11 @@ const waitForRunStatus = async (baseUrl: string, runId: string, status: string):
   throw new Error(`Run ${runId} did not reach ${status}; current status is ${summary.runStatus}.`);
 };
 
+const getRunStatus = async (baseUrl: string, runId: string): Promise<string> => {
+  const summary = await requestJson<{ runStatus: string }>(baseUrl, `/api/runs/${runId}/summary`);
+  return summary.runStatus;
+};
+
 const waitForAgent = async (
   baseUrl: string,
   predicate: (agent: { deviceName: string; status: string; currentRunId: string | null }) => boolean,
@@ -142,6 +147,18 @@ const waitForAgent = async (
     await sleep(100);
   }
   throw new Error(`Agent did not appear: ${label}; last=${JSON.stringify(lastItems)}`);
+};
+
+const waitForNoAgent = async (baseUrl: string, deviceName: string): Promise<void> => {
+  const startedAt = Date.now();
+  let lastItems: Array<{ deviceName: string }> = [];
+  while (Date.now() - startedAt < 5_000) {
+    const agents = await requestJson<{ items: Array<{ deviceName: string }> }>(baseUrl, "/api/agents");
+    lastItems = agents.items;
+    if (!agents.items.some((agent) => agent.deviceName === deviceName)) return;
+    await sleep(100);
+  }
+  throw new Error(`Agent did not disappear: ${deviceName}; last=${JSON.stringify(lastItems)}`);
 };
 
 const verifyDomainPackEndpoints = async (baseUrl: string): Promise<void> => {
@@ -397,7 +414,7 @@ const verifyAutoApprovedToolRequestIsClosed = async (baseUrl: string): Promise<v
   ws.close();
 };
 
-const verifyAgentDisconnectMarksRunFailed = async (baseUrl: string): Promise<void> => {
+const verifyAgentDisconnectKeepsRunNonTerminal = async (baseUrl: string): Promise<void> => {
   const run = await postJson<{ id: string; status: string }>(baseUrl, "/api/runs", {
     domain: "BI",
     roundId: "ROUNDTRIP-DISCONNECT-001",
@@ -444,7 +461,8 @@ const verifyAgentDisconnectMarksRunFailed = async (baseUrl: string): Promise<voi
     ws.once("close", () => resolve());
     ws.close(4000, "roundtrip disconnect smoke");
   });
-  await waitForRunStatus(baseUrl, run.id, "FAILED");
+  await sleep(500);
+  assert.equal(await getRunStatus(baseUrl, run.id), "RUNNING", "agent disconnect must not terminalize an active run");
 
   const events = await requestJson<{ items: Array<{ event_type: string; payload: unknown }> }>(
     baseUrl,
@@ -454,7 +472,7 @@ const verifyAgentDisconnectMarksRunFailed = async (baseUrl: string): Promise<voi
     const payload = event.payload && typeof event.payload === "object" && !Array.isArray(event.payload)
       ? event.payload as Record<string, unknown>
       : {};
-    return event.event_type === "run.interrupted" && payload.reason === "agent_lost";
+    return event.event_type === "run.interrupted" && payload.reason === "agent_lost" && payload.terminalized === false;
   }), "agent disconnect should insert run.interrupted event");
 
   const logs = await requestJson<{ items: Array<{ message: string; level: string }> }>(
@@ -462,11 +480,11 @@ const verifyAgentDisconnectMarksRunFailed = async (baseUrl: string): Promise<voi
     `/api/runs/${run.id}/logs?limit=50`
   );
   assert.ok(logs.items.some((log) => (
-    log.level === "ERROR" && log.message === "Agent disconnected during active run"
-  )), "agent disconnect should insert an ERROR log");
+    log.level === "WARN" && log.message === "Agent disconnected during active run; run remains non-terminal for reconnect"
+  )), "agent disconnect should insert a non-terminal WARN log");
 };
 
-const verifyAgentHeartbeatTimeoutMarksRunFailed = async (baseUrl: string): Promise<void> => {
+const verifyAgentHeartbeatTimeoutKeepsRunNonTerminal = async (baseUrl: string): Promise<void> => {
   const run = await postJson<{ id: string; status: string }>(baseUrl, "/api/runs", {
     domain: "BI",
     roundId: "ROUNDTRIP-STALE-001",
@@ -508,7 +526,8 @@ const verifyAgentHeartbeatTimeoutMarksRunFailed = async (baseUrl: string): Promi
   });
   send("run.started", { run_id: run.id });
   await waitForRunStatus(baseUrl, run.id, "RUNNING");
-  await waitForRunStatus(baseUrl, run.id, "FAILED");
+  await waitForNoAgent(baseUrl, "Stale Agent");
+  assert.equal(await getRunStatus(baseUrl, run.id), "RUNNING", "heartbeat timeout must not terminalize an active run");
 
   const events = await requestJson<{ items: Array<{ event_type: string; payload: unknown }> }>(
     baseUrl,
@@ -518,11 +537,11 @@ const verifyAgentHeartbeatTimeoutMarksRunFailed = async (baseUrl: string): Promi
     const payload = event.payload && typeof event.payload === "object" && !Array.isArray(event.payload)
       ? event.payload as Record<string, unknown>
       : {};
-    return event.event_type === "run.interrupted" && payload.reason === "agent_lost" && payload.closeReason === "heartbeat_timeout";
+    return event.event_type === "run.interrupted"
+      && payload.reason === "agent_lost"
+      && payload.closeReason === "heartbeat_timeout"
+      && payload.terminalized === false;
   }), "heartbeat timeout should insert run.interrupted event");
-
-  const agents = await requestJson<{ items: Array<{ deviceName: string }> }>(baseUrl, "/api/agents");
-  assert.equal(agents.items.some((agent) => agent.deviceName === "Stale Agent"), false);
 
   if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
     ws.close();
@@ -736,8 +755,8 @@ const main = async (): Promise<void> => {
     await verifyDomainPackEndpoints(baseUrl);
     await verifyToolResponseRoundtrip(baseUrl);
     await verifyAutoApprovedToolRequestIsClosed(baseUrl);
-    await verifyAgentDisconnectMarksRunFailed(baseUrl);
-    await verifyAgentHeartbeatTimeoutMarksRunFailed(baseUrl);
+    await verifyAgentDisconnectKeepsRunNonTerminal(baseUrl);
+    await verifyAgentHeartbeatTimeoutKeepsRunNonTerminal(baseUrl);
     await verifyAgentRunSnapshotIsRecorded(baseUrl);
     await verifyAgentProgressAndPartialArtifactsAreRecorded(baseUrl);
     await verifyEvidenceArtifactUpload(baseUrl);

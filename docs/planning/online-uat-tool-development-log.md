@@ -1822,3 +1822,11 @@ P0a v1 範圍釐清：containment 只處理唯一 self-check error 為 `RESULT_P
 - Runtime 接線：fresh run 與 tool-response resume 都在 result upload 前呼叫 no-result containment。若 containment 寫出 workbook，upload 會走 `codex_generated` source，通過 result evidence gate 後正常 case advance；若沒有 helper evidence 或 consistency gate 有 error，仍維持 failed/blocked 給 PM review，避免把真缺 evidence 偽裝成可繼續結果。
 - 邊界：這是平台層 process-isolation fix，不是 BI-specific testcase 修正，也不是自動把 `G-05` 判成產品 FAIL。產品判定仍需要 Codex/result gate 基於 action role、test target、actual vs expected outcome 判定；containment 只保證單題 no-result 不會讓後續 cases 全部變 PENDING。
 - 驗證：新增 `npm run verify:codex-no-result-containment`。另回歸 `npm run verify:runtime-containment-result`、`npm run verify:p0-helper-browser-session-containment`、`npm run typecheck`、`npm run build --prefix agent`、`npm run build`。
+
+### 2026-05-21 - P0.35 server-side agent disconnect non-terminal policy
+
+- 背景：run `0c1ce924-a4bd-410a-be99-0f880cd525be` 在第一題 `BIUI_COLLAGE_R001-B-05` helper pre-run 已完成三個 helper actions 並產生 current-run evidence 後，control WebSocket 以 `1006 / agent_lost` 斷線。Server 端仍用舊規則把 busy active run 直接標 `FAILED`；Agent 重新連上後回報 local snapshot，server 因 currentStatus 已是 terminal 又派 `task.cancel reason=remote_run_failed`，本機 Codex 因此被取消，archive 顯示 `CODEX_RUN_CANCELLED reason=remote_run_failed`。
+- 根因：P0.32 只修了 Mac Agent 本機「斷線不中止 active task」，但 server-side disconnect policy 沒同步。兩邊規則互相矛盾：Agent 想繼續，server 先 terminalize，再用 terminal snapshot cancel 把它殺掉。
+- 修正：`src/agent/agent-run-events.ts` 的 `handleAgentDisconnect` 不再對 active run 呼叫 `setRunStatus(runId, "FAILED")`。它仍記錄 `run.interrupted reason=agent_lost`，但 payload 加 `terminalized=false`，log 改為 WARN：`Agent disconnected during active run; run remains non-terminal for reconnect`。Run status 保持 `RUNNING`，讓 reconnect 後的 Agent 可以繼續送 phase/result upload，而不會收到 `remote_run_failed` cancel。
+- 邊界：PM 手動取消、Agent 自己回報 `run.failed` / `run.cancelled`、result ingest hard error 仍可 terminalize。這個 patch 只處理 control-channel transient loss，不把真的 testcase/product/runtime judgment 改成 PASS/BLOCKED。
+- 驗證：`npm run verify:agent-roundtrip` 已更新並通過，現在覆蓋 explicit websocket close 與 heartbeat timeout 兩種路徑，要求 active run 保持 non-terminal。

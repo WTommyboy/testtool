@@ -304,7 +304,6 @@ const handleAgentDisconnect = (event: AgentDisconnectEvent): void => {
   const currentStatus = getRunStatus(runId);
   if (isTerminalStatus(currentStatus)) return;
 
-  setRunStatus(runId, "FAILED");
   insertRunEvent(runId, "run.interrupted", {
     agentId: event.agentId,
     deviceName: event.agent.deviceName,
@@ -312,16 +311,18 @@ const handleAgentDisconnect = (event: AgentDisconnectEvent): void => {
     closeCode: event.code,
     closeReason: event.reason,
     previousStatus: currentStatus,
-    agentStatus: event.agent.status
+    agentStatus: event.agent.status,
+    terminalized: false
   });
-  insertRunLog(runId, "ERROR", "Agent disconnected during active run", {
+  insertRunLog(runId, "WARN", "Agent disconnected during active run; run remains non-terminal for reconnect", {
     agentId: event.agentId,
     deviceName: event.agent.deviceName,
     reason: "agent_lost",
     closeCode: event.code,
     closeReason: event.reason,
     previousStatus: currentStatus,
-    agentStatus: event.agent.status
+    agentStatus: event.agent.status,
+    terminalized: false
   });
 };
 

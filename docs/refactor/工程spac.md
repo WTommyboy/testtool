@@ -2635,3 +2635,10 @@ Status update 2026-05-20 P0.29 BI official inline formula-builder alignment: Tom
 - 修正：Agent runtime 在 fresh run 與 resume 上傳前新增 no-result containment。當 Codex exit 0、沒有 trusted workbook、helper pre-run 有 current-case evidence、且 consistency gate 無 error 時，`runtime-containment-result.ts` 會寫可信單題 `BLOCKED / CODEX_NO_RESULT_XLSX` workbook，讓後續 cases 可繼續。
 - 邊界：這是平台 process isolation。它不把 G-05 自動判成產品 FAIL，也不在缺 helper evidence 或 package/document consistency error 時硬寫 BLOCKED。真正產品判定仍交給 Codex / result gate 依 case scope、action role、actual vs expected outcome 處理。
 - 驗證：新增 `npm run verify:codex-no-result-containment`，並回歸 `verify:runtime-containment-result`、`verify:p0-helper-browser-session-containment`、`typecheck`、`build --prefix agent`、`build`。
+
+### 2026-05-21 - P0.35 server-side agent disconnect non-terminal policy
+
+- 背景：run `0c1ce924-a4bd-410a-be99-0f880cd525be` 直接取消。Archive 顯示第一段 Agent 斷線為 `agent_lost closeCode=1006`，server 先把 run 標 FAILED；第二段 Agent 重新連上後回報 local run snapshot，server 因 currentStatus=FAILED 派 `task.cancel reason=remote_run_failed`，最後本機回 `CODEX_RUN_CANCELLED reason=remote_run_failed`。
+- 修正：server 不再把 active-run control WebSocket disconnect / heartbeat timeout 直接 terminalize。`agent_lost` 仍記錄事件，但 payload 帶 `terminalized=false`，run status 保持 RUNNING，避免 reconnect 後 server 反向 cancel still-running local task。
+- 邊界：這不改 PM cancel、Agent 主動 failed/cancelled、result ingest hard failure。這是平台 run lifecycle policy 對齊 P0.32 Agent-side continuation。
+- 驗證：`npm run verify:agent-roundtrip` 已更新：explicit disconnect 與 heartbeat timeout 都必須保持 active run non-terminal。
