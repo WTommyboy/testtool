@@ -462,6 +462,10 @@ const structuredDatePresetLabelFromTarget = (target: string): string | null => {
       return "最近 30 天";
     case "dateRange.preset.yesterday":
       return "昨日";
+    case "dateRange.preset.fromDateToYesterday":
+      return "自某日至昨日";
+    case "dateRange.preset.fromDateToToday":
+      return "自某日至今";
     default:
       return null;
   }

@@ -4475,6 +4475,10 @@ const datePresetLabelFromTarget = (target: string): string | null => {
       return "最近 30 天";
     case "dateRange.preset.yesterday":
       return "昨日";
+    case "dateRange.preset.fromDateToYesterday":
+      return "自某日至昨日";
+    case "dateRange.preset.fromDateToToday":
+      return "自某日至今";
     default:
       return null;
   }
@@ -4489,6 +4493,59 @@ const caseScopeDatePresetRequests = (params: Record<string, unknown>): Array<{ t
     seen.add(target);
     return [{ target, label }];
   });
+};
+
+const isFromDatePresetTarget = (target: string): boolean =>
+  target === "dateRange.preset.fromDateToYesterday" || target === "dateRange.preset.fromDateToToday";
+
+const fillFromDatePresetStartValue = async (
+  page: Page,
+  params: Record<string, unknown>
+): Promise<Record<string, unknown>> => {
+  const rawValue =
+    firstStringParam(params, ["fromDateStartIso", "fromDateStart", "startDate", "dateStart"]) ??
+    "2026-04-01";
+  const isoValue = normalizeIsoDateString(rawValue);
+  const textValue = isoValue.replaceAll("-", "/");
+  const candidates = await page.evaluate(() => {
+    const isVisible = (element: Element): boolean => {
+      const rect = element.getBoundingClientRect();
+      const style = window.getComputedStyle(element);
+      return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden" && style.opacity !== "0";
+    };
+    const allInputs = Array.from(document.querySelectorAll<HTMLInputElement>("input"));
+    const scoped = Array.from(document.querySelectorAll<HTMLInputElement>(
+      "#datePickerPopup input, [class*=date] input, [class*=Date] input, [class*=calendar] input, [class*=Calendar] input"
+    ));
+    const preferred = scoped.length > 0 ? scoped : allInputs;
+    return preferred.flatMap((input) => {
+      if (!isVisible(input) || input.disabled || input.readOnly) return [];
+      const index = allInputs.indexOf(input);
+      if (index < 0) return [];
+      return [{
+        index,
+        type: input.type,
+        placeholder: input.placeholder,
+        value: input.value
+      }];
+    });
+  });
+  const candidate = candidates.find((item) => /date|text|search|^$/i.test(String(item.type ?? ""))) ?? candidates[0] ?? null;
+  if (!candidate || typeof candidate.index !== "number") {
+    return { requestedValue: isoValue, verified: false, reason: "FROM_DATE_START_INPUT_NOT_FOUND", candidates };
+  }
+  const valueToFill = String(candidate.type ?? "") === "date" ? isoValue : textValue;
+  await page.locator("input").nth(candidate.index).fill(valueToFill, { timeout: 5000 });
+  const observedValue = await page.locator("input").nth(candidate.index).inputValue({ timeout: 3000 }).catch(() => null);
+  const verified = normalizeDateText(observedValue ?? "") === normalizeDateText(valueToFill) ||
+    normalizeDateText(observedValue ?? "") === normalizeDateText(isoValue);
+  return {
+    requestedValue: isoValue,
+    filledValue: valueToFill,
+    observedValue,
+    verified,
+    input: candidate
+  };
 };
 
 const contractRequiresCsvPreviewComparison = (params: Record<string, unknown>): boolean => {
@@ -7276,6 +7333,24 @@ const readReportListRowState = async (page: Page, reportName: string): Promise<R
       const style = window.getComputedStyle(element);
       return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden" && style.opacity !== "0";
     };
+    const bodyText = normalize(document.body?.innerText ?? "");
+    const rowTextFromBody = (): string | null => {
+      const lines = (document.body?.innerText ?? "")
+        .split(/\n+/)
+        .map((line) => normalize(line))
+        .filter(Boolean);
+      for (let index = 0; index < lines.length - 3; index += 1) {
+        const name = lines[index];
+        const period = lines[index + 1];
+        const download = lines[index + 2];
+        const remove = lines[index + 3];
+        const looksLikePeriod = /\d{4}[/-]\d{1,2}[/-]\d{1,2}\s*~\s*\d{4}[/-]\d{1,2}[/-]\d{1,2}|過去\s*\d+\s*天|最近\s*\d+\s*天|昨日|今日|上週|本週|上月|本月/.test(period);
+        if (name === targetReportName && looksLikePeriod && /^下載$/.test(download) && /^刪除$/.test(remove)) {
+          return `${name} ${period} ${download} ${remove}`;
+        }
+      }
+      return bodyText.includes(targetReportName) ? targetReportName : null;
+    };
     const downloadPattern = /下載|CSV|匯出|download|export|⬇/i;
     const deletePattern = /刪除|删除|delete|trash|remove|🗑/i;
     const allBodyElements = Array.from(document.querySelectorAll<HTMLElement>("body *"));
@@ -7319,12 +7394,13 @@ const readReportListRowState = async (page: Page, reportName: string): Promise<R
       })
       .sort((a, b) => a.text.length - b.text.length || b.downloadControls.length + b.deleteControls.length - (a.downloadControls.length + a.deleteControls.length));
     const row = matchingRows[0] ?? null;
+    const fallbackRowText = row ? null : rowTextFromBody();
     return {
-      found: row !== null,
+      found: row !== null || fallbackRowText !== null,
       reportName: targetReportName,
       url: window.location.href,
-      bodyTextExcerpt: normalize(document.body?.innerText ?? "").slice(0, 3000),
-      rowText: row?.text ?? null,
+      bodyTextExcerpt: bodyText.slice(0, 3000),
+      rowText: row?.text ?? fallbackRowText,
       downloadControls: row?.downloadControls ?? [],
       deleteControls: row?.deleteControls ?? []
     };
@@ -7928,16 +8004,39 @@ const readProjectListRowsForObservation = async (page: Page): Promise<Record<str
       const style = window.getComputedStyle(element);
       return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden" && style.opacity !== "0";
     };
+    const rowsFromBodyText = () => {
+      const lines = (document.body.innerText || "")
+        .split(/\n+/)
+        .map((line) => normalize(line))
+        .filter(Boolean);
+      const rows: Array<{ index: number; text: string; source: string }> = [];
+      for (let index = 0; index < lines.length - 3; index += 1) {
+        const name = lines[index];
+        const period = lines[index + 1];
+        const download = lines[index + 2];
+        const remove = lines[index + 3];
+        const looksLikePeriod = /\d{4}[/-]\d{1,2}[/-]\d{1,2}\s*~\s*\d{4}[/-]\d{1,2}[/-]\d{1,2}|過去\s*\d+\s*天|最近\s*\d+\s*天|昨日|今日|上週|本週|上月|本月/.test(period);
+        const looksLikeActionPair = /^下載$/.test(download) && /^刪除$/.test(remove);
+        const looksLikeReportName = !/^(報表名稱|資料週期區間|操作|下載|刪除|上一頁|下一頁|\d+筆\/頁|共\s*\d+\s*筆資料)$/.test(name);
+        if (looksLikeReportName && looksLikePeriod && looksLikeActionPair) {
+          rows.push({ index: rows.length, text: `${name} ${period} ${download} ${remove}`, source: "bodyTextReportList" });
+        }
+      }
+      return rows;
+    };
     const candidates = Array.from(document.querySelectorAll<HTMLElement>("tr, [role='row'], .ant-table-row, [class*='row'], [class*='Row']"))
       .filter((element) => isVisible(element))
       .map((element, index) => ({
         index,
-        text: normalize(element.innerText || element.textContent).slice(0, 800)
+        text: normalize(element.innerText || element.textContent).slice(0, 800),
+        source: "domRow"
       }))
       .filter((row) => row.text.length > 0 && /拼貼|報表|test|UAT|下載|刪除|\d{4}/i.test(row.text));
+    const rows = candidates.length > 0 ? candidates : rowsFromBodyText();
     return {
-      rowCount: candidates.length,
-      sampleRows: candidates.slice(0, 12)
+      rowCount: rows.length,
+      sampleRows: rows.slice(0, 12),
+      fallbackUsed: candidates.length === 0 && rows.length > 0 ? "bodyTextReportList" : null
     };
   });
 };
@@ -9348,9 +9447,18 @@ const observeFrontendVisibleUiActions = async (
         page.locator("button").filter({ hasText: pattern }),
         page.locator("[role='button']").filter({ hasText: pattern })
       ], 5000);
+      let fromDateStartInput: Record<string, unknown> | null = null;
       let confirmed = false;
       if (selected) {
-        confirmed = await clickDateConfirmButton(page, 3000).catch(() => false);
+        if (isFromDatePresetTarget(request.target)) {
+          fromDateStartInput = await fillFromDatePresetStartValue(page, params).catch((error) => ({
+            requestedValue: firstStringParam(params, ["fromDateStartIso", "fromDateStart", "startDate", "dateStart"]) ?? "2026-04-01",
+            verified: false,
+            error: error instanceof Error ? error.message : String(error)
+          }));
+        }
+        const canConfirm = !isFromDatePresetTarget(request.target) || fromDateStartInput?.verified === true;
+        confirmed = canConfirm ? await clickDateConfirmButton(page, 3000).catch(() => false) : false;
         await page.waitForTimeout(800);
       }
       const afterPresetDateText = await readDateRangeButtonText(page);
@@ -9360,6 +9468,7 @@ const observeFrontendVisibleUiActions = async (
         label: request.label,
         clicked: selected,
         confirmed,
+        fromDateStartInput,
         beforeDateText: beforePresetDateText,
         afterDateText: afterPresetDateText,
         labelApplied: normalizeUiText(afterPresetDateText ?? "").includes(normalizeUiText(request.label)),
@@ -9368,6 +9477,9 @@ const observeFrontendVisibleUiActions = async (
           : null
       });
       if (!selected) warnings.push(`DATE_PANEL_PRESET_NOT_CLICKABLE:${request.target}`);
+      if (selected && isFromDatePresetTarget(request.target) && fromDateStartInput?.verified !== true) {
+        warnings.push(`DATE_PANEL_FROM_DATE_START_INPUT_NOT_VERIFIED:${request.target}`);
+      }
     }
     if (targets.has("dateRange.timeTypeTab.static")) {
       const beforeStaticSelected = await page.evaluate(() => {
@@ -10275,27 +10387,42 @@ const readFrontendObservationState = async (
       }
       if (wantedPresetTargets.length > 0) {
         const presetActions = actionList.filter((item) => typeof item.target === "string" && wantedPresetTargets.includes(item.target));
-        const switches = presetActions.map((item) => ({
-          target: item.target,
-          label: item.label ?? null,
-          clicked: item.clicked === true,
-          confirmed: item.confirmed === true,
-          beforeDateText: item.beforeDateText ?? null,
-          afterDateText: item.afterDateText ?? null,
-          stateChanged: item.stateChanged ?? null,
-          labelApplied: typeof item.label === "string" && typeof item.afterDateText === "string"
+        const switches = presetActions.map((item) => {
+          const labelApplied = typeof item.label === "string" && typeof item.afterDateText === "string"
             ? normalizeText(item.afterDateText).includes(normalizeText(item.label))
-            : item.labelApplied === true
-        }));
+            : item.labelApplied === true;
+          const stateChanged = item.stateChanged ?? null;
+          const clicked = item.clicked === true;
+          const actualOutcome = !clicked
+            ? "target_absent_or_not_clickable"
+            : labelApplied === true || stateChanged === true
+              ? "succeeded"
+              : "dispatched_no_change";
+          return {
+            target: item.target,
+            label: item.label ?? null,
+            clicked,
+            confirmed: item.confirmed === true,
+            fromDateStartInput: item.fromDateStartInput ?? null,
+            beforeDateText: item.beforeDateText ?? null,
+            afterDateText: item.afterDateText ?? null,
+            stateChanged,
+            labelApplied,
+            actualOutcome
+          };
+        });
         const afterTexts = switches
           .map((item) => typeof item.afterDateText === "string" ? normalizeText(item.afterDateText) : "")
           .filter(Boolean);
         const distinctAfterTexts = new Set(afterTexts).size;
+        const failedSwitches = switches.filter((item) => item.actualOutcome !== "succeeded");
         return {
           evidenceObject: "dateRange.presetSwitch.state",
           openedByVisibleUi: actionList.some((item) => item.target === "dateRange.button" && item.clicked === true),
           requestedPresetTargets: wantedPresetTargets,
           presetSwitches: switches,
+          failedPresetSwitches: failedSwitches,
+          recommendedFailureClassification: failedSwitches.length > 0 ? "FAIL_INTERACTION_FAILED" : null,
           distinctAfterDateTexts: distinctAfterTexts,
           interactionLog: actionList,
           asserted: switches.length === wantedPresetTargets.length &&

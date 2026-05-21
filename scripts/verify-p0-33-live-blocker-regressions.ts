@@ -1,0 +1,158 @@
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import type { CaseManifestCase } from "../agent/src/case-manifest";
+import { buildDateUiEvidence } from "../agent/src/date-ui-evidence";
+import { buildHelperExecutionPlan } from "../agent/src/helper-execution-plan";
+import type { StructuredCaseScopeContract } from "../agent/src/structured-case-scope";
+
+type JsonObject = Record<string, any>;
+
+const root = process.cwd();
+const contractPath = path.join(root, "domain-packs", "BI_OFFICIAL_UI_COLLAGE", "case-scope-runtime-contracts.json");
+const executorPath = path.join(root, "agent", "src", "bi-ui-helper-executor.ts");
+const resultContractPath = path.join(root, "agent", "src", "result-contract.ts");
+
+const readJson = <T>(filePath: string): T => JSON.parse(fs.readFileSync(filePath, "utf8")) as T;
+
+const contracts = (): StructuredCaseScopeContract[] => {
+  const file = readJson<JsonObject>(contractPath);
+  return (file.contracts as JsonObject[]).map((item) => ({
+    version: "v1",
+    source: "domain-packs/BI_OFFICIAL_UI_COLLAGE/case-scope-runtime-contracts.json",
+    domain: "BI_OFFICIAL_UI_COLLAGE",
+    ...item
+  })) as StructuredCaseScopeContract[];
+};
+
+const chineseTarget = (target: StructuredCaseScopeContract["testTarget"]): string => {
+  switch (target) {
+    case "frontend_presentation":
+      return "前端呈現";
+    case "frontend_backend_integration":
+      return "前後端整合";
+    case "functional_flow":
+      return "功能流程";
+    case "backend_function":
+      return "後端功能";
+    default:
+      return "功能流程";
+  }
+};
+
+const fixtureCase = (contract: StructuredCaseScopeContract): CaseManifestCase => ({
+  order: 1,
+  rowNumber: 2,
+  groupId: contract.caseNo.split("-").at(-2) ?? null,
+  groupName: "P0.33 live blocker regression fixture",
+  caseNo: contract.caseNo,
+  caseTitle: `${contract.caseNo} P0.33 regression smoke`,
+  testType: chineseTarget(contract.testTarget),
+  executionMethod: "agent",
+  riskLevel: contract.requiredActions.some((item) => item.evidenceRequirements.includes("toolBridge.response")) ? "🟠 修改" : "🟢 觀察",
+  testTarget: chineseTarget(contract.testTarget),
+  cleanupChecklist: "欄位=不影響;篩選=不影響;分組=不影響;時間=不影響;顯示=不影響",
+  preconditions: contract.requiresEditor ? "起始頁面: BI official UI；進入拼貼報表新增/既有報表頁。" : "起始頁面: BI official UI。",
+  stepsSummary: contract.requiredActions.map((item) => `${item.action}:${item.target}:${item.expectedOutcome}`).join(" "),
+  expected: "Expected behavior is defined by caseScopeContract requiredActions and evidenceRequirements.",
+  resultStatus: null,
+  testDate: null,
+  detailJson: null,
+  validationMethod: "P0.33 live blocker regression smoke",
+  currentCaseFile: path.join(os.tmpdir(), `${contract.caseNo}.json`)
+});
+
+const parseRowsFromBodyText = (text: string): string[] => {
+  const normalize = (value: string): string => value.trim().replace(/\s+/g, " ");
+  const lines = text.split(/\n+/).map(normalize).filter(Boolean);
+  const rows: string[] = [];
+  for (let index = 0; index < lines.length - 3; index += 1) {
+    const [name, period, download, remove] = lines.slice(index, index + 4);
+    const looksLikePeriod = /\d{4}[/-]\d{1,2}[/-]\d{1,2}\s*~\s*\d{4}[/-]\d{1,2}[/-]\d{1,2}|過去\s*\d+\s*天|最近\s*\d+\s*天|昨日|今日|上週|本週|上月|本月/.test(period);
+    if (!/^(報表名稱|資料週期區間|操作|下載|刪除)$/.test(name) && looksLikePeriod && download === "下載" && remove === "刪除") {
+      rows.push(`${name} ${period} ${download} ${remove}`);
+    }
+  }
+  return rows;
+};
+
+const main = (): void => {
+  const executorSource = fs.readFileSync(executorPath, "utf8");
+  const resultContractSource = fs.readFileSync(resultContractPath, "utf8");
+
+  const b05DateEvidence = buildDateUiEvidence({
+    requested: "本月",
+    baseDate: "2026-05-21",
+    observed: {
+      dateRangeButtonText: null,
+      dateRangeDisplayText: null,
+      popupVisible: null,
+      popupText: null,
+      bodyText: "自訂報表 欄位選擇 計算 本月 區間總和 2026-05-21 2026-05-20"
+    }
+  });
+  assert.equal(b05DateEvidence.checks.requestedLabelVisible, true, "B-05-style preset label must be visible in body text");
+  assert.equal(b05DateEvidence.checks.representedRangeMatchesRequested, null, "preset-only UI still records represented range as computed/not directly visible");
+  assert(resultContractSource.includes("requestedRange?.basis === \"preset\" && checks?.requestedLabelVisible === true"), "result contract must accept visible preset label as date UI match");
+
+  const bodyText = [
+    "報表名稱",
+    "資料週期區間",
+    "操作",
+    "BIUICOL05210316",
+    "2026-03-25 ~ 2026-05-20",
+    "下載",
+    "刪除",
+    "BIUICOL05210310",
+    "2026-03-01 ~ 2026-03-31",
+    "下載",
+    "刪除"
+  ].join("\n");
+  const rows = parseRowsFromBodyText(bodyText);
+  assert.equal(rows.length, 2, "J-08-style body text should yield report rows");
+  assert(executorSource.includes("bodyTextReportList"), "executor must keep project-list body text row fallback");
+
+  const byCase = new Map(contracts().map((item) => [item.caseNo, item]));
+  const l10 = byCase.get("BIUI_COLLAGE_R001-L-10");
+  assert(l10, "L-10 contract must exist");
+  const l10Plan = buildHelperExecutionPlan({ runDir: os.tmpdir(), currentCase: fixtureCase(l10), helperHints: null });
+  const observeAction = l10Plan.actions.find((item) => item.template === "collage.observeFrontendState");
+  assert.equal(observeAction?.params.observationType, "datePanel", "L-10 must route to datePanel observation");
+  assert.deepEqual(
+    observeAction?.caseScopeActions.map((item) => item.target),
+    ["dateRange.preset.fromDateToYesterday", "dateRange.preset.fromDateToToday"],
+    "L-10 must preserve from-date preset targets"
+  );
+  for (const snippet of [
+    "dateRange.preset.fromDateToYesterday",
+    "dateRange.preset.fromDateToToday",
+    "自某日至昨日",
+    "自某日至今",
+    "fillFromDatePresetStartValue",
+    "recommendedFailureClassification"
+  ]) {
+    assert(executorSource.includes(snippet), `executor missing P0.33 snippet: ${snippet}`);
+  }
+
+  const m11 = byCase.get("BIUI_COLLAGE_R001-M-11");
+  assert(m11, "M-11 contract must exist");
+  const m11Templates = buildHelperExecutionPlan({ runDir: os.tmpdir(), currentCase: fixtureCase(m11), helperHints: null }).actions.map((item) => item.template);
+  assert.deepEqual(
+    m11Templates,
+    ["collage.openProject", "collage.openReportFromProjectList", "collage.updateExistingReportAndReopen"],
+    "M-11 must not regress to open-only helper plan"
+  );
+
+  console.log(JSON.stringify({
+    ok: true,
+    checks: [
+      "B-05 preset label evidence accepted by result contract",
+      "J-08 report rows recoverable from body text",
+      "L-10 from-date preset targets routed to executable datePanel actions",
+      "M-11 update existing report helper is planned"
+    ]
+  }, null, 2));
+};
+
+main();

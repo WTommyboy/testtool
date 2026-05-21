@@ -200,7 +200,10 @@ type HelperEvidencePassContradiction = {
 const dateUiEvidenceMatchesRequested = (value: unknown): boolean => {
   const dateUiEvidence = record(value);
   const checks = record(dateUiEvidence?.checks);
-  return checks?.representedRangeMatchesRequested === true || checks?.staticRequestedRangeObserved === true;
+  const requestedRange = record(dateUiEvidence?.requestedRange);
+  return checks?.representedRangeMatchesRequested === true ||
+    checks?.staticRequestedRangeObserved === true ||
+    (requestedRange?.basis === "preset" && checks?.requestedLabelVisible === true);
 };
 
 const isStaticDateRangeRequest = (dateRangeEvidence: Record<string, unknown> | null): boolean => {

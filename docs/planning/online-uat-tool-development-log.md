@@ -1803,3 +1803,14 @@ P0a v1 範圍釐清：containment 只處理唯一 self-check error 為 `RESULT_P
 - Platform fix：`agent/src/cli.ts` 將 transient connection close/error 改為只記 `task_continues_after_connection_loss` 與既有 `task_continues_after_connection_closed` diagnostic，不再因 `agent_connection_closed` / `agent_connection_error` cancel active task，不再 exit 讓 launchd 重開。明確 `task.cancel`、SIGINT、SIGTERM 仍保留取消語意。
 - Guard：`npm run verify:zombie-run-guards` 改為要求 active-run connection-loss continuation log，並禁止舊的 `abortActiveTaskForConnectionLoss` / `exitingAfterConnectionLoss` / connection-loss cancel path 回歸。
 - 驗證：已跑 `npm run verify:zombie-run-guards`、`npm run typecheck`、`npm run build --prefix agent`、`npm run build`、`npm run verify:agent-runtime-file-access`、`npm run verify:agent-context-prep`，另以 dev run workspace 手動執行 Codex CLI smoke 確認不是 helper skill xattr/file-access crash。這是平台 run lifecycle 修正，不是 BI testcase 客製，也不改產品 PASS/FAIL/BLOCKED 判定。
+
+### 2026-05-21 - P0.33 reduced-smoke live blocker bridge
+
+- 背景：reduced run `10e944dc-4d9b-4e32-b197-9a8339dd52e5` 已可完整跑完，但仍有不該留下的 BLOCKED。這輪先修 smoke 可證明的 runtime/domain-contract bridge，不把 10e run 的人工結果寫成永久 oracle，也不新增 BI 小 helper/agent。
+- B-05 類 date preset：`date-ui-evidence` 仍保留「computed represented range not directly visible」語意；但 result contract 現在允許 preset target 在 `requestedLabelVisible=true` 時通過 requested-range evidence。這避免 UI button 已明確套用「上月/本月」卻因 represented range not visible 被誤 BLOCKED。
+- J-08 類 project-list row observation：官方 UI 的報表列有時能在 body text 看到，但 DOM row extractor 抽不到 row。`readProjectListRowsForObservation` 與 `readReportListRowState` 加入 body-text report-list fallback，保留 `fallbackUsed=bodyTextReportList`，讓 delete cancel / row-count 類 evidence 不再因 extractor 太窄而歸 generic BLOCKED。
+- L-10 類 from-date preset：planner/executor 新增 `dateRange.preset.fromDateToYesterday` 與 `dateRange.preset.fromDateToToday` label mapping，date panel observation 會填 start-date input 後確認，並把 `fromDateStartInput` 寫入 evidence。
+- L-05 類 failed preset interaction：date panel preset switch evidence 現在寫 `actualOutcome`，並在未點到/無 state change 時產生 `recommendedFailureClassification=FAIL_INTERACTION_FAILED`。這讓 result judgment 可區分產品互動失敗與工具 evidence 不足。
+- M-11 guard：新增 P0.33 smoke 鎖定 structured plan 必須包含 `collage.updateExistingReportAndReopen`，避免 run packet 回到 open-only path。
+- 驗證：`npm run verify:p0-33-live-blocker-regressions`、`npm run verify:official-observation-contract`、`npm run verify:p0-runtime-wiring`、`npm run verify:bi-official-ui-object-vocabulary`、`npm run verify:shared-lifecycle-action-contracts`、`npm run verify:agent-result-contract`、`npm run verify:result-evidence-gate`、`npm run verify:date-ui-evidence`、`npm run verify:p0-live-action-templates`、`npm run typecheck`、`npm run build --prefix agent`、`npm run build` 通過。
+- 邊界：這是 Gen1/Gen2 compatibility bridge，通用部分放 result contract / planner / runtime evidence shape；BI 語意仍由 `BI_OFFICIAL_UI_COLLAGE` 的 target/object/action contract 驅動。剩餘是否能全數降到明確 PASS/FAIL，仍需下一輪 reduced live UAT 驗證。
