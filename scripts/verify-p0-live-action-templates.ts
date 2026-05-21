@@ -84,6 +84,7 @@ const requiredObservationTypes = new Set([
   "dateTimeTypeTab",
   "datePanelCancel",
   "downloadToast",
+  "saveReportDisabled",
   "saveModalCancel",
   "copyModalCancel"
 ]);

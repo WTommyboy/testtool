@@ -279,6 +279,7 @@ type FrontendObservationType =
   | "dateTimeTypeTab"
   | "datePanelCancel"
   | "downloadToast"
+  | "saveReportDisabled"
   | "saveModalCancel"
   | "copyModalCancel"
   | null;
@@ -295,6 +296,7 @@ const inferFrontendObservationType = (currentCase: CaseManifestCase | null): Fro
     .filter(Boolean)
     .join("\n");
   if (/使用者按鈕|登入者名稱|user\s*button|account\s*button/i.test(text)) return "userButton";
+  if (/儲存報表.{0,16}disabled|disabled.{0,16}儲存報表|未輸入報表名稱.*儲存報表|save\s*report.{0,16}disabled/i.test(text)) return "saveReportDisabled";
   if (/新增專案\s*modal|新增專案.*名稱輸入|專案名稱輸入|拼貼報表旁新增專案|project\s*create\s*modal|create\s*project/i.test(text)) return "projectCreateModal";
   if (/刪除確認|deleteConfirmModal|取消流程|取消刪除|刪除\s*modal|delete\s*cancel/i.test(text)) return "deleteCancelFlow";
   if (/側欄|公司共享|sidebar/i.test(text)) return "sidebarGroup";
@@ -346,6 +348,8 @@ const observationRequiredEvidence = (observationType: FrontendObservationType): 
       return ["dateRange.cancelFlow.state", "interactionLog", "screenshot"];
     case "downloadToast":
       return ["editorToolbar.download.state", "download.toast.state", "interactionLog", "screenshot"];
+    case "saveReportDisabled":
+      return ["editorToolbar.saveButton.state", "dom.state", "screenshot"];
     case "saveModalCancel":
       return ["saveModal.cancelFlow.state", "interactionLog", "screenshot"];
     case "copyModalCancel":
@@ -390,6 +394,8 @@ const fallbackObservationType = (value: string | null): FrontendObservationType 
     case "downloadToast":
     case "editorDownload":
       return "downloadToast";
+    case "saveReportDisabled":
+      return "saveReportDisabled";
     case "saveModalCancel":
       return "saveModalCancel";
     case "copyModalCancel":
@@ -1001,7 +1007,7 @@ const buildActions = (currentCase: CaseManifestCase | null, helperHints: HelperH
       })
     ];
   }
-  if (isOpenReportFromProjectListFlow(currentCase, helperHints)) {
+  if (caseScopeContract?.routeIntent !== "report_mutation_flow" && isOpenReportFromProjectListFlow(currentCase, helperHints)) {
     return [
       action("H1", "collage.openProject", "開啟指定拼貼專案", params, {
         requiredEvidence: ["dom.url", "dom.pageTitle", "dom.state", "screenshot"],

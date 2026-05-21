@@ -2642,3 +2642,10 @@ Status update 2026-05-20 P0.29 BI official inline formula-builder alignment: Tom
 - 修正：server 不再把 active-run control WebSocket disconnect / heartbeat timeout 直接 terminalize。`agent_lost` 仍記錄事件，但 payload 帶 `terminalized=false`，run status 保持 RUNNING，避免 reconnect 後 server 反向 cancel still-running local task。
 - 邊界：這不改 PM cancel、Agent 主動 failed/cancelled、result ingest hard failure。這是平台 run lifecycle policy 對齊 P0.32 Agent-side continuation。
 - 驗證：`npm run verify:agent-roundtrip` 已更新：explicit disconnect 與 heartbeat timeout 都必須保持 active run non-terminal。
+
+### 2026-05-22 - P0.37 reduced-smoke blocked judgment/order bridge
+
+- 背景：run `3fe0f31b-a0ca-47f7-9712-925531fcc8c0` 已可跑完 reduced smoke，但仍有 `F-02/J-03/L-05/M-01/M-07/M-11` 六題 BLOCKED。這批不應視為同一類問題：`F-02/M-07` 是 result-contract 過嚴，`J-03` 是 upload containment 後沒有 re-enrich，`L-05` 是 deterministic FAIL 沒被採用，`M-01/M-11` 是 BI domain observation/route gap。
+- 修正方向：平台層補 deterministic re-judgment 與 upload-order guard；result-contract 只在 explicit `under_test` 靜態頁籤/日期面板 flow 時要求 static-tab interaction；拼貼模式的 `display=not_applicable_collage_no_display_mode` 不再造成 PASS contradiction；frontend observation 的 `FAIL_INTERACTION_FAILED` 可把 BLOCKED 改成 FAIL。Domain 層補 `saveReportDisabled` observation 與 `editorToolbar.saveButton.state` evidence，並讓 `report_mutation_flow` 優先於泛用 open-report route。
+- 邊界：這是 P0 compatibility bridge。平台可通用的部分是 judgment/order/routing policy；BI-specific save button、date panel、collage no-display semantics 放在 BI domain pack。不是新增 per-domain small helper，也不是把 3fe0f31b 的人工結果作為永久 oracle。
+- 驗證：`npm run verify:p0-33-live-blocker-regressions`、`npm run verify:agent-result-contract`、`npm run verify:p0-report-mutation-templates`、`npm run verify:official-observation-contract`、`npm run verify:p0-scope-contract`、`npm run verify:bi-official-ui-object-vocabulary`、`npm run verify:p0-live-action-templates`、`npm run typecheck --prefix agent`、`npm run typecheck`、`npm run build`、`npm run build --prefix agent`。

@@ -400,6 +400,16 @@ const main = async (): Promise<void> => {
       caseId: "OTTEST004-B-09",
       action: "collage.configureMetric",
       status: "ok",
+      params: {
+        caseScopeActions: [
+          {
+            actionId: "selectStaticTimeType",
+            role: "under_test",
+            target: "dateRange.timeTypeTab.static",
+            expectedOutcome: "state_changed"
+          }
+        ]
+      },
       evidence: {
         dateRangeEvidence: {
           ok: true,
@@ -436,9 +446,56 @@ const main = async (): Promise<void> => {
     const normalizedDateRangeWithoutFlowReport = await validateResultWorkbookContract(normalizedDateRangeWithoutFlowPass, undefined, { runDir: tempRoot });
     assert.equal(normalizedDateRangeWithoutFlowReport.status, "error");
     assert.ok(
-      normalizedDateRangeWithoutFlowReport.issues.some((item) => item.code === "RESULT_PASS_CONTRADICTS_HELPER_EVIDENCE"),
+      normalizedDateRangeWithoutFlowReport.issues.some((item) => item.code === "RESULT_PASS_CONTRADICTS_REQUIRED_ACTION_FLOW"),
       "static date range PASS must require flow interaction evidence, not only final represented range"
     );
+
+    const saveReopenStaticDateOutcomePass = path.join(tempRoot, "pass-configure-metric-static-date-outcome-not-static-tab-flow.xlsx");
+    await writePassWorkbook(saveReopenStaticDateOutcomePass, "OTTEST004-F-02");
+    fs.mkdirSync(path.join(tempRoot, "output", "helper-artifacts", "OTTEST004-F-02"), { recursive: true });
+    fs.writeFileSync(path.join(tempRoot, "output", "helper-artifacts", "OTTEST004-F-02", "collage.configureMetric-latest.json"), JSON.stringify({
+      ...staticDateRangeHelperEvidence,
+      caseId: "OTTEST004-F-02",
+      params: {
+        display: "not_applicable_collage_no_display_mode",
+        caseScopeActions: [
+          {
+            actionId: "saveTemporaryReport",
+            role: "under_test",
+            target: "saveModal.saveButton",
+            expectedOutcome: "succeeded"
+          }
+        ]
+      },
+      evidence: {
+        ...(staticDateRangeHelperEvidence.evidence as Record<string, unknown>),
+        dateRangeEvidence: {
+          ...((staticDateRangeHelperEvidence.evidence as Record<string, unknown>).dateRangeEvidence as Record<string, unknown>),
+          interactionLog: {
+            schemaVersion: "interaction-log-v1",
+            actions: {
+              setStaticDateRange: {
+                actualOutcome: "partial_state_change",
+                steps: {
+                  openStaticTab: { actualOutcome: "dispatched_no_change" }
+                }
+              }
+            }
+          }
+        },
+        stateDelta: {
+          after: {
+            checks: {
+              field: true,
+              dateRange: false,
+              display: false
+            }
+          }
+        }
+      }
+    }, null, 2));
+    const saveReopenStaticDateOutcomeReport = await validateResultWorkbookContract(saveReopenStaticDateOutcomePass, undefined, { runDir: tempRoot });
+    assert.equal(saveReopenStaticDateOutcomeReport.status, "ok", JSON.stringify(saveReopenStaticDateOutcomeReport.issues));
 
     const normalizedDateRangePass = path.join(tempRoot, "pass-configure-metric-normalized-date-evidence.xlsx");
     await writePassWorkbook(normalizedDateRangePass, "OTTEST004-B-09");
@@ -554,7 +611,8 @@ const main = async (): Promise<void> => {
         "PASS/helper contradiction can be contained as BLOCKED_NEEDS_REJUDGMENT without failing workbook validation",
         "PASS/helper contradiction containment is skipped when other workbook contract errors are present",
         "configureMetric dateRange=false still blocks without normalized date evidence",
-        "static dateRange PASS requires flow interaction evidence, not only final represented range",
+        "explicit static-tab under_test PASS requires flow interaction evidence, not only final represented range",
+        "static date outcome evidence is enough for save/reopen cases that do not test the static tab itself",
         "configureMetric dateRange=false is allowed when date-ui-evidence proves the represented range and flow evidence exists",
         "required static-tab under_test flow failure is contained as FAIL with an auto Bug row"
       ]

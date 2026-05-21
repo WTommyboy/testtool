@@ -2411,6 +2411,7 @@
         "disabled"
       ],
       "evidenceObjects": [
+        "editorToolbar.saveButton.state",
         "saveModal.cancelFlow.state",
         "saveModal.saveFlow.state"
       ],

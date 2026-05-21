@@ -18,6 +18,7 @@
     "collage.observation.dateTimeTypeTab",
     "collage.observation.datePanelCancel",
     "collage.observation.editorDownload",
+    "collage.observation.saveReportDisabled",
     "collage.observation.saveModalCancel",
     "collage.observation.copyModalCancel"
   ],
@@ -46,6 +47,7 @@
           "datePanelCancel",
           "downloadToast",
           "editorDownload",
+          "saveReportDisabled",
           "saveModalCancel",
           "copyModalCancel"
         ]
@@ -138,6 +140,20 @@
         "expectedMessagePattern": "第 {rowIndex} 欄位，欄位未設置完成",
         "multipleIncompleteRowsProduceMultipleMessages": true,
         "previewRequestDelta": 0
+      }
+    },
+    "saveReportDisabled": {
+      "component": "editorToolbar.saveButton",
+      "semanticMap": "editorToolbarSaveButton",
+      "objectIds": [
+        "editorToolbar.saveButton"
+      ],
+      "requiredEvidence": [
+        "editorToolbar.saveButton.state"
+      ],
+      "successState": {
+        "visible": true,
+        "disabled": true
       }
     },
     "sidebarCompanySharedGroup": {

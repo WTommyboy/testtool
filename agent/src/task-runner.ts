@@ -3077,6 +3077,29 @@ const uploadRunArtifacts = async (options: UploadArtifactsOptions): Promise<Uplo
           },
           false
         );
+        const postContainmentEnrichment = await ensureBlockedResultCurrentRunEvidence({
+          filePath: resultXlsxPath,
+          runId,
+          runDir
+        });
+        writeJson(path.join(runDir, "output", "result-evidence-enrichment-after-upload-containment.json"), postContainmentEnrichment);
+        if (postContainmentEnrichment.status === "updated") {
+          contractReport = await validateResultWorkbookContract(resultXlsxPath, undefined, { runDir });
+          writeJson(path.join(runDir, "output", "result-xlsx-self-check.json"), contractReport);
+          sendBestEffort(
+            connection,
+            "run.stdout",
+            {
+              run_id: runId,
+              text: "uat-agent reconciled upload-contained BLOCKED rows with deterministic current-run helper evidence before retry upload."
+            },
+            false
+          );
+          if (contractReport.status === "error") {
+            const errorCodes = contractReport.issues.filter((item) => item.severity === "error").map((item) => item.code).join(",");
+            throw new Error(`RESULT_XLSX_SELF_CHECK_FAILED_AFTER_UPLOAD_CONTAINMENT ${errorCodes}`);
+          }
+        }
         try {
           const retryUploadResponse = await uploadResultXlsx(outputUrls.result_xlsx, resultXlsxPath, config.token, resultUploadMetadata, {
             maxAttempts: 2,

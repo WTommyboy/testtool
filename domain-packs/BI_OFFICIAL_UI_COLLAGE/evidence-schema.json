@@ -171,6 +171,15 @@
       ],
       "purpose": "Frontend observation evidence for invalid-operation validation messages."
     },
+    "editorToolbar.saveButton.state": {
+      "type": "object",
+      "requiredFields": [
+        "visible",
+        "disabled",
+        "asserted"
+      ],
+      "purpose": "Frontend observation evidence for the save-report button visible/disabled state before valid save setup."
+    },
     "sidebar.companySharedGroup.state": {
       "type": "object",
       "requiredFields": [

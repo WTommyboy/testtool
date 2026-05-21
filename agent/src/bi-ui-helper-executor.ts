@@ -9244,6 +9244,7 @@ type FrontendObservationType =
   | "dateTimeTypeTab"
   | "datePanelCancel"
   | "downloadToast"
+  | "saveReportDisabled"
   | "saveModalCancel"
   | "copyModalCancel";
 
@@ -9268,6 +9269,7 @@ const frontendObservationType = (options: CliOptions): FrontendObservationType |
     value === "datePanelCancel" ||
     value === "downloadToast" ||
     value === "editorDownload" ||
+    value === "saveReportDisabled" ||
     value === "saveModalCancel" ||
     value === "copyModalCancel"
   ) {
@@ -9865,6 +9867,11 @@ const observeFrontendVisibleUiActions = async (
     return { actions };
   }
 
+  if (observationType === "saveReportDisabled") {
+    actions.push({ action: "observe", target: "editorToolbar.saveButton" });
+    return { actions };
+  }
+
   if (observationType === "saveModalCancel") {
     const flow = await observeSaveModalCancelFlow(options, page);
     actions.push(
@@ -10369,6 +10376,26 @@ const readFrontendObservationState = async (
       };
     }
 
+    if (type === "saveReportDisabled") {
+      const saveButtons = visibleButtons.filter((button) =>
+        /儲存報表|save\s*report/i.test(`${button.text ?? ""}\n${button.ariaLabel ?? ""}\n${button.title ?? ""}`)
+      );
+      const saveButton = saveButtons[0] ?? null;
+      const visible = Boolean(saveButton);
+      const disabled = saveButton?.disabled === true ||
+        saveButton?.computedStyle?.pointerEvents === "none" ||
+        saveButton?.computedStyle?.opacity === "0.5";
+      return {
+        evidenceObject: "editorToolbar.saveButton.state",
+        visible,
+        disabled,
+        button: saveButton,
+        interactionLog: Array.isArray(actionData?.actions) ? actionData.actions : [],
+        recommendedFailureClassification: visible && !disabled ? "FAIL_INTERACTION_FAILED" : null,
+        asserted: visible && disabled
+      };
+    }
+
     if (type === "saveModalCancel") {
       const actionList = Array.isArray(actionData?.actions) ? actionData.actions as Array<Record<string, unknown>> : [];
       const flow = actionData?.saveModalCancelFlow && typeof actionData.saveModalCancelFlow === "object" && !Array.isArray(actionData.saveModalCancelFlow)
@@ -10574,6 +10601,7 @@ const waitForFrontendObservationReadiness = async (
     dateTimeTypeTab: /時間|動態|靜態|報表設定/i,
     datePanelCancel: /時間|取消|報表設定/i,
     downloadToast: /下載|計算|執行|報表設定/i,
+    saveReportDisabled: /儲存報表|報表設定|欄位選擇/i,
     saveModalCancel: /儲存報表|報表設定/i,
     copyModalCancel: /複製副本|更新設定|報表設定/i
   };

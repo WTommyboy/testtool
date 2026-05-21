@@ -1430,6 +1430,41 @@
       }
     },
     {
+      "caseNo": "BIUI_COLLAGE_R001-M-01",
+      "routeIntent": "frontend_observation",
+      "testTarget": "frontend_presentation",
+      "requiresEditor": true,
+      "observationType": "saveReportDisabled",
+      "requiredActions": [
+        {
+          "actionId": "assertSaveReportDisabledBeforeValidSetup",
+          "action": "assertDisabled",
+          "target": "editorToolbar.saveButton",
+          "role": "under_test",
+          "expectedOutcome": "disabled_or_no_change",
+          "requiredForPass": true,
+          "evidenceRequirements": [
+            "editorToolbar.saveButton.state",
+            "screenshot"
+          ]
+        }
+      ],
+      "evidenceRequirements": {
+        "observation": [
+          "editorToolbar.saveButton.state",
+          "screenshot"
+        ]
+      },
+      "judgmentPolicy": {
+        "failWhen": [
+          "save report button is visible and enabled before a valid setup/report name is provided"
+        ],
+        "blockedWhen": [
+          "editor page or save report button cannot be reached"
+        ]
+      }
+    },
+    {
       "caseNo": "BIUI_COLLAGE_R001-M-06",
       "routeIntent": "report_mutation_flow",
       "testTarget": "functional_flow",

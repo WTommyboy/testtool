@@ -223,30 +223,28 @@ const helperReportRequiredActions = (parsed: Record<string, unknown>): Record<st
   return [...directActions, ...contractActions];
 };
 
-const helperReportTestTarget = (parsed: Record<string, unknown>): string | null => {
-  const params = record(parsed.params) ?? {};
-  const contract = record(params.caseScopeContract);
-  const policy = record(contract?.judgmentPolicy);
-  const raw = params.testTarget ?? params["測試標的"] ?? policy?.testTarget ?? policy?.["測試標的"];
-  return typeof raw === "string" && raw.trim() ? raw.trim() : null;
-};
-
 const helperReportRequiresStaticTabUnderTest = (parsed: Record<string, unknown>): boolean => {
   const targetPattern = /dateRange\.timeTypeTab\.static|timeTypeTab\.static|靜態時間|靜態/i;
   const actions = helperReportRequiredActions(parsed);
-  if (actions.some((action) => {
+  return actions.some((action) => {
     const role = typeof action.role === "string" ? action.role : "";
     const target = [action.target, action.targetObjectId, action.objectId, action.actionId]
       .filter((item): item is string => typeof item === "string")
       .join("\n");
     const expectedOutcome = typeof action.expectedOutcome === "string" ? action.expectedOutcome : "";
     return (!role || role === "under_test") && targetPattern.test(target) && /succeeded|state_changed|changed/i.test(expectedOutcome || "succeeded");
-  })) {
-    return true;
-  }
-  const testTarget = helperReportTestTarget(parsed);
-  return Boolean(testTarget && /功能流程|前端呈現|前後端整合|frontend|flow|integration/i.test(testTarget));
+  });
 };
+
+const deepStringIncludes = (value: unknown, pattern: RegExp): boolean => {
+  if (typeof value === "string") return pattern.test(value);
+  if (!value || typeof value !== "object") return false;
+  if (Array.isArray(value)) return value.some((item) => deepStringIncludes(item, pattern));
+  return Object.values(value as Record<string, unknown>).some((item) => deepStringIncludes(item, pattern));
+};
+
+const helperReportDisplayNotApplicable = (parsed: Record<string, unknown>): boolean =>
+  deepStringIncludes({ params: parsed.params, evidence: parsed.evidence }, /not_applicable_collage_no_display_mode|拼貼模式無顯示方式|顯示=不影響/i);
 
 const dateRangeProfileSignature = (parsed: Record<string, unknown>, context: string): string | null => {
   const evidence = record(parsed.evidence);
@@ -266,7 +264,7 @@ const configureMetricDateRangeVerified = (parsed: Record<string, unknown>): bool
   const evidence = record(parsed.evidence);
   const dateRangeEvidence = record(evidence?.dateRangeEvidence);
   if (dateRangeEvidence?.ok === false) return false;
-  if (!staticDateRangeFlowVerified(dateRangeEvidence)) return false;
+  if (helperReportRequiresStaticTabUnderTest(parsed) && !staticDateRangeFlowVerified(dateRangeEvidence)) return false;
   return dateUiEvidenceMatchesRequested(dateRangeEvidence?.dateUiEvidence) || dateUiEvidenceMatchesRequested(evidence?.dateUiEvidence);
 };
 
@@ -316,15 +314,41 @@ const configureMetricContradictionForPass = (parsed: Record<string, unknown>): O
   const after = record(stateDelta.after) ?? {};
   const failed = falseChecks(after.checks);
   const requiredActionFlowFailures = configureMetricRequiredActionFlowFailures(parsed);
-  const adjustedFailed = failed.includes("dateRange") && configureMetricDateRangeVerified(parsed)
-    ? failed.filter((item) => item !== "dateRange")
+  const displayAdjustedFailed = helperReportDisplayNotApplicable(parsed)
+    ? failed.filter((item) => item !== "display")
     : failed;
+  const adjustedFailed = displayAdjustedFailed.includes("dateRange") && configureMetricDateRangeVerified(parsed)
+    ? displayAdjustedFailed.filter((item) => item !== "dateRange")
+    : displayAdjustedFailed;
   if (adjustedFailed.length === 0 && requiredActionFlowFailures.length === 0) return null;
   return {
     falseChecks: adjustedFailed,
     requiredActionFlowFailures,
     containmentVerdict: requiredActionFlowFailures.length > 0 ? "FAIL_INTERACTION_OR_ASSERTION_FAILED" : "BLOCKED_NEEDS_REJUDGMENT"
   };
+};
+
+const normalizeDateRangeText = (value: string): string => value.replace(/\s+/g, "").replace(/\//g, "-");
+
+const dateRangeVisibleInText = (expected: unknown, observedText: unknown): boolean => {
+  if (typeof expected !== "string" || typeof observedText !== "string") return false;
+  const normalizedExpected = normalizeDateRangeText(expected);
+  const parts = normalizedExpected.split(/[~～－—–]{1,2}/).filter(Boolean);
+  if (parts.length >= 2) {
+    const normalizedObserved = normalizeDateRangeText(observedText);
+    return normalizedObserved.includes(parts[0] ?? "") && normalizedObserved.includes(parts.at(-1) ?? "");
+  }
+  return normalizeDateRangeText(observedText).includes(normalizedExpected);
+};
+
+const reopenReportDateRangeVerified = (parsed: Record<string, unknown>): boolean => {
+  const evidence = record(parsed.evidence) ?? {};
+  const reopen = record(evidence.reopenReportEvidence) ?? {};
+  const expected = record(reopen.expected) ?? {};
+  const settle = record(reopen.settle) ?? {};
+  const domState = record(reopen.domState) ?? {};
+  return dateRangeVisibleInText(expected.dateRange, settle.bodyTextExcerpt) ||
+    dateRangeVisibleInText(expected.dateRange, domState.bodyTextExcerpt);
 };
 
 const helperEvidenceFalseChecksForPass = (runDir: string, caseNo: string): HelperEvidencePassContradiction[] => {
@@ -342,8 +366,14 @@ const helperEvidenceFalseChecksForPass = (runDir: string, caseNo: string): Helpe
         const stateDelta = record(reopen.stateDelta) ?? {};
         const after = record(stateDelta.after) ?? {};
         const failed = falseChecks(after.checks);
-        if (failed.length === 0) return null;
-        return { falseChecks: failed, requiredActionFlowFailures: [], containmentVerdict: "BLOCKED_NEEDS_REJUDGMENT" };
+        const displayAdjustedFailed = helperReportDisplayNotApplicable(parsed)
+          ? failed.filter((item) => item !== "display")
+          : failed;
+        const adjustedFailed = displayAdjustedFailed.includes("dateRange") && reopenReportDateRangeVerified(parsed)
+          ? displayAdjustedFailed.filter((item) => item !== "dateRange")
+          : displayAdjustedFailed;
+        if (adjustedFailed.length === 0) return null;
+        return { falseChecks: adjustedFailed, requiredActionFlowFailures: [], containmentVerdict: "BLOCKED_NEEDS_REJUDGMENT" };
       }
     }
   ];

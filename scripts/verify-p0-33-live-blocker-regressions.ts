@@ -85,7 +85,9 @@ const writeBlockedEvidenceWorkbook = async (filePath: string): Promise<void> => 
   sheet.addRow(["編號", "結果", "失敗分類", "詳細紀錄JSON"]);
   sheet.addRow(["BIUI_COLLAGE_R001-B-05", "BLOCKED", "EVIDENCE_INSUFFICIENT", JSON.stringify({ 測試目的: "B-05 deterministic pass fixture", currentRunEvidence: { old: true } })]);
   sheet.addRow(["BIUI_COLLAGE_R001-J-03", "BLOCKED", "BLOCKED_NEEDS_VISUAL_REVIEW", JSON.stringify({ 測試目的: "J-03 deterministic pass fixture", currentRunEvidence: { old: true } })]);
+  sheet.addRow(["BIUI_COLLAGE_R001-L-05", "BLOCKED", "EVIDENCE_INSUFFICIENT", JSON.stringify({ 測試目的: "L-05 deterministic fail fixture", currentRunEvidence: { old: true } })]);
   sheet.addRow(["BIUI_COLLAGE_R001-I-04", "BLOCKED", "EVIDENCE_INSUFFICIENT", JSON.stringify({ 測試目的: "negative fixture", currentRunEvidence: { old: true } })]);
+  workbook.addWorksheet("Bug").addRow(["嚴重度", "Bug ID", "關聯編號", "標題", "描述", "建議", "狀態", "Evidence"]);
   await workbook.xlsx.writeFile(filePath);
 };
 
@@ -145,6 +147,28 @@ const writeDeterministicEvidenceFixture = (runDir: string): void => {
         deleteEnabledAfterSelection: true,
         createEnabledAfterSelection: true
       }
+    }
+  }, null, 2));
+
+  const l05Dir = path.join(runDir, "output", "helper-artifacts-archive", "2026-05-21T00-02-00-000Z", "BIUI_COLLAGE_R001-L-05");
+  fs.mkdirSync(l05Dir, { recursive: true });
+  fs.writeFileSync(path.join(l05Dir, "frontend-observation-evidence.json"), JSON.stringify({
+    schemaVersion: "frontend-observation-evidence-v1",
+    observationType: "datePanel",
+    observationState: {
+      evidenceObject: "dateRange.presetSwitch.state",
+      asserted: false,
+      recommendedFailureClassification: "FAIL_INTERACTION_FAILED",
+      failedPresetSwitches: [
+        {
+          target: "dateRange.preset.lastWeek",
+          actualOutcome: "target_absent_or_not_clickable",
+          clicked: false
+        }
+      ],
+      interactionLog: [
+        { action: "select", target: "dateRange.preset.lastWeek", clicked: false }
+      ]
     }
   }, null, 2));
 };
@@ -215,6 +239,37 @@ const main = async (): Promise<void> => {
     ["collage.openProject", "collage.openReportFromProjectList", "collage.updateExistingReportAndReopen"],
     "M-11 must not regress to open-only helper plan"
   );
+  const m11LiveLikeCase: CaseManifestCase = {
+    ...fixtureCase(m11),
+    structuredSteps: [
+      {
+        caseNo: "BIUI_COLLAGE_R001-M-11",
+        stepNo: 1,
+        actionType: "open",
+        targetType: "domain_ui_object",
+        targetValue: "projectList.reportRow",
+        inputValue: null,
+        expected: "visible",
+        requireApproval: false,
+        timeoutMs: 8000,
+        retry: 1,
+        role: "precondition",
+        actionId: "openExistingReportBeforeUpdate",
+        evidenceRequirements: ["projectList.reportRow.state", "screenshot"]
+      }
+    ]
+  };
+  assert.deepEqual(
+    buildHelperExecutionPlan({ runDir: os.tmpdir(), currentCase: m11LiveLikeCase, helperHints: null }).actions.map((item) => item.template),
+    ["collage.openProject", "collage.openReportFromProjectList", "collage.updateExistingReportAndReopen"],
+    "M-11 live structured-step precondition must not be swallowed by generic open-report route"
+  );
+
+  const m01 = byCase.get("BIUI_COLLAGE_R001-M-01");
+  assert(m01, "M-01 contract must exist");
+  const m01Plan = buildHelperExecutionPlan({ runDir: os.tmpdir(), currentCase: fixtureCase(m01), helperHints: null });
+  const m01ObserveAction = m01Plan.actions.find((item) => item.template === "collage.observeFrontendState");
+  assert.equal(m01ObserveAction?.params.observationType, "saveReportDisabled", "M-01 must observe editor save button disabled state, not row delete tooltip");
 
   const g05VisibleReportCase: CaseManifestCase = {
     ...fixtureCase(m11),
@@ -257,9 +312,12 @@ const main = async (): Promise<void> => {
   assert.equal(enrichment.status, "updated", "deterministic helper evidence should update blocked workbook");
   assert(enrichment.rows.some((item) => item.caseNo === "BIUI_COLLAGE_R001-B-05" && item.action === "deterministic_helper_pass"), "B-05 deterministic date evidence must promote BLOCKED to PASS");
   assert(enrichment.rows.some((item) => item.caseNo === "BIUI_COLLAGE_R001-J-03" && item.action === "deterministic_helper_pass"), "J-03 deterministic frontend observation must promote BLOCKED to PASS");
+  assert(enrichment.rows.some((item) => item.caseNo === "BIUI_COLLAGE_R001-L-05" && item.action === "deterministic_helper_fail"), "L-05 deterministic frontend interaction failure must promote BLOCKED to FAIL");
   const statuses = await readWorkbookStatuses(fixtureResult);
   assert.equal(statuses["BIUI_COLLAGE_R001-B-05"]?.status, "PASS", "B-05 should become PASS");
   assert.equal(statuses["BIUI_COLLAGE_R001-J-03"]?.status, "PASS", "J-03 should become PASS");
+  assert.equal(statuses["BIUI_COLLAGE_R001-L-05"]?.status, "FAIL", "L-05 should become FAIL");
+  assert.equal(statuses["BIUI_COLLAGE_R001-L-05"]?.verdict, "FAIL_INTERACTION_FAILED", "L-05 should carry a deterministic failure classification");
   assert.equal(statuses["BIUI_COLLAGE_R001-I-04"]?.status, "BLOCKED", "negative non-deterministic observation should remain BLOCKED");
 
   console.log(JSON.stringify({
@@ -269,9 +327,12 @@ const main = async (): Promise<void> => {
       "J-08 report rows recoverable from body text",
       "L-10 from-date preset targets routed to executable datePanel actions",
       "M-11 update existing report helper is planned",
+      "M-11 live structured precondition does not bypass report mutation helper",
+      "M-01 routes to saveReportDisabled observation",
       "G-05/M-10 allow visible-first existing report selection",
       "M-11 uses current-run saved-report state instead of stale TOOL_A01 pattern",
-      "B-05/J-03 deterministic helper evidence promotes BLOCKED to PASS"
+      "B-05/J-03 deterministic helper evidence promotes BLOCKED to PASS",
+      "L-05 deterministic helper failure promotes BLOCKED to FAIL"
     ]
   }, null, 2));
 };

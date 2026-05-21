@@ -334,6 +334,7 @@ const helperSupportsStructuredObservationType = (value: string | null | undefine
   value === "datePanelCancel" ||
   value === "downloadToast" ||
   value === "editorDownload" ||
+  value === "saveReportDisabled" ||
   value === "saveModalCancel" ||
   value === "copyModalCancel";
 
