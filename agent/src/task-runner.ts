@@ -3376,6 +3376,52 @@ const containCodexRuntimeFailureIfNeeded = async (options: {
   return report;
 };
 
+const containCodexNoResultIfNeeded = async (options: {
+  connection: AgentConnection;
+  message: AgentMessage;
+  runId: string;
+  runDir: string;
+  inputs: DownloadedInputs;
+  currentCaseNo: string | null;
+  result: CodexTurnResult;
+  contextLabel?: string;
+}): Promise<RuntimeContainmentReport | null> => {
+  if (options.result.exitCode !== 0) return null;
+  if (getCodexGeneratedResultXlsx(options.runDir)) return null;
+  const report = await writeCodexRuntimeContainmentResultIfNeeded({
+    runId: options.runId,
+    roundId: getStringPayload(options.message, "round_id") ?? options.runId,
+    runDir: options.runDir,
+    xlsxPath: options.inputs.xlsx,
+    currentCaseNo: options.currentCaseNo,
+    result: options.result,
+    failCategory: "CODEX_NO_RESULT_XLSX",
+    containmentKind: "no_result_after_success"
+  });
+  if (report.status === "written") {
+    sendBestEffort(
+      options.connection,
+      "run.stdout",
+      {
+        run_id: options.runId,
+        text: `uat-agent contained Codex no-result ${options.contextLabel ?? "turn"} for ${report.caseNo ?? "current case"} as BLOCKED/CODEX_NO_RESULT_XLSX; continuing run after result upload.`
+      },
+      false
+    );
+  } else {
+    sendBestEffort(
+      options.connection,
+      "run.stderr",
+      {
+        run_id: options.runId,
+        text: `uat-agent could not contain Codex no-result ${options.contextLabel ?? "turn"} for ${options.currentCaseNo ?? "current case"}: ${report.reason ?? "unknown"}`
+      },
+      false
+    );
+  }
+  return report;
+};
+
 const runFreshCasesUntilPauseOrDone = async (options: {
   connection: AgentConnection;
   config: AgentConfig;
@@ -3589,6 +3635,16 @@ const runFreshCasesUntilPauseOrDone = async (options: {
       guides,
       result
     });
+    const noResultContainment = await containCodexNoResultIfNeeded({
+      connection,
+      message,
+      runId,
+      runDir,
+      inputs,
+      currentCaseNo: guides.caseManifest.currentCaseNo,
+      result,
+      contextLabel: "turn"
+    });
 
     uploadedArtifacts = await timeAgentPhase(
       timing,
@@ -3610,10 +3666,11 @@ const runFreshCasesUntilPauseOrDone = async (options: {
     );
 
     const runtimeFailureContained = runtimeContainment?.status === "written" && uploadedArtifacts.usedCodexGeneratedResult;
+    const noResultContained = noResultContainment?.status === "written" && uploadedArtifacts.usedCodexGeneratedResult;
     if (result.exitCode !== 0 && !runtimeFailureContained) {
       throw new Error(`CODEX_RUN_FAILED exit=${result.exitCode} signal=${result.signal ?? "none"}`);
     }
-    if (!uploadedArtifacts.usedCodexGeneratedResult) {
+    if (!uploadedArtifacts.usedCodexGeneratedResult && !noResultContained) {
       throw new Error("CODEX_NO_RESULT_XLSX");
     }
 
@@ -4183,6 +4240,16 @@ export const handleToolResponse = async (
         false
       );
     }
+    const noResultContainment = await containCodexNoResultIfNeeded({
+      connection,
+      message: dispatch,
+      runId,
+      runDir,
+      inputs: downloadedInputs,
+      currentCaseNo,
+      result,
+      contextLabel: "during resume"
+    });
 
     uploadedArtifacts = await timeAgentPhase(
       timing,
@@ -4204,10 +4271,11 @@ export const handleToolResponse = async (
     );
 
     const runtimeFailureContained = runtimeContainment?.status === "written" && uploadedArtifacts.usedCodexGeneratedResult;
+    const noResultContained = noResultContainment?.status === "written" && uploadedArtifacts.usedCodexGeneratedResult;
     if (result.exitCode !== 0 && !runtimeFailureContained) {
       throw new Error(`CODEX_RUN_FAILED exit=${result.exitCode} signal=${result.signal ?? "none"}`);
     }
-    if (!uploadedArtifacts.usedCodexGeneratedResult) {
+    if (!uploadedArtifacts.usedCodexGeneratedResult && !noResultContained) {
       throw new Error("CODEX_NO_RESULT_XLSX");
     }
 

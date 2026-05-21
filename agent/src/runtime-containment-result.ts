@@ -173,6 +173,7 @@ export const writeCodexRuntimeContainmentResultIfNeeded = async (input: {
   currentCaseNo: string | null;
   result: RuntimeResultLike;
   failCategory?: string;
+  containmentKind?: "runtime_failure" | "no_result_after_success";
 }): Promise<RuntimeContainmentReport> => {
   const generatedAt = new Date().toISOString();
   const reportPath = path.join(input.runDir, "output", "runtime-containment-result.json");
@@ -195,7 +196,8 @@ export const writeCodexRuntimeContainmentResultIfNeeded = async (input: {
     });
   }
 
-  if (input.result.exitCode === 0) {
+  const containmentKind = input.containmentKind ?? "runtime_failure";
+  if (input.result.exitCode === 0 && containmentKind !== "no_result_after_success") {
     return writeReport({
       schemaVersion: "codex-runtime-containment-result-v1",
       generatedAt,
@@ -255,7 +257,20 @@ export const writeCodexRuntimeContainmentResultIfNeeded = async (input: {
     });
   }
 
-  const failCategory = input.failCategory ?? "CODEX_RUNTIME_RESULT_WRITE_FAILED";
+  const failCategory = input.failCategory ?? (
+    containmentKind === "no_result_after_success"
+      ? "CODEX_NO_RESULT_XLSX"
+      : "CODEX_RUNTIME_RESULT_WRITE_FAILED"
+  );
+  const expectedBehavior = containmentKind === "no_result_after_success"
+    ? "Codex 應讀取 current-run helper/browser evidence，完成 case 判定並寫出 output/result.xlsx；若 Codex 無法完成可信判定，Agent 應隔離為單題 BLOCKED，不讓整輪停止。"
+    : "Codex runtime 應讀取 current-run helper/browser evidence，完成 case 判定並寫出 output/result.xlsx，且不讓單題 runtime failure 中斷整輪。";
+  const actualBehavior = containmentKind === "no_result_after_success"
+    ? "Helper pre-run 已產生 current-run evidence，但 Codex turn 結束後沒有可信 output/result.xlsx；Agent 以單題 containment 結果保留 evidence 並讓整輪可繼續。"
+    : "Helper pre-run 已產生 current-run evidence，但 Codex subprocess 在判定或寫回 result.xlsx 前失敗；Agent 以單題 containment 結果保留 evidence 並讓整輪可繼續。";
+  const blockedReason = containmentKind === "no_result_after_success"
+    ? `${failCategory}: Codex completed without a trusted output/result.xlsx after current-run helper evidence was collected.`
+    : `${failCategory}: Codex failed after helper evidence collection and before trusted result workbook was produced.`;
   const detailJson = {
     測試目的: sourceCase.caseTitle
       ? `執行並判定 ${sourceCase.caseNo}：${sourceCase.caseTitle}`
@@ -266,9 +281,9 @@ export const writeCodexRuntimeContainmentResultIfNeeded = async (input: {
       helperPreRunStatus: helperPreRunSummary?.status ?? null,
       helperExecutedCount: helperPreRunSummary?.executedCount ?? null
     },
-    預期行為: "Codex runtime 應讀取 current-run helper/browser evidence，完成 case 判定並寫出 output/result.xlsx，且不讓單題 runtime failure 中斷整輪。",
-    實際行為: "Helper pre-run 已產生 current-run evidence，但 Codex subprocess 在判定或寫回 result.xlsx 前失敗；Agent 以單題 containment 結果保留 evidence 並讓整輪可繼續。",
-    blocked_reason: `${failCategory}: Codex failed after helper evidence collection and before trusted result workbook was produced.`,
+    預期行為: expectedBehavior,
+    實際行為: actualBehavior,
+    blocked_reason: blockedReason,
     currentRunEvidence: {
       helperPreRunSummary: helperPreRunSummaryPath,
       helperReports: helperReportsFromSummary(helperPreRunSummary),
@@ -279,6 +294,7 @@ export const writeCodexRuntimeContainmentResultIfNeeded = async (input: {
       schemaVersion: "codex-runtime-containment-result-v1",
       generatedAt,
       failCategory,
+      containmentKind,
       codexFailure: compactCodexFailure(input.result),
       policy: "This is a trusted single-case BLOCKED containment result for process isolation only. It is not a PASS/FAIL judgment of the product behavior."
     }
