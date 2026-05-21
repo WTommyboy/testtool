@@ -653,6 +653,16 @@ const inferExistingReportNamePattern = (text: string, params: Record<string, unk
       fallbackReportNamePattern
   );
 
+const inferExistingReportSelectionMode = (text: string, params: Record<string, unknown>): "visible_first" | null => {
+  const explicit = stringParam(params, ["existingReportSelectionMode", "existingReportSelection"]);
+  if (explicit === "visible_first") return "visible_first";
+  const requestsAnyVisibleReport =
+    /任一(?:可見)?既有報表|任一.*報表\s*row|點擊既有報表名稱|使用專案頁任一可見既有報表/.test(text);
+  const requiresCurrentRunTestReport =
+    /本輪(?:建立|可辨識)|不可動非測試報表|前置資源:.*本輪/.test(text);
+  return requestsAnyVisibleReport && !requiresCurrentRunTestReport ? "visible_first" : null;
+};
+
 const cleanDateRangeText = (value: string | null): string | null => {
   const trimmed = nonNeutral(value);
   if (!trimmed) return null;
@@ -707,6 +717,7 @@ const inferCollageParams = (currentCase: CaseManifestCase | null, helperHints: H
       /修改既有|既有報表.{0,20}(?:修改|覆寫|覆盖)|已儲存報表.{0,20}(?:修改|覆寫|覆盖)|儲存覆寫|覆寫|覆盖/.test(text)
     );
   const existingReportNamePattern = inferExistingReportNamePattern(text, params, reportNamePattern);
+  const existingReportSelectionMode = inferExistingReportSelectionMode(text, params);
   const dateRangeText =
     cleanDateRangeText(stringParam(params, ["dateRange", "timeRange"])) ??
     cleanDateRangeText(dateObjectParam(params.dateRange)) ??
@@ -791,7 +802,8 @@ const inferCollageParams = (currentCase: CaseManifestCase | null, helperHints: H
     cleanupTargets: cleanup,
     reportNamePattern,
     existingReportNamePattern,
-    existingReportSourceCaseNo: modifiesExistingReport ? "TOOL-A-01" : null,
+    existingReportSelectionMode,
+    existingReportSourceCaseNo: stringParam(params, ["existingReportSourceCaseNo", "existingReportSourceCase"]) ?? null,
     openExistingReport: modifiesExistingReport,
     overwriteExisting: modifiesExistingReport
   };

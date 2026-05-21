@@ -606,19 +606,31 @@ const reportNameMatchesPattern = (reportName: string, pattern: string): boolean 
 };
 
 const readSavedReportStateFiles = (options: CliOptions): Array<{ caseId: string; reportName: string; path: string; savedAt: string | null }> => {
-  const root = path.join(options.runDir, "output", "helper-artifacts");
-  if (!fs.existsSync(root)) return [];
+  const roots = [
+    path.join(options.runDir, "output", "helper-artifacts"),
+    path.join(options.runDir, "output", "helper-artifacts-archive")
+  ];
   const result: Array<{ caseId: string; reportName: string; path: string; savedAt: string | null }> = [];
-  for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
-    if (!entry.isDirectory()) continue;
-    const filePath = path.join(root, entry.name, "saved-report.json");
-    if (!fs.existsSync(filePath)) continue;
+  const stateFiles: string[] = [];
+  const visit = (dir: string, depth: number): void => {
+    if (!fs.existsSync(dir) || depth > 4) return;
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const entryPath = path.join(dir, entry.name);
+      if (entry.isFile() && entry.name === "saved-report.json") {
+        stateFiles.push(entryPath);
+      } else if (entry.isDirectory()) {
+        visit(entryPath, depth + 1);
+      }
+    }
+  };
+  roots.forEach((root) => visit(root, 0));
+  for (const filePath of stateFiles) {
     try {
       const parsed = JSON.parse(fs.readFileSync(filePath, "utf8")) as Record<string, unknown>;
       const reportName = typeof parsed.reportName === "string" ? parsed.reportName.trim() : "";
       if (!reportName) continue;
       result.push({
-        caseId: typeof parsed.caseId === "string" && parsed.caseId.trim() ? parsed.caseId.trim() : entry.name,
+        caseId: typeof parsed.caseId === "string" && parsed.caseId.trim() ? parsed.caseId.trim() : path.basename(path.dirname(filePath)),
         reportName,
         path: filePath,
         savedAt: typeof parsed.savedAt === "string" ? parsed.savedAt : null
@@ -630,17 +642,70 @@ const readSavedReportStateFiles = (options: CliOptions): Array<{ caseId: string;
   return result.sort((a, b) => String(b.savedAt ?? "").localeCompare(String(a.savedAt ?? "")));
 };
 
+const visibleReportNamesFromProjectList = async (page: Page): Promise<string[]> => {
+  return page.evaluate(() => {
+    const normalize = (value: string | null | undefined): string => (value ?? "").trim().replace(/\s+/g, " ");
+    const bodyText = document.body?.innerText ?? "";
+    const lines = bodyText
+      .split(/\n+/)
+      .map((line) => normalize(line))
+      .filter(Boolean);
+    const names: string[] = [];
+    const looksLikePeriod = (value: string): boolean =>
+      /\d{4}[/-]\d{1,2}[/-]\d{1,2}\s*~\s*\d{4}[/-]\d{1,2}[/-]\d{1,2}|過去\s*\d+\s*天|最近\s*\d+\s*天|昨日|今日|上週|本週|上月|本月/.test(value);
+    for (let index = 0; index < lines.length - 3; index += 1) {
+      const name = lines[index] ?? "";
+      const period = lines[index + 1] ?? "";
+      const download = lines[index + 2] ?? "";
+      const remove = lines[index + 3] ?? "";
+      if (!name || !looksLikePeriod(period) || download !== "下載" || remove !== "刪除") continue;
+      if (/報表名稱|資料週期區間|操作|拼貼報表|報表明細|指標趨勢/.test(name)) continue;
+      if (!names.includes(name)) names.push(name);
+    }
+    return names;
+  });
+};
+
+const currentCaseOpenProjectUrl = (options: CliOptions): string | null => {
+  const filePath = path.join(artifactRoot(options), "collage.openProject-latest.json");
+  if (!fs.existsSync(filePath)) return null;
+  try {
+    const parsed = JSON.parse(fs.readFileSync(filePath, "utf8")) as Record<string, unknown>;
+    const evidence = parsed.evidence && typeof parsed.evidence === "object" && !Array.isArray(parsed.evidence)
+      ? parsed.evidence as Record<string, unknown>
+      : {};
+    const domState = evidence.domState && typeof evidence.domState === "object" && !Array.isArray(evidence.domState)
+      ? evidence.domState as Record<string, unknown>
+      : {};
+    const url = typeof domState.url === "string" ? domState.url : null;
+    return url && isOfficialCollageProjectRouteUrl(url) ? url : null;
+  } catch {
+    return null;
+  }
+};
+
+const navigateToKnownProjectListUrl = async (options: CliOptions, page: Page): Promise<string | null> => {
+  const url = currentCaseOpenProjectUrl(options);
+  if (!url) return null;
+  await page.goto(url, { waitUntil: "domcontentloaded", timeout: 15000 });
+  await page.waitForTimeout(1200);
+  return url;
+};
+
 const resolveExistingReportName = async (options: CliOptions, page: Page): Promise<{ reportName: string; source: string; candidates: unknown[] }> => {
   const explicit = firstStringParam(options.params, ["existingReportName", "savedReportName"]);
   if (explicit) return { reportName: explicit, source: "params.existingReportName", candidates: [] };
 
-  const pattern = firstStringParam(options.params, ["existingReportNamePattern", "reportNamePattern"]) ?? "TOOL_A01_<timestamp>";
+  const pattern = firstStringParam(options.params, ["existingReportNamePattern", "reportNamePattern"]);
+  const selectionMode = stringParam(options.params, "existingReportSelectionMode");
   const sourceCaseNo = stringParam(options.params, "existingReportSourceCaseNo");
   const savedReports = readSavedReportStateFiles(options);
-  const matchedSaved = savedReports.find((item) => {
-    const caseMatches = !sourceCaseNo || item.caseId === sourceCaseNo || item.path.includes(sanitize(sourceCaseNo));
-    return caseMatches && reportNameMatchesPattern(item.reportName, pattern);
-  }) ?? savedReports.find((item) => reportNameMatchesPattern(item.reportName, pattern));
+  const matchedSaved = pattern
+    ? savedReports.find((item) => {
+      const caseMatches = !sourceCaseNo || item.caseId === sourceCaseNo || item.path.includes(sanitize(sourceCaseNo));
+      return caseMatches && reportNameMatchesPattern(item.reportName, pattern);
+    }) ?? savedReports.find((item) => reportNameMatchesPattern(item.reportName, pattern))
+    : savedReports.find((item) => !sourceCaseNo || item.caseId === sourceCaseNo || item.path.includes(sanitize(sourceCaseNo))) ?? savedReports[0] ?? null;
   if (matchedSaved) {
     return {
       reportName: matchedSaved.reportName,
@@ -650,10 +715,12 @@ const resolveExistingReportName = async (options: CliOptions, page: Page): Promi
   }
 
   const bodyText = await page.locator("body").innerText({ timeout: 5000 }).catch(() => "");
-  const bodyCandidate = bodyText
-    .split(/\s+/)
-    .map((item) => item.trim())
-    .find((item) => reportNameMatchesPattern(item, pattern));
+  const bodyCandidate = pattern
+    ? bodyText
+      .split(/\s+/)
+      .map((item) => item.trim())
+      .find((item) => reportNameMatchesPattern(item, pattern))
+    : null;
   if (bodyCandidate) {
     return {
       reportName: bodyCandidate,
@@ -662,7 +729,19 @@ const resolveExistingReportName = async (options: CliOptions, page: Page): Promi
     };
   }
 
-  throw new HelperBlockedError(`EXISTING_REPORT_ROW_NOT_FOUND_PRECONDITION:pattern=${pattern};savedReports=${JSON.stringify(savedReports).slice(0, 1000)}`);
+  if (selectionMode === "visible_first") {
+    const visibleReportNames = await visibleReportNamesFromProjectList(page);
+    const firstVisible = visibleReportNames[0];
+    if (firstVisible) {
+      return {
+        reportName: firstVisible,
+        source: "visible-first-report-list-row",
+        candidates: visibleReportNames.slice(0, 20)
+      };
+    }
+  }
+
+  throw new HelperBlockedError(`EXISTING_REPORT_ROW_NOT_FOUND_PRECONDITION:pattern=${pattern ?? "none"};selectionMode=${selectionMode ?? "default"};savedReports=${JSON.stringify(savedReports).slice(0, 1000)}`);
 };
 
 const createReport = (
@@ -4055,6 +4134,10 @@ const openExistingReport = async (options: CliOptions, page: Page, startedAt: st
   if (!/報表設定|儲存報表|執行/.test(bodyText)) {
     await ensureCollageProjectSelected(options, page);
   }
+  const afterSelectionText = await page.locator("body").innerText({ timeout: 5000 }).catch(() => "");
+  if (!isCollageReportListReadyForPage(page, afterSelectionText)) {
+    await navigateToKnownProjectListUrl(options, page).catch(() => undefined);
+  }
 
   let resolved = await resolveExistingReportName(options, page);
   let listText = await page.locator("body").innerText({ timeout: 5000 }).catch(() => "");
@@ -7430,6 +7513,16 @@ const ensureSavedReportListRowVisible = async (
     });
     await page.waitForTimeout(1200);
     state = await capture("after_project_click_from_editor");
+    if (state.found) return { state, attempts, recoveryActions };
+  }
+
+  const knownProjectUrl = currentCaseOpenProjectUrl(options);
+  if (knownProjectUrl) {
+    recoveryActions.push("goto_known_project_list_url");
+    await navigateToKnownProjectListUrl(options, page).catch((error) => {
+      recoveryActions.push(`goto_known_project_list_url_failed:${error instanceof Error ? error.message : String(error)}`);
+    });
+    state = await capture("after_known_project_list_url");
     if (state.found) return { state, attempts, recoveryActions };
   }
 

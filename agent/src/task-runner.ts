@@ -2933,7 +2933,7 @@ const uploadRunArtifacts = async (options: UploadArtifactsOptions): Promise<Uplo
           "run.stdout",
           {
             run_id: runId,
-            text: "uat-agent enriched BLOCKED result detail_json with current-run evidence pointers before upload."
+            text: "uat-agent reconciled BLOCKED result rows with current-run helper evidence before upload."
           },
           false
         );

@@ -6,7 +6,7 @@ export type ResultEvidenceEnrichmentRow = {
   rowNo: number;
   caseNo: string;
   status: string;
-  action: "added_blocked_current_run_evidence" | "unchanged" | "skipped";
+  action: "added_blocked_current_run_evidence" | "deterministic_helper_pass" | "unchanged" | "skipped";
   reason?: string;
 };
 
@@ -91,6 +91,145 @@ const relativePath = (runDir: string, filePath: string): string => {
 };
 
 const existingFiles = (paths: string[]): string[] => paths.filter((item) => fs.existsSync(item));
+
+const firstDetailString = (detail: Record<string, unknown>, keys: string[], fallback: string): string => {
+  for (const key of keys) {
+    const value = detail[key];
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return fallback;
+};
+
+const readJson = (filePath: string): Record<string, unknown> | null => {
+  if (!fs.existsSync(filePath)) return null;
+  try {
+    const parsed = JSON.parse(fs.readFileSync(filePath, "utf8")) as unknown;
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed as Record<string, unknown> : null;
+  } catch {
+    return null;
+  }
+};
+
+const findCaseArtifact = (runDir: string, caseNo: string, fileName: string): string | null => {
+  const roots = [
+    path.join(runDir, "output", "helper-artifacts"),
+    path.join(runDir, "output", "helper-artifacts-archive")
+  ];
+  const matches: string[] = [];
+  const visit = (dir: string, depth: number): void => {
+    if (!fs.existsSync(dir) || depth > 5) return;
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const entryPath = path.join(dir, entry.name);
+      if (entry.isFile() && entry.name === fileName && entryPath.includes(`${path.sep}${caseNo}${path.sep}`)) {
+        matches.push(entryPath);
+      } else if (entry.isDirectory()) {
+        visit(entryPath, depth + 1);
+      }
+    }
+  };
+  roots.forEach((root) => visit(root, 0));
+  return matches.sort().at(-1) ?? null;
+};
+
+const objectValue = (value: unknown): Record<string, unknown> | null =>
+  value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
+
+const arrayValue = (value: unknown): Record<string, unknown>[] =>
+  Array.isArray(value) ? value.flatMap((item) => objectValue(item) ? [objectValue(item) as Record<string, unknown>] : []) : [];
+
+const deterministicDateVariantPassEvidence = (runDir: string, caseNo: string): Record<string, unknown> | null => {
+  const filePath = findCaseArtifact(runDir, caseNo, "date-variants-preview-evidence.json");
+  const evidence = filePath ? readJson(filePath) : null;
+  const variants = arrayValue(evidence?.variants);
+  if (!filePath || !evidence || variants.length === 0) return null;
+  const allSatisfied = variants.every((variant) => {
+    const status = typeof variant.status === "string" ? variant.status : "";
+    const networkEvidence = objectValue(variant.networkEvidence);
+    const tableSummary = objectValue(variant.tableSummary);
+    const dateUiEvidence = objectValue(variant.dateUiEvidence);
+    const checks = objectValue(dateUiEvidence?.checks);
+    return status === "ok" &&
+      networkEvidence?.responseStatus === 200 &&
+      typeof tableSummary?.dateColumnCount === "number" &&
+      tableSummary.dateColumnCount > 0 &&
+      (
+        checks?.representedRangeMatchesRequested === true ||
+        checks?.staticRequestedRangeObserved === true ||
+        checks?.requestedLabelVisible === true
+      );
+  });
+  if (!allSatisfied) return null;
+  const judgmentSummary = objectValue(evidence.judgmentSummary);
+  const comparison = objectValue(judgmentSummary?.comparison ?? evidence.comparison);
+  return {
+    evidenceType: "dateVariantsPreviewEvidence",
+    evidencePath: path.relative(runDir, filePath),
+    variantCount: variants.length,
+    comparison: comparison ?? null,
+    variants: variants.map((variant) => ({
+      requestedLabel: variant.requestedLabel ?? null,
+      requestDateRange: objectValue(variant.networkEvidence)?.requestDateRange ?? null,
+      responseStatus: objectValue(variant.networkEvidence)?.responseStatus ?? null,
+      tableSummary: variant.tableSummary ?? null,
+      dateUiChecks: objectValue(objectValue(variant.dateUiEvidence)?.checks) ?? null,
+      warnings: variant.warnings ?? []
+    }))
+  };
+};
+
+const deterministicFrontendObservationPassEvidence = (runDir: string, caseNo: string): Record<string, unknown> | null => {
+  const filePath = findCaseArtifact(runDir, caseNo, "frontend-observation-evidence.json");
+  const evidence = filePath ? readJson(filePath) : null;
+  const state = objectValue(evidence?.observationState);
+  if (!filePath || !evidence || state?.asserted !== true) return null;
+  return {
+    evidenceType: "frontendObservationEvidence",
+    evidencePath: path.relative(runDir, filePath),
+    observationType: evidence.observationType ?? null,
+    observationState: {
+      evidenceObject: state.evidenceObject ?? null,
+      asserted: state.asserted,
+      assertions: state.assertions ?? null,
+      interactionLog: state.interactionLog ?? null
+    }
+  };
+};
+
+const deterministicHelperPassEvidence = (runDir: string, caseNo: string): Record<string, unknown> | null =>
+  deterministicDateVariantPassEvidence(runDir, caseNo) ?? deterministicFrontendObservationPassEvidence(runDir, caseNo);
+
+const buildDeterministicPassDetail = (options: {
+  runId: string;
+  caseNo: string;
+  previousDetail: Record<string, unknown>;
+  passEvidence: Record<string, unknown>;
+}): Record<string, unknown> => ({
+  測試目的: firstDetailString(
+    options.previousDetail,
+    ["測試目的", "testPurpose", "目的"],
+    "Current-run helper evidence satisfies the case assertions."
+  ),
+  設定條件: firstDetailString(
+    options.previousDetail,
+    ["設定條件", "conditions", "前置條件"],
+    "Reused current-run helper artifacts and deterministic evidence contract."
+  ),
+  預期行為: firstDetailString(
+    options.previousDetail,
+    ["預期行為", "expected", "預期結果"],
+    "Required UI/data assertions are satisfied by helper evidence."
+  ),
+  實際行為: "Current-run helper evidence was already deterministic and satisfied this case, so the Agent promoted the prior BLOCKED result to PASS instead of leaving it as evidence-insufficient.",
+  currentRunEvidence: {
+    source: "uat-agent-deterministic-helper-judgment",
+    currentRunEvidence: true,
+    runId: options.runId,
+    caseNo: options.caseNo,
+    generatedAt: new Date().toISOString(),
+    ...options.passEvidence
+  },
+  previous_blocked_detail_json: options.previousDetail
+});
 
 const summarizeHelperPreRun = (filePath: string): Record<string, unknown> | null => {
   if (!fs.existsSync(filePath)) return null;
@@ -189,6 +328,7 @@ export const ensureBlockedResultCurrentRunEvidence = async (options: {
   const caseCol = findColumn(header, ["編號", "case_no", "caseno", "案例編號"]);
   const statusCol = findColumn(header, ["結果", "status"]);
   const detailCol = findColumn(header, ["詳細紀錄JSON", "詳細紀錄json", "detail_json", "detailjson"]);
+  const verdictCol = findColumn(header, ["失敗分類", "verdictReason", "verdict_reason", "fail_category", "failCategory"]);
   if (!caseCol || !statusCol || !detailCol) {
     return {
       schemaVersion: "result-evidence-enrichment-v1",
@@ -221,7 +361,48 @@ export const ensureBlockedResultCurrentRunEvidence = async (options: {
     }
 
     if (hasCurrentRunEvidence(detail)) {
+      const deterministicPass = deterministicHelperPassEvidence(options.runDir, caseNo);
+      if (deterministicPass) {
+        row.getCell(statusCol).value = "PASS";
+        if (verdictCol) row.getCell(verdictCol).value = "";
+        row.getCell(detailCol).value = JSON.stringify(buildDeterministicPassDetail({
+          runId: options.runId,
+          caseNo,
+          previousDetail: detail,
+          passEvidence: deterministicPass
+        }), null, 2);
+        rows.push({
+          rowNo,
+          caseNo,
+          status,
+          action: "deterministic_helper_pass",
+          reason: typeof deterministicPass.evidenceType === "string" ? deterministicPass.evidenceType : "deterministic helper evidence"
+        });
+        updated = true;
+        continue;
+      }
       rows.push({ rowNo, caseNo, status, action: "unchanged", reason: "current-run evidence already present" });
+      continue;
+    }
+
+    const deterministicPass = deterministicHelperPassEvidence(options.runDir, caseNo);
+    if (deterministicPass) {
+      row.getCell(statusCol).value = "PASS";
+      if (verdictCol) row.getCell(verdictCol).value = "";
+      row.getCell(detailCol).value = JSON.stringify(buildDeterministicPassDetail({
+        runId: options.runId,
+        caseNo,
+        previousDetail: detail,
+        passEvidence: deterministicPass
+      }), null, 2);
+      rows.push({
+        rowNo,
+        caseNo,
+        status,
+        action: "deterministic_helper_pass",
+        reason: typeof deterministicPass.evidenceType === "string" ? deterministicPass.evidenceType : "deterministic helper evidence"
+      });
+      updated = true;
       continue;
     }
 
