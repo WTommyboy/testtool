@@ -11,13 +11,18 @@ const main = (): void => {
 
   assert.match(
     cliSource,
-    /abortActiveTaskForConnectionLoss/,
-    "Mac Agent CLI must abort active tasks when the control WebSocket is lost."
+    /task_continues_after_connection_loss/,
+    "Mac Agent CLI must keep active tasks alive when the control WebSocket is temporarily lost."
   );
-  assert.match(
+  assert.doesNotMatch(
     cliSource,
-    /process\.exit\(1\)/,
-    "Mac Agent CLI must exit after active-run connection loss so launchd starts a clean worker."
+    /abortActiveTaskForConnectionLoss|exitingAfterConnectionLoss/,
+    "Mac Agent CLI must not keep the old active-run abort path for transient control WebSocket loss."
+  );
+  assert.doesNotMatch(
+    cliSource,
+    /reason = `agent_connection_\$\{status\}`[\s\S]*?activeTask\.cancel/,
+    "Mac Agent CLI must not cancel the active task solely because the control WebSocket is lost."
   );
 
   assert.match(
