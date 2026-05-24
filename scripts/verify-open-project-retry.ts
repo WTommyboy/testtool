@@ -48,6 +48,17 @@ const officialUiSidebarHome = [
   "新增自訂報表"
 ].join("\n");
 
+const officialUiCollapsedCustomSidebar = [
+  "數據統計中心",
+  "公司共享",
+  "我的自訂",
+  "拼貼報表",
+  "報表明細",
+  "明細模式_test_tommy",
+  "指標趨勢",
+  "新增自訂報表"
+].join("\n");
+
 assert.equal(
   hooks.inferVisibleCollageProjectName(blockedProjectHome),
   "拼貼test_001",
@@ -58,6 +69,21 @@ assert.equal(
   hooks.inferVisibleCollageProjectName(officialUiSidebarHome),
   "BI正式UI測試專案",
   "project inference should support official UI sidebar labels under 我的自訂 > 拼貼報表"
+);
+
+assert.equal(
+  hooks.inferVisibleCollageProjectName(officialUiCollapsedCustomSidebar),
+  null,
+  "project inference must not treat structural sidebar labels such as 報表明細 as collage project names"
+);
+
+assert.deepEqual(
+  hooks.officialCollageSidebarPreludeLabels(
+    "https://galaxy.games.gamania.com/bi-dev/zh-TW/report/aiInsights/aiDailyReport",
+    officialUiCollapsedCustomSidebar
+  ),
+  ["我的自訂"],
+  "official UI navigation should expand 我的自訂 before clicking 拼貼報表 when no collage project is visible"
 );
 
 assert.equal(

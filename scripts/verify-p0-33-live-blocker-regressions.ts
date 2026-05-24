@@ -236,8 +236,11 @@ const main = async (): Promise<void> => {
   const rows = parseRowsFromBodyText(bodyText);
   assert.equal(rows.length, 2, "J-08-style body text should yield report rows");
   assert(executorSource.includes("bodyTextReportList"), "executor must keep project-list body text row fallback");
+  assert(executorSource.includes("rowDeleteButtonContext"), "executor must recover official project-list rows from row-local delete icon context");
   assert(executorSource.includes("projectListRowDeleteButtonCandidate"), "executor must locate row-local delete icon buttons by DOM/ARIA context");
   assert(executorSource.includes("aria-label=\"刪除\""), "executor must support official UI delete icon aria-label fallback");
+  assert(executorSource.includes("button[aria-label=\"返回\"]"), "G-05 back action must support official UI icon-only aria-label return button");
+  assert(executorSource.includes("hasVisibleCollageProjectAfterCollageLabel"), "M-10 openProject must guard against treating structural sidebar labels as project names");
 
   const j10 = byCase.get("BIUI_COLLAGE_R001-J-10");
   assert(j10, "J-10 contract must exist");

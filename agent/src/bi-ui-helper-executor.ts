@@ -2995,7 +2995,9 @@ const isCollageReportListReadyForPage = (page: Page, bodyText: string): boolean 
 
 const officialCollageSidebarPreludeLabels = (url: string, bodyText: string): string[] => {
   if (!isOfficialBiUiPageUrl(url)) return /拼貼報表|拼貼模式/.test(bodyText) ? [] : ["我的自訂"];
-  return /拼貼報表/.test(bodyText) ? [] : ["我的自訂"];
+  if (!/我的自訂/.test(bodyText)) return [];
+  if (!/拼貼報表/.test(bodyText)) return ["我的自訂"];
+  return hasVisibleCollageProjectAfterCollageLabel(bodyText) ? [] : ["我的自訂"];
 };
 
 const officialCollageSidebarTargetLabel = (url: string, bodyText: string): string | null => {
@@ -3211,14 +3213,15 @@ export const inferVisibleCollageProjectName = (bodyText: string, explicitProject
     .map((line) => line.trim())
     .filter(Boolean);
   const collageIndex = lines.findIndex((line) => line === "拼貼模式" || /拼貼模式/.test(line) || line === "拼貼報表" || /拼貼報表/.test(line));
-  const stopPattern = /^(?:▶\s*)?(?:明細檢視|報表明細|指標趨勢|新增自訂報表|➕\s*新增專案|\+\s*新增專案)$/;
+  const stopPattern = /^(?:▶\s*)?(?:AI 洞察|公司共享|明細檢視|報表明細|明細模式.*|指標趨勢|新增自訂報表|指標儀表板|即時數據|活躍數據|營收數據|留存數據|新用戶數據|➕\s*新增專案|\+\s*新增專案)$/;
   const ignored = new Set(["▶", "▼", "🗑️", "報表", "📂", "公司共享", "我的自訂", "拼貼模式", "拼貼報表"]);
+  const projectNamePattern = /^(?:拼貼test[_\d]*|.+專案|t\d+)$/;
   const start = collageIndex >= 0 ? collageIndex + 1 : 0;
   for (let index = start; index < lines.length; index += 1) {
     const line = lines[index] ?? "";
-    if (index > start && stopPattern.test(line)) break;
+    if (stopPattern.test(line)) break;
     if (ignored.has(line) || /^🗑/.test(line) || /新增報表|新增專案|請從左側選擇|數據統計中心|沒有可用|尚無|無資料|載入中|loading/i.test(line)) continue;
-    if (/^(?:拼貼test[_\d]*|.+專案)$/.test(line)) return line;
+    if (projectNamePattern.test(line)) return line;
     if (collageIndex >= 0 && line.length <= 80 && !/[：:]/.test(line)) return line;
   }
   return lines.find((line) => /拼貼test[_\d]*|.+專案/.test(line) && !/新增專案/.test(line)) ?? null;
@@ -3226,6 +3229,11 @@ export const inferVisibleCollageProjectName = (bodyText: string, explicitProject
 
 const hasOfficialNoAvailableProjectState = (bodyText: string): boolean =>
   /(?:尚無|沒有|無可用|無任何|目前無).{0,20}(?:專案|報表)|(?:專案|報表).{0,20}(?:尚無|沒有|無資料|不存在)/.test(bodyText);
+
+const hasVisibleCollageProjectAfterCollageLabel = (bodyText: string): boolean => {
+  const inferred = inferVisibleCollageProjectName(bodyText);
+  return Boolean(inferred && !/^(?:報表明細|指標趨勢|新增自訂報表|指標儀表板|即時數據|活躍數據|營收數據|留存數據|新用戶數據)$/.test(inferred));
+};
 
 const shouldTryOfficialCollageSidebarNavigation = (page: Page, bodyText: string): boolean =>
   isOfficialBiUiPageUrl(page.url()) && /我的自訂/.test(bodyText);
@@ -3240,6 +3248,7 @@ export const __openProjectRetryTestHooks = {
   isOfficialCollageEditorRouteUrl,
   officialCollageSidebarPreludeLabels,
   officialCollageSidebarTargetLabel,
+  hasVisibleCollageProjectAfterCollageLabel,
   inferVisibleCollageProjectName,
   scoreCollageProjectClickCandidate,
   scoreVisibleBodyTextClickCandidate
@@ -8134,6 +8143,38 @@ const readProjectListRowsForObservation = async (page: Page): Promise<Record<str
       }
       return rows;
     };
+    const rowLikeText = (button: HTMLButtonElement): string => {
+      let current: HTMLElement | null = button;
+      for (let depth = 0; depth < 6 && current; depth += 1) {
+        const text = normalize(current.innerText || current.textContent);
+        if (/\d{4}[/-]\d{1,2}[/-]\d{1,2}|過去\s*\d+\s*天|最近\s*\d+\s*天|昨日|今日|上週|本週|上月|本月/.test(text)) {
+          return text.slice(0, 400);
+        }
+        current = current.parentElement;
+      }
+      return "";
+    };
+    const rowsFromDeleteButtonContext = () => {
+      const seen = new Set<string>();
+      const rows: Array<{ index: number; text: string; source: string }> = [];
+      for (const button of Array.from(document.querySelectorAll<HTMLButtonElement>("button"))) {
+        const style = window.getComputedStyle(button);
+        const text = normalize(button.innerText || button.textContent);
+        const ariaLabel = normalize(button.getAttribute("aria-label"));
+        const title = normalize(button.getAttribute("title"));
+        const className = String(button.className ?? "");
+        const disabled = button.disabled || button.getAttribute("aria-disabled") === "true" || style.pointerEvents === "none";
+        const insideDialog = Boolean(button.closest("[role='dialog'], .modal, .ant-modal, .MuiDialog-root, .swal2-popup"));
+        const labelMatchesDelete = /(^|\s)(刪除|删除)(\s|$)|delete|trash|remove/i.test(`${text}\n${ariaLabel}\n${title}\n${className}`);
+        if (!isVisible(button) || disabled || insideDialog || !labelMatchesDelete) continue;
+        const context = rowLikeText(button);
+        const looksLikeReportRow = /\d{4}[/-]\d{1,2}[/-]\d{1,2}|過去\s*\d+\s*天|最近\s*\d+\s*天|昨日|今日|上週|本週|上月|本月/.test(context);
+        if (!looksLikeReportRow || seen.has(context)) continue;
+        seen.add(context);
+        rows.push({ index: rows.length, text: `${context} 刪除`, source: "rowDeleteButtonContext" });
+      }
+      return rows;
+    };
     const candidates = Array.from(document.querySelectorAll<HTMLElement>("tr, [role='row'], .ant-table-row, [class*='row'], [class*='Row']"))
       .filter((element) => isVisible(element))
       .map((element, index) => ({
@@ -8142,11 +8183,15 @@ const readProjectListRowsForObservation = async (page: Page): Promise<Record<str
         source: "domRow"
       }))
       .filter((row) => row.text.length > 0 && /拼貼|報表|test|UAT|下載|刪除|\d{4}/i.test(row.text));
-    const rows = candidates.length > 0 ? candidates : rowsFromBodyText();
+    const deleteButtonRows = rowsFromDeleteButtonContext();
+    const bodyTextRows = rowsFromBodyText();
+    const rows = candidates.length > 0 ? candidates : deleteButtonRows.length > 0 ? deleteButtonRows : bodyTextRows;
     return {
       rowCount: rows.length,
       sampleRows: rows.slice(0, 12),
-      fallbackUsed: candidates.length === 0 && rows.length > 0 ? "bodyTextReportList" : null
+      fallbackUsed: candidates.length === 0 && rows.length > 0
+        ? (deleteButtonRows.length > 0 ? "rowDeleteButtonContext" : "bodyTextReportList")
+        : null
     };
   });
 };
@@ -9279,6 +9324,8 @@ const clickBackToProjectList = async (options: CliOptions, page: Page, startedAt
   try {
     observed = await observeDuring(page, async () => {
       const clicked = await clickFirstVisible([
+        page.locator('button[aria-label="返回"]:not([disabled])').first(),
+        page.locator('a[aria-label="返回"], [role=button][aria-label="返回"]').first(),
         page.getByText("← 返回", { exact: false }),
         page.getByText("返回", { exact: false }),
         page.locator("button, a, [role=button]").filter({ hasText: /返回|Back/i })
