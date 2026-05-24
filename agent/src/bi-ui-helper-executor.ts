@@ -1427,7 +1427,17 @@ const knownMetricFieldCode = (field: string): string | null => {
 };
 
 type CalendarSide = "left" | "right";
-type VisibleButton = { index: number; text: string; x: number; y: number; width: number; height: number };
+type VisibleButton = {
+  index: number;
+  text: string;
+  ariaLabel: string;
+  title: string;
+  className: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
 type VisibleTextTarget = {
   index: number;
   text: string;
@@ -1649,6 +1659,9 @@ const visibleButtons = async (page: Page): Promise<VisibleButton[]> => {
       return [{
         index,
         text: (button.textContent ?? "").trim().replace(/\s+/g, " "),
+        ariaLabel: button.getAttribute("aria-label") ?? "",
+        title: button.getAttribute("title") ?? "",
+        className: String(button.className ?? ""),
         x: rect.x,
         y: rect.y,
         width: rect.width,
@@ -1811,6 +1824,10 @@ const monthDiff = (from: Pick<VisibleMonthLabel, "year" | "month">, toYear: numb
 
 const clickVisibleButtonByIndex = async (page: Page, index: number, timeout = 5000): Promise<void> => {
   await page.locator("button").nth(index).click({ timeout });
+};
+
+const hoverVisibleButtonByIndex = async (page: Page, index: number, timeout = 5000): Promise<void> => {
+  await page.locator("button").nth(index).hover({ timeout });
 };
 
 const clickVisibleBodyElementByIndex = async (page: Page, index: number, timeout = 5000): Promise<void> => {
@@ -8134,6 +8151,70 @@ const readProjectListRowsForObservation = async (page: Page): Promise<Record<str
   });
 };
 
+const projectListRowDeleteButtonCandidate = async (page: Page): Promise<Record<string, unknown>> =>
+  page.evaluate(() => {
+    const isVisible = (element: Element): boolean => {
+      const rect = element.getBoundingClientRect();
+      const style = window.getComputedStyle(element);
+      return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden" && style.opacity !== "0";
+    };
+    const normalize = (value: string | null | undefined) => (value ?? "").trim().replace(/\s+/g, " ");
+    const rowLikeText = (button: HTMLButtonElement): string => {
+      let current: HTMLElement | null = button;
+      for (let depth = 0; depth < 6 && current; depth += 1) {
+        const text = normalize(current.innerText || current.textContent);
+        if (/\d{4}[/-]\d{1,2}[/-]\d{1,2}|過去\s*\d+\s*天|最近\s*\d+\s*天|昨日|今日|上週|本週|上月|本月|下載|刪除/.test(text)) {
+          return text.slice(0, 400);
+        }
+        current = current.parentElement;
+      }
+      return "";
+    };
+    const buttons = Array.from(document.querySelectorAll("button")).flatMap((button, domIndex) => {
+      const rect = button.getBoundingClientRect();
+      const style = window.getComputedStyle(button);
+      const text = normalize(button.innerText || button.textContent);
+      const ariaLabel = normalize(button.getAttribute("aria-label"));
+      const title = normalize(button.getAttribute("title"));
+      const className = String(button.className ?? "");
+      const disabled = button.disabled || button.getAttribute("aria-disabled") === "true" || style.pointerEvents === "none";
+      const labelText = `${text}\n${ariaLabel}\n${title}\n${className}`;
+      const labelMatchesDelete = /(^|\s)(刪除|删除)(\s|$)|delete|trash|remove/i.test(labelText);
+      const insideDialog = Boolean(button.closest("[role='dialog'], .modal, .ant-modal, .MuiDialog-root, .swal2-popup"));
+      if (!isVisible(button) || disabled || insideDialog || !labelMatchesDelete) return [];
+      const rowContextText = rowLikeText(button);
+      const iconSized = rect.width <= 96 && rect.height <= 72;
+      const belowToolbar = rect.y > Math.min(180, window.innerHeight * 0.22);
+      const rowContext = /\d{4}[/-]\d{1,2}[/-]\d{1,2}|過去\s*\d+\s*天|最近\s*\d+\s*天|昨日|今日|上週|本週|上月|本月|下載/.test(rowContextText);
+      return [{
+        domIndex,
+        text,
+        ariaLabel,
+        title,
+        className,
+        rect: { x: Math.round(rect.x), y: Math.round(rect.y), width: Math.round(rect.width), height: Math.round(rect.height) },
+        rowContext,
+        rowContextText,
+        iconSized,
+        belowToolbar,
+        score: (rowContext ? 100 : 0) + (belowToolbar ? 20 : 0) + (iconSized ? 10 : 0)
+      }];
+    });
+    const candidates = buttons
+      .filter((button) => button.rowContext || button.belowToolbar)
+      .sort((a, b) => b.score - a.score || b.rect.y - a.rect.y || b.rect.x - a.rect.x);
+    return {
+      selected: candidates[0] ?? null,
+      candidates: candidates.slice(0, 8),
+      visibleDeleteButtons: buttons.slice(0, 12)
+    };
+  }).catch((error) => ({
+    selected: null,
+    candidates: [],
+    visibleDeleteButtons: [],
+    error: error instanceof Error ? error.message : String(error)
+  }));
+
 const clickModalCancelButton = async (page: Page): Promise<boolean> => {
   const clicked = await clickFirstVisible([
     page.locator("[role='dialog'] button").filter({ hasText: /^\s*取消\s*$/ }),
@@ -9693,6 +9774,9 @@ const observeFrontendVisibleUiActions = async (
     const flow: Record<string, unknown> = {
       before: await readCreateProjectModalState(page).catch((error) => ({ error: error instanceof Error ? error.message : String(error) }))
     };
+    const projectLimitPrecondition = await readCollageSidebarProjectLimitState(page);
+    flow.projectLimitPrecondition = projectLimitPrecondition;
+    actions.push({ action: "observe", target: "sidebar.collageProjects.count", ...projectLimitPrecondition });
     let openClicked = false;
     let openError: string | null = null;
     try {
@@ -9705,6 +9789,11 @@ const observeFrontendVisibleUiActions = async (
     if (!openClicked) warnings.push("PROJECT_CREATE_BUTTON_NOT_CLICKABLE");
     await page.waitForTimeout(700);
     flow.modalOpened = await readCreateProjectModalState(page).catch((error) => ({ error: error instanceof Error ? error.message : String(error) }));
+    if (projectLimitPrecondition.preconditionEstablished === true) {
+      flow.projectLimitAfterClick = await readCollageSidebarProjectLimitState(page);
+      warnings.push("PROJECT_CREATE_MODAL_PRECONDITION_PROJECT_LIMIT_REACHED");
+      return { actions, projectCreateModalFlow: flow };
+    }
     if (targets.has("projectCreateModal.nameInput")) {
       const projectName = fitUiResourceName(firstStringParam(params, ["projectNamePattern", "projectName", "name"]) ?? `${sanitize(options.caseId)}P${timestampId()}`);
       try {
@@ -9735,19 +9824,34 @@ const observeFrontendVisibleUiActions = async (
 
   if (observationType === "rowDeleteTooltip") {
     let hovered = false;
-    for (const locator of [
-      page.getByText("刪除", { exact: true }).last(),
-      page.locator("button, a, [role=button], span, div").filter({ hasText: /^\\s*刪除\\s*$/ }).last()
-    ]) {
+    const candidate = await projectListRowDeleteButtonCandidate(page);
+    const selected = candidate.selected && typeof candidate.selected === "object" && !Array.isArray(candidate.selected)
+      ? candidate.selected as Record<string, unknown>
+      : null;
+    if (typeof selected?.domIndex === "number") {
       try {
-        await locator.hover({ timeout: 5000 });
+        await hoverVisibleButtonByIndex(page, selected.domIndex, 5000);
         hovered = true;
-        break;
       } catch {
-        // Try next candidate.
+        // Fall back to text locators below.
       }
     }
-    actions.push({ action: "hover", target: "projectList.rowDeleteAction", hovered });
+    if (!hovered) {
+      for (const locator of [
+        page.locator('button[aria-label="刪除"]:not([disabled])').last(),
+        page.getByText("刪除", { exact: true }).last(),
+        page.locator("button, a, [role=button], span, div").filter({ hasText: /^\\s*刪除\\s*$/ }).last()
+      ]) {
+        try {
+          await locator.hover({ timeout: 5000 });
+          hovered = true;
+          break;
+        } catch {
+          // Try next candidate.
+        }
+      }
+    }
+    actions.push({ action: "hover", target: "projectList.rowDeleteAction", hovered, candidate });
     if (!hovered) warnings.push("ROW_DELETE_ACTION_NOT_HOVERABLE");
     await page.waitForTimeout(800);
     return { actions };
@@ -9760,19 +9864,34 @@ const observeFrontendVisibleUiActions = async (
     };
     let deleteClicked = false;
     let deleteError: string | null = null;
-    for (const locator of [
-      page.getByText("刪除", { exact: true }).last(),
-      page.locator("button, a, [role=button], span, div").filter({ hasText: /^\\s*刪除\\s*$/ }).last()
-    ]) {
+    const candidate = await projectListRowDeleteButtonCandidate(page);
+    const selected = candidate.selected && typeof candidate.selected === "object" && !Array.isArray(candidate.selected)
+      ? candidate.selected as Record<string, unknown>
+      : null;
+    if (typeof selected?.domIndex === "number") {
       try {
-        await locator.click({ timeout: 6000 });
+        await clickVisibleButtonByIndex(page, selected.domIndex, 6000);
         deleteClicked = true;
-        break;
       } catch (error) {
         deleteError = error instanceof Error ? error.message : String(error);
       }
     }
-    actions.push({ action: "click", target: "projectList.rowDeleteAction", clicked: deleteClicked, ...(deleteError && !deleteClicked ? { error: deleteError } : {}) });
+    if (!deleteClicked) {
+      for (const locator of [
+        page.locator('button[aria-label="刪除"]:not([disabled])').last(),
+        page.getByText("刪除", { exact: true }).last(),
+        page.locator("button, a, [role=button], span, div").filter({ hasText: /^\\s*刪除\\s*$/ }).last()
+      ]) {
+        try {
+          await locator.click({ timeout: 6000 });
+          deleteClicked = true;
+          break;
+        } catch (error) {
+          deleteError = error instanceof Error ? error.message : String(error);
+        }
+      }
+    }
+    actions.push({ action: "click", target: "projectList.rowDeleteAction", clicked: deleteClicked, candidate, ...(deleteError && !deleteClicked ? { error: deleteError } : {}) });
     if (!deleteClicked) warnings.push("PROJECT_LIST_ROW_DELETE_ACTION_NOT_CLICKABLE");
     await page.waitForTimeout(800);
     flow.modalOpened = await readVisibleModalState(page).catch((error) => ({ error: error instanceof Error ? error.message : String(error) }));
@@ -10182,6 +10301,9 @@ const readFrontendObservationState = async (
       const nameInput = flow.nameInput && typeof flow.nameInput === "object" && !Array.isArray(flow.nameInput)
         ? flow.nameInput as Record<string, unknown>
         : null;
+      const projectLimitPrecondition = flow.projectLimitPrecondition && typeof flow.projectLimitPrecondition === "object" && !Array.isArray(flow.projectLimitPrecondition)
+        ? flow.projectLimitPrecondition as Record<string, unknown>
+        : null;
       const openAction = actionList.find((item) => item.target === "sidebar.collageProjectCreateButton") ?? null;
       const typeAction = actionList.find((item) => item.target === "projectCreateModal.nameInput") ?? null;
       const cancelAction = actionList.find((item) => item.target === "projectCreateModal.cancelButton") ?? null;
@@ -10193,6 +10315,23 @@ const readFrontendObservationState = async (
         Number(afterCancel.dialogs && Array.isArray(afterCancel.dialogs) ? afterCancel.dialogs.length : afterCancel.dialogCount ?? 0) === 0 ||
         !/新增專案|專案名稱/.test(String(afterCancel.bodyTextExcerpt ?? ""));
       const nameInputRequired = actionList.some((item) => item.target === "projectCreateModal.nameInput");
+      if (projectLimitPrecondition?.preconditionEstablished === true) {
+        return {
+          evidenceObject: "projectCreateModal.flow.state",
+          createButtonClicked: openAction?.clicked === true,
+          modalVisible,
+          nameInputVerified: null,
+          cancelClicked: null,
+          modalClosed,
+          modalOpened,
+          afterCancel,
+          projectLimitPrecondition,
+          blockedReason: "PROJECT_CREATE_MODAL_PRECONDITION_PROJECT_LIMIT_REACHED",
+          recommendedCaseDisposition: "PM_ENVIRONMENT_PRECONDITION",
+          interactionLog: actionList,
+          asserted: false
+        };
+      }
       return {
         evidenceObject: "projectCreateModal.flow.state",
         createButtonClicked: openAction?.clicked === true,

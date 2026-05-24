@@ -203,6 +203,7 @@ const writeDeterministicEvidenceFixture = (runDir: string): void => {
 const main = async (): Promise<void> => {
   const executorSource = fs.readFileSync(executorPath, "utf8");
   const resultContractSource = fs.readFileSync(resultContractPath, "utf8");
+  const byCase = new Map(contracts().map((item) => [item.caseNo, item]));
 
   const b05DateEvidence = buildDateUiEvidence({
     requested: "本月",
@@ -235,8 +236,16 @@ const main = async (): Promise<void> => {
   const rows = parseRowsFromBodyText(bodyText);
   assert.equal(rows.length, 2, "J-08-style body text should yield report rows");
   assert(executorSource.includes("bodyTextReportList"), "executor must keep project-list body text row fallback");
+  assert(executorSource.includes("projectListRowDeleteButtonCandidate"), "executor must locate row-local delete icon buttons by DOM/ARIA context");
+  assert(executorSource.includes("aria-label=\"刪除\""), "executor must support official UI delete icon aria-label fallback");
 
-  const byCase = new Map(contracts().map((item) => [item.caseNo, item]));
+  const j10 = byCase.get("BIUI_COLLAGE_R001-J-10");
+  assert(j10, "J-10 contract must exist");
+  const j10Plan = buildHelperExecutionPlan({ runDir: os.tmpdir(), currentCase: fixtureCase(j10), helperHints: null });
+  const j10ObserveAction = j10Plan.actions.find((item) => item.template === "collage.observeFrontendState");
+  assert.equal(j10ObserveAction?.params.observationType, "projectCreateModal", "J-10 must route to projectCreateModal observation");
+  assert(executorSource.includes("PROJECT_CREATE_MODAL_PRECONDITION_PROJECT_LIMIT_REACHED"), "projectCreateModal must short-circuit when sidebar project limit is already reached");
+
   const l10 = byCase.get("BIUI_COLLAGE_R001-L-10");
   assert(l10, "L-10 contract must exist");
   const l10Plan = buildHelperExecutionPlan({ runDir: os.tmpdir(), currentCase: fixtureCase(l10), helperHints: null });
@@ -356,6 +365,8 @@ const main = async (): Promise<void> => {
     checks: [
       "B-05 preset label evidence accepted by result contract",
       "J-08 report rows recoverable from body text",
+      "J-08 delete/cancel can target row-local aria-label delete icons",
+      "J-10 projectCreateModal short-circuits on established project-limit precondition",
       "L-10 from-date preset targets routed to executable datePanel actions",
       "M-11 update existing report helper is planned",
       "M-11 live structured precondition does not bypass report mutation helper",

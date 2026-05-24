@@ -425,6 +425,45 @@ const main = async (): Promise<void> => {
       `structured project-limit precondition blockers should not be reclassified as visual fallback gaps; issues=${JSON.stringify(projectLimitPreconditionBlockedReport.issues)}`
     );
 
+    const projectCreateModalLimitBlocked = path.join(tempRoot, "project-create-modal-limit-blocked-result.xlsx");
+    await writeWorkbook(projectCreateModalLimitBlocked, [
+      {
+        caseNo: "BIUI_COLLAGE_R001-J-10",
+        status: "BLOCKED",
+        testType: "功能流程",
+        failCategory: "EVIDENCE_INSUFFICIENT",
+        detailJson: JSON.stringify({
+          測試目的: "驗證點擊拼貼專案新增入口後會開啟新增專案 modal，並可輸入專案名稱。",
+          設定條件: "本題要求拼貼專案數未達 5 個上限。",
+          預期行為: "新增專案 modal 開啟且名稱輸入框可填寫。",
+          實際行為: "current-run helper evidence 顯示側欄拼貼專案數 projectCount=5，已達上限；點擊新增入口後進入上限提示分支，未開啟 modal。",
+          blocked_reason: "PROJECT_CREATE_MODAL_PRECONDITION_PROJECT_LIMIT_REACHED",
+          previewRequired: false,
+          currentRunEvidence: {
+            screenshotPath:
+              "output/helper-artifacts/BIUI_COLLAGE_R001-J-10/BIUI_COLLAGE_R001-J-10-observe-projectCreateModal.png",
+            frontendObservationEvidence:
+              "output/helper-artifacts/BIUI_COLLAGE_R001-J-10/frontend-observation-evidence.json",
+            projectLimitPrecondition: {
+              projectNames: ["拼貼test_001", "UAT_G01測試專案", "t1", "t2", "t3"],
+              projectCount: 5,
+              requiredProjectCount: 5,
+              preconditionEstablished: true
+            }
+          }
+        })
+      }
+    ]);
+    const projectCreateModalLimitBlockedReport = await runGate(projectCreateModalLimitBlocked, {
+      currentCaseNo: "BIUI_COLLAGE_R001-J-10",
+      expectedCaseNos: ["BIUI_COLLAGE_R001-J-10"]
+    });
+    assert.equal(
+      projectCreateModalLimitBlockedReport.status,
+      "ok",
+      `projectCreateModal limit precondition blockers should not be treated as generic visual fallback gaps; issues=${JSON.stringify(projectCreateModalLimitBlockedReport.issues)}`
+    );
+
     const blockedNoNativeConfirm = path.join(tempRoot, "blocked-no-native-confirm-result.xlsx");
     await writeWorkbook(blockedNoNativeConfirm, [
       {
