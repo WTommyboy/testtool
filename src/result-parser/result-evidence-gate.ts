@@ -199,6 +199,13 @@ const NON_DESTRUCTIVE_HOVER_TOOLTIP_PATTERNS = [
   /(?:projectList\.rowDeleteAction|projectList\.rowActionTooltip|rowDeleteTooltip|rowActionTooltip).{0,120}(?:hover(?:ed)?|tooltip|tooltipVisible|visibleText|未出現|沒有出現|顯示)/gi
 ];
 
+const NON_DESTRUCTIVE_DELETE_CANCEL_FLOW_PATTERNS = [
+  /(?:已|完成|成功|按下|clicked?|handled|dismissed|執行|點擊|按了).{0,80}(?:刪除|删除|delete).{0,80}(?:取消|cancel).{0,160}(?:deleteCancelFlow|cancelClicked|modalClosed|rowCountAfterCancel|rowStillVisible|未刪除|沒有刪除|不變|保留|asserted)/gi,
+  /(?:deleteCancelFlow|projectList\.deleteCancelFlow|deleteConfirmModal\.cancelButton|deleteClicked|cancelClicked|modalClosed|rowCountAfterCancel|rowStillVisible).{0,160}(?:刪除|删除|delete|取消|cancel|modal|rowCount|rowStillVisible|asserted)/gi,
+  /(?:刪除|删除|delete).{0,100}(?:取消|cancel).{0,160}(?:deleteCancelFlow|cancelClicked|modalClosed|rowCountAfterCancel|rowStillVisible|未刪除|沒有刪除|不變|保留|asserted)/gi,
+  /(?:取消|cancel).{0,100}(?:刪除|删除|delete).{0,160}(?:deleteCancelFlow|cancelClicked|modalClosed|rowCountAfterCancel|rowStillVisible|未刪除|沒有刪除|不變|保留|asserted)/gi
+];
+
 const normalizeStatus = (status: string): string => status.trim().toUpperCase().replace(/\s+/g, "_");
 
 const normalizeCaseNo = (value: string): string =>
@@ -567,6 +574,9 @@ const claimsToolBridgeAction = (detail: Record<string, unknown>): boolean => {
   }
   for (const pattern of NON_DESTRUCTIVE_HOVER_TOOLTIP_PATTERNS) {
     text = text.replace(pattern, "NON_DESTRUCTIVE_HOVER_TOOLTIP_TEXT");
+  }
+  for (const pattern of NON_DESTRUCTIVE_DELETE_CANCEL_FLOW_PATTERNS) {
+    text = text.replace(pattern, "NON_DESTRUCTIVE_CANCEL_FLOW_TEXT");
   }
   const allowlistedNativeValidation =
     /browser_handle_dialog|native\s*(?:alert|dialog)|原生\s*(?:alert|dialog)|alert|dialog/i.test(text) &&

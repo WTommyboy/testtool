@@ -250,6 +250,10 @@ const main = async (): Promise<void> => {
   const j10ObserveAction = j10Plan.actions.find((item) => item.template === "collage.observeFrontendState");
   assert.equal(j10ObserveAction?.params.observationType, "projectCreateModal", "J-10 must route to projectCreateModal observation");
   assert(executorSource.includes("PROJECT_CREATE_MODAL_PRECONDITION_PROJECT_LIMIT_REACHED"), "projectCreateModal must short-circuit when sidebar project limit is already reached");
+  assert(executorSource.includes("readProjectLimitToastState"), "projectCreateModal must detect project-limit toast after clicking create");
+  assert(executorSource.includes("projectLimitToastAfterClick"), "projectCreateModal evidence must preserve post-click project-limit toast state");
+  assert(executorSource.includes("isTextLikeInputType"), "projectCreateModal name input helper must only fill text-like inputs");
+  assert(!executorSource.includes("modalInputs.at(-1)"), "projectCreateModal must not fallback to arbitrary modal input");
 
   const l10 = byCase.get("BIUI_COLLAGE_R001-L-10");
   assert(l10, "L-10 contract must exist");
@@ -372,6 +376,8 @@ const main = async (): Promise<void> => {
       "J-08 report rows recoverable from body text",
       "J-08 delete/cancel can target row-local aria-label delete icons",
       "J-10 projectCreateModal short-circuits on established project-limit precondition",
+      "J-10 projectCreateModal short-circuits on post-click project-limit toast",
+      "J-10 projectCreateModal never fills arbitrary non-text inputs",
       "L-10 from-date preset targets routed to executable datePanel actions",
       "M-11 update existing report helper is planned",
       "M-11 live structured precondition does not bypass report mutation helper",

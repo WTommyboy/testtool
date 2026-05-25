@@ -1634,6 +1634,9 @@ const clickFirstVisible = async (locators: Array<ReturnType<Page["locator"]>>, t
   return false;
 };
 
+const isTextLikeInputType = (type: string | null | undefined): boolean =>
+  !type || /^(text|search|email|url|tel|password)$/i.test(type);
+
 const visibleInputIndexes = async (page: Page): Promise<Array<{ index: number; type: string; placeholder: string; value: string }>> => {
   return page.evaluate(() => {
     return Array.from(document.querySelectorAll("input")).flatMap((input, index) => {
@@ -4055,11 +4058,11 @@ const fillCreateProjectName = async (page: Page, projectName: string): Promise<R
   const dialogs = Array.isArray(modalState.dialogs) ? modalState.dialogs as Array<Record<string, unknown>> : [];
   const dialog = dialogs.find((item) => /新增專案|專案名稱|建構模式|類型|模式/.test(String(item.textExcerpt ?? ""))) ?? dialogs[0];
   const modalInputs = Array.isArray(dialog?.inputs) ? dialog.inputs as Array<Record<string, unknown>> : [];
+  const fillableModalInputs = modalInputs.filter((item) => isTextLikeInputType(String(item.type ?? "")));
   const modalCandidate =
-    modalInputs.find((item) => /專案|project/i.test(String(item.placeholder ?? ""))) ??
-    modalInputs.find((item) => /名稱|name/i.test(String(item.placeholder ?? "")) && !/報表|report/i.test(String(item.placeholder ?? ""))) ??
-    modalInputs.find((item) => String(item.type ?? "") === "text" && String(item.value ?? "").trim().length === 0) ??
-    modalInputs.at(-1);
+    fillableModalInputs.find((item) => /專案|project/i.test(String(item.placeholder ?? ""))) ??
+    fillableModalInputs.find((item) => /名稱|name/i.test(String(item.placeholder ?? "")) && !/報表|report/i.test(String(item.placeholder ?? ""))) ??
+    fillableModalInputs.find((item) => String(item.value ?? "").trim().length === 0);
   if (dialog && modalCandidate && typeof dialog.dialogIndex === "number" && typeof modalCandidate.inputIndex === "number") {
     const dialogLocator = page.locator("[role='dialog'], .modal, .ant-modal, .MuiDialog-root, .swal2-popup").nth(dialog.dialogIndex);
     const inputLocator = dialogLocator.locator("input").nth(modalCandidate.inputIndex);
@@ -4086,12 +4089,12 @@ const fillCreateProjectName = async (page: Page, projectName: string): Promise<R
   }
 
   const inputs = await visibleInputIndexes(page);
+  const fillableInputs = inputs.filter((item) => isTextLikeInputType(item.type));
   const candidate =
-    inputs.find((item) => /專案|project/i.test(item.placeholder)) ??
-    inputs.find((item) => /名稱|name/i.test(item.placeholder) && !/報表|report/i.test(item.placeholder)) ??
-    inputs.find((item) => item.type === "text" && item.value.trim().length === 0) ??
-    inputs.at(-1);
-  if (!candidate) throw new HelperBlockedError(`CREATE_PROJECT_NAME_INPUT_NOT_FOUND: modalState=${JSON.stringify(modalState).slice(0, 1000)}; inputs=${JSON.stringify(inputs).slice(0, 1000)}`);
+    fillableInputs.find((item) => /專案|project/i.test(item.placeholder)) ??
+    fillableInputs.find((item) => /名稱|name/i.test(item.placeholder) && !/報表|report/i.test(item.placeholder)) ??
+    fillableInputs.find((item) => item.value.trim().length === 0);
+  if (!candidate) throw new HelperBlockedError(`CREATE_PROJECT_NAME_INPUT_NOT_FOUND: modalState=${JSON.stringify(modalState).slice(0, 1000)}; fillableInputs=${JSON.stringify(fillableInputs).slice(0, 1000)}; inputs=${JSON.stringify(inputs).slice(0, 1000)}`);
   const attempts: Array<Record<string, unknown>> = [];
   await page.locator("input").nth(candidate.index).fill(projectName, { timeout: 8000 });
   let observedValue = await page.locator("input").nth(candidate.index).inputValue({ timeout: 3000 }).catch(() => null);
@@ -9805,6 +9808,35 @@ const readCollageSidebarProjectLimitState = async (page: Page): Promise<Record<s
     error: error instanceof Error ? error.message : String(error)
   }));
 
+const readProjectLimitToastState = async (page: Page): Promise<Record<string, unknown>> =>
+  page.evaluate(() => {
+    const normalize = (value: string | null | undefined) => (value ?? "").trim().replace(/\s+/g, " ");
+    const isVisible = (element: Element): boolean => {
+      const rect = element.getBoundingClientRect();
+      const style = window.getComputedStyle(element);
+      return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden" && style.opacity !== "0";
+    };
+    const expectedPattern = /已達最高\s*5\s*個專案|已達.*5.*專案|最高\s*5\s*個專案/;
+    const visibleMatches = Array.from(document.querySelectorAll("body *"))
+      .filter((element) => isVisible(element))
+      .map((element) => normalize(element.textContent))
+      .filter((text) => expectedPattern.test(text))
+      .slice(0, 5);
+    const bodyText = normalize(document.body.innerText);
+    const bodyMatched = expectedPattern.test(bodyText);
+    return {
+      visible: visibleMatches.length > 0 || bodyMatched,
+      visibleTexts: visibleMatches,
+      bodyMatched,
+      bodyTextSample: bodyText.slice(0, 1200)
+    };
+  }).catch((error) => ({
+    visible: false,
+    visibleTexts: [],
+    bodyMatched: false,
+    error: error instanceof Error ? error.message : String(error)
+  }));
+
 const observeFrontendVisibleUiActions = async (
   options: CliOptions,
   page: Page,
@@ -10001,8 +10033,16 @@ const observeFrontendVisibleUiActions = async (
     if (!openClicked) warnings.push("PROJECT_CREATE_BUTTON_NOT_CLICKABLE");
     await page.waitForTimeout(700);
     flow.modalOpened = await readCreateProjectModalState(page).catch((error) => ({ error: error instanceof Error ? error.message : String(error) }));
+    flow.projectLimitAfterClick = await readCollageSidebarProjectLimitState(page);
+    flow.projectLimitToastAfterClick = await readProjectLimitToastState(page);
     if (projectLimitPrecondition.preconditionEstablished === true) {
-      flow.projectLimitAfterClick = await readCollageSidebarProjectLimitState(page);
+      warnings.push("PROJECT_CREATE_MODAL_PRECONDITION_PROJECT_LIMIT_REACHED");
+      return { actions, projectCreateModalFlow: flow };
+    }
+    const limitToastAfterClick = flow.projectLimitToastAfterClick && typeof flow.projectLimitToastAfterClick === "object" && !Array.isArray(flow.projectLimitToastAfterClick)
+      ? flow.projectLimitToastAfterClick as Record<string, unknown>
+      : null;
+    if (limitToastAfterClick?.visible === true) {
       warnings.push("PROJECT_CREATE_MODAL_PRECONDITION_PROJECT_LIMIT_REACHED");
       return { actions, projectCreateModalFlow: flow };
     }
@@ -10516,6 +10556,12 @@ const readFrontendObservationState = async (
       const projectLimitPrecondition = flow.projectLimitPrecondition && typeof flow.projectLimitPrecondition === "object" && !Array.isArray(flow.projectLimitPrecondition)
         ? flow.projectLimitPrecondition as Record<string, unknown>
         : null;
+      const projectLimitAfterClick = flow.projectLimitAfterClick && typeof flow.projectLimitAfterClick === "object" && !Array.isArray(flow.projectLimitAfterClick)
+        ? flow.projectLimitAfterClick as Record<string, unknown>
+        : null;
+      const projectLimitToastAfterClick = flow.projectLimitToastAfterClick && typeof flow.projectLimitToastAfterClick === "object" && !Array.isArray(flow.projectLimitToastAfterClick)
+        ? flow.projectLimitToastAfterClick as Record<string, unknown>
+        : null;
       const openAction = actionList.find((item) => item.target === "sidebar.collageProjectCreateButton") ?? null;
       const typeAction = actionList.find((item) => item.target === "projectCreateModal.nameInput") ?? null;
       const cancelAction = actionList.find((item) => item.target === "projectCreateModal.cancelButton") ?? null;
@@ -10527,7 +10573,11 @@ const readFrontendObservationState = async (
         Number(afterCancel.dialogs && Array.isArray(afterCancel.dialogs) ? afterCancel.dialogs.length : afterCancel.dialogCount ?? 0) === 0 ||
         !/新增專案|專案名稱/.test(String(afterCancel.bodyTextExcerpt ?? ""));
       const nameInputRequired = actionList.some((item) => item.target === "projectCreateModal.nameInput");
-      if (projectLimitPrecondition?.preconditionEstablished === true) {
+      const projectLimitReached =
+        projectLimitPrecondition?.preconditionEstablished === true ||
+        projectLimitAfterClick?.preconditionEstablished === true ||
+        projectLimitToastAfterClick?.visible === true;
+      if (projectLimitReached) {
         return {
           evidenceObject: "projectCreateModal.flow.state",
           createButtonClicked: openAction?.clicked === true,
@@ -10538,6 +10588,8 @@ const readFrontendObservationState = async (
           modalOpened,
           afterCancel,
           projectLimitPrecondition,
+          projectLimitAfterClick,
+          projectLimitToastAfterClick,
           blockedReason: "PROJECT_CREATE_MODAL_PRECONDITION_PROJECT_LIMIT_REACHED",
           recommendedCaseDisposition: "PM_ENVIRONMENT_PRECONDITION",
           interactionLog: actionList,

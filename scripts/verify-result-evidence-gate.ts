@@ -250,6 +250,49 @@ const main = async (): Promise<void> => {
       `hovering a delete icon to observe tooltip must not require Tool Bridge response; issues=${JSON.stringify(nonDestructiveHoverDeleteTooltipReport.issues)}`
     );
 
+    const nonDestructiveDeleteCancelFlow = path.join(tempRoot, "non-destructive-delete-cancel-flow-result.xlsx");
+    await writeWorkbook(nonDestructiveDeleteCancelFlow, [
+      {
+        caseNo: "BIUI_COLLAGE_R001-J-08",
+        status: "FAIL",
+        detailJson: JSON.stringify({
+          測試目的: "驗證列內刪除 icon 會開啟刪除確認 modal，且取消後不刪除報表。",
+          設定條件: "已登入 DEV 並進入拼貼專案頁，存在可見報表列與列內刪除動作。",
+          預期行為: "點擊列內刪除 icon 後應開啟刪除確認 modal；點擊取消後 modal 關閉，報表列仍存在。",
+          實際行為:
+            "helper 已執行點擊刪除與點擊取消；deleteCancelFlow 顯示 deleteClicked=true、cancelClicked=true、modalClosed=true、rowCountBefore=100、rowCountAfterCancel=100、rowStillVisible=true，但 asserted=false。",
+          錯誤原因: "未取得 modalVisible=true 的過程證據，因此依前端流程測試標的判 FAIL。",
+          根因層級: "前端流程/證據不足",
+          驗證方法: "依 currentRunEvidence.projectList.deleteCancelFlow.state 驗證刪除取消流程，未接受原生 confirm，也未執行不可逆刪除。",
+          "RD 分派": "前端",
+          currentRunEvidence: {
+            ...goodDetail.currentRunEvidence,
+            helperPreRunSummary: "/tmp/run/output/helper-pre-run-summary.json",
+            frontendObservationReport: "/tmp/run/output/helper-artifacts/BIUI_COLLAGE_R001-J-08/collage.observeFrontendState-latest.json",
+            keyState: {
+              evidenceObject: "projectList.deleteCancelFlow.state",
+              deleteClicked: true,
+              cancelClicked: true,
+              modalClosed: true,
+              rowCountBefore: 100,
+              rowCountAfterCancel: 100,
+              rowStillVisible: true,
+              asserted: false
+            }
+          }
+        })
+      }
+    ]);
+    const nonDestructiveDeleteCancelFlowReport = await runGate(nonDestructiveDeleteCancelFlow, {
+      currentCaseNo: "BIUI_COLLAGE_R001-J-08",
+      expectedCaseNos: ["BIUI_COLLAGE_R001-J-08"]
+    });
+    assert.equal(
+      nonDestructiveDeleteCancelFlowReport.status,
+      "ok",
+      `delete-cancel observation flow must not require Tool Bridge response; issues=${JSON.stringify(nonDestructiveDeleteCancelFlowReport.issues)}`
+    );
+
     const missingToolBridge = path.join(tempRoot, "missing-tool-bridge-result.xlsx");
     await writeWorkbook(missingToolBridge, [
       {
@@ -746,6 +789,7 @@ const main = async (): Promise<void> => {
             "diagnostic result source is blocked",
             "benign overwrite prose does not require Tool Bridge response",
             "hovering a delete icon to observe tooltip does not require Tool Bridge response",
+            "delete-cancel observation flow does not require Tool Bridge response",
             "Tool Bridge action claim without response evidence is blocked",
             "non-destructive selected-field validation alert does not require Tool Bridge response",
             "out-of-scope preview blocker can be contained as case-level rejudgment",
