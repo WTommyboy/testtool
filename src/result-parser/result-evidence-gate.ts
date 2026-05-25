@@ -200,10 +200,10 @@ const NON_DESTRUCTIVE_HOVER_TOOLTIP_PATTERNS = [
 ];
 
 const NON_DESTRUCTIVE_DELETE_CANCEL_FLOW_PATTERNS = [
-  /(?:已|完成|成功|按下|clicked?|handled|dismissed|執行|點擊|按了).{0,80}(?:刪除|删除|delete).{0,80}(?:取消|cancel).{0,160}(?:deleteCancelFlow|cancelClicked|modalClosed|rowCountAfterCancel|rowStillVisible|未刪除|沒有刪除|不變|保留|asserted)/gi,
+  /(?:已|完成|成功|按下|clicked?|handled|dismissed|執行|點擊|按了).{0,80}(?:刪除|删除|delete).{0,80}(?:取消|cancel).{0,180}(?:deleteCancelFlow|cancelClicked|modalClosed|rowCountAfterCancel|rowStillVisible|rowCount|sampleRows|before=|after=|未刪除|沒有刪除|未發生刪除|不變|一致|保留|asserted)/gi,
   /(?:deleteCancelFlow|projectList\.deleteCancelFlow|deleteConfirmModal\.cancelButton|deleteClicked|cancelClicked|modalClosed|rowCountAfterCancel|rowStillVisible).{0,160}(?:刪除|删除|delete|取消|cancel|modal|rowCount|rowStillVisible|asserted)/gi,
-  /(?:刪除|删除|delete).{0,100}(?:取消|cancel).{0,160}(?:deleteCancelFlow|cancelClicked|modalClosed|rowCountAfterCancel|rowStillVisible|未刪除|沒有刪除|不變|保留|asserted)/gi,
-  /(?:取消|cancel).{0,100}(?:刪除|删除|delete).{0,160}(?:deleteCancelFlow|cancelClicked|modalClosed|rowCountAfterCancel|rowStillVisible|未刪除|沒有刪除|不變|保留|asserted)/gi
+  /(?:刪除|删除|delete).{0,100}(?:取消|cancel).{0,180}(?:deleteCancelFlow|cancelClicked|modalClosed|rowCountAfterCancel|rowStillVisible|rowCount|sampleRows|before=|after=|未刪除|沒有刪除|未發生刪除|不變|一致|保留|asserted)/gi,
+  /(?:取消|cancel).{0,100}(?:刪除|删除|delete).{0,180}(?:deleteCancelFlow|cancelClicked|modalClosed|rowCountAfterCancel|rowStillVisible|rowCount|sampleRows|before=|after=|未刪除|沒有刪除|未發生刪除|不變|一致|保留|asserted)/gi
 ];
 
 const normalizeStatus = (status: string): string => status.trim().toUpperCase().replace(/\s+/g, "_");

@@ -345,6 +345,8 @@ const main = async (): Promise<void> => {
   assert.equal(m11OpenReportAction?.params.existingReportSourceCaseNo, null, "M-11 must not force stale TOOL-A-01 source case");
   assert(executorSource.includes("helper-artifacts-archive"), "executor must read saved-report state from archived helper artifacts");
   assert(executorSource.includes("visible-first-report-list-row"), "executor must support visible-first existing report selection");
+  assert(executorSource.includes("ensureSavedReportListRowVisible(options, page, copyReportName)"), "M-10 copy flow must recover back to the project list before judging copied row visibility");
+  assert(executorSource.includes("COPY_REPORT_ROW_NOT_VERIFIED"), "M-10 copy flow must keep row verification as evidence instead of accepting save toast alone");
 
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "p0-33-result-enricher-"));
   const fixtureResult = path.join(tempRoot, "blocked-result.xlsx");
@@ -383,6 +385,7 @@ const main = async (): Promise<void> => {
       "M-11 live structured precondition does not bypass report mutation helper",
       "M-01 routes to saveReportDisabled observation",
       "G-05/M-10 allow visible-first existing report selection",
+      "M-10 copy flow recovers to project list before row verification",
       "M-11 uses current-run saved-report state instead of stale TOOL_A01 pattern",
       "B-05/J-03 deterministic helper evidence promotes BLOCKED to PASS",
       "L-05 deterministic helper failure promotes BLOCKED to FAIL",

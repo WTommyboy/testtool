@@ -260,7 +260,7 @@ const main = async (): Promise<void> => {
           設定條件: "已登入 DEV 並進入拼貼專案頁，存在可見報表列與列內刪除動作。",
           預期行為: "點擊列內刪除 icon 後應開啟刪除確認 modal；點擊取消後 modal 關閉，報表列仍存在。",
           實際行為:
-            "helper 已執行點擊刪除與點擊取消；deleteCancelFlow 顯示 deleteClicked=true、cancelClicked=true、modalClosed=true、rowCountBefore=100、rowCountAfterCancel=100、rowStillVisible=true，但 asserted=false。",
+            "helper 證據顯示已點擊 row 刪除 icon 並開啟刪除確認 modal，隨後點擊取消，afterCancel 無 dialog；rowCount before=100、after=100，sampleRows 一致，未發生刪除。",
           錯誤原因: "未取得 modalVisible=true 的過程證據，因此依前端流程測試標的判 FAIL。",
           根因層級: "前端流程/證據不足",
           驗證方法: "依 currentRunEvidence.projectList.deleteCancelFlow.state 驗證刪除取消流程，未接受原生 confirm，也未執行不可逆刪除。",

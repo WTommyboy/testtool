@@ -8857,9 +8857,14 @@ const copyReportAndVerify = async (options: CliOptions, page: Page, startedAt: s
   writeSavedReportState(options, copyReportName, { approvedToolRequestId: options.approvedToolRequestId, copiedFromReportName: sourceReportName, dialogs });
   let readiness: BackToProjectListReadiness | null = null;
   let rowState: ReportListRowState | null = null;
+  let reportListAttempts: Array<ReportListRowState & { label: string }> = [];
+  let reportListRecoveryActions: string[] = [];
   try {
     readiness = await waitForBackToProjectListReadiness(options, page);
-    rowState = await readReportListRowState(page, copyReportName);
+    const rowVisibility = await ensureSavedReportListRowVisible(options, page, copyReportName);
+    rowState = rowVisibility.state;
+    reportListAttempts = rowVisibility.attempts;
+    reportListRecoveryActions = rowVisibility.recoveryActions;
   } catch (error) {
     warnings.push(`COPY_REPORT_LIST_VERIFICATION_ERROR:${error instanceof Error ? error.message : String(error)}`);
   }
@@ -8879,7 +8884,13 @@ const copyReportAndVerify = async (options: CliOptions, page: Page, startedAt: s
     modalFlow: observed.result,
     dialogs,
     network: { requests: observed.requests, responses: observed.responses },
-    reportListEvidence: { readiness, rowState, copyReportVisible: rowState?.found === true }
+    reportListEvidence: {
+      readiness,
+      rowState,
+      attempts: reportListAttempts,
+      recoveryActions: reportListRecoveryActions,
+      copyReportVisible: rowState?.found === true
+    }
   };
   ensureDir(artifactRoot(options));
   fs.writeFileSync(copyReportEvidencePath(options), `${JSON.stringify(evidence, null, 2)}\n`);
