@@ -791,6 +791,8 @@ const browserSessionWindowNamePrefix = (lease: BrowserSessionLease): string =>
 
 const GALAXY_BI_HOST = "galaxy.games.gamania.com";
 const GALAXY_BI_DEV_PATH_PREFIXES = ["/biapi-dev", "/bi-dev"] as const;
+const OFFICIAL_COLLAGE_DEFAULT_PROJECT_ID = "9";
+const OFFICIAL_COLLAGE_DEFAULT_PROJECT_NAME = "拼貼test_001";
 
 const parseHttpUrl = (url: string | null | undefined): URL | null => {
   if (!url) return null;
@@ -2953,6 +2955,37 @@ const isOfficialCollageProjectRouteUrl = (url: string): boolean =>
 const isOfficialCollageEditorRouteUrl = (url: string): boolean =>
   Boolean(parseHttpUrl(url)?.pathname.match(/\/bi-dev\/[^/]+\/report\/new$/));
 
+type OfficialCollageProjectRouteFallback = {
+  url: string;
+  projectId: string;
+  projectName: string;
+};
+
+const buildOfficialCollageProjectRouteFallback = (
+  currentUrl: string,
+  params: Record<string, unknown> = {},
+  explicitProjectName: string | null = null
+): OfficialCollageProjectRouteFallback | null => {
+  if (!isOfficialBiUiPageUrl(currentUrl)) return null;
+  const parsed = parseHttpUrl(currentUrl);
+  if (!parsed) return null;
+  const pathParts = parsed.pathname.split("/").filter(Boolean);
+  const locale = pathParts[1] && pathParts[1] !== "report" ? pathParts[1] : "zh-TW";
+  const explicitProjectId = firstStringParam(params, ["projectId", "collageProjectId", "defaultProjectId", "officialProjectId"]);
+  if (explicitProjectName && !explicitProjectId) return null;
+  const projectId = explicitProjectId ?? OFFICIAL_COLLAGE_DEFAULT_PROJECT_ID;
+  if (!/^\d+$/.test(projectId)) return null;
+  const projectName =
+    explicitProjectName ??
+    firstStringParam(params, ["defaultProjectName", "collageProjectName", "officialProjectName"]) ??
+    OFFICIAL_COLLAGE_DEFAULT_PROJECT_NAME;
+  return {
+    url: `${parsed.origin}/bi-dev/${locale}/report/myCustom/tileMode/${projectId}`,
+    projectId,
+    projectName
+  };
+};
+
 const hasOfficialCreateReportEntry = (bodyText: string): boolean =>
   /(?:[+＋➕]\s*)?新增(?:自訂)?報表/.test(bodyText);
 
@@ -3246,12 +3279,131 @@ export const __openProjectRetryTestHooks = {
   isOfficialCollageReportListReadyForUrl,
   isOfficialCollageProjectRouteUrl,
   isOfficialCollageEditorRouteUrl,
+  buildOfficialCollageProjectRouteFallback,
   officialCollageSidebarPreludeLabels,
   officialCollageSidebarTargetLabel,
   hasVisibleCollageProjectAfterCollageLabel,
   inferVisibleCollageProjectName,
   scoreCollageProjectClickCandidate,
   scoreVisibleBodyTextClickCandidate
+};
+
+const navigateOfficialCollageProjectRouteFallback = async (
+  options: CliOptions,
+  page: Page,
+  attempts: CollageProjectSelectionAttempt[],
+  initialBodyText: string,
+  explicitProjectName: string | null
+): Promise<{ bodyText: string; fallback: OfficialCollageProjectRouteFallback | null }> => {
+  const fallback = buildOfficialCollageProjectRouteFallback(page.url(), options.params, explicitProjectName);
+  if (!fallback) return { bodyText: initialBodyText, fallback: null };
+
+  const beforeUrl = page.url();
+  const beforeExcerpt = initialBodyText.slice(0, 500);
+  observeHelper(options, {
+    eventType: "navigation_transition",
+    severity: "info",
+    appUrl: beforeUrl,
+    data: {
+      context: "official_collage_route_fallback",
+      status: "started",
+      fromUrl: beforeUrl,
+      toUrl: fallback.url,
+      projectId: fallback.projectId,
+      projectName: fallback.projectName,
+      beforeTextExcerpt: beforeExcerpt
+    },
+    domainExtension: {
+      namespace: "BI_OFFICIAL_UI_COLLAGE",
+      data: {
+        expectedNavigationPath: "stable route fallback > 拼貼報表 project",
+        projectId: fallback.projectId,
+        projectName: fallback.projectName
+      }
+    }
+  });
+
+  let bodyText = initialBodyText;
+  try {
+    await page.goto(fallback.url, { waitUntil: "domcontentloaded", timeout: 20000 });
+    const startedAt = Date.now();
+    while (Date.now() - startedAt < 8000) {
+      await page.waitForTimeout(700);
+      bodyText = await page.locator("body").innerText({ timeout: 5000 }).catch(() => "");
+      if (isCollageReportListReadyForPage(page, bodyText)) break;
+    }
+    attempts.push({
+      label: "official_route_fallback",
+      url: page.url(),
+      hasCreateReportEntry: hasCreateReportEntry(bodyText),
+      hasSelectProjectPrompt: hasSelectProjectPrompt(bodyText),
+      bodyTextExcerpt: bodyText.slice(0, 800),
+      clickMethod: "goto",
+      clickedText: fallback.url,
+      candidateCount: 1
+    });
+    observeHelper(options, {
+      eventType: "navigation_transition",
+      severity: isCollageReportListReadyForPage(page, bodyText) ? "info" : "warning",
+      appUrl: page.url(),
+      data: {
+        context: "official_collage_route_fallback",
+        status: isCollageReportListReadyForPage(page, bodyText) ? "ready" : "not_ready",
+        fromUrl: beforeUrl,
+        toUrl: page.url(),
+        projectId: fallback.projectId,
+        projectName: fallback.projectName,
+        beforeTextExcerpt: beforeExcerpt,
+        afterTextExcerpt: bodyText.slice(0, 500)
+      },
+      domainExtension: {
+        namespace: "BI_OFFICIAL_UI_COLLAGE",
+        data: {
+          expectedNavigationPath: "stable route fallback > 拼貼報表 project",
+          projectId: fallback.projectId,
+          projectName: fallback.projectName
+        }
+      }
+    });
+    return { bodyText, fallback };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    attempts.push({
+      label: "official_route_fallback_failed",
+      url: page.url(),
+      hasCreateReportEntry: hasCreateReportEntry(bodyText),
+      hasSelectProjectPrompt: hasSelectProjectPrompt(bodyText),
+      bodyTextExcerpt: bodyText.slice(0, 800),
+      error: message.slice(0, 300),
+      clickMethod: "goto",
+      clickedText: fallback.url,
+      candidateCount: 1
+    });
+    observeHelper(options, {
+      eventType: "navigation_transition",
+      severity: "warning",
+      appUrl: page.url(),
+      data: {
+        context: "official_collage_route_fallback",
+        status: "failed",
+        fromUrl: beforeUrl,
+        toUrl: fallback.url,
+        projectId: fallback.projectId,
+        projectName: fallback.projectName,
+        beforeTextExcerpt: beforeExcerpt,
+        error: message.slice(0, 500)
+      },
+      domainExtension: {
+        namespace: "BI_OFFICIAL_UI_COLLAGE",
+        data: {
+          expectedNavigationPath: "stable route fallback > 拼貼報表 project",
+          projectId: fallback.projectId,
+          projectName: fallback.projectName
+        }
+      }
+    });
+    return { bodyText, fallback: null };
+  }
 };
 
 const navigateOfficialCollageSidebar = async (
@@ -3484,7 +3636,7 @@ const ensureCollageProjectSelected = async (
 ): Promise<{
   projectName: string | null;
   bodyText: string;
-  selectedBy: "already_selected" | "param" | "inferred";
+  selectedBy: "already_selected" | "param" | "inferred" | "route_fallback";
   attempts: CollageProjectSelectionAttempt[];
 }> => {
   const attempts: CollageProjectSelectionAttempt[] = [];
@@ -3534,7 +3686,20 @@ const ensureCollageProjectSelected = async (
     }
   }
 
-  const projectName = inferVisibleCollageProjectName(bodyText, explicitProjectName);
+  let projectName = inferVisibleCollageProjectName(bodyText, explicitProjectName);
+  if (!projectName) {
+    const routeFallback = await navigateOfficialCollageProjectRouteFallback(options, page, attempts, bodyText, explicitProjectName);
+    bodyText = routeFallback.bodyText;
+    if (routeFallback.fallback && isCollageReportListReadyForPage(page, bodyText)) {
+      return {
+        projectName: routeFallback.fallback.projectName,
+        bodyText,
+        selectedBy: "route_fallback",
+        attempts
+      };
+    }
+    projectName = inferVisibleCollageProjectName(bodyText, explicitProjectName);
+  }
   if (!projectName) {
     const reason = hasOfficialNoAvailableProjectState(bodyText)
       ? "COLLAGE_NO_AVAILABLE_PROJECT_VISIBLE"

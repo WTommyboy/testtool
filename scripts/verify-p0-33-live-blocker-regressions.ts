@@ -241,6 +241,8 @@ const main = async (): Promise<void> => {
   assert(executorSource.includes("aria-label=\"刪除\""), "executor must support official UI delete icon aria-label fallback");
   assert(executorSource.includes("button[aria-label=\"返回\"]"), "G-05 back action must support official UI icon-only aria-label return button");
   assert(executorSource.includes("hasVisibleCollageProjectAfterCollageLabel"), "M-10 openProject must guard against treating structural sidebar labels as project names");
+  assert(executorSource.includes("buildOfficialCollageProjectRouteFallback"), "openProject must have a route fallback when the official UI entry page hides collage project children");
+  assert(executorSource.includes("official_collage_route_fallback"), "openProject route fallback must emit observability events");
 
   const j10 = byCase.get("BIUI_COLLAGE_R001-J-10");
   assert(j10, "J-10 contract must exist");

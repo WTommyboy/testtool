@@ -59,6 +59,38 @@ const officialUiCollapsedCustomSidebar = [
   "新增自訂報表"
 ].join("\n");
 
+const officialUiAiDailyCollapsedAfterToggle = [
+  "數據統計中心",
+  "橘子星球",
+  "Tommy LH(劉徐融)",
+  "報表",
+  "AI 洞察",
+  "AI 日報",
+  "公司共享",
+  "每日報表",
+  "雙平台營收占比",
+  "退費追蹤",
+  "beanfun! 導流",
+  "商品銷售明細表",
+  "商品退款明細",
+  "篩選訂單明細",
+  "我的自訂",
+  "新增自訂報表",
+  "指標儀表板",
+  "即時數據",
+  "活躍數據",
+  "營收數據",
+  "留存數據",
+  "新用戶數據",
+  "數據中心",
+  "主頁",
+  "AI 洞察",
+  "AI 日報",
+  "AI 日報",
+  "2026-05-24",
+  "該日期尚無 AI 日報資料"
+].join("\n");
+
 assert.equal(
   hooks.inferVisibleCollageProjectName(blockedProjectHome),
   "拼貼test_001",
@@ -77,6 +109,12 @@ assert.equal(
   "project inference must not treat structural sidebar labels such as 報表明細 as collage project names"
 );
 
+assert.equal(
+  hooks.inferVisibleCollageProjectName(officialUiAiDailyCollapsedAfterToggle),
+  null,
+  "AI 日報 entry page without visible collage children should not invent a project name"
+);
+
 assert.deepEqual(
   hooks.officialCollageSidebarPreludeLabels(
     "https://galaxy.games.gamania.com/bi-dev/zh-TW/report/aiInsights/aiDailyReport",
@@ -84,6 +122,44 @@ assert.deepEqual(
   ),
   ["我的自訂"],
   "official UI navigation should expand 我的自訂 before clicking 拼貼報表 when no collage project is visible"
+);
+
+assert.deepEqual(
+  hooks.buildOfficialCollageProjectRouteFallback(
+    "https://galaxy.games.gamania.com/bi-dev/zh-TW/report/aiInsights/aiDailyReport",
+    {},
+    null
+  ),
+  {
+    url: "https://galaxy.games.gamania.com/bi-dev/zh-TW/report/myCustom/tileMode/9",
+    projectId: "9",
+    projectName: "拼貼test_001"
+  },
+  "AI 日報 entry page should have a stable official collage project route fallback"
+);
+
+assert.equal(
+  hooks.buildOfficialCollageProjectRouteFallback(
+    "https://galaxy.games.gamania.com/bi-dev/zh-TW/report/aiInsights/aiDailyReport",
+    {},
+    "UAT_G01測試專案"
+  ),
+  null,
+  "explicit project name should not fall back to the default project unless a projectId is provided"
+);
+
+assert.deepEqual(
+  hooks.buildOfficialCollageProjectRouteFallback(
+    "https://galaxy.games.gamania.com/bi-dev/zh-TW/report/aiInsights/aiDailyReport",
+    { projectId: "61" },
+    "UAT_G01測試專案"
+  ),
+  {
+    url: "https://galaxy.games.gamania.com/bi-dev/zh-TW/report/myCustom/tileMode/61",
+    projectId: "61",
+    projectName: "UAT_G01測試專案"
+  },
+  "explicit project route fallback should require the explicit projectId"
 );
 
 assert.equal(
