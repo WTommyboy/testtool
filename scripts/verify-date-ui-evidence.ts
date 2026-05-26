@@ -17,6 +17,28 @@ const main = (): void => {
   assert.equal(extracted[0]?.startIso, "2026-04-28");
   assert.equal(extracted[0]?.endIso, "2026-05-04");
 
+  const greaterThanSeparatorEvidence = buildDateUiEvidence({
+    requested: "14 天前 ~ 1 天前",
+    baseDate: "2026-05-26",
+    observed: {
+      dateRangeButtonText: null,
+      dateRangeDisplayText: null,
+      popupVisible: false,
+      popupText: null,
+      bodyText: "自訂報表 儲存報表 計算 14 天前 > 1 天前"
+    }
+  });
+  assert.equal(
+    greaterThanSeparatorEvidence.checks.requestedLabelVisible,
+    true,
+    "dynamic range labels must accept Galaxy UI's > separator as equivalent to testcase ~"
+  );
+  assert.equal(
+    greaterThanSeparatorEvidence.warnings.includes("DATE_UI_REQUESTED_LABEL_NOT_VISIBLE"),
+    false,
+    "dynamic range labels with > separator must not emit requested-label-missing warnings"
+  );
+
   const yesterdayRange = computePresetDateRange("昨日", "2026-05-05");
   assert.equal(yesterdayRange?.startIso, "2026-05-04");
   assert.equal(yesterdayRange?.endIso, "2026-05-04");
@@ -101,6 +123,7 @@ const main = (): void => {
         checked: [
           "shortcut label normalization",
           "visible represented range parsing",
+          "dynamic range label matching with Galaxy > separator",
           "preset represented range computed from baseDate",
           "Monday-week shortcut ranges by default",
           "Sunday-week shortcut range override",

@@ -1422,10 +1422,10 @@
       },
       "judgmentPolicy": {
         "failWhen": [
-          "from-date presets are visible but selecting them does not update date range state"
+          "from-date composite endpoint controls are reachable but configuring them does not update date range state"
         ],
         "blockedWhen": [
-          "date panel cannot be opened or preset controls cannot be located"
+          "date panel cannot be opened or endpoint controls cannot be located"
         ]
       }
     },

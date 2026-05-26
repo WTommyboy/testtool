@@ -131,6 +131,9 @@ export const normalizeDateUiText = (value: string | null | undefined): string =>
     .replace(/\s+/g, "")
     .replaceAll("-", "/");
 
+const normalizeDateUiComparableLabel = (value: string | null | undefined): string =>
+  normalizeDateUiText(value).replace(/[>＞→~～至到]/g, "~");
+
 const toIsoFromMatch = (match: RegExpMatchArray): string => {
   const [, year, month, day] = match;
   return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
@@ -226,7 +229,7 @@ const rangesFromSingleLine = (line: string, source: DateUiRangeEvidence["source"
     const second = matches[index + 1];
     if (first.index === undefined || second.index === undefined) continue;
     const between = line.slice(first.index + first[0].length, second.index);
-    if (!/[~～→至到-]/.test(between) || between.length > 40) continue;
+    if (!/[~～→>＞至到-]/.test(between) || between.length > 40) continue;
     const prefix = line.slice(0, first.index).replace(/[（(]\s*$/u, "");
     const label = cleanupRangeLabel(prefix);
     const startIso = toIsoFromMatch(first);
@@ -269,12 +272,13 @@ export const extractDateUiRanges = (
 
 const requestedLabelVisible = (requested: string | null, observedText: string): boolean | null => {
   if (!requested) return null;
+  const comparableObserved = normalizeDateUiComparableLabel(observedText);
   const staticRange = staticDateRangeFromText(requested);
   if (staticRange) {
-    return normalizeDateUiText(observedText).includes(normalizeDateUiText(staticRange.display));
+    return comparableObserved.includes(normalizeDateUiComparableLabel(staticRange.display));
   }
   const label = normalizeDatePresetLabel(requested);
-  return label ? normalizeDateUiText(observedText).includes(normalizeDateUiText(label)) : null;
+  return label ? comparableObserved.includes(normalizeDateUiComparableLabel(label)) : null;
 };
 
 const findMatchingRange = (

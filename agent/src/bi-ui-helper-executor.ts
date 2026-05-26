@@ -1634,6 +1634,62 @@ const clickFirstVisible = async (locators: Array<ReturnType<Page["locator"]>>, t
   return false;
 };
 
+const clickVisibleTextByCoordinates = async (
+  page: Page,
+  label: string,
+  timeout = 5000,
+  scopeSelector = "body"
+): Promise<boolean> => {
+  const deadline = Date.now() + timeout;
+  while (Date.now() < deadline) {
+    const point = await page.evaluate(({ label: targetLabel, scopeSelector: targetScope }) => {
+      const normalize = (value: string | null | undefined): string => (value ?? "").trim().replace(/\s+/g, "");
+      const expected = normalize(targetLabel);
+      const isVisible = (element: Element): boolean => {
+        const rect = element.getBoundingClientRect();
+        const style = window.getComputedStyle(element);
+        return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden" && style.opacity !== "0";
+      };
+      const scope = document.querySelector(targetScope);
+      const roots = scope && isVisible(scope) ? [scope] : [document.body];
+      const elements = roots.flatMap((root) =>
+        Array.from(root.querySelectorAll<HTMLElement>("button, [role='button'], [role='tab'], li, div, span"))
+      );
+      const candidates = elements.flatMap((element, index) => {
+        if (!isVisible(element)) return [];
+        if (element instanceof HTMLButtonElement && element.disabled) return [];
+        const text = normalize(element.innerText || element.textContent || "");
+        if (text !== expected) return [];
+        const rect = element.getBoundingClientRect();
+        const style = window.getComputedStyle(element);
+        const interactiveAncestor = element.closest("button, [role='button'], [role='tab'], [tabindex]");
+        const interactive = element.matches("button, [role='button'], [role='tab'], [tabindex]") || Boolean(interactiveAncestor);
+        return [{
+          index,
+          x: rect.left + rect.width / 2,
+          y: rect.top + rect.height / 2,
+          area: rect.width * rect.height,
+          interactive,
+          cursor: style.cursor
+        }];
+      });
+      candidates.sort((a, b) => {
+        if (a.interactive !== b.interactive) return a.interactive ? -1 : 1;
+        if ((a.cursor === "pointer") !== (b.cursor === "pointer")) return a.cursor === "pointer" ? -1 : 1;
+        return a.area - b.area || a.index - b.index;
+      });
+      const selected = candidates[0];
+      return selected ? { x: selected.x, y: selected.y } : null;
+    }, { label, scopeSelector });
+    if (point) {
+      await page.mouse.click(point.x, point.y);
+      return true;
+    }
+    await page.waitForTimeout(200);
+  }
+  return false;
+};
+
 const isTextLikeInputType = (type: string | null | undefined): boolean =>
   !type || /^(text|search|email|url|tel|password)$/i.test(type);
 
@@ -2367,12 +2423,15 @@ const setDatePreset = async (options: CliOptions, page: Page, preset: string): P
   uiProfiles.push(await captureUiDomProfile(options, page, "datePreset.popupOpened"));
 
   const uiPresetPattern = datePresetLabelRegex(uiPreset);
-  const selected = await clickFirstVisible([
+  let selected = await clickFirstVisible([
     page.getByText(uiPreset, { exact: true }),
     page.getByText(uiPresetPattern, { exact: false }),
     page.locator("button").filter({ hasText: uiPresetPattern }),
     page.locator("[role='button']").filter({ hasText: uiPresetPattern })
   ], 5000);
+  if (!selected) {
+    selected = await clickVisibleTextByCoordinates(page, uiPreset, 3000, "#datePickerPopup");
+  }
   if (!selected) {
     return {
       ok: false,
@@ -4825,6 +4884,21 @@ const fillFromDatePresetStartValue = async (
   };
 };
 
+const fromDatePresetSpecFromTarget = (target: string, params: Record<string, unknown>): DatePreviewSpec | null => {
+  if (!isFromDatePresetTarget(target)) return null;
+  const startDate = normalizeIsoDateString(
+    firstStringParam(params, ["fromDateStartIso", "fromDateStart", "startDate", "dateStart"]) ?? "2026-04-01"
+  );
+  const endOffset = target === "dateRange.preset.fromDateToToday" ? 0 : -1;
+  return {
+    requestedLabel: target === "dateRange.preset.fromDateToToday" ? "自某日至今" : "自某日至昨日",
+    mode: "structured",
+    start: { type: "static", date: startDate },
+    end: { type: "relative", offsetDays: endOffset },
+    expectedDateRange: `${startDate.replaceAll("-", "/")} > ${endOffset === 0 ? "0 天前" : "1 天前"}`
+  };
+};
+
 const contractRequiresCsvPreviewComparison = (params: Record<string, unknown>): boolean => {
   const contract = params.caseScopeContract;
   if (!contract || typeof contract !== "object") return true;
@@ -4890,14 +4964,18 @@ const configureMetric = async (options: CliOptions, page: Page, startedAt: strin
   } else if (caseScopeDatePresets.length > 0) {
     const stages: Record<string, unknown>[] = [];
     for (const request of caseScopeDatePresets) {
-      const result = await setDateRange(options, page, request.label);
+      const fromDateSpec = fromDatePresetSpecFromTarget(request.target, options.params);
+      const result = fromDateSpec
+        ? await setStructuredDateRange(options, page, fromDateSpec)
+        : await setDateRange(options, page, request.label);
       const { uiProfiles, ...resultEvidence } = result;
       dateRangeUiProfiles.push(...(uiProfiles ?? []));
-      const dateUiEvidence = await readDateUiEvidence(page, request.label, options.params);
+      const dateUiEvidence = await readDateUiEvidence(page, fromDateSpec?.expectedDateRange ?? request.label, options.params);
       dateUiArtifact = writeDateUiEvidenceArtifact(options, dateUiEvidence);
       stages.push({
         target: request.target,
         requestedLabel: request.label,
+        mode: fromDateSpec ? "structured_from_date_range" : "preset_or_static_label",
         ...resultEvidence,
         dateUiEvidence
       });
@@ -8604,6 +8682,7 @@ type SaveReportObservedResult = {
   projectSelectionEvidence: Record<string, unknown> | null;
   saveModalProfile: UiDomProfileRef;
   saveModalAfterFillProfile: UiDomProfileRef | null;
+  savePrerequisite: Record<string, unknown> | null;
 };
 
 const saveReport = async (options: CliOptions, page: Page, startedAt: string): Promise<HelperReport> => {
@@ -8644,7 +8723,13 @@ const saveReport = async (options: CliOptions, page: Page, startedAt: string): P
   try {
     observed = await withTimeout(
       observeDuring(page, async (): Promise<SaveReportObservedResult> => {
-        await page.getByText("儲存報表", { exact: false }).first().click({ timeout: 15000 });
+        const savePrerequisite = await prepareSaveReportButton(page).catch((error) => ({
+          error: error instanceof Error ? error.message : String(error)
+        }));
+        const saveClicked = await clickSaveReportEntryButton(page);
+        if (!saveClicked) {
+          throw new HelperBlockedError(`SAVE_REPORT_BUTTON_NOT_CLICKABLE_AFTER_PRECONDITION:${JSON.stringify(savePrerequisite).slice(0, 1200)}`);
+        }
         await page.waitForTimeout(600);
         const saveModalProfile = await captureUiDomProfile(options, page, "saveReport.modalOpened");
         let nameInputEvidence: Record<string, unknown> | null = null;
@@ -8667,7 +8752,7 @@ const saveReport = async (options: CliOptions, page: Page, startedAt: string): P
           };
         }
         await page.waitForTimeout(1800);
-        return { nameInputEvidence, projectSelectionEvidence, saveModalProfile, saveModalAfterFillProfile };
+        return { nameInputEvidence, projectSelectionEvidence, saveModalProfile, saveModalAfterFillProfile, savePrerequisite };
       }),
       45000,
       "SAVE_REPORT_FLOW_TIMEOUT"
@@ -8694,7 +8779,8 @@ const saveReport = async (options: CliOptions, page: Page, startedAt: string): P
         },
         network: { requests: observed.requests, responses: observed.responses },
         nameInput: observed.result.nameInputEvidence,
-        projectSelection: observed.result.projectSelectionEvidence
+        projectSelection: observed.result.projectSelectionEvidence,
+        savePrerequisite: observed.result.savePrerequisite
       },
       {},
       ["NATIVE_DIALOG_CHAIN_BLOCKED", "UNKNOWN_NATIVE_DIALOG_NO_RECOVERY_HANDLER"]
@@ -8749,7 +8835,8 @@ const saveReport = async (options: CliOptions, page: Page, startedAt: string): P
       reportListEvidence,
       network: { requests: observed.requests, responses: observed.responses },
       nameInput: observed.result.nameInputEvidence,
-      projectSelection: observed.result.projectSelectionEvidence
+      projectSelection: observed.result.projectSelectionEvidence,
+      savePrerequisite: observed.result.savePrerequisite
     },
     shot ? { screenshot: shot } : {},
     shot ? [] : ["SCREENSHOT_UNAVAILABLE"]
@@ -8771,13 +8858,17 @@ const resolveCopyReportName = (options: CliOptions): string => {
 };
 
 const clickUpdateSettingButton = async (page: Page): Promise<boolean> => {
+  const state = await readButtonStateByText(page, /^(更新設定|更新|儲存設定)$/).catch(() => null);
+  if (state?.disabled === true || state?.ariaDisabled === true || state?.pointerEvents === "none") return false;
   const clicked = await clickFirstVisible([
     page.getByRole("button", { name: /更新設定|更新|儲存設定/ }),
     page.getByText("更新設定", { exact: true }),
     page.locator("button, [role=button]").filter({ hasText: /更新設定|更新|儲存設定/ })
   ], 10000);
-  if (clicked) await page.waitForTimeout(1400);
-  return clicked;
+  const fallbackClicked = clicked ? false : await clickVisibleTextByCoordinates(page, "更新設定", 5000, "body");
+  const didClick = clicked || fallbackClicked;
+  if (didClick) await page.waitForTimeout(1400);
+  return didClick;
 };
 
 const readButtonStateByText = async (page: Page, pattern: RegExp): Promise<Record<string, unknown> | null> =>
@@ -8789,32 +8880,53 @@ const readButtonStateByText = async (page: Page, pattern: RegExp): Promise<Recor
       const style = window.getComputedStyle(element);
       return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden" && style.opacity !== "0";
     };
-    const buttons = Array.from(document.querySelectorAll<HTMLElement>("button, [role='button']")).flatMap((button, index) => {
-      const text = normalize(button.textContent);
-      const ariaLabel = normalize(button.getAttribute("aria-label"));
-      const title = normalize(button.getAttribute("title"));
-      const label = `${text}\n${ariaLabel}\n${title}`;
-      if (!regex.test(label) || !isVisible(button)) return [];
-      const rect = button.getBoundingClientRect();
-      const style = window.getComputedStyle(button);
+    const buttonLikeSelector = "button, [role='button'], [tabindex], a";
+    const candidates = Array.from(document.querySelectorAll<HTMLElement>("body *")).flatMap((element, index) => {
+      if (!isVisible(element)) return [];
+      const text = normalize(element.innerText || element.textContent);
+      const ariaLabel = normalize(element.getAttribute("aria-label"));
+      const title = normalize(element.getAttribute("title"));
+      if (![text, ariaLabel, title].some((label) => label && regex.test(label))) return [];
+      if (text.length > 80 && !ariaLabel && !title) return [];
+      const control = (element.closest(buttonLikeSelector) as HTMLElement | null) ?? element;
+      if (!isVisible(control)) return [];
+      const rect = control.getBoundingClientRect();
+      const style = window.getComputedStyle(control);
+      const controlText = normalize(control.innerText || control.textContent);
+      const controlAriaLabel = normalize(control.getAttribute("aria-label"));
+      const controlTitle = normalize(control.getAttribute("title"));
       return [{
         index,
-        text,
-        ariaLabel,
-        title,
-        disabled: button instanceof HTMLButtonElement ? button.disabled : button.getAttribute("aria-disabled") === "true",
-        ariaDisabled: button.getAttribute("aria-disabled") === "true",
+        text: controlText || text,
+        ariaLabel: controlAriaLabel || ariaLabel,
+        title: controlTitle || title,
+        tagName: control.tagName.toLowerCase(),
+        matchedText: text || ariaLabel || title,
+        disabled: control instanceof HTMLButtonElement ? control.disabled : control.getAttribute("aria-disabled") === "true",
+        ariaDisabled: control.getAttribute("aria-disabled") === "true",
         pointerEvents: style.pointerEvents,
         opacity: style.opacity,
+        cursor: style.cursor,
         rect: { x: Math.round(rect.x), y: Math.round(rect.y), width: Math.round(rect.width), height: Math.round(rect.height) }
       }];
     });
-    return buttons[0] ?? null;
+    candidates.sort((a, b) => {
+      const aPointer = a.cursor === "pointer" || a.pointerEvents !== "none";
+      const bPointer = b.cursor === "pointer" || b.pointerEvents !== "none";
+      if (aPointer !== bPointer) return aPointer ? -1 : 1;
+      const aArea = a.rect.width * a.rect.height;
+      const bArea = b.rect.width * b.rect.height;
+      return aArea - bArea || a.index - b.index;
+    });
+    return candidates[0] ?? null;
   }, { source: pattern.source, flags: pattern.flags });
 
 const prepareUpdateSettingButton = async (page: Page): Promise<Record<string, unknown>> => {
   const before = await readButtonStateByText(page, /^(更新設定|更新|儲存設定)$/);
-  const needsCalculation = before?.disabled === true || before?.ariaDisabled === true;
+  const bodyTextBefore = await page.locator("body").innerText({ timeout: 5000 }).catch(() => "");
+  const needsCalculation = before?.disabled === true ||
+    before?.ariaDisabled === true ||
+    (before === null && /更新設定|更新|儲存設定/.test(bodyTextBefore) && /計算|執行/.test(bodyTextBefore));
   if (!needsCalculation) {
     return { before, calculateClicked: false, after: before };
   }
@@ -8828,6 +8940,47 @@ const prepareUpdateSettingButton = async (page: Page): Promise<Record<string, un
     calculateError = error instanceof Error ? error.message : String(error);
   }
   const after = await readButtonStateByText(page, /^(更新設定|更新|儲存設定)$/);
+  return {
+    before,
+    calculateClicked,
+    ...(calculateError ? { calculateError } : {}),
+    after
+  };
+};
+
+const clickSaveReportEntryButton = async (page: Page): Promise<boolean> => {
+  const state = await readButtonStateByText(page, /^(儲存報表|儲存)$/).catch(() => null);
+  if (state?.disabled === true || state?.ariaDisabled === true || state?.pointerEvents === "none") return false;
+  const clicked = await clickFirstVisible([
+    page.getByRole("button", { name: /^(儲存報表|儲存)$/ }),
+    page.locator("button, [role=button]").filter({ hasText: /儲存報表|儲存/ }),
+    page.getByText("儲存報表", { exact: true })
+  ], 10000);
+  const fallbackClicked = clicked ? false : await clickVisibleTextByCoordinates(page, "儲存報表", 5000, "body");
+  const didClick = clicked || fallbackClicked;
+  if (didClick) await page.waitForTimeout(800);
+  return didClick;
+};
+
+const prepareSaveReportButton = async (page: Page): Promise<Record<string, unknown>> => {
+  const before = await readButtonStateByText(page, /^(儲存報表|儲存)$/);
+  const bodyTextBefore = await page.locator("body").innerText({ timeout: 5000 }).catch(() => "");
+  const needsCalculation = before?.disabled === true ||
+    before?.ariaDisabled === true ||
+    (before === null && /儲存報表|儲存/.test(bodyTextBefore) && /計算|執行/.test(bodyTextBefore));
+  if (!needsCalculation) {
+    return { before, calculateClicked: false, after: before };
+  }
+  let calculateClicked = false;
+  let calculateError: string | null = null;
+  try {
+    await clickRunPreviewButton(page, 15000);
+    calculateClicked = true;
+    await page.waitForTimeout(1800);
+  } catch (error) {
+    calculateError = error instanceof Error ? error.message : String(error);
+  }
+  const after = await readButtonStateByText(page, /^(儲存報表|儲存)$/);
   return {
     before,
     calculateClicked,
@@ -9953,28 +10106,44 @@ const observeFrontendVisibleUiActions = async (
     const presetRequests = caseScopeDatePresetRequests(params).filter((request) => request.target !== "dateRange.preset.yesterday");
     for (const request of presetRequests) {
       const beforePresetDateText = await readDateRangeButtonText(page);
-      if (!(await isDatePickerOpen(page))) {
-        await clickDateRangeButton();
-      }
-      const pattern = datePresetLabelRegex(request.label);
-      const selected = await clickFirstVisible([
-        page.getByText(request.label, { exact: true }),
-        page.getByText(pattern, { exact: false }),
-        page.locator("button").filter({ hasText: pattern }),
-        page.locator("[role='button']").filter({ hasText: pattern })
-      ], 5000);
       let fromDateStartInput: Record<string, unknown> | null = null;
+      let selected = false;
       let confirmed = false;
-      if (selected) {
-        if (isFromDatePresetTarget(request.target)) {
-          fromDateStartInput = await fillFromDatePresetStartValue(page, params).catch((error) => ({
-            requestedValue: firstStringParam(params, ["fromDateStartIso", "fromDateStart", "startDate", "dateStart"]) ?? "2026-04-01",
-            verified: false,
-            error: error instanceof Error ? error.message : String(error)
-          }));
+      let structuredResult: DateRangeUiResult | null = null;
+      if (isFromDatePresetTarget(request.target)) {
+        const spec = fromDatePresetSpecFromTarget(request.target, params);
+        structuredResult = spec
+          ? await setStructuredDateRange(options, page, spec).catch((error) => ({
+              ok: false,
+              warning: error instanceof Error ? error.message : String(error),
+              uiProfiles: []
+            }))
+          : null;
+        const inputRecord = structuredResult?.inputs && typeof structuredResult.inputs === "object" && !Array.isArray(structuredResult.inputs)
+          ? structuredResult.inputs as Record<string, unknown>
+          : {};
+        fromDateStartInput = (inputRecord.startResult && typeof inputRecord.startResult === "object" && !Array.isArray(inputRecord.startResult))
+          ? inputRecord.startResult as Record<string, unknown>
+          : null;
+        selected = structuredResult?.ok === true;
+        confirmed = structuredResult?.ok === true;
+      } else {
+        if (!(await isDatePickerOpen(page))) {
+          await clickDateRangeButton();
         }
-        const canConfirm = !isFromDatePresetTarget(request.target) || fromDateStartInput?.verified === true;
-        confirmed = canConfirm ? await clickDateConfirmButton(page, 3000).catch(() => false) : false;
+        const pattern = datePresetLabelRegex(request.label);
+        selected = await clickFirstVisible([
+          page.getByText(request.label, { exact: true }),
+          page.getByText(pattern, { exact: false }),
+          page.locator("button").filter({ hasText: pattern }),
+          page.locator("[role='button']").filter({ hasText: pattern })
+        ], 5000);
+        if (!selected) {
+          selected = await clickVisibleTextByCoordinates(page, request.label, 3000, "#datePickerPopup");
+        }
+        if (selected) {
+          confirmed = await clickDateConfirmButton(page, 3000).catch(() => false);
+        }
         await page.waitForTimeout(800);
       }
       const afterPresetDateText = await readDateRangeButtonText(page);
@@ -9985,6 +10154,11 @@ const observeFrontendVisibleUiActions = async (
         clicked: selected,
         confirmed,
         fromDateStartInput,
+        structuredResult: structuredResult ? {
+          ok: structuredResult.ok,
+          warning: structuredResult.warning ?? null,
+          inputs: structuredResult.inputs ?? null
+        } : null,
         beforeDateText: beforePresetDateText,
         afterDateText: afterPresetDateText,
         labelApplied: normalizeUiText(afterPresetDateText ?? "").includes(normalizeUiText(request.label)),
@@ -9993,8 +10167,8 @@ const observeFrontendVisibleUiActions = async (
           : null
       });
       if (!selected) warnings.push(`DATE_PANEL_PRESET_NOT_CLICKABLE:${request.target}`);
-      if (selected && isFromDatePresetTarget(request.target) && fromDateStartInput?.verified !== true) {
-        warnings.push(`DATE_PANEL_FROM_DATE_START_INPUT_NOT_VERIFIED:${request.target}`);
+      if (isFromDatePresetTarget(request.target) && structuredResult?.ok !== true) {
+        warnings.push(`DATE_PANEL_FROM_DATE_RANGE_NOT_VERIFIED:${request.target}:${structuredResult?.warning ?? "unknown"}`);
       }
     }
     if (targets.has("dateRange.timeTypeTab.static")) {

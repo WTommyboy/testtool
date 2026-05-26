@@ -223,6 +223,18 @@ const main = async (): Promise<void> => {
   });
   assert.equal(b05DateEvidence.checks.requestedLabelVisible, true, "B-05-style preset label must be visible in body text");
   assert.equal(b05DateEvidence.checks.representedRangeMatchesRequested, null, "preset-only UI still records represented range as computed/not directly visible");
+  const b07DynamicLabelEvidence = buildDateUiEvidence({
+    requested: "14 天前 ~ 1 天前",
+    baseDate: "2026-05-26",
+    observed: {
+      dateRangeButtonText: null,
+      dateRangeDisplayText: null,
+      popupVisible: false,
+      popupText: null,
+      bodyText: "自訂報表 儲存報表 計算 14 天前 > 1 天前"
+    }
+  });
+  assert.equal(b07DynamicLabelEvidence.checks.requestedLabelVisible, true, "B-07 dynamic range label must accept Galaxy > separator");
   assert(resultContractSource.includes("requestedRange?.basis === \"preset\" && checks?.requestedLabelVisible === true"), "result contract must accept visible preset label as date UI match");
 
   const bodyText = [
@@ -277,7 +289,10 @@ const main = async (): Promise<void> => {
     "dateRange.preset.fromDateToToday",
     "自某日至昨日",
     "自某日至今",
-    "fillFromDatePresetStartValue",
+    "fromDatePresetSpecFromTarget",
+    "setStructuredDateRange(options, page, spec)",
+    "clickVisibleTextByCoordinates",
+    "prepareSaveReportButton",
     "recommendedFailureClassification",
     "prepareUpdateSettingButton",
     "UPDATE_SETTING_PRECONDITION_CALCULATE_CLICKED",
@@ -426,6 +441,10 @@ const main = async (): Promise<void> => {
       "J-10 projectCreateModal short-circuits on post-click project-limit toast",
       "J-10 projectCreateModal never fills arbitrary non-text inputs",
       "L-10 from-date preset targets routed to executable datePanel actions",
+      "B-07 dynamic date label separator normalized",
+      "L-05 visible non-button preset labels have coordinate-click fallback",
+      "L-10 from-date targets use structured endpoint controls instead of phantom preset buttons",
+      "F-07 save flow calculates before save when save button is disabled",
       "M-11 update existing report helper is planned",
       "M-11 update helper calculates before clicking disabled 更新設定",
       "M-11 live structured precondition does not bypass report mutation helper",

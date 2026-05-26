@@ -1485,30 +1485,32 @@
       ]
     },
     "dateRange.preset.fromDateToYesterday": {
-      "status": "notCaptured",
+      "status": "confirmed",
       "sourceIds": [
         "ui.vocabularyAlignment"
       ],
-      "screenContext": "collageEditor / dateRange.preset",
+      "screenContext": "collageEditor / dateRange.panel",
       "visualCues": [
         "自某日至昨日",
         "自訂起日至昨日",
         "from date to yesterday",
-        "preset button text 自某日至昨日 inside opened date panel"
-      ]
+        "date panel start static date plus end dynamic 1 天前"
+      ],
+      "alignmentNotes": "No single visible preset button exists in the official UI; this is a composite endpoint-control action."
     },
     "dateRange.preset.fromDateToToday": {
-      "status": "notCaptured",
+      "status": "confirmed",
       "sourceIds": [
         "ui.vocabularyAlignment"
       ],
-      "screenContext": "collageEditor / dateRange.preset",
+      "screenContext": "collageEditor / dateRange.panel",
       "visualCues": [
         "自某日至今",
         "自訂起日至今",
         "from date to today",
-        "preset button text 自某日至今 inside opened date panel"
-      ]
+        "date panel start static date plus end dynamic 0 天前"
+      ],
+      "alignmentNotes": "No single visible preset button exists in the official UI; this is a composite endpoint-control action."
     },
     "dateRange.dynamicStartOffsetInput": {
       "status": "notCaptured",

@@ -1979,71 +1979,69 @@
     {
       "id": "dateRange.preset.fromDateToYesterday",
       "page": "collageEditor",
-      "component": "dateRange.preset",
-      "objectType": "presetButton",
-      "purpose": "Custom dynamic preset from a chosen date to yesterday.",
+      "component": "dateRange.panel",
+      "objectType": "compositeDateRangeAction",
+      "purpose": "Composite date range action: set a static start date and a dynamic end date of yesterday.",
       "aliases": [
         "自某日至昨日",
         "自訂起日至昨日",
         "from date to yesterday"
       ],
       "supportedActions": [
-        "click",
         "select",
         "assertSelected",
         "assertStateChanged",
         "assertRequest"
       ],
       "stateAttributes": [
-        "visibleText",
+        "startDateValue",
+        "endDynamicOffset",
         "selected",
-        "className",
-        "startDateValue"
+        "dateRangeButtonText"
       ],
       "evidenceObjects": [
         "dateRange.panel.state",
         "preview.result"
       ],
       "locatorHints": [
-        "preset button text 自某日至昨日 inside opened date panel"
+        "not a visible preset label; open date panel, set start side to static date, set end side to dynamic 1 天前, then confirm"
       ],
       "hazards": [
-        "requires entering a start date after selecting the preset"
+        "legacy testcase wording may call this a preset, but the official UI exposes it as endpoint controls rather than a single visible preset button"
       ]
     },
     {
       "id": "dateRange.preset.fromDateToToday",
       "page": "collageEditor",
-      "component": "dateRange.preset",
-      "objectType": "presetButton",
-      "purpose": "Custom dynamic preset from a chosen date to today.",
+      "component": "dateRange.panel",
+      "objectType": "compositeDateRangeAction",
+      "purpose": "Composite date range action: set a static start date and a dynamic end date of today.",
       "aliases": [
         "自某日至今",
         "自訂起日至今",
         "from date to today"
       ],
       "supportedActions": [
-        "click",
         "select",
         "assertSelected",
         "assertStateChanged",
         "assertRequest"
       ],
       "stateAttributes": [
-        "visibleText",
+        "startDateValue",
+        "endDynamicOffset",
         "selected",
-        "className",
-        "startDateValue"
+        "dateRangeButtonText"
       ],
       "evidenceObjects": [
         "dateRange.panel.state",
         "preview.result"
       ],
       "locatorHints": [
-        "preset button text 自某日至今 inside opened date panel"
+        "not a visible preset label; open date panel, set start side to static date, set end side to dynamic 0 天前, then confirm"
       ],
       "hazards": [
-        "requires entering a start date after selecting the preset"
+        "legacy testcase wording may call this a preset, but the official UI exposes it as endpoint controls rather than a single visible preset button"
       ]
     },
     {
