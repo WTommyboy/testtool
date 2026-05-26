@@ -226,6 +226,8 @@ const deterministicReportMutationFailEvidence = (runDir: string, caseNo: string)
   const evidence = filePath ? readJson(filePath) : null;
   if (!filePath || !evidence) return null;
   const dateRangeUpdate = objectValue(evidence.dateRangeUpdate);
+  const updatePrerequisite = objectValue(evidence.updatePrerequisite);
+  const updatePrerequisiteAfter = objectValue(updatePrerequisite?.after);
   const updateAction = objectValue(evidence.updateAction);
   const updateResult = objectValue(updateAction?.result);
   const bodyTextExcerpt = typeof updateResult?.bodyTextExcerpt === "string" ? updateResult.bodyTextExcerpt : "";
@@ -235,11 +237,15 @@ const deterministicReportMutationFailEvidence = (runDir: string, caseNo: string)
       ? updateResult.recommendedFailureClassification
       : null;
   const updateButtonWasVisible = /更新設定|更新|儲存設定/.test(bodyTextExcerpt);
+  const updateButtonStillDisabled =
+    updatePrerequisiteAfter?.disabled === true ||
+    updatePrerequisiteAfter?.ariaDisabled === true ||
+    (/請先計算/.test(bodyTextExcerpt) && updatePrerequisite?.calculateClicked !== true);
   const validEditorChangeWasApplied = dateRangeUpdate?.ok === true;
   const updateWasNotClicked = updateResult?.clicked === false;
-  const classification = recommended && /^FAIL_/i.test(recommended)
+  const classification = recommended && /^FAIL_/i.test(recommended) && !updateButtonStillDisabled
     ? recommended
-    : validEditorChangeWasApplied && updateWasNotClicked && updateButtonWasVisible
+    : validEditorChangeWasApplied && updateWasNotClicked && updateButtonWasVisible && !updateButtonStillDisabled
       ? "FAIL_INTERACTION_FAILED"
       : null;
   if (!classification) return null;
@@ -252,6 +258,7 @@ const deterministicReportMutationFailEvidence = (runDir: string, caseNo: string)
     reportName: evidence.reportName ?? null,
     targetDateRange: evidence.targetDateRange ?? null,
     dateRangeUpdate,
+    updatePrerequisite,
     updateAction: {
       result: updateResult,
       network: updateAction?.network ?? null,

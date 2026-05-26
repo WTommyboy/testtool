@@ -185,6 +185,11 @@ const writeDeterministicEvidenceFixture = (runDir: string): void => {
       requested: "昨日",
       finalButtonText: "昨日"
     },
+    updatePrerequisite: {
+      before: { text: "更新設定", disabled: false, ariaDisabled: false },
+      calculateClicked: false,
+      after: { text: "更新設定", disabled: false, ariaDisabled: false }
+    },
     updateAction: {
       result: {
         clicked: false,
@@ -238,6 +243,8 @@ const main = async (): Promise<void> => {
   assert(executorSource.includes("bodyTextReportList"), "executor must keep project-list body text row fallback");
   assert(executorSource.includes("rowDeleteButtonContext"), "executor must recover official project-list rows from row-local delete icon context");
   assert(executorSource.includes("projectListRowDeleteButtonCandidate"), "executor must locate row-local delete icon buttons by DOM/ARIA context");
+  assert(executorSource.includes("rowBeforeCancel: rowBefore"), "J-08 delete/cancel evidence must expose the before row snapshot under the result-facing key");
+  assert(executorSource.includes("modalInteractionObserved"), "frontend modal observations must accept successful cancel/type interactions as modal evidence when DOM dialog wrappers are absent");
   assert(executorSource.includes("aria-label=\"刪除\""), "executor must support official UI delete icon aria-label fallback");
   assert(executorSource.includes("button[aria-label=\"返回\"]"), "G-05 back action must support official UI icon-only aria-label return button");
   assert(executorSource.includes("hasVisibleCollageProjectAfterCollageLabel"), "M-10 openProject must guard against treating structural sidebar labels as project names");
@@ -272,6 +279,8 @@ const main = async (): Promise<void> => {
     "自某日至今",
     "fillFromDatePresetStartValue",
     "recommendedFailureClassification",
+    "prepareUpdateSettingButton",
+    "UPDATE_SETTING_PRECONDITION_CALCULATE_CLICKED",
     "UPDATE_REOPEN_SKIPPED_AFTER_UPDATE_NOT_CLICKED"
   ]) {
     assert(executorSource.includes(snippet), `executor missing P0.33 snippet: ${snippet}`);
@@ -371,6 +380,42 @@ const main = async (): Promise<void> => {
   assert.equal(statuses["BIUI_COLLAGE_R001-M-11"]?.verdict, "FAIL_INTERACTION_FAILED", "M-11 should carry a deterministic failure classification");
   assert.equal(statuses["BIUI_COLLAGE_R001-I-04"]?.status, "BLOCKED", "negative non-deterministic observation should remain BLOCKED");
 
+  const prereqRoot = fs.mkdtempSync(path.join(os.tmpdir(), "p0-33-update-prereq-"));
+  const prereqWorkbook = path.join(prereqRoot, "blocked-result.xlsx");
+  await writeBlockedEvidenceWorkbook(prereqWorkbook);
+  const prereqM11Dir = path.join(prereqRoot, "output", "helper-artifacts", "BIUI_COLLAGE_R001-M-11");
+  fs.mkdirSync(prereqM11Dir, { recursive: true });
+  fs.writeFileSync(path.join(prereqM11Dir, "update-reopen-evidence.json"), JSON.stringify({
+    workflowStatus: "blocked",
+    reportName: "BIUICOL05219998",
+    targetDateRange: "昨日",
+    recommendedFailureClassification: "FAIL_INTERACTION_FAILED",
+    dateRangeUpdate: { ok: true, requested: "昨日" },
+    updatePrerequisite: {
+      before: { text: "更新設定", disabled: true, ariaDisabled: false },
+      calculateClicked: false,
+      after: { text: "更新設定", disabled: true, ariaDisabled: false }
+    },
+    updateAction: {
+      result: {
+        clicked: false,
+        successTextObserved: false,
+        bodyTextExcerpt: "自訂報表 複製副本 更新設定 請先計算，在進行儲存 計算 昨日"
+      },
+      network: { requests: [], responses: [] },
+      dialogs: []
+    },
+    persisted: false
+  }, null, 2));
+  const prereqEnrichment = await ensureBlockedResultCurrentRunEvidence({
+    filePath: prereqWorkbook,
+    runId: "p0-33-update-prereq-fixture-run",
+    runDir: prereqRoot
+  });
+  const prereqStatuses = await readWorkbookStatuses(prereqWorkbook);
+  assert(!prereqEnrichment.rows.some((item) => item.caseNo === "BIUI_COLLAGE_R001-M-11" && item.action === "deterministic_helper_fail"), "M-11 update button disabled by calculation prerequisite must not be promoted to product FAIL");
+  assert.equal(prereqStatuses["BIUI_COLLAGE_R001-M-11"]?.status, "BLOCKED", "M-11 should remain BLOCKED when update was not actionable because calculation prerequisite was unmet");
+
   console.log(JSON.stringify({
     ok: true,
     checks: [
@@ -382,6 +427,7 @@ const main = async (): Promise<void> => {
       "J-10 projectCreateModal never fills arbitrary non-text inputs",
       "L-10 from-date preset targets routed to executable datePanel actions",
       "M-11 update existing report helper is planned",
+      "M-11 update helper calculates before clicking disabled 更新設定",
       "M-11 live structured precondition does not bypass report mutation helper",
       "M-01 routes to saveReportDisabled observation",
       "G-05/M-10 allow visible-first existing report selection",
@@ -389,7 +435,8 @@ const main = async (): Promise<void> => {
       "M-11 uses current-run saved-report state instead of stale TOOL_A01 pattern",
       "B-05/J-03 deterministic helper evidence promotes BLOCKED to PASS",
       "L-05 deterministic helper failure promotes BLOCKED to FAIL",
-      "M-11 deterministic report mutation failure promotes BLOCKED to FAIL"
+      "M-11 deterministic report mutation failure promotes BLOCKED to FAIL",
+      "M-11 disabled-by-calculation prerequisite does not promote to product FAIL"
     ]
   }, null, 2));
 };

@@ -86,6 +86,15 @@ const comparableCellsEqual = (actual: unknown, expected: unknown): boolean => {
   return normalizeComparableCell(actual) === normalizeComparableCell(expected);
 };
 
+const comparableDateKey = (value: unknown): string | null => {
+  const normalized = normalizeComparableCell(value);
+  const dashed = normalized.match(/\b(\d{4})-(\d{1,2})-(\d{1,2})\b/);
+  if (dashed) return `${dashed[1]}-${dashed[2].padStart(2, "0")}-${dashed[3].padStart(2, "0")}`;
+  const slashed = normalized.match(/\b(\d{4})\/(\d{1,2})\/(\d{1,2})\b/);
+  if (slashed) return `${slashed[1]}-${slashed[2].padStart(2, "0")}-${slashed[3].padStart(2, "0")}`;
+  return null;
+};
+
 const normalizeComparableHeader = (value: unknown): string => {
   const normalized = normalizeComparableCell(value)
     .replace(/[（]/g, "(")
@@ -117,6 +126,75 @@ const tableRowsFromPreview = (preview: Record<string, unknown> | null): { header
   return { header, rows };
 };
 
+type PreviewMatrixMismatch = {
+  rowIndex: number;
+  dateKey: string | null;
+  actual: number | null;
+  expected: number | null;
+  reason: string;
+};
+
+const compareDateRowsToPreviewMetricMatrix = (
+  csvHeader: string[],
+  csvRows: string[][],
+  numericColumns: Array<{ columnIndex: number; header: string; values: number[]; summary: Record<string, unknown> | null }>,
+  previewTable: { header: string[]; rows: string[][] } | null
+): Record<string, unknown> | null => {
+  if (!previewTable || csvRows.length === 0 || numericColumns.length === 0) return null;
+  const dateColumnIndex = csvHeader.findIndex((header) => normalizeComparableHeader(header) === "date");
+  const csvDateIndex = dateColumnIndex >= 0 ? dateColumnIndex : csvRows.every((row) => comparableDateKey(row[0]) !== null) ? 0 : -1;
+  if (csvDateIndex < 0) return null;
+  const previewDateColumns = previewTable.header.flatMap((header, index) => {
+    const dateKey = comparableDateKey(header);
+    return dateKey ? [{ index, dateKey }] : [];
+  });
+  if (previewDateColumns.length === 0) return null;
+
+  const matrixMatches = numericColumns.flatMap((column) => {
+    if (column.columnIndex === csvDateIndex) return [];
+    const previewRow = previewTable.rows.find((row) => comparableHeadersEqual(row[0], column.header))
+      ?? (numericColumns.length === 1 && previewTable.rows.length === 1 ? previewTable.rows[0] : null);
+    if (!previewRow) return [];
+    const previewValues = new Map<string, number>();
+    for (const item of previewDateColumns) {
+      const value = comparableNumber(previewRow[item.index]);
+      if (value !== null) previewValues.set(item.dateKey, value);
+    }
+    const mismatches: PreviewMatrixMismatch[] = csvRows.flatMap((row, rowIndex): PreviewMatrixMismatch[] => {
+      const dateKey = comparableDateKey(row[csvDateIndex]);
+      const actual = comparableNumber(row[column.columnIndex]);
+      if (!dateKey || actual === null) return [{ rowIndex, dateKey, actual, expected: null, reason: "csv_date_or_value_unreadable" }];
+      const expected = previewValues.get(dateKey);
+      if (expected === undefined) return [{ rowIndex, dateKey, actual, expected: null, reason: "preview_date_missing" }];
+      return approxEqual(actual, expected) ? [] : [{ rowIndex, dateKey, actual, expected, reason: "value_mismatch" }];
+    });
+    const csvSum = column.values.reduce((total, value) => total + value, 0);
+    const previewTotal = comparableNumber(previewRow[1]);
+    const rowCountMatches = csvRows.length === previewValues.size;
+    const totalMatches = previewTotal === null || approxEqual(csvSum, previewTotal);
+    return [{
+      csvColumnIndex: column.columnIndex,
+      csvHeader: column.header,
+      previewRowLabel: previewRow[0] ?? null,
+      csvDateCount: csvRows.length,
+      previewDateCount: previewValues.size,
+      rowCountMatches,
+      totalMatches,
+      mismatches: mismatches.slice(0, 20),
+      mismatchCount: mismatches.length,
+      matched: rowCountMatches && totalMatches && mismatches.length === 0
+    }];
+  });
+  if (matrixMatches.length === 0) return null;
+  return {
+    format: "csv-date-rows-vs-preview-metric-matrix",
+    dateColumnIndex: csvDateIndex,
+    previewDateColumnCount: previewDateColumns.length,
+    matches: matrixMatches,
+    matched: matrixMatches.some((item) => item.matched === true)
+  };
+};
+
 export const summarizeCsvAgainstPreview = (csvText: string, preview: Record<string, unknown> | null): Record<string, unknown> => {
   const rows = parseCsv(csvText);
   const header = (rows[0] ?? []).map((cell) => normalizeComparableCell(cell));
@@ -127,6 +205,8 @@ export const summarizeCsvAgainstPreview = (csvText: string, preview: Record<stri
   }).filter((item) => item.values.length > 0);
   const previewSeries = chartSeriesFromPreview(preview);
   const previewTable = tableRowsFromPreview(preview);
+  const previewMatrixComparison = compareDateRowsToPreviewMetricMatrix(header, dataRows, numericColumns, previewTable);
+  const previewMatrixMatched = previewMatrixComparison?.matched === true;
   const comparisons = previewSeries.series.map((series, seriesIndex) => {
     const expected = numericSummary(series);
     const match = numericColumns.find((column) => {
@@ -141,9 +221,13 @@ export const summarizeCsvAgainstPreview = (csvText: string, preview: Record<stri
   });
   const tableHeaderMatches = previewTable === null || previewTable.header.length === 0
     ? null
+    : previewMatrixMatched
+      ? true
     : previewTable.header.every((expected, index) => comparableHeadersEqual(header[index], expected));
   const tableRowsMatched = previewTable === null
     ? null
+    : previewMatrixMatched
+      ? true
     : dataRows.length === previewTable.rows.length
       && previewTable.rows.every((expectedRow, rowIndex) => {
         const actualRow = dataRows[rowIndex] ?? [];
@@ -151,11 +235,15 @@ export const summarizeCsvAgainstPreview = (csvText: string, preview: Record<stri
       });
   const rowCountMatchesPreview = previewSeries.labelCount !== null
     ? dataRows.length === previewSeries.labelCount
+    : previewMatrixMatched
+      ? true
     : previewTable !== null
       ? dataRows.length === previewTable.rows.length
       : null;
   const allSeriesMatched = comparisons.length > 0
     ? comparisons.every((item) => item.matchedCsvColumn !== null)
+    : previewMatrixMatched
+      ? true
     : tableRowsMatched;
   return {
     csv: {
@@ -174,6 +262,7 @@ export const summarizeCsvAgainstPreview = (csvText: string, preview: Record<stri
       tableTailRows: previewTable?.rows.slice(-3) ?? null
     },
     comparisons,
+    previewMatrixComparison,
     checks: {
       rowCountMatchesPreview,
       allSeriesMatched,

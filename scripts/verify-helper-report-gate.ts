@@ -118,6 +118,30 @@ const main = (): void => {
     assert.equal(csvComparison.checks.allSeriesMatched, true);
     assert.equal(csvComparison.preview.tableRowCount, 3);
 
+    const officialMatrixCsvComparison = summarizeCsvAgainstPreview(
+      [
+        "\"日期\",\"新增帳號數\"",
+        "\"2026-03-27\",\"72\"",
+        "\"2026-03-26\",\"63\"",
+        "\"2026-03-25\",\"57\""
+      ].join("\n"),
+      {
+        chart: null,
+        table: {
+          header: ["", "區間總和", "2026-03-27 (五)", "2026-03-26 (四)", "2026-03-25 (三)"],
+          rows: [
+            ["", "區間總和", "2026-03-27 (五)", "2026-03-26 (四)", "2026-03-25 (三)"],
+            ["新增帳號數", "192", "72", "63", "57"]
+          ]
+        }
+      }
+    ) as { checks: Record<string, unknown>; previewMatrixComparison: Record<string, unknown> };
+    assert.equal(officialMatrixCsvComparison.checks.rowCountMatchesPreview, true, "official UI CSV date rows should match preview date columns");
+    assert.equal(officialMatrixCsvComparison.checks.tableHeaderMatches, true, "official UI CSV/preview matrix shape should normalize header comparison");
+    assert.equal(officialMatrixCsvComparison.checks.tableRowsMatched, true, "official UI CSV/preview matrix values should match after transpose");
+    assert.equal(officialMatrixCsvComparison.checks.allSeriesMatched, true);
+    assert.equal(officialMatrixCsvComparison.previewMatrixComparison.matched, true);
+
     const projectHomeText = [
       "📊 報表管理",
       "▶",

@@ -2657,3 +2657,10 @@ Status update 2026-05-20 P0.29 BI official inline formula-builder alignment: Tom
 - Executor 調整：`updateExistingReportAndReopen` 在更新未點擊時不再繼續 back-to-list/reopen，避免把後續 navigation noise 混進主要 failure；`persisted=true` 只允許在 real reopen 後的 state check 成立時出現。
 - 邊界：這不是把 Tommy oracle 寫入平台。B-05 是 generic runtime lease recovery；M-11 是 action/evidence contract judgment。BI-specific 的「更新設定」文案仍屬 BI official UI domain semantics。
 - 驗證：`npm run verify:p0-helper-browser-session-containment`、`npm run verify:p0-33-live-blocker-regressions`、`npm run verify:agent-result-contract`、`npm run verify:p0-live-action-templates`、`npm run typecheck --prefix agent`、`npm run typecheck`、`npm run build --prefix agent`、`npm run build`；另用 f5196a8d 實際 result copy 確認 M-11 可轉成 `FAIL_INTERACTION_FAILED`。
+
+### 2026-05-26 - P0.39 49022034 evidence-shape and lifecycle judgment bridge
+
+- 背景：run `49022034-109f-44c0-9707-6b1867c21808` 已確認是正確 domain pack；剩餘問題集中在 evidence shape normalization、modal/list lifecycle evidence、以及 M-11 更新設定前置流程，不是全域 helper route 崩壞。
+- 調整：CSV comparator 支援「CSV 日期列 vs preview 日期欄矩陣」對齊，避免 `F-07` 這類同一份資料因表格方向不同而 false FAIL。`I-04/J-08` lifecycle observation 改為接受實際 modal-only interaction evidence，不只看 dialog wrapper 是否存在。`M-11` helper 會在 `更新設定` disabled 且 UI 提示需先計算時先按 `計算`，result enricher 也不再把未滿足計算前置的 disabled 狀態直接升產品 FAIL。
+- 邊界：平台層修 CSV shape / result evidence ordering；BI-specific 的 project modal、delete cancel、更新設定前置計算語意仍屬 `BI_OFFICIAL_UI_COLLAGE` domain action/evidence semantics。這仍是 P0 compatibility bridge，不是 Gen4 interpreter，也不是 oracle hard-code。
+- 驗證：`verify:helper-report-gate`、`verify:p0-33-live-blocker-regressions`、`verify:result-evidence-gate`、`verify:p0-live-action-templates`、`verify:official-observation-contract`、`verify:bi-official-ui-object-vocabulary`、`verify:shared-lifecycle-action-contracts`、`verify:agent-result-contract`、root `typecheck`、agent `build`、`git diff --check`；另用 49022034 實際 `F-07` artifact smoke，62 個日期值與區間總和皆匹配。

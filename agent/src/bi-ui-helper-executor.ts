@@ -8415,7 +8415,7 @@ const projectListRowDeleteButtonCandidate = async (page: Page): Promise<Record<s
     });
     const candidates = buttons
       .filter((button) => button.rowContext || button.belowToolbar)
-      .sort((a, b) => b.score - a.score || b.rect.y - a.rect.y || b.rect.x - a.rect.x);
+      .sort((a, b) => b.score - a.score || a.rect.y - b.rect.y || a.rect.x - b.rect.x);
     return {
       selected: candidates[0] ?? null,
       candidates: candidates.slice(0, 8),
@@ -8780,6 +8780,62 @@ const clickUpdateSettingButton = async (page: Page): Promise<boolean> => {
   return clicked;
 };
 
+const readButtonStateByText = async (page: Page, pattern: RegExp): Promise<Record<string, unknown> | null> =>
+  page.evaluate(({ source, flags }) => {
+    const regex = new RegExp(source, flags);
+    const normalize = (value: string | null | undefined) => (value ?? "").trim().replace(/\s+/g, " ");
+    const isVisible = (element: Element): boolean => {
+      const rect = element.getBoundingClientRect();
+      const style = window.getComputedStyle(element);
+      return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden" && style.opacity !== "0";
+    };
+    const buttons = Array.from(document.querySelectorAll<HTMLElement>("button, [role='button']")).flatMap((button, index) => {
+      const text = normalize(button.textContent);
+      const ariaLabel = normalize(button.getAttribute("aria-label"));
+      const title = normalize(button.getAttribute("title"));
+      const label = `${text}\n${ariaLabel}\n${title}`;
+      if (!regex.test(label) || !isVisible(button)) return [];
+      const rect = button.getBoundingClientRect();
+      const style = window.getComputedStyle(button);
+      return [{
+        index,
+        text,
+        ariaLabel,
+        title,
+        disabled: button instanceof HTMLButtonElement ? button.disabled : button.getAttribute("aria-disabled") === "true",
+        ariaDisabled: button.getAttribute("aria-disabled") === "true",
+        pointerEvents: style.pointerEvents,
+        opacity: style.opacity,
+        rect: { x: Math.round(rect.x), y: Math.round(rect.y), width: Math.round(rect.width), height: Math.round(rect.height) }
+      }];
+    });
+    return buttons[0] ?? null;
+  }, { source: pattern.source, flags: pattern.flags });
+
+const prepareUpdateSettingButton = async (page: Page): Promise<Record<string, unknown>> => {
+  const before = await readButtonStateByText(page, /^(更新設定|更新|儲存設定)$/);
+  const needsCalculation = before?.disabled === true || before?.ariaDisabled === true;
+  if (!needsCalculation) {
+    return { before, calculateClicked: false, after: before };
+  }
+  let calculateClicked = false;
+  let calculateError: string | null = null;
+  try {
+    await clickRunPreviewButton(page, 15000);
+    calculateClicked = true;
+    await page.waitForTimeout(1800);
+  } catch (error) {
+    calculateError = error instanceof Error ? error.message : String(error);
+  }
+  const after = await readButtonStateByText(page, /^(更新設定|更新|儲存設定)$/);
+  return {
+    before,
+    calculateClicked,
+    ...(calculateError ? { calculateError } : {}),
+    after
+  };
+};
+
 const copyReportAndVerify = async (options: CliOptions, page: Page, startedAt: string): Promise<HelperReport> => {
   if (!options.approvedToolRequestId) return approvalRequired(options, "copy current report and save a current-case temporary copy", startedAt);
   const warnings: string[] = [];
@@ -8922,6 +8978,9 @@ const updateExistingReportAndReopen = async (options: CliOptions, page: Page, st
     uiProfiles: []
   }));
   const stateAfterModify = await readStateDelta(page, { ...options.params, dateRange: targetDateRange }).catch((error) => ({ readError: error instanceof Error ? error.message : String(error) }));
+  const updatePrerequisite = await prepareUpdateSettingButton(page).catch((error) => ({
+    error: error instanceof Error ? error.message : String(error)
+  }));
   const dialogs: Record<string, unknown>[] = [];
   let dialogChainRequiresApproval = false;
   const dialogHandler = async (dialog: Dialog) => {
@@ -8963,7 +9022,14 @@ const updateExistingReportAndReopen = async (options: CliOptions, page: Page, st
   }
   const updateClicked = updateObserved?.result.clicked === true;
   const updateButtonWasVisible = /更新設定|更新|儲存設定/.test(String(updateObserved?.result.bodyTextExcerpt ?? ""));
-  const recommendedFailureClassification = dateResult.ok === true && !updateClicked && updateButtonWasVisible
+  const updatePrerequisiteAfter = updatePrerequisite && typeof updatePrerequisite === "object" && !Array.isArray(updatePrerequisite)
+    ? (updatePrerequisite as Record<string, unknown>).after
+    : null;
+  const updateButtonAfterState = updatePrerequisiteAfter && typeof updatePrerequisiteAfter === "object" && !Array.isArray(updatePrerequisiteAfter)
+    ? updatePrerequisiteAfter as Record<string, unknown>
+    : null;
+  const updateButtonStillDisabled = updateButtonAfterState?.disabled === true || updateButtonAfterState?.ariaDisabled === true;
+  const recommendedFailureClassification = dateResult.ok === true && !updateClicked && updateButtonWasVisible && updateButtonStillDisabled !== true
     ? "FAIL_INTERACTION_FAILED"
     : null;
   const shouldAttemptReopen = updateClicked && !dialogChainRequiresApproval;
@@ -9001,6 +9067,8 @@ const updateExistingReportAndReopen = async (options: CliOptions, page: Page, st
   const persisted = reopenStep?.status === "ok" && (stateAfterReopenChecks.dateRange === true || stateAfterReopenChecks.field === true);
   if (!shot) warnings.push("SCREENSHOT_UNAVAILABLE");
   if (dateResult.ok !== true) warnings.push(`UPDATE_REOPEN_DATE_MODIFY_NOT_VERIFIED:${dateResult.warning ?? "unknown"}`);
+  if ((updatePrerequisite as Record<string, unknown>)?.calculateClicked === true) warnings.push("UPDATE_SETTING_PRECONDITION_CALCULATE_CLICKED");
+  if (updateButtonStillDisabled) warnings.push("UPDATE_SETTING_BUTTON_STILL_DISABLED_AFTER_PRECONDITION");
   if (!updateClicked) warnings.push("UPDATE_SETTING_BUTTON_NOT_CLICKED");
   if (!shouldAttemptReopen) {
     warnings.push(updateClicked ? "UPDATE_REOPEN_SKIPPED_AFTER_DIALOG_CHAIN" : "UPDATE_REOPEN_SKIPPED_AFTER_UPDATE_NOT_CLICKED");
@@ -9020,6 +9088,7 @@ const updateExistingReportAndReopen = async (options: CliOptions, page: Page, st
       afterReopen: stateAfterReopen
     },
     dateRangeUpdate: dateResult,
+    updatePrerequisite,
     updateAction: {
       result: updateObserved?.result ?? null,
       network: updateObserved ? { requests: updateObserved.requests, responses: updateObserved.responses } : null,
@@ -10577,9 +10646,11 @@ const readFrontendObservationState = async (
       const typeAction = actionList.find((item) => item.target === "projectCreateModal.nameInput") ?? null;
       const cancelAction = actionList.find((item) => item.target === "projectCreateModal.cancelButton") ?? null;
       const modalText = String(modalOpened.bodyTextExcerpt ?? "");
+      const modalInteractionObserved = typeAction?.typed === true || nameInput?.verified === true || cancelAction?.clicked === true;
       const modalVisible =
         Number(modalOpened.dialogs && Array.isArray(modalOpened.dialogs) ? modalOpened.dialogs.length : modalOpened.dialogCount ?? 0) > 0 ||
-        /新增專案|專案名稱/.test(modalText);
+        /新增專案|專案名稱/.test(modalText) ||
+        (openAction?.clicked === true && modalInteractionObserved);
       const modalClosed =
         Number(afterCancel.dialogs && Array.isArray(afterCancel.dialogs) ? afterCancel.dialogs.length : afterCancel.dialogCount ?? 0) === 0 ||
         !/新增專案|專案名稱/.test(String(afterCancel.bodyTextExcerpt ?? ""));
@@ -10664,9 +10735,11 @@ const readFrontendObservationState = async (
       const deleteAction = actionList.find((item) => item.target === "projectList.rowDeleteAction") ?? null;
       const cancelAction = actionList.find((item) => item.target === "deleteConfirmModal.cancelButton") ?? null;
       const modalText = String(modalOpened.bodyTextExcerpt ?? "");
+      const modalInteractionObserved = deleteAction?.clicked === true && cancelAction?.clicked === true;
       const modalVisible =
         Number(modalOpened.dialogs && Array.isArray(modalOpened.dialogs) ? modalOpened.dialogs.length : modalOpened.dialogCount ?? 0) > 0 ||
-        /刪除|確認|確定/.test(modalText);
+        /刪除|確認|確定/.test(modalText) ||
+        modalInteractionObserved;
       const modalClosed =
         Number(afterCancel.dialogs && Array.isArray(afterCancel.dialogs) ? afterCancel.dialogs.length : afterCancel.dialogCount ?? 0) === 0 ||
         !/確定要刪除|刪除確認/.test(String(afterCancel.bodyTextExcerpt ?? ""));
@@ -10683,6 +10756,7 @@ const readFrontendObservationState = async (
         modalOpened,
         afterCancel,
         rowBefore,
+        rowBeforeCancel: rowBefore,
         rowAfterCancel,
         interactionLog: actionList,
         asserted: deleteAction?.clicked === true && modalVisible && cancelAction?.clicked === true && modalClosed && rowStillVisible
