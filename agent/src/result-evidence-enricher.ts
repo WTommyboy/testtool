@@ -137,6 +137,48 @@ const objectValue = (value: unknown): Record<string, unknown> | null =>
 const arrayValue = (value: unknown): Record<string, unknown>[] =>
   Array.isArray(value) ? value.flatMap((item) => objectValue(item) ? [objectValue(item) as Record<string, unknown>] : []) : [];
 
+const stringArray = (value: unknown): string[] =>
+  Array.isArray(value) ? value.filter((item): item is string => typeof item === "string" && item.trim().length > 0) : [];
+
+const normalizeCaseNo = (value: string): string =>
+  value.trim().replace(/\s+/g, "").replace(/^DEMO-/i, "").toUpperCase();
+
+const runCaseScopeContract = (runDir: string, caseNo: string): Record<string, unknown> | null => {
+  const candidates = [
+    path.join(runDir, "input", "domain_case_scope_contracts.json"),
+    path.join(process.cwd(), "domain-packs", "BI_OFFICIAL_UI_COLLAGE", "case-scope-runtime-contracts.json")
+  ];
+  const wanted = normalizeCaseNo(caseNo);
+  for (const filePath of candidates) {
+    const parsed = readJson(filePath);
+    const contracts = arrayValue(parsed?.contracts);
+    const contract = contracts.find((item) =>
+      typeof item.caseNo === "string" && normalizeCaseNo(item.caseNo) === wanted
+    );
+    if (contract) return contract;
+  }
+  return null;
+};
+
+const contractAllowsFunctionalFlowStateChangePass = (
+  contract: Record<string, unknown> | null,
+  passEvidence: Record<string, unknown>
+): boolean => {
+  if (!contract || contract.testTarget !== "functional_flow") return false;
+  const observationState = objectValue(passEvidence.observationState);
+  if (observationState?.asserted !== true) return false;
+  const evidenceObject = typeof observationState.evidenceObject === "string" ? observationState.evidenceObject : "";
+  if (!evidenceObject) return false;
+  const requiredActions = arrayValue(contract.requiredActions)
+    .filter((item) => (item.role ?? "under_test") === "under_test" && item.requiredForPass !== false);
+  if (requiredActions.length === 0) return false;
+  return requiredActions.every((item) => {
+    const evidenceRequirements = stringArray(item.evidenceRequirements);
+    return item.expectedOutcome === "state_changed" &&
+      evidenceRequirements.includes(evidenceObject);
+  });
+};
+
 const deterministicDateVariantPassEvidence = (runDir: string, caseNo: string): Record<string, unknown> | null => {
   const filePath = findCaseArtifact(runDir, caseNo, "date-variants-preview-evidence.json");
   const evidence = filePath ? readJson(filePath) : null;
@@ -190,6 +232,9 @@ const deterministicFrontendObservationPassEvidence = (runDir: string, caseNo: st
       evidenceObject: state.evidenceObject ?? null,
       asserted: state.asserted,
       assertions: state.assertions ?? null,
+      presetSwitches: state.presetSwitches ?? null,
+      failedPresetSwitches: state.failedPresetSwitches ?? null,
+      recommendedFailureClassification: state.recommendedFailureClassification ?? null,
       interactionLog: state.interactionLog ?? null
     }
   };
@@ -275,33 +320,39 @@ const buildDeterministicPassDetail = (options: {
   caseNo: string;
   previousDetail: Record<string, unknown>;
   passEvidence: Record<string, unknown>;
-}): Record<string, unknown> => ({
-  測試目的: firstDetailString(
-    options.previousDetail,
-    ["測試目的", "testPurpose", "目的"],
-    "Current-run helper evidence satisfies the case assertions."
-  ),
-  設定條件: firstDetailString(
-    options.previousDetail,
-    ["設定條件", "conditions", "前置條件"],
-    "Reused current-run helper artifacts and deterministic evidence contract."
-  ),
-  預期行為: firstDetailString(
-    options.previousDetail,
-    ["預期行為", "expected", "預期結果"],
-    "Required UI/data assertions are satisfied by helper evidence."
-  ),
-  實際行為: "Current-run helper evidence was already deterministic and satisfied this case, so the Agent promoted the prior BLOCKED result to PASS instead of leaving it as evidence-insufficient.",
-  currentRunEvidence: {
-    source: "uat-agent-deterministic-helper-judgment",
-    currentRunEvidence: true,
-    runId: options.runId,
-    caseNo: options.caseNo,
-    generatedAt: new Date().toISOString(),
-    ...options.passEvidence
-  },
-  previous_blocked_detail_json: options.previousDetail
-});
+  previousStatus?: "BLOCKED" | "FAIL";
+}): Record<string, unknown> => {
+  const previousStatus = options.previousStatus ?? "BLOCKED";
+  return {
+    測試目的: firstDetailString(
+      options.previousDetail,
+      ["測試目的", "testPurpose", "目的"],
+      "Current-run helper evidence satisfies the case assertions."
+    ),
+    設定條件: firstDetailString(
+      options.previousDetail,
+      ["設定條件", "conditions", "前置條件"],
+      "Reused current-run helper artifacts and deterministic evidence contract."
+    ),
+    預期行為: firstDetailString(
+      options.previousDetail,
+      ["預期行為", "expected", "預期結果"],
+      "Required UI/data assertions are satisfied by helper evidence."
+    ),
+    實際行為: `Current-run helper evidence was already deterministic and satisfied this case, so the Agent promoted the prior ${previousStatus} result to PASS instead of leaving an evidence-inconsistent judgment.`,
+    currentRunEvidence: {
+      source: "uat-agent-deterministic-helper-judgment",
+      currentRunEvidence: true,
+      runId: options.runId,
+      caseNo: options.caseNo,
+      generatedAt: new Date().toISOString(),
+      ...options.passEvidence
+    },
+    ...(previousStatus === "FAIL"
+      ? { previous_fail_detail_json: options.previousDetail }
+      : { previous_blocked_detail_json: options.previousDetail })
+  };
+};
 
 const buildDeterministicFailDetail = (options: {
   runId: string;
@@ -367,6 +418,31 @@ const appendGeneratedBugRow = (
   set(row, ["建議", "suggestion"], "Route to BI frontend. Verify the required visible UI action/state before accepting PASS evidence.");
   set(row, ["狀態", "status"], "OPEN");
   set(row, ["Evidence", "evidence"], "Generated by result evidence enricher from current-run helper evidence.");
+};
+
+const removeGeneratedBugRows = (
+  bugSheet: ExcelJS.Worksheet | undefined,
+  caseNo: string
+): number => {
+  if (!bugSheet) return 0;
+  const header = bugSheet.getRow(1);
+  const relatedCol = findColumn(header, ["關聯編號", "來源 Case", "case_no", "caseno"]);
+  const bugIdCol = findColumn(header, ["Bug ID", "bug_id"]);
+  const titleCol = findColumn(header, ["標題", "title"]);
+  if (!relatedCol) return 0;
+  let removed = 0;
+  for (let rowNo = bugSheet.rowCount; rowNo >= 2; rowNo -= 1) {
+    const row = bugSheet.getRow(rowNo);
+    const related = text(row.getCell(relatedCol).value);
+    const bugId = bugIdCol ? text(row.getCell(bugIdCol).value) : "";
+    const title = titleCol ? text(row.getCell(titleCol).value) : "";
+    const generated = /^AUTO-/i.test(bugId) || /^\[AUTO\]/i.test(title);
+    if (related === caseNo && generated) {
+      bugSheet.spliceRows(rowNo, 1);
+      removed += 1;
+    }
+  }
+  return removed;
 };
 
 const summarizeHelperPreRun = (filePath: string): Record<string, unknown> | null => {
@@ -484,17 +560,61 @@ export const ensureBlockedResultCurrentRunEvidence = async (options: {
     const caseNo = text(row.getCell(caseCol).value);
     if (!caseNo) continue;
     const status = text(row.getCell(statusCol).value).toUpperCase().replace(/\s+/g, "_");
+    const parseDetail = (): Record<string, unknown> | null => {
+      try {
+        const parsed = JSON.parse(text(row.getCell(detailCol).value)) as unknown;
+        if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("not object");
+        return parsed as Record<string, unknown>;
+      } catch {
+        return null;
+      }
+    };
     if (status !== "BLOCKED") {
+      if (status === "FAIL") {
+        const detail = parseDetail();
+        if (!detail) {
+          rows.push({ rowNo, caseNo, status, action: "skipped", reason: "detail_json is not a JSON object" });
+          continue;
+        }
+        const deterministicPass = deterministicHelperPassEvidence(options.runDir, caseNo);
+        const deterministicFail = deterministicFrontendObservationFailEvidence(options.runDir, caseNo) ??
+          deterministicReportMutationFailEvidence(options.runDir, caseNo);
+        const contract = runCaseScopeContract(options.runDir, caseNo);
+        if (
+          deterministicPass &&
+          !deterministicFail &&
+          contractAllowsFunctionalFlowStateChangePass(contract, deterministicPass)
+        ) {
+          row.getCell(statusCol).value = "PASS";
+          if (verdictCol) row.getCell(verdictCol).value = "";
+          row.getCell(detailCol).value = JSON.stringify(buildDeterministicPassDetail({
+            runId: options.runId,
+            caseNo,
+            previousDetail: detail,
+            passEvidence: {
+              ...deterministicPass,
+              judgmentOverride: "functional_flow_state_changed_asserted"
+            },
+            previousStatus: "FAIL"
+          }), null, 2);
+          const removedBugRows = removeGeneratedBugRows(bugSheet, caseNo);
+          rows.push({
+            rowNo,
+            caseNo,
+            status,
+            action: "deterministic_helper_pass",
+            reason: `functional_flow_state_changed_asserted${removedBugRows > 0 ? `_removed_${removedBugRows}_generated_bug_rows` : ""}`
+          });
+          updated = true;
+          continue;
+        }
+      }
       rows.push({ rowNo, caseNo, status, action: "unchanged", reason: "only BLOCKED rows are enriched" });
       continue;
     }
 
-    let detail: Record<string, unknown>;
-    try {
-      const parsed = JSON.parse(text(row.getCell(detailCol).value)) as unknown;
-      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("not object");
-      detail = parsed as Record<string, unknown>;
-    } catch {
+    const detail = parseDetail();
+    if (!detail) {
       rows.push({ rowNo, caseNo, status, action: "skipped", reason: "detail_json is not a JSON object" });
       continue;
     }

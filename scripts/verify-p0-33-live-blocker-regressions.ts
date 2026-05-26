@@ -92,6 +92,27 @@ const writeBlockedEvidenceWorkbook = async (filePath: string): Promise<void> => 
   await workbook.xlsx.writeFile(filePath);
 };
 
+const writeFalseFailEvidenceWorkbook = async (filePath: string): Promise<void> => {
+  const workbook = new ExcelJS.Workbook();
+  const sheet = workbook.addWorksheet("測試案例");
+  sheet.addRow(["編號", "結果", "失敗分類", "詳細紀錄JSON"]);
+  sheet.addRow([
+    "BIUI_COLLAGE_R001-L-10",
+    "FAIL",
+    "FAIL_INTERACTION_FAILED",
+    JSON.stringify({
+      測試目的: "L-10 functional-flow false FAIL fixture",
+      設定條件: "From-date composite endpoint controls were configured through the official date panel.",
+      預期行為: "功能流程應可切換自某日至昨日與自某日至今。",
+      實際行為: "The helper changed the date state, but the row writer treated labelApplied=false as a frontend failure."
+    })
+  ]);
+  const bugSheet = workbook.addWorksheet("Bug");
+  bugSheet.addRow(["嚴重度", "Bug ID", "關聯編號", "標題", "描述", "建議", "狀態", "Evidence"]);
+  bugSheet.addRow(["P2", "AUTO-BIUI_COLLAGE_R001-L-10", "BIUI_COLLAGE_R001-L-10", "[AUTO] L-10 false fail fixture", "Fixture bug row generated from false FAIL.", "Should be removed when deterministic pass overrides the false FAIL.", "OPEN", "fixture"]);
+  await workbook.xlsx.writeFile(filePath);
+};
+
 const readWorkbookStatuses = async (filePath: string): Promise<Record<string, { status: string; verdict: string }>> => {
   const workbook = new ExcelJS.Workbook();
   await workbook.xlsx.readFile(filePath);
@@ -106,6 +127,22 @@ const readWorkbookStatuses = async (filePath: string): Promise<Record<string, { 
     };
   }
   return result;
+};
+
+const readWorkbookBugRows = async (filePath: string): Promise<Array<{ bugId: string; caseNo: string }>> => {
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.readFile(filePath);
+  const sheet = workbook.getWorksheet("Bug");
+  if (!sheet) return [];
+  const rows: Array<{ bugId: string; caseNo: string }> = [];
+  for (let rowNo = 2; rowNo <= sheet.rowCount; rowNo += 1) {
+    const row = sheet.getRow(rowNo);
+    rows.push({
+      bugId: String(row.getCell(2).value ?? "").trim(),
+      caseNo: String(row.getCell(3).value ?? "").trim()
+    });
+  }
+  return rows;
 };
 
 const writeDeterministicEvidenceFixture = (runDir: string): void => {
@@ -202,6 +239,73 @@ const writeDeterministicEvidenceFixture = (runDir: string): void => {
     backToList: null,
     reopen: null,
     persisted: false
+  }, null, 2));
+};
+
+const writeFalseFailFunctionalFlowFixture = (runDir: string): void => {
+  const inputDir = path.join(runDir, "input");
+  fs.mkdirSync(inputDir, { recursive: true });
+  fs.writeFileSync(path.join(inputDir, "domain_case_scope_contracts.json"), JSON.stringify({
+    schemaVersion: "domain-case-scope-contracts-v1",
+    contracts: [
+      {
+        caseNo: "BIUI_COLLAGE_R001-L-10",
+        testTarget: "functional_flow",
+        requiredActions: [
+          {
+            actionId: "setFromDateToYesterday",
+            target: "dateRange.preset.fromDateToYesterday",
+            role: "under_test",
+            expectedOutcome: "state_changed",
+            evidenceRequirements: ["dateRange.presetSwitch.state"]
+          },
+          {
+            actionId: "setFromDateToToday",
+            target: "dateRange.preset.fromDateToToday",
+            role: "under_test",
+            expectedOutcome: "state_changed",
+            evidenceRequirements: ["dateRange.presetSwitch.state"]
+          }
+        ]
+      }
+    ]
+  }, null, 2));
+
+  const l10Dir = path.join(runDir, "output", "helper-artifacts", "BIUI_COLLAGE_R001-L-10");
+  fs.mkdirSync(l10Dir, { recursive: true });
+  fs.writeFileSync(path.join(l10Dir, "frontend-observation-evidence.json"), JSON.stringify({
+    schemaVersion: "frontend-observation-evidence-v1",
+    observationType: "datePanel",
+    observationState: {
+      evidenceObject: "dateRange.presetSwitch.state",
+      asserted: true,
+      recommendedFailureClassification: null,
+      failedPresetSwitches: [],
+      presetSwitches: [
+        {
+          target: "dateRange.preset.fromDateToYesterday",
+          clicked: true,
+          confirmed: true,
+          stateChanged: true,
+          labelApplied: false,
+          actualOutcome: "succeeded",
+          afterDateText: "2026/04/01 > 1 天前"
+        },
+        {
+          target: "dateRange.preset.fromDateToToday",
+          clicked: true,
+          confirmed: true,
+          stateChanged: true,
+          labelApplied: false,
+          actualOutcome: "succeeded",
+          afterDateText: "2026/04/01 > 0 天前"
+        }
+      ],
+      interactionLog: [
+        { action: "setDateRange", target: "dateRange.preset.fromDateToYesterday", clicked: true, stateChanged: true, actualOutcome: "succeeded" },
+        { action: "setDateRange", target: "dateRange.preset.fromDateToToday", clicked: true, stateChanged: true, actualOutcome: "succeeded" }
+      ]
+    }
   }, null, 2));
 };
 
@@ -400,6 +504,22 @@ const main = async (): Promise<void> => {
   assert.equal(statuses["BIUI_COLLAGE_R001-M-11"]?.verdict, "FAIL_INTERACTION_FAILED", "M-11 should carry a deterministic failure classification");
   assert.equal(statuses["BIUI_COLLAGE_R001-I-04"]?.status, "BLOCKED", "negative non-deterministic observation should remain BLOCKED");
 
+  const falseFailRoot = fs.mkdtempSync(path.join(os.tmpdir(), "p0-33-l10-false-fail-"));
+  const falseFailWorkbook = path.join(falseFailRoot, "false-fail-result.xlsx");
+  writeFalseFailFunctionalFlowFixture(falseFailRoot);
+  await writeFalseFailEvidenceWorkbook(falseFailWorkbook);
+  const falseFailEnrichment = await ensureBlockedResultCurrentRunEvidence({
+    filePath: falseFailWorkbook,
+    runId: "p0-33-l10-false-fail-fixture-run",
+    runDir: falseFailRoot
+  });
+  const falseFailStatuses = await readWorkbookStatuses(falseFailWorkbook);
+  const falseFailBugRows = await readWorkbookBugRows(falseFailWorkbook);
+  assert(falseFailEnrichment.rows.some((item) => item.caseNo === "BIUI_COLLAGE_R001-L-10" && item.action === "deterministic_helper_pass"), "L-10 functional-flow deterministic pass evidence must override false FAIL");
+  assert.equal(falseFailStatuses["BIUI_COLLAGE_R001-L-10"]?.status, "PASS", "L-10 false FAIL should become PASS when functional-flow stateChanged evidence is asserted");
+  assert.equal(falseFailStatuses["BIUI_COLLAGE_R001-L-10"]?.verdict, "", "L-10 false FAIL override should clear the fail classification");
+  assert(!falseFailBugRows.some((item) => item.caseNo === "BIUI_COLLAGE_R001-L-10"), "L-10 false FAIL override should remove matching generated bug rows");
+
   const prereqRoot = fs.mkdtempSync(path.join(os.tmpdir(), "p0-33-update-prereq-"));
   const prereqWorkbook = path.join(prereqRoot, "blocked-result.xlsx");
   await writeBlockedEvidenceWorkbook(prereqWorkbook);
@@ -462,6 +582,7 @@ const main = async (): Promise<void> => {
       "B-05/J-03 deterministic helper evidence promotes BLOCKED to PASS",
       "L-05 deterministic helper failure promotes BLOCKED to FAIL",
       "M-11 deterministic report mutation failure promotes BLOCKED to FAIL",
+      "L-10 functional-flow deterministic helper pass evidence overrides false FAIL",
       "M-11 disabled-by-calculation prerequisite does not promote to product FAIL"
     ]
   }, null, 2));
