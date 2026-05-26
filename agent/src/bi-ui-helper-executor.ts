@@ -1525,10 +1525,35 @@ const datePresetLabelRegex = (label: string): RegExp => {
 };
 
 const isDatePickerOpen = async (page: Page): Promise<boolean> => {
-  return page.locator("#datePickerPopup").first().evaluate((element) => {
-    const rect = element.getBoundingClientRect();
-    const style = window.getComputedStyle(element);
-    return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden";
+  return page.evaluate(() => {
+    const detectDatePickerOpenInDom = (): boolean => {
+      const normalize = (value: string | null | undefined): string => (value ?? "").trim().replace(/\s+/g, "");
+      const isVisible = (element: Element): boolean => {
+        const rect = element.getBoundingClientRect();
+        const style = window.getComputedStyle(element);
+        return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden" && style.opacity !== "0";
+      };
+      const visibleText = (element: Element): string => {
+        if (!isVisible(element)) return "";
+        return normalize((element as HTMLElement).innerText || element.textContent || "");
+      };
+      const popup = document.querySelector("#datePickerPopup");
+      if (popup && isVisible(popup)) return true;
+
+      const candidates = Array.from(document.querySelectorAll<HTMLElement>(
+        "[role='dialog'], [class*='popover'], [class*='Popover'], [class*='popup'], [class*='Popup'], [class*='calendar'], [class*='Calendar'], [class*='date'], [class*='Date'], div, section"
+      ));
+      return candidates.some((element) => {
+        const text = visibleText(element);
+        if (!text) return false;
+        const hasDateMode = /動態時間|靜態時間|動態|靜態/.test(text);
+        const hasDateControls = /確認|確定|取消/.test(text) || element.querySelectorAll("input").length >= 2;
+        const hasPresetGrid = /今日|昨日|本週|上週|本月|上月|過去|最近/.test(text) &&
+          element.querySelectorAll("button, [role='button'], [role='tab']").length >= 4;
+        return (hasDateMode && hasDateControls) || (hasPresetGrid && /確認|確定|取消/.test(text));
+      });
+    };
+    return detectDatePickerOpenInDom();
   }).catch(() => false);
 };
 
@@ -8859,7 +8884,7 @@ const resolveCopyReportName = (options: CliOptions): string => {
 
 const clickUpdateSettingButton = async (page: Page): Promise<boolean> => {
   const state = await readButtonStateByText(page, /^(更新設定|更新|儲存設定)$/).catch(() => null);
-  if (state?.disabled === true || state?.ariaDisabled === true || state?.pointerEvents === "none") return false;
+  if (state?.disabled === true || state?.ariaDisabled === true || state?.pointerEvents === "none" || state?.cursor === "not-allowed") return false;
   const clicked = await clickFirstVisible([
     page.getByRole("button", { name: /更新設定|更新|儲存設定/ }),
     page.getByText("更新設定", { exact: true }),
@@ -8921,14 +8946,20 @@ const readButtonStateByText = async (page: Page, pattern: RegExp): Promise<Recor
     return candidates[0] ?? null;
   }, { source: pattern.source, flags: pattern.flags });
 
-const prepareUpdateSettingButton = async (page: Page): Promise<Record<string, unknown>> => {
+const prepareUpdateSettingButton = async (
+  page: Page,
+  options: { forceCalculate?: boolean; reason?: string } = {}
+): Promise<Record<string, unknown>> => {
   const before = await readButtonStateByText(page, /^(更新設定|更新|儲存設定)$/);
   const bodyTextBefore = await page.locator("body").innerText({ timeout: 5000 }).catch(() => "");
-  const needsCalculation = before?.disabled === true ||
+  const needsCalculation = options.forceCalculate === true ||
+    before?.disabled === true ||
     before?.ariaDisabled === true ||
+    before?.cursor === "not-allowed" ||
+    /請先計算/.test(bodyTextBefore) ||
     (before === null && /更新設定|更新|儲存設定/.test(bodyTextBefore) && /計算|執行/.test(bodyTextBefore));
   if (!needsCalculation) {
-    return { before, calculateClicked: false, after: before };
+    return { before, forceCalculate: options.forceCalculate === true, calculateClicked: false, after: before };
   }
   let calculateClicked = false;
   let calculateError: string | null = null;
@@ -8942,6 +8973,8 @@ const prepareUpdateSettingButton = async (page: Page): Promise<Record<string, un
   const after = await readButtonStateByText(page, /^(更新設定|更新|儲存設定)$/);
   return {
     before,
+    forceCalculate: options.forceCalculate === true,
+    calculateReason: options.reason ?? (before?.cursor === "not-allowed" ? "update_button_cursor_not_allowed" : "update_button_requires_calculation"),
     calculateClicked,
     ...(calculateError ? { calculateError } : {}),
     after
@@ -9131,7 +9164,10 @@ const updateExistingReportAndReopen = async (options: CliOptions, page: Page, st
     uiProfiles: []
   }));
   const stateAfterModify = await readStateDelta(page, { ...options.params, dateRange: targetDateRange }).catch((error) => ({ readError: error instanceof Error ? error.message : String(error) }));
-  const updatePrerequisite = await prepareUpdateSettingButton(page).catch((error) => ({
+  const updatePrerequisite = await prepareUpdateSettingButton(page, {
+    forceCalculate: dateResult.ok === true,
+    reason: "after_report_setting_mutation"
+  }).catch((error) => ({
     error: error instanceof Error ? error.message : String(error)
   }));
   const dialogs: Record<string, unknown>[] = [];
@@ -9181,7 +9217,10 @@ const updateExistingReportAndReopen = async (options: CliOptions, page: Page, st
   const updateButtonAfterState = updatePrerequisiteAfter && typeof updatePrerequisiteAfter === "object" && !Array.isArray(updatePrerequisiteAfter)
     ? updatePrerequisiteAfter as Record<string, unknown>
     : null;
-  const updateButtonStillDisabled = updateButtonAfterState?.disabled === true || updateButtonAfterState?.ariaDisabled === true;
+  const updateButtonStillDisabled = updateButtonAfterState?.disabled === true ||
+    updateButtonAfterState?.ariaDisabled === true ||
+    updateButtonAfterState?.pointerEvents === "none" ||
+    updateButtonAfterState?.cursor === "not-allowed";
   const recommendedFailureClassification = dateResult.ok === true && !updateClicked && updateButtonWasVisible && updateButtonStillDisabled !== true
     ? "FAIL_INTERACTION_FAILED"
     : null;
@@ -10080,6 +10119,11 @@ const observeFrontendVisibleUiActions = async (
   const targets = frontendObservationTargets(params);
   const actions: Record<string, unknown>[] = [];
   const clickDateRangeButton = async (): Promise<boolean> => {
+    const datePanelAlreadyOpened = await isDatePickerOpen(page);
+    if (datePanelAlreadyOpened) {
+      actions.push({ action: "open", target: "dateRange.button", clicked: false, datePanelAlreadyOpened });
+      return true;
+    }
     const clicked = await clickFirstVisible([
       page.locator('button[aria-label="時間設置"]'),
       page.getByRole("button", { name: /時間|日期|昨日|今日|上月|本月|過去|最近/ }),
