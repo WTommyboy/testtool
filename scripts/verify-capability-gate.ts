@@ -996,6 +996,74 @@ const main = (): void => {
       "project-page navigation case should stop at openProject and not enter report editor"
     );
 
+    const projectToolbarObservationCase = {
+      ...collageSaveReopenCase,
+      caseNo: "BIUI_COLLAGE_R001-J-02",
+      caseTitle: "專案頁未勾選報表時下載/刪除按鈕 disabled",
+      testType: "前端呈現",
+      riskLevel: "🟢 觀察",
+      testTarget: "前端呈現",
+      cleanupChecklist: "欄位=不影響;篩選=不影響;分組=不影響;時間=不影響;顯示=不影響",
+      preconditions: "起始頁面: 拼貼模式專案頁",
+      stepsSummary: "進入專案頁，不勾選任何報表，觀察 toolbar 下載/刪除 icon disabled、新增報表 enabled。",
+      expected: "未勾選時下載與刪除 icon 反灰不可點；新增報表仍可點",
+      validationMethod: "Evidence: DOM button disabled state + screenshot"
+    };
+    const projectToolbarGate = evaluateCapabilityGate(projectToolbarObservationCase, null);
+    assert.equal(projectToolbarGate.supportStatus, "supported", `J-02 frontend observation should be helper-supported; report=${JSON.stringify(projectToolbarGate)}`);
+    assert.equal(projectToolbarGate.detected.observationType, "projectToolbar");
+    assert.ok(projectToolbarGate.supportedHelperTemplates.includes("collage.observeFrontendState"), "J-02 should advertise frontend observation helper");
+    const projectToolbarPlan = buildHelperExecutionPlan({ runDir, currentCase: projectToolbarObservationCase, helperHints: null });
+    assert.deepEqual(
+      projectToolbarPlan.actions.map((item) => item.template),
+      ["collage.openProject", "collage.observeFrontendState"],
+      "J-02 observation must not enter editor or run preview"
+    );
+    assert.ok(!projectToolbarPlan.actions.some((item) => item.template === "collage.configureMetric"), "J-02 observation must not configure metrics");
+    assert.ok(!projectToolbarPlan.actions.some((item) => item.template === "collage.runPreviewAndCollectEvidence"), "J-02 observation must not require preview");
+
+    const datePresetObservationCase = {
+      ...collageSaveReopenCase,
+      caseNo: "BIUI_COLLAGE_R001-L-04",
+      caseTitle: "時間 preset「昨日」按下後日期按鈕文案更新",
+      testType: "前端呈現",
+      riskLevel: "🟢 觀察",
+      testTarget: "前端呈現",
+      cleanupChecklist: "欄位=不影響;篩選=不影響;分組=不影響;時間=不影響;顯示=不影響",
+      preconditions: "起始頁面: 拼貼模式新增報表頁",
+      stepsSummary: "開啟時間面板，點擊 preset「昨日」，確認日期按鈕顯示昨日；本題不選欄位、不按執行、不跑 preview。",
+      expected: "日期控制文案切換為「昨日」",
+      validationMethod: "Evidence: date UI DOM + screenshot"
+    };
+    const datePresetObservationHints: HelperHints = {
+      ...manualAiDateHints,
+      caseId: "BIUI_COLLAGE_R001-L-04",
+      automationLevel: "helper",
+      operationTemplate: "collage.observeFrontendState",
+      params: {
+        mode: "拼貼",
+        observationType: "dateRangePresetSwitch",
+        observationContext: "editor",
+        dateRange: "昨日",
+        doNotSave: true,
+        doNotReopen: true,
+        doNotDownloadCsv: true
+      },
+      requiredEvidence: ["dom.state", "frontendObservationEvidence", "screenshot"]
+    };
+    const datePresetObservationGate = evaluateCapabilityGate(datePresetObservationCase, datePresetObservationHints);
+    assert.equal(datePresetObservationGate.supportStatus, "supported", `L-04 frontend observation should be helper-supported; report=${JSON.stringify(datePresetObservationGate)}`);
+    assert.equal(datePresetObservationGate.detected.observationType, "dateRangePresetSwitch");
+    assert.equal(datePresetObservationGate.detected.observationContext, "editor");
+    const datePresetObservationPlan = buildHelperExecutionPlan({ runDir, currentCase: datePresetObservationCase, helperHints: datePresetObservationHints });
+    assert.deepEqual(
+      datePresetObservationPlan.actions.map((item) => item.template),
+      ["collage.openProject", "collage.createReport", "collage.observeFrontendState"],
+      "L-04 observation should collect date UI evidence without metric/precondition preview"
+    );
+    assert.ok(!datePresetObservationPlan.actions.some((item) => item.template === "collage.configureMetric"), "L-04 observation must not configure metrics");
+    assert.ok(!datePresetObservationPlan.actions.some((item) => item.template === "collage.runPreviewAndCollectEvidence"), "L-04 observation must not require selected fields/preview");
+
     const selectAllCase = {
       ...collageSaveReopenCase,
       caseNo: "OTTEST004-D-02",
@@ -1145,6 +1213,8 @@ const main = (): void => {
           "manual hybrid D0 CSV baseline cases chain date preview, save, and report-list download",
           "relative D0 CSV baseline cases create unique reports and defer D+1 comparison",
           "delete temporary report cases create a pending Tool Bridge helper action",
+          "frontend observation project-toolbar cases route to observeFrontendState without preview",
+          "frontend observation date preset cases route to observeFrontendState without selected-field preview preconditions",
           "selectAllFields helper hints preserve sourceReports/expected count and avoid synthetic field text",
           "actual D-02 expectedSources/expectedTotalFieldCount infer select-all 4-source/72-field helper params",
           "A-06 all-zero field inspection uses a dedicated select-all preview evidence helper",

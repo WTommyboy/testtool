@@ -257,6 +257,7 @@ const allZeroFieldInspectionEvidencePath = (options: CliOptions): string => path
 const deleteTemporaryReportEvidencePath = (options: CliOptions): string => path.join(artifactRoot(options), "delete-temporary-report-evidence.json");
 const calculatedFieldEvidencePath = (options: CliOptions): string => path.join(artifactRoot(options), "calculated-field-evidence.json");
 const createProjectEvidencePath = (options: CliOptions): string => path.join(artifactRoot(options), "create-project-evidence.json");
+const frontendObservationEvidencePath = (options: CliOptions): string => path.join(artifactRoot(options), "frontend-observation-evidence.json");
 const createdProjectStatePath = (options: CliOptions): string => path.join(artifactRoot(options), "created-project.json");
 const dateUiEvidencePath = (options: CliOptions, suffix: string | null = null): string =>
   path.join(artifactRoot(options), suffix ? `date-ui-evidence-${sanitize(suffix)}.json` : "date-ui-evidence.json");
@@ -627,7 +628,35 @@ const createReport = (
 const browserSessionWindowNamePrefix = (lease: BrowserSessionLease): string =>
   `uat-tool:${lease.runId}:${lease.caseNo}:${lease.generation}`;
 
-const isGalaxyBiDevUrl = (url: string): boolean => /^https:\/\/galaxy\.games\.gamania\.com\/biapi-dev\//i.test(url);
+const GALAXY_BI_HOST = "galaxy.games.gamania.com";
+const GALAXY_BI_DEV_PATH_PREFIXES = ["/biapi-dev", "/bi-dev"] as const;
+
+const parseHttpUrl = (url: string | null | undefined): URL | null => {
+  if (!url) return null;
+  try {
+    return new URL(url);
+  } catch {
+    return null;
+  }
+};
+
+const isAllowedGalaxyBiPath = (pathname: string): boolean =>
+  GALAXY_BI_DEV_PATH_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
+
+const isGalaxyBiDevUrl = (url: string, expectedDevUrl?: string | null): boolean => {
+  const candidate = parseHttpUrl(url);
+  if (!candidate) return false;
+  if (candidate.protocol !== "https:") return false;
+  if (candidate.hostname.toLowerCase() !== GALAXY_BI_HOST) return false;
+  if (!isAllowedGalaxyBiPath(candidate.pathname)) return false;
+
+  const expected = parseHttpUrl(expectedDevUrl);
+  if (!expected) return true;
+  if (expected.protocol !== "https:") return false;
+  if (expected.hostname.toLowerCase() !== GALAXY_BI_HOST) return false;
+  if (!isAllowedGalaxyBiPath(expected.pathname)) return false;
+  return candidate.origin === expected.origin;
+};
 
 const readPageBrowserSessionMarker = async (page: Page): Promise<{ windowName: string; sessionRaw: string | null; url: string } | null> => {
   try {
@@ -659,7 +688,7 @@ const browserSessionEvidence = (
   targetBinding: {
     resolvedBy: "window.name",
     tokenMatch: true,
-    urlMatch: isGalaxyBiDevUrl(page.url()),
+    urlMatch: isGalaxyBiDevUrl(page.url(), lease.devUrl),
     targetIdMatch: "not_checked",
     pageUrl: page.url()
   },
@@ -700,8 +729,8 @@ const resolveBrowserSessionPage = async (
     const marker = await readPageBrowserSessionMarker(page);
     if (!marker) continue;
     if (marker.windowName === lease.windowName) {
-      if (!isGalaxyBiDevUrl(marker.url)) {
-        throw new HelperBlockedError(`BROWSER_SESSION_URL_MISMATCH:url=${marker.url}`);
+      if (!isGalaxyBiDevUrl(marker.url, lease.devUrl)) {
+        throw new HelperBlockedError(`BROWSER_SESSION_URL_MISMATCH:url=${marker.url};leaseDevUrl=${lease.devUrl ?? "null"}`);
       }
       return {
         page,
@@ -713,7 +742,7 @@ const resolveBrowserSessionPage = async (
     }
   }
 
-  const targetStillExists = pages.some((page) => page.url() === lease.devUrl || isGalaxyBiDevUrl(page.url()));
+  const targetStillExists = pages.some((page) => page.url() === lease.devUrl || isGalaxyBiDevUrl(page.url(), lease.devUrl));
   if (targetStillExists) {
     throw new HelperBlockedError(
       `BROWSER_SESSION_TOKEN_MISMATCH:expected=${browserSessionWindowNamePrefix(lease)};uatTargets=${JSON.stringify(mismatches).slice(0, 1000)}`
@@ -5697,6 +5726,330 @@ const downloadCsvAndComparePreview = async (options: CliOptions, page: Page, sta
   );
 };
 
+const readFrontendObservationSnapshot = async (page: Page): Promise<Record<string, unknown>> => {
+  return page.evaluate(() => {
+    const normalize = (value: string | null | undefined) => (value ?? "").trim().replace(/\s+/g, " ");
+    const isVisible = (element: Element): boolean => {
+      const rect = element.getBoundingClientRect();
+      const style = window.getComputedStyle(element);
+      return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden" && style.opacity !== "0";
+    };
+    const rectFor = (element: Element) => {
+      const rect = element.getBoundingClientRect();
+      return { x: Math.round(rect.x), y: Math.round(rect.y), width: Math.round(rect.width), height: Math.round(rect.height) };
+    };
+    const disabledFor = (element: HTMLElement): boolean => {
+      const style = window.getComputedStyle(element);
+      const className = typeof element.className === "string" ? element.className : "";
+      return (
+        ("disabled" in element && Boolean((element as HTMLButtonElement).disabled)) ||
+        element.getAttribute("aria-disabled") === "true" ||
+        /disabled|disable|inactive|readonly/i.test(className) ||
+        Number.parseFloat(style.opacity || "1") < 0.35
+      );
+    };
+    const elementRecord = (element: HTMLElement, index: number) => ({
+      index,
+      tagName: element.tagName.toLowerCase(),
+      text: normalize(element.innerText || element.textContent).slice(0, 180),
+      role: element.getAttribute("role"),
+      ariaLabel: element.getAttribute("aria-label"),
+      title: element.getAttribute("title"),
+      className: typeof element.className === "string" ? element.className.slice(0, 240) : "",
+      disabled: disabledFor(element),
+      rect: rectFor(element)
+    });
+    const all = Array.from(document.querySelectorAll<HTMLElement>("body *"));
+    const visible = all.map((element, index) => ({ element, index })).filter(({ element }) => isVisible(element));
+    const buttons = Array.from(document.querySelectorAll<HTMLElement>("button, a, [role='button']"))
+      .flatMap((element, index) => isVisible(element) ? [elementRecord(element, index)] : [])
+      .slice(0, 120);
+    const inputs = Array.from(document.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>("input, textarea"))
+      .flatMap((element, index) => isVisible(element) ? [{
+        ...elementRecord(element, index),
+        type: element instanceof HTMLInputElement ? element.type : "textarea",
+        placeholder: normalize(element.placeholder).slice(0, 160),
+        value: normalize(element.value).slice(0, 160),
+        readonly: element.readOnly
+      }] : [])
+      .slice(0, 80);
+    const selects = Array.from(document.querySelectorAll<HTMLSelectElement>("select"))
+      .flatMap((select, index) => isVisible(select) ? [{
+        ...elementRecord(select, index),
+        value: select.value,
+        selectedText: normalize(select.selectedOptions?.[0]?.textContent),
+        options: Array.from(select.options).slice(0, 60).map((option) => ({
+          value: option.value,
+          text: normalize(option.textContent),
+          selected: option.selected,
+          disabled: option.disabled
+        }))
+      }] : [])
+      .slice(0, 40);
+    const dialogs = Array.from(document.querySelectorAll<HTMLElement>("[role='dialog'], .modal, .ant-modal, .MuiDialog-root, .swal2-popup"))
+      .flatMap((dialog, index) => isVisible(dialog) ? [{
+        ...elementRecord(dialog, index),
+        textExcerpt: normalize(dialog.innerText || dialog.textContent).slice(0, 1200),
+        buttons: Array.from(dialog.querySelectorAll<HTMLElement>("button, [role='button']")).flatMap((button, buttonIndex) =>
+          isVisible(button) ? [elementRecord(button, buttonIndex)] : []
+        )
+      }] : [])
+      .slice(0, 12);
+    const toastLike = visible
+      .filter(({ element }) => /toast|snackbar|alert|message|notification|tooltip|popover/i.test(`${element.className} ${element.getAttribute("role") ?? ""}`))
+      .map(({ element, index }) => elementRecord(element, index))
+      .slice(0, 20);
+    const datePicker = document.querySelector<HTMLElement>("#datePickerPopup");
+    return {
+      url: location.href,
+      title: document.title,
+      bodyTextExcerpt: normalize(document.body.innerText).slice(0, 3000),
+      controls: { buttons, inputs, selects },
+      dialogs,
+      toastLike,
+      datePicker: datePicker ? {
+        visible: isVisible(datePicker),
+        textExcerpt: normalize(datePicker.innerText || datePicker.textContent).slice(0, 1800),
+        buttons: Array.from(datePicker.querySelectorAll<HTMLElement>("button, [role='button']")).flatMap((button, index) =>
+          isVisible(button) ? [elementRecord(button, index)] : []
+        )
+      } : null
+    };
+  });
+};
+
+const observeModalTriggerAndCancel = async (
+  page: Page,
+  triggerPattern: RegExp,
+  cancelPattern: RegExp = /取消|關閉|返回|不儲存|否|No/i
+): Promise<Record<string, unknown>> => {
+  const dialogs: Record<string, unknown>[] = [];
+  const dialogHandler = async (dialog: Dialog) => {
+    const record = { type: dialog.type(), message: dialog.message(), defaultValue: dialog.defaultValue(), handledAction: "dismiss" };
+    dialogs.push(record);
+    await dialog.dismiss().catch(() => undefined);
+  };
+  page.once("dialog", dialogHandler);
+  const before = await readFrontendObservationSnapshot(page);
+  const clicked = await clickFirstVisible([
+    page.locator("button, a, [role='button']").filter({ hasText: triggerPattern }),
+    page.getByText(triggerPattern, { exact: false })
+  ], 8000);
+  await page.waitForTimeout(800);
+  const afterTrigger = await readFrontendObservationSnapshot(page);
+  const cancelled = clicked
+    ? await clickFirstVisible([
+        page.locator("[role='dialog'], .modal, .ant-modal, .MuiDialog-root, .swal2-popup").locator("button, [role='button']").filter({ hasText: cancelPattern }),
+        page.locator("button, [role='button']").filter({ hasText: cancelPattern })
+      ], 5000).catch(() => false)
+    : false;
+  if (!cancelled) await page.keyboard.press("Escape").catch(() => undefined);
+  await page.waitForTimeout(500);
+  return {
+    before,
+    trigger: triggerPattern.source,
+    clicked,
+    nativeDialogs: dialogs,
+    afterTrigger,
+    cancelled,
+    afterCancel: await readFrontendObservationSnapshot(page)
+  };
+};
+
+const hoverFirstMatchingControl = async (page: Page, pattern: RegExp): Promise<Record<string, unknown>> => {
+  const candidates = await page.evaluate((source) => {
+    const regex = new RegExp(source, "i");
+    const normalize = (value: string | null | undefined) => (value ?? "").trim().replace(/\s+/g, " ");
+    const isVisible = (element: Element): boolean => {
+      const rect = element.getBoundingClientRect();
+      const style = window.getComputedStyle(element);
+      return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden" && style.opacity !== "0";
+    };
+    return Array.from(document.querySelectorAll<HTMLElement>("button, a, [role='button'], [title], [aria-label]")).flatMap((element, index) => {
+      if (!isVisible(element)) return [];
+      const haystack = [
+        normalize(element.innerText || element.textContent),
+        element.getAttribute("title"),
+        element.getAttribute("aria-label"),
+        element.getAttribute("onclick"),
+        typeof element.className === "string" ? element.className : ""
+      ].join(" ");
+      if (!regex.test(haystack)) return [];
+      const rect = element.getBoundingClientRect();
+      return [{
+        index,
+        text: normalize(element.innerText || element.textContent),
+        title: element.getAttribute("title"),
+        ariaLabel: element.getAttribute("aria-label"),
+        rect: { x: Math.round(rect.x), y: Math.round(rect.y), width: Math.round(rect.width), height: Math.round(rect.height) }
+      }];
+    });
+  }, pattern.source);
+  const first = (candidates as Array<Record<string, unknown>>)[0];
+  if (typeof first?.index !== "number") return { hovered: false, candidates };
+  await page.locator("button, a, [role='button'], [title], [aria-label]").nth(first.index).hover({ timeout: 5000 }).catch(() => undefined);
+  await page.waitForTimeout(800);
+  return {
+    hovered: true,
+    selected: first,
+    candidates,
+    afterHover: await readFrontendObservationSnapshot(page)
+  };
+};
+
+const observeFrontendState = async (options: CliOptions, page: Page, startedAt: string): Promise<HelperReport> => {
+  const observationType = firstStringParam(options.params, ["observationType", "frontendObservationType", "uiObservationType"]) ?? "unknown";
+  const observationContext = firstStringParam(options.params, ["observationContext", "frontendObservationContext", "uiObservationContext"]) ?? "unknown";
+  const warnings: string[] = [];
+  const artifacts: Record<string, string> = {};
+  const uiProfileBefore = await captureUiDomProfile(options, page, "frontendObservation.before");
+  const before = await readFrontendObservationSnapshot(page);
+  const operations: Array<Record<string, unknown>> = [];
+
+  try {
+    if ((observationContext === "editor" || ["datePanel", "dateRangePresetSwitch", "validationMessage", "fieldPicker", "editorDownload"].includes(observationType)) &&
+      !/報表設定|儲存報表|\+ 新增欄位|執行|時間區間/.test(String(before.bodyTextExcerpt ?? ""))) {
+      await ensureCollageProjectSelected(options, page).catch((error) => {
+        warnings.push(`OBSERVATION_EDITOR_NAV_PROJECT_SELECTION_FAILED:${error instanceof Error ? error.message : String(error)}`);
+      });
+      await clickCreateReportButton(page).catch((error) => {
+        warnings.push(`OBSERVATION_EDITOR_NAV_CREATE_REPORT_FAILED:${error instanceof Error ? error.message : String(error)}`);
+      });
+      await page.waitForTimeout(1000);
+      operations.push({ type: "best_effort_editor_navigation" });
+    }
+
+    switch (observationType) {
+      case "datePanel":
+      case "dateRangePresetSwitch": {
+        const requested = nonNeutralUiTarget(firstStringParam(options.params, ["dateRange", "timeRange", "datePreset", "requestedDate"]));
+        const dateOperation = requested && observationType === "dateRangePresetSwitch"
+          ? await setDatePreset(options, page, requested).catch((error) => ({ ok: false, warning: error instanceof Error ? error.message : String(error) }))
+          : await openDatePicker(options, page, "frontendObservation.datePanel").catch((error) => ({ ok: false, warning: error instanceof Error ? error.message : String(error), uiProfiles: [] }));
+        const dateUiEvidence = await readDateUiEvidence(page, requested, options.params).catch((error) => ({ error: error instanceof Error ? error.message : String(error) }));
+        const dateUiArtifact = "warnings" in dateUiEvidence ? writeDateUiEvidenceArtifact(options, dateUiEvidence as DateUiEvidence) : null;
+        if (dateUiArtifact) artifacts.dateUiEvidence = dateUiArtifact;
+        operations.push({ type: observationType, requested, dateOperation, dateUiEvidence });
+        break;
+      }
+      case "validationMessage": {
+        const observed = await observeDuring(page, async () => {
+          const clicked = await clickFirstVisible([
+            page.getByText("計算", { exact: true }),
+            page.getByText("執行", { exact: true }),
+            page.locator("button").filter({ hasText: /計算|執行/ })
+          ], 10000);
+          await page.waitForTimeout(1500);
+          return { clicked };
+        });
+        operations.push({
+          type: "validationMessage",
+          triggerResult: observed.result,
+          network: { requests: observed.requests, responses: observed.responses },
+          after: await readFrontendObservationSnapshot(page)
+        });
+        break;
+      }
+      case "fieldPicker": {
+        const addOperation = await clickMetricAddFieldControl(page, String(firstStringParam(options.params, ["field", "metric", "metricField"]) ?? "")).catch((error) => {
+          warnings.push(`FIELD_PICKER_OPEN_NOT_VERIFIED:${error instanceof Error ? error.message : String(error)}`);
+          return null;
+        });
+        await page.waitForTimeout(700);
+        const items = await extractFieldPickerDomItems(page).catch((error) => {
+          warnings.push(`FIELD_PICKER_DOM_EXTRACT_FAILED:${error instanceof Error ? error.message : String(error)}`);
+          return [];
+        });
+        operations.push({ type: "fieldPicker", addOperation, itemCount: items.length, items: items.slice(0, 80) });
+        break;
+      }
+      case "sourceReportPicker": {
+        const clicked = await clickFirstVisible([
+          page.getByText(/請選擇報表|來源報表|每日報表|共享報表/i, { exact: false }),
+          page.locator("button, [role='button'], select").filter({ hasText: /請選擇報表|來源報表|每日報表|共享報表/i })
+        ], 8000).catch(() => false);
+        await page.waitForTimeout(800);
+        operations.push({ type: "sourceReportPicker", clicked, after: await readFrontendObservationSnapshot(page) });
+        break;
+      }
+      case "projectCreateModal":
+      case "projectLimitToast": {
+        const beforeClick = await readCreateProjectModalState(page).catch(() => null);
+        const clicked = await clickCreateProjectButton(page).then(() => true).catch((error) => {
+          warnings.push(`CREATE_PROJECT_BUTTON_OBSERVATION_CLICK_FAILED:${error instanceof Error ? error.message : String(error)}`);
+          return false;
+        });
+        await page.waitForTimeout(1000);
+        const afterClick = await readCreateProjectModalState(page).catch(() => null);
+        await page.keyboard.press("Escape").catch(() => undefined);
+        operations.push({ type: observationType, clicked, beforeClick, afterClick, afterEscape: await readFrontendObservationSnapshot(page) });
+        break;
+      }
+      case "rowDeleteTooltip": {
+        operations.push({ type: "rowDeleteTooltip", ...(await hoverFirstMatchingControl(page, /刪除|删除|delete|trash|remove|🗑/i)) });
+        break;
+      }
+      case "deleteCancelFlow": {
+        operations.push({ type: "deleteCancelFlow", ...(await observeModalTriggerAndCancel(page, /刪除|删除|delete|trash|remove|🗑/i)) });
+        break;
+      }
+      case "saveModalCancel": {
+        operations.push({ type: "saveModalCancel", ...(await observeModalTriggerAndCancel(page, /儲存|保存|save/i)) });
+        break;
+      }
+      case "copyModalCancel": {
+        operations.push({ type: "copyModalCancel", ...(await observeModalTriggerAndCancel(page, /複製|复制|copy|duplicate/i)) });
+        break;
+      }
+      case "editorDownload":
+      case "projectToolbar":
+      case "sidebarGroup":
+      case "userButton":
+      default: {
+        operations.push({ type: observationType, snapshotOnly: true, after: await readFrontendObservationSnapshot(page) });
+      }
+    }
+  } catch (error) {
+    warnings.push(`FRONTEND_OBSERVATION_OPERATION_ERROR:${error instanceof Error ? error.message : String(error)}`);
+  }
+
+  const after = await readFrontendObservationSnapshot(page).catch((error) => ({ error: error instanceof Error ? error.message : String(error) }));
+  const uiProfileAfter = await captureUiDomProfile(options, page, "frontendObservation.after");
+  const shot = await screenshot(options, page, "frontend-observation");
+  const evidence = {
+    schemaVersion: "frontend-observation-evidence-v1",
+    generatedAt: new Date().toISOString(),
+    caseId: options.caseId,
+    observationType,
+    observationContext,
+    before,
+    after,
+    operations,
+    uiProfiles: { before: uiProfileBefore, after: uiProfileAfter },
+    policy: "Helper collected DOM/screenshot/visible UI interaction evidence only. Codex/result gate must judge PASS/FAIL/BLOCKED from case scope; helper status ok does not mean testcase pass."
+  };
+  ensureDir(artifactRoot(options));
+  fs.writeFileSync(frontendObservationEvidencePath(options), `${JSON.stringify(evidence, null, 2)}\n`);
+  return createReport(
+    options,
+    "ok",
+    startedAt,
+    {
+      domState: await readDomState(page),
+      frontendObservationEvidence: evidence
+    },
+    {
+      frontendObservationEvidence: frontendObservationEvidencePath(options),
+      ...(shot ? { screenshot: shot } : {}),
+      ...artifacts
+    },
+    [
+      ...warnings,
+      ...(shot ? [] : ["SCREENSHOT_UNAVAILABLE"])
+    ]
+  );
+};
+
 const approvalRequired = (options: CliOptions, action: string, startedAt: string): HelperReport => {
   const requestId = `${options.caseId}-${sanitize(options.action)}`;
   return createReport(
@@ -6520,6 +6873,9 @@ const run = async (): Promise<void> => {
         break;
       case "collage.captureDateUiEvidence":
         report = await captureDateUiEvidenceReport(options, page, startedAt);
+        break;
+      case "collage.observeFrontendState":
+        report = await observeFrontendState(options, page, startedAt);
         break;
       case "collage.extractMetadataDropdownFields":
         report = await extractMetadataDropdownFields(options, page, startedAt);

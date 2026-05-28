@@ -182,6 +182,8 @@ export const writeBiUiHelperGuidance = (runDir: string, options: WriteBiUiHelper
     "3. 結果判定需符合 testcase 的測試標的與 evidence policy。",
     "4. 截圖是人類佐證,不是唯一 evidence；能用結構化資料比對時優先用結構化資料。",
     "5. Metadata/dropdown observation case 以 DOM extraction 的欄位清單與 count 為主 evidence；screenshot 只作輔助,不可因截圖 timeout 阻塞已取得的結構化結論。",
+    "6. Frontend observation case 若 helper 已產生 `frontend-observation-evidence.json`,Codex 必須讀該檔的 controls/dialogs/toastLike/datePicker/operations 判斷；不可再因沒有 preview、沒有 selected metric fields、沒有 chart/network evidence 而寫 BLOCKED。",
+    "7. `collage.observeFrontendState` 的 helper status=ok 只代表 evidence 收集成功,不代表 testcase PASS。若 evidence 顯示 UI disabled/no change/tooltip/toast 等狀態符合前端呈現預期 → PASS；若前端呈現或功能流程 under-test 動作失敗/狀態不符 → FAIL；只有 target 找不到、頁面不可達、evidence 讀不到時才 BLOCKED。",
     "",
     "### 儲存/刪除/原生 Dialog",
     "",

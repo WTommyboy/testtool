@@ -592,6 +592,39 @@ const buildActions = (currentCase: CaseManifestCase | null, helperHints: HelperH
     features.hasGroup;
   const metadataOnly = features.isMetadataDropdown;
   if (unsupportedHelperTarget) return [];
+  if (features.observationType && !metadataOnly) {
+    const observationParams = {
+      ...params,
+      observationType: features.observationType,
+      observationContext: features.observationContext
+    };
+    const actionsForObservation: HelperPlanAction[] = [
+      action("H1", "collage.openProject", "開啟指定拼貼專案供前端觀察", observationParams, {
+        requiredEvidence: ["dom.url", "dom.pageTitle", "dom.state", "screenshot"],
+        notes: ["只定位拼貼專案頁，不判斷 testcase 結果。"]
+      })
+    ];
+    if (features.observationContext === "editor") {
+      actionsForObservation.push(
+        action("H2", "collage.createReport", "進入新增報表頁供前端觀察", observationParams, {
+          requiredEvidence: ["dom.url", "dom.pageTitle", "dom.state", "screenshot"],
+          notes: ["到達報表設定頁後交給 observation helper 做安全 UI observation；不設定 metric、不按 preview。"]
+        })
+      );
+    }
+    actionsForObservation.push(
+      action(`H${actionsForObservation.length + 1}`, "collage.observeFrontendState", "收集前端 UI 狀態/流程 evidence", observationParams, {
+        requiredEvidence: ["dom.state", "frontendObservationEvidence", "screenshot"],
+        screenshotPolicy: "required_if_possible",
+        notes: [
+          "此模板只執行本 case scope 內的安全 UI 觀察或預期失敗互動；不可用 preview/selected metric fields 取代前端判斷。",
+          "helper 只寫 frontend-observation-evidence.json，不判 PASS/FAIL/BLOCKED；Codex 必須依 case 測試標的與 evidence 判定。",
+          "若觀察結果顯示 UI 真的 disabled/no change，前端呈現/功能流程 case 應由 result gate 判 FAIL，而不是 BLOCKED。"
+        ]
+      })
+    );
+    return actionsForObservation;
+  }
   const createProjectFlow = isCreateProjectOnlyFlow(currentCase, helperHints);
   if (createProjectFlow) {
     const projectParams = {
@@ -970,6 +1003,15 @@ const buildAvailableTemplates = (currentCase: CaseManifestCase | null, helperHin
   const params = inferCollageParams(currentCase, helperHints);
   const features = detectCaseFeatures(currentCase, helperHints);
   const available: HelperPlanAction[] = [
+    action("T-observe-ui", "collage.observeFrontendState", "收集目前 case scope 的前端 UI observation evidence", params, {
+      optional: true,
+      requiredEvidence: ["dom.state", "frontendObservationEvidence", "screenshot"],
+      screenshotPolicy: "required_if_possible",
+      notes: [
+        "適用前端呈現/功能流程 case：讀 DOM、截圖、必要時做預期 no-op/disabled 互動；不跑 preview、不設定內部狀態。",
+        "結果只作 evidence，Codex 仍需依測試標的判 PASS/FAIL/BLOCKED。"
+      ]
+    }),
     action("T-date-ui", "collage.captureDateUiEvidence", "讀取日期 UI label 與代表日期區間 evidence", params, {
       mutatesUi: false,
       optional: true,

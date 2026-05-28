@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import type { CaseManifestCase } from "./case-manifest";
 import type { HelperHints } from "./helper-hints";
-import { detectCaseFeatures } from "./case-feature-detection";
+import { detectCaseFeatures, type FrontendObservationContext, type FrontendObservationType } from "./case-feature-detection";
 
 export type CapabilityGateReport = {
   schemaVersion: "uat-capability-gate-v1";
@@ -20,6 +20,8 @@ export type CapabilityGateReport = {
     hasGroup: boolean;
     isMetadataDropdown: boolean;
     isSaveReopenFlow: boolean;
+    observationType: FrontendObservationType | null;
+    observationContext: FrontendObservationContext;
     operationTemplate: string | null;
     automationLevel: string | null;
   };
@@ -263,6 +265,8 @@ export const evaluateCapabilityGate = (
   const hasGroup = detectedFeatures.hasGroup;
   const isMetadataDropdown = detectedFeatures.isMetadataDropdown;
   const isSaveReopenFlow = detectedFeatures.isSaveReopenFlow;
+  const observationType = detectedFeatures.observationType;
+  const observationContext = detectedFeatures.observationContext;
   const isA06LikeCase = /(?:^|[-_])A[-_]?06$/i.test(currentCase?.caseNo ?? "");
   const isAllZeroFieldInspection =
     operationTemplate === "collage_all_zero_field_inspection" ||
@@ -305,6 +309,7 @@ export const evaluateCapabilityGate = (
   const formulaHelperAllowed = mode === "collage" && !hasFilter && !hasGroup && hasFormulaParams(params);
   const createProjectAllowed = mode === "collage" && !hasFilter && !hasGroup && isCreateProjectOnlyFlow(currentCase, helperHints);
   const simpleProjectFlowAllowed = mode === "collage" && !hasFilter && !hasGroup && (isOpenReportFromProjectListFlow(currentCase, helperHints) || isBackToProjectListFlow(currentCase, helperHints));
+  const frontendObservationAllowed = mode === "collage" && !hasFilter && !hasGroup && observationType !== null && !isMetadataDropdown;
 
   if (mode === "record") unsupportedFeatures.push("record_mode_helper_not_supported");
   if (mode === "metric") unsupportedFeatures.push("metric_mode_helper_not_supported");
@@ -327,6 +332,12 @@ export const evaluateCapabilityGate = (
       "collage.openProject",
       "collage.createReport",
       "collage.configureCalculatedMetricAndPreview"
+    );
+  } else if (frontendObservationAllowed) {
+    supportedHelperTemplates.push(
+      "collage.openProject",
+      ...(observationContext === "editor" ? ["collage.createReport"] : []),
+      "collage.observeFrontendState"
     );
   } else if (mode === "collage" && !hasFilter && !hasGroup && isMetadataDropdown) {
     supportedHelperTemplates.push(
@@ -364,7 +375,7 @@ export const evaluateCapabilityGate = (
     if (datePreviewEvidenceAllowed) supportedHelperTemplates.push("collage.runDateVariantsPreviewEvidence");
   }
 
-  if ((manualAiRequested || dateNeedsCodexVisibleUi) && !isDeleteReport && !formulaHelperAllowed && !createProjectAllowed && !simpleProjectFlowAllowed) {
+  if ((manualAiRequested || dateNeedsCodexVisibleUi) && !isDeleteReport && !formulaHelperAllowed && !createProjectAllowed && !simpleProjectFlowAllowed && !frontendObservationAllowed) {
     const degradedAllowed = [
       "collage.openProject",
       "collage.createReport",
@@ -387,7 +398,7 @@ export const evaluateCapabilityGate = (
   let helperPreRunAllowed = false;
   let blockingReason: string | null = null;
 
-  if (formulaHelperAllowed || createProjectAllowed || simpleProjectFlowAllowed) {
+  if (formulaHelperAllowed || createProjectAllowed || simpleProjectFlowAllowed || frontendObservationAllowed) {
     supportStatus = "supported";
     executionMode = "helper_assisted";
     helperPreRunAllowed = true;
@@ -437,6 +448,8 @@ export const evaluateCapabilityGate = (
       hasGroup,
       isMetadataDropdown,
       isSaveReopenFlow,
+      observationType,
+      observationContext,
       operationTemplate,
       automationLevel
     },

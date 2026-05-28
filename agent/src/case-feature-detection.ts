@@ -1,6 +1,25 @@
 import type { CaseManifestCase } from "./case-manifest";
 import type { HelperHints } from "./helper-hints";
 
+export type FrontendObservationType =
+  | "userButton"
+  | "projectToolbar"
+  | "sidebarGroup"
+  | "rowDeleteTooltip"
+  | "projectLimitToast"
+  | "sourceReportPicker"
+  | "fieldPicker"
+  | "datePanel"
+  | "dateRangePresetSwitch"
+  | "validationMessage"
+  | "editorDownload"
+  | "projectCreateModal"
+  | "deleteCancelFlow"
+  | "saveModalCancel"
+  | "copyModalCancel";
+
+export type FrontendObservationContext = "project" | "project_list" | "editor" | "unknown";
+
 export type CaseFeatureDetection = {
   text: string;
   behaviorText: string;
@@ -10,6 +29,8 @@ export type CaseFeatureDetection = {
   hasGroup: boolean;
   isMetadataDropdown: boolean;
   isSaveReopenFlow: boolean;
+  observationType: FrontendObservationType | null;
+  observationContext: FrontendObservationContext;
 };
 
 const normalize = (value: unknown): string => String(value ?? "").trim();
@@ -67,6 +88,19 @@ const behaviorTextBlob = (item: CaseManifestCase | null, helperHints: HelperHint
     .filter(Boolean)
     .join("\n");
 
+const paramsObject = (helperHints: HelperHints | null): Record<string, unknown> =>
+  helperHints?.params && typeof helperHints.params === "object" && !Array.isArray(helperHints.params)
+    ? (helperHints.params as Record<string, unknown>)
+    : {};
+
+const stringParam = (params: Record<string, unknown>, keys: string[]): string | null => {
+  for (const key of keys) {
+    const value = params[key];
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return null;
+};
+
 const detectMode = (text: string, operationTemplate: string | null): CaseFeatureDetection["mode"] => {
   const source = `${operationTemplate ?? ""}\n${text}`;
   const constructionMode = source.match(/建構模式\s*[:：]\s*(拼貼|明細(?:檢視)?|指標(?:趨勢)?)/);
@@ -77,6 +111,97 @@ const detectMode = (text: string, operationTemplate: string | null): CaseFeature
   if (/collage|拼貼模式|我的自訂\s*>\s*拼貼模式|新增報表|儲存報表|重開|重新檢視/.test(source)) return "collage";
   if (/record_static_fields|明細檢視|record[-_ ]?(?:centric|mode|view)|detail[-_ ]?(?:centric|mode|view)/i.test(source)) return "record";
   if (/metric_(?:date|filter|group)|指標趨勢|metric[-_ ]?(?:centric|mode|view)/i.test(source)) return "metric";
+  return "unknown";
+};
+
+const hasHardDataEvidenceRequirement = (behaviorText: string): boolean =>
+  /(?:preview|預覽|request\s*body|response\s*body|network|API|chart|圖表|表格資料|CSV|下載資料|數值|筆數|sum|max|min|資料正確|後端回傳|資料列|逐日資料)/i.test(behaviorText) &&
+  !/(?:不觸發|未觸發|不得觸發|不應觸發|沒有觸發).{0,16}(?:preview|request|API|下載|network)|(?:disabled|反灰|不可點|不能點|防呆|toast|tooltip|提示|警示|彈窗)/i.test(behaviorText);
+
+const isFrontendObservationEligible = (
+  currentCase: CaseManifestCase | null,
+  operationTemplate: string | null,
+  behaviorText: string
+): boolean => {
+  if (operationTemplate === "collage.observeFrontendState") return true;
+  const target = `${currentCase?.testTarget ?? ""}\n${currentCase?.testType ?? ""}`;
+  const frontendTarget = /前端呈現|功能流程/.test(target);
+  if (!frontendTarget) return false;
+  if (hasHardDataEvidenceRequirement(behaviorText)) return false;
+  return /(?:觀察|確認|檢查|顯示|可見|不可見|disabled|enabled|反灰|不可點|不能點|可點|按鈕|icon|頁籤|tab|下拉|picker|選單|modal|dialog|彈窗|toast|tooltip|防呆|文案|側邊欄|展開|收合|hover|滑過)/i.test(behaviorText);
+};
+
+const detectObservationType = (
+  currentCase: CaseManifestCase | null,
+  helperHints: HelperHints | null,
+  behaviorText: string
+): FrontendObservationType | null => {
+  const operationTemplate = helperHints?.operationTemplate ?? null;
+  if (!isFrontendObservationEligible(currentCase, operationTemplate, behaviorText)) return null;
+  const params = paramsObject(helperHints);
+  const explicitType = stringParam(params, ["observationType", "frontendObservationType", "uiObservationType"]);
+  if (
+    explicitType &&
+    [
+      "userButton",
+      "projectToolbar",
+      "sidebarGroup",
+      "rowDeleteTooltip",
+      "projectLimitToast",
+      "sourceReportPicker",
+      "fieldPicker",
+      "datePanel",
+      "dateRangePresetSwitch",
+      "validationMessage",
+      "editorDownload",
+      "projectCreateModal",
+      "deleteCancelFlow",
+      "saveModalCancel",
+      "copyModalCancel"
+    ].includes(explicitType)
+  ) {
+    return explicitType as FrontendObservationType;
+  }
+
+  if (/右上.{0,16}(?:使用者|登入者|user)|(?:使用者|登入者).{0,16}(?:名稱|button|按鈕)/i.test(behaviorText)) return "userButton";
+  if (/側邊欄|公司共享|我的自訂|展開|收合|sidebar/i.test(behaviorText)) return "sidebarGroup";
+  if (/最高\s*5\s*個專案|達(?:到)?最高|專案數上限|project\s*limit/i.test(behaviorText)) return "projectLimitToast";
+  if (/新增專案.{0,24}(?:modal|dialog|彈窗|取消|防呆|模式)|(?:modal|dialog|彈窗).{0,24}新增專案/i.test(behaviorText)) return "projectCreateModal";
+  if (/來源報表.{0,24}(?:下拉|選單|picker|搜尋|請選擇報表)|(?:下拉|選單|picker).{0,24}來源報表/i.test(behaviorText)) return "sourceReportPicker";
+  if (/(?:\+\s*)?新增欄位|欄位選擇|field\s*picker|可選欄位/i.test(behaviorText)) return "fieldPicker";
+  if (/防呆|錯誤訊息|validation|toast|欄位未設置|未設置完成/i.test(behaviorText)) return "validationMessage";
+  if (/日期|時間區間|時間面板|date\s*panel|dateRange|靜態時間|動態時間|上週|本週|昨日|今日|上月|本月/i.test(behaviorText)) {
+    return /昨日|今日|上週|本週|上月|本月|過去\s*\d+\s*天|最近\s*\d+\s*天|preset/i.test(behaviorText)
+      ? "dateRangePresetSwitch"
+      : "datePanel";
+  }
+  if (/未勾選|勾選|toolbar|工具列|專案頁.{0,32}(?:下載|刪除|新增報表)|(?:下載|刪除|新增報表).{0,32}專案頁/i.test(behaviorText)) return "projectToolbar";
+  if (/tooltip|hover|滑過|刪除\s*icon/i.test(behaviorText)) return "rowDeleteTooltip";
+  if (/儲存.{0,18}(?:modal|dialog|彈窗|取消)|(?:modal|dialog|彈窗).{0,18}儲存/i.test(behaviorText)) return "saveModalCancel";
+  if (/複製.{0,18}(?:modal|dialog|彈窗|取消)|(?:modal|dialog|彈窗).{0,18}複製/i.test(behaviorText)) return "copyModalCancel";
+  if (/刪除.{0,18}(?:modal|dialog|confirm|彈窗|取消)|(?:modal|dialog|confirm|彈窗).{0,18}刪除/i.test(behaviorText)) return "deleteCancelFlow";
+  if (/(?:editor|報表設定|新增報表頁|設定頁|右上).{0,28}(?:下載|download)|(?:下載報表|download).{0,24}(?:editor|報表設定|新增報表頁|設定頁|右上)/i.test(behaviorText)) return "editorDownload";
+  return null;
+};
+
+const detectObservationContext = (
+  observationType: FrontendObservationType | null,
+  helperHints: HelperHints | null,
+  behaviorText: string
+): FrontendObservationContext => {
+  const params = paramsObject(helperHints);
+  const explicitContext = stringParam(params, ["observationContext", "frontendObservationContext", "uiObservationContext"]);
+  if (explicitContext && ["project", "project_list", "editor", "unknown"].includes(explicitContext)) {
+    return explicitContext as FrontendObservationContext;
+  }
+  if (!observationType) return "unknown";
+  if (["datePanel", "dateRangePresetSwitch", "validationMessage", "editorDownload", "fieldPicker", "saveModalCancel", "copyModalCancel"].includes(observationType)) {
+    return "editor";
+  }
+  if (["projectToolbar", "sidebarGroup", "projectLimitToast", "projectCreateModal", "rowDeleteTooltip", "deleteCancelFlow"].includes(observationType)) {
+    return /清單|列表|報表列|row/i.test(behaviorText) ? "project_list" : "project";
+  }
+  if (observationType === "sourceReportPicker") return /報表設定|新增報表頁|editor|設定頁/i.test(behaviorText) ? "editor" : "project";
   return "unknown";
 };
 
@@ -104,6 +229,8 @@ export const detectCaseFeatures = (
   const isSaveReopenFlow =
     operationTemplate === "collage_build_preview_save_reopen" ||
     (!explicitlyNoReopen && /儲存報表|重開|重新檢視|還原|載入/.test(behaviorText));
+  const observationType = detectObservationType(currentCase, helperHints, behaviorText);
+  const observationContext = detectObservationContext(observationType, helperHints, behaviorText);
 
   return {
     text,
@@ -113,6 +240,8 @@ export const detectCaseFeatures = (
     hasFilter,
     hasGroup,
     isMetadataDropdown,
-    isSaveReopenFlow
+    isSaveReopenFlow,
+    observationType,
+    observationContext
   };
 };
