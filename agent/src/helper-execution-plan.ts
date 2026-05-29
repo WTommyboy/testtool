@@ -165,6 +165,9 @@ const textRequestsReportListDownload = (text: string): boolean =>
 const textRequestsSameCaseSaveAndRowDownload = (text: string): boolean =>
   /同\s*case|同一\s*case/.test(text) && /(?:建立|新增報表).{0,60}(?:儲存|save)|(?:儲存|save).{0,60}(?:專案頁|清單|row|下載)/i.test(text) && textRequestsReportListDownload(text);
 
+const DEFAULT_SINGLE_METRIC_SOURCE_REPORT = "每日報表";
+const DEFAULT_SINGLE_METRIC_FIELD = "新增帳號數";
+
 const textRequestsSave = (text: string, params: Record<string, unknown>): boolean =>
   booleanishParam(params, ["save", "saveReport", "doSave"]) || /(?:儲存|保存|save)/i.test(text);
 
@@ -366,6 +369,40 @@ const cleanDateRangeText = (value: string | null): string | null => {
   return nonNeutral(cleaned);
 };
 
+const cleanupFieldIsCountOnly = (value: string | null | undefined): boolean => {
+  const normalized = String(value ?? "").trim().replace(/\s+/g, "");
+  return /^(?:1|一)欄$|^\d+欄$|^空→\d+欄$|^欄位數[:：]?\d+$/.test(normalized);
+};
+
+const shouldDefaultSingleMetricField = (
+  text: string,
+  params: Record<string, unknown>,
+  cleanup: Record<string, string>,
+  explicitField: string | null,
+  cleanupField: string | null,
+  inferredField: string | null
+): boolean => {
+  if (explicitField || inferredField) return false;
+  if (cleanupField && !cleanupFieldIsCountOnly(cleanupField)) return false;
+  const requestsMetricData =
+    helperRequestsDownload(params) ||
+    /CSV|preview|預覽|計算|執行|資料列|row\s*count|數值|抽樣|比對/i.test(text);
+  const singleFieldScope =
+    cleanupFieldIsCountOnly(cleanup["欄位"]) ||
+    /最小(?:設置|設定)|(?:1|一)\s*欄|單一欄|一個欄位|新增帳號數/i.test(text);
+  return requestsMetricData && singleFieldScope;
+};
+
+const isProjectRowDownloadOnlyCase = (text: string, params: Record<string, unknown>): boolean =>
+  textRequestsReportListDownload(text) &&
+  !textRequestsSameCaseSaveAndRowDownload(text) &&
+  !textRequestsSave(text, params) &&
+  (
+    /本題不測項目.{0,30}(?:CSV|內容|數值|row\s*count)/i.test(text) ||
+    !/preview|預覽|數值對齊|row\s*count|row數|內容驗證|與\s*preview\s*一致/i.test(text)
+  ) &&
+  /觸發下載|下載檔|download\s*API|檔名|大小|本題不測項目.{0,20}(?:CSV|內容)/i.test(text);
+
 const inferCollageParams = (currentCase: CaseManifestCase | null, helperHints: HelperHints | null): Record<string, unknown> => {
   const text = textBlob(currentCase);
   const cleanup = parseCleanupTargets(currentCase?.cleanupChecklist);
@@ -383,11 +420,17 @@ const inferCollageParams = (currentCase: CaseManifestCase | null, helperHints: H
     );
   const dateVariantLabels = firstStringArrayParam(params, ["dateVariants", "uiLabels"]);
   const rawDateVariants = rawArrayParam(params, "dateVariants");
+  const explicitField = nonNeutral(stringParam(params, ["field", "metric", "metricField"]));
+  const cleanupField = nonNeutral(cleanup["欄位"]);
+  const inferredFieldCandidate = nonNeutral(firstMatch(text, [/欄位[「=：: ]+([^」\n,，;；]+)/]));
+  const inferredField = cleanupFieldIsCountOnly(inferredFieldCandidate) ? null : inferredFieldCandidate;
+  const useDefaultSingleMetric = shouldDefaultSingleMetricField(text, params, cleanup, explicitField, cleanupField, inferredField);
   const field = selectAllFields
     ? null
-    : nonNeutral(stringParam(params, ["field", "metric", "metricField"])) ??
-      nonNeutral(cleanup["欄位"]) ??
-      nonNeutral(firstMatch(text, [/欄位[「=：: ]+([^」\n,，;；]+)/]));
+    : explicitField ??
+      (cleanupFieldIsCountOnly(cleanupField) ? null : cleanupField) ??
+      inferredField ??
+      (useDefaultSingleMetric ? DEFAULT_SINGLE_METRIC_FIELD : null);
   const fields = splitCompositeMetricFields(field);
   const reportNamePattern = inferReportNamePattern(text, params);
   const modifiesExistingReport =
@@ -412,18 +455,20 @@ const inferCollageParams = (currentCase: CaseManifestCase | null, helperHints: H
   const inferredSource = selectAllFields && sourceReportsParam.length > 0
     ? null
     : firstMatch(text, [/來源報表[=：: ]*「?([^」\n,， ]+)/]);
-  const effectiveSource = explicitSource ?? inferredSource;
+  const effectiveSource = explicitSource ?? inferredSource ?? (useDefaultSingleMetric ? DEFAULT_SINGLE_METRIC_SOURCE_REPORT : null);
   const sourceReports = sourceReportsParam.length > 0
     ? sourceReportsParam
     : allZeroFieldInspection && effectiveSource
       ? [effectiveSource]
-      : sourceReportsParam;
+      : useDefaultSingleMetric
+        ? [DEFAULT_SINGLE_METRIC_SOURCE_REPORT]
+        : sourceReportsParam;
 
   return {
     ...params,
     devUrl: stringParam(params, ["devUrl"]) ?? null,
     projectName: stringParam(params, ["projectName", "project"]) ?? firstMatch(text, [/(拼貼test[_\d]+)/i]),
-    source: explicitSource ?? inferredSource,
+    source: effectiveSource,
     referenceCsv: stringParam(params, ["referenceCsv"]) ?? "rules/BI_DATA/metadata.csv",
     referenceSourcePath: stringParam(params, ["referenceSourcePath"]) ?? null,
     referenceSourceName: stringParam(params, ["referenceSourceName"]) ?? firstMatch(text, [/原始指定檔名[=：: ]+`?([^`\n;]+)/, /source filename[=：: ]+`?([^`\n;]+)/i]),
@@ -891,6 +936,29 @@ const buildActions = (currentCase: CaseManifestCase | null, helperHints: HelperH
           "此 helper 只負責目前 case 的 A-06 類 evidence：透過 visible UI 選欄位、設定日期/顯示、按執行前做 selected-field-count guard。",
           "helper 會輸出 `all-zero-field-inspection-evidence.json`，包含 selected fields、request/response observation、chart/table summaries 與 allZeroCandidates。",
           "helper 不判 PASS/FAIL；Codex 必須確認全 0 清單是否可讀、是否符合 testcase 本題範圍，再寫 result.xlsx。"
+        ]
+      })
+    ];
+  }
+  if (isProjectRowDownloadOnlyCase(text, { ...params, ...helperParams })) {
+    const rowDownloadParams = {
+      ...params,
+      downloadScope: "report_list",
+      allowAnyReportListRowDownload: true,
+      skipSave: true,
+      skipReopen: true
+    };
+    return [
+      action("H1", "collage.openProject", "開啟指定拼貼專案供清單列下載", rowDownloadParams, {
+        requiredEvidence: ["dom.url", "dom.pageTitle", "dom.state", "screenshot"],
+        notes: ["只定位拼貼專案頁，不進 editor、不建立報表。"]
+      }),
+      action("H2", "collage.downloadCsvAndComparePreview", "從專案頁既有報表列觸發 CSV 下載", rowDownloadParams, {
+        requiredEvidence: ["downloaded.csv", "reportList.row", "screenshot"],
+        screenshotPolicy: "required_if_possible",
+        notes: [
+          "適用 N-04 類清單列下載功能流程：可使用第一筆既有報表列，不要求本 case 先建立報表。",
+          "本題只驗下載事件與檔案取得；若沒有 preview evidence，helper 只留下 comparison warning，不應阻擋下載功能判定。"
         ]
       })
     ];

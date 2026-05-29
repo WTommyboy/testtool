@@ -239,8 +239,16 @@ const strictSelectAllFieldCountRequired = (params: Record<string, unknown>): boo
 const metricFieldsFromParams = (params: Record<string, unknown>): string[] => {
   if (paramsRequestSelectAllFields(params)) return [];
   const explicit = stringArrayParam(params, "fields");
-  if (explicit.length > 0) return [...new Set(explicit.filter((item) => !isNeutralUiTarget(item)))];
-  return splitCompositeMetricFields(nonNeutralUiTarget(firstStringParam(params, ["field", "metric", "metricField"])));
+  if (explicit.length > 0) return [...new Set(explicit.flatMap((item) => normalizedMetricFieldRequest(item) ?? []))];
+  return splitCompositeMetricFields(normalizedMetricFieldRequest(firstStringParam(params, ["field", "metric", "metricField"])));
+};
+
+const normalizedMetricFieldRequest = (value: string | null | undefined): string | null => {
+  const target = nonNeutralUiTarget(value);
+  if (!target) return null;
+  const compact = target.replace(/\s+/g, "");
+  if (/^(?:1|一)欄$|^\d+欄$|^空→\d+欄$|^欄位數[:：]?\d+$/.test(compact)) return null;
+  return target;
 };
 
 const timestampId = (): string => new Date().toISOString().replace(/[-:T.Z]/g, "").slice(0, 12);
@@ -5289,6 +5297,74 @@ const readReportListRowState = async (page: Page, reportName: string): Promise<R
   }, reportName);
 };
 
+const readFirstDownloadableReportListRowState = async (page: Page): Promise<ReportListRowState> => {
+  return await page.evaluate(() => {
+    const normalize = (value: string | null | undefined) => (value ?? "").trim().replace(/\s+/g, " ");
+    const isVisible = (element: Element): boolean => {
+      const rect = element.getBoundingClientRect();
+      const style = window.getComputedStyle(element);
+      return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden" && style.opacity !== "0";
+    };
+    const downloadPattern = /下載|CSV|匯出|download|export|⬇/i;
+    const deletePattern = /刪除|删除|delete|trash|remove|🗑/i;
+    const allBodyElements = Array.from(document.querySelectorAll<HTMLElement>("body *"));
+    const rowElements = Array.from(document.querySelectorAll<HTMLElement>(
+      "tr, [class*=row], [class*=Row], [class*=card], [class*=Card], [class*=item], [class*=Item]"
+    ));
+    const controlsFor = (row: HTMLElement, pattern: RegExp) => Array.from(row.querySelectorAll<HTMLElement>("button, a, [role=button]")).flatMap((control) => {
+      if (!isVisible(control)) return [];
+      const text = normalize(control.innerText || control.textContent);
+      const attrs = [
+        control.getAttribute("aria-label"),
+        control.getAttribute("title"),
+        control.getAttribute("download"),
+        control.getAttribute("href"),
+        control.getAttribute("onclick"),
+        typeof control.className === "string" ? control.className : ""
+      ].join(" ");
+      if (!pattern.test(`${text} ${attrs}`)) return [];
+      const rect = control.getBoundingClientRect();
+      return [{
+        bodyIndex: allBodyElements.indexOf(control),
+        text,
+        tagName: control.tagName.toLowerCase(),
+        role: control.getAttribute("role"),
+        ariaLabel: control.getAttribute("aria-label"),
+        title: control.getAttribute("title"),
+        onclick: control.getAttribute("onclick"),
+        rect: { x: Math.round(rect.x), y: Math.round(rect.y), width: Math.round(rect.width), height: Math.round(rect.height) }
+      }];
+    });
+    const candidates = rowElements
+      .filter((row) => isVisible(row))
+      .map((row) => {
+        const downloadControls = controlsFor(row, downloadPattern);
+        const deleteControls = controlsFor(row, deletePattern);
+        const text = normalize(row.innerText || row.textContent);
+        const rect = row.getBoundingClientRect();
+        return {
+          text,
+          downloadControls,
+          deleteControls,
+          rect: { x: Math.round(rect.x), y: Math.round(rect.y), width: Math.round(rect.width), height: Math.round(rect.height) }
+        };
+      })
+      .filter((row) => row.downloadControls.length > 0 && row.text.length > 0 && !/新增報表|新增專案|下載資料|儲存報表|計算/.test(row.text))
+      .sort((a, b) => a.text.length - b.text.length || a.rect.y - b.rect.y);
+    const row = candidates[0] ?? null;
+    const reportName = row?.text.split(/\n| {2,}/).map((part) => part.trim()).find((part) => part && !downloadPattern.test(part) && !deletePattern.test(part)) ?? "first-downloadable-report-row";
+    return {
+      found: row !== null,
+      reportName,
+      url: window.location.href,
+      bodyTextExcerpt: normalize(document.body?.innerText ?? "").slice(0, 3000),
+      rowText: row?.text ?? null,
+      downloadControls: row?.downloadControls ?? [],
+      deleteControls: row?.deleteControls ?? []
+    };
+  });
+};
+
 const ensureSavedReportListRowVisible = async (
   options: CliOptions,
   page: Page,
@@ -5594,12 +5670,13 @@ const downloadCsvAndComparePreview = async (options: CliOptions, page: Page, sta
   const domStateBefore: Record<string, unknown> = await readDomState(page).catch((error) => ({ readError: error instanceof Error ? error.message : String(error) }));
   const downloadDir = path.join(artifactRoot(options), "downloads");
   ensureDir(downloadDir);
-  const savedReportName = readSavedReportName(options);
+  let savedReportName = readSavedReportName(options) ?? firstStringParam(options.params, ["savedReportName", "existingReportName", "reportName"]);
   const downloadScope = stringParam(options.params, "downloadScope");
+  const allowAnyReportListRowDownload = booleanishParam(options.params, ["allowAnyReportListRowDownload", "downloadFirstReportRow", "allowExistingReportRowDownload"]);
   const bodyTextBefore = typeof domStateBefore.bodyTextExcerpt === "string" ? domStateBefore.bodyTextExcerpt : "";
   const wantsReportList = downloadScope === "report_list"
     || Boolean(savedReportName && bodyTextBefore.includes(savedReportName) && !/報表設定|儲存報表|執行/.test(bodyTextBefore));
-  if (wantsReportList && !savedReportName) throw new HelperBlockedError("SAVED_REPORT_NAME_MISSING_FOR_REPORT_LIST_CSV");
+  if (wantsReportList && !savedReportName && !allowAnyReportListRowDownload) throw new HelperBlockedError("SAVED_REPORT_NAME_MISSING_FOR_REPORT_LIST_CSV");
 
   let listRecovery: Awaited<ReturnType<typeof ensureSavedReportListRowVisible>> | null = null;
   let reportListState: ReportListRowState | null = null;
@@ -5630,6 +5707,15 @@ const downloadCsvAndComparePreview = async (options: CliOptions, page: Page, sta
           "CSV_SAVED_REPORT_ROW_NOT_FOUND_AFTER_REFRESH"
         ]
       );
+    }
+  } else if (wantsReportList && allowAnyReportListRowDownload) {
+    reportListState = await readFirstDownloadableReportListRowState(page);
+    savedReportName = reportListState.found ? reportListState.reportName : null;
+    listRecovery = reportListState.found
+      ? { state: reportListState, attempts: [{ ...reportListState, label: "first_downloadable_row" }], recoveryActions: ["allow_any_report_list_row"] }
+      : { state: reportListState, attempts: [{ ...reportListState, label: "first_downloadable_row" }], recoveryActions: ["allow_any_report_list_row_not_found"] };
+    if (!reportListState.found) {
+      throw new HelperBlockedError(`REPORT_LIST_DOWNLOADABLE_ROW_NOT_FOUND; bodyText=${reportListState.bodyTextExcerpt.slice(0, 1200)}`);
     }
   }
 
@@ -5897,6 +5983,110 @@ const hoverFirstMatchingControl = async (page: Page, pattern: RegExp): Promise<R
   };
 };
 
+const readMetricRowsSnapshot = async (page: Page): Promise<Record<string, unknown>> => {
+  return page.evaluate(() => {
+    const normalize = (value: string | null | undefined) => (value ?? "").trim().replace(/\s+/g, " ");
+    const isVisible = (element: Element): boolean => {
+      const rect = element.getBoundingClientRect();
+      const style = window.getComputedStyle(element);
+      return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden" && style.opacity !== "0";
+    };
+    const disabledFor = (element: HTMLElement): boolean => {
+      const style = window.getComputedStyle(element);
+      const className = typeof element.className === "string" ? element.className : "";
+      return (
+        ("disabled" in element && Boolean((element as HTMLButtonElement).disabled)) ||
+        element.getAttribute("aria-disabled") === "true" ||
+        /disabled|disable|inactive|readonly/i.test(className) ||
+        Number.parseFloat(style.opacity || "1") < 0.35
+      );
+    };
+    const all = Array.from(document.querySelectorAll<HTMLElement>("body *"));
+    const controls = all.flatMap((element, bodyIndex) => {
+      if (!isVisible(element)) return [];
+      const rect = element.getBoundingClientRect();
+      if (rect.x > 660 || rect.y < 160) return [];
+      const text = normalize(element.innerText || element.textContent);
+      const attrs = [
+        element.getAttribute("aria-label"),
+        element.getAttribute("title"),
+        element.getAttribute("onclick"),
+        element.getAttribute("data-testid"),
+        element.getAttribute("data-test-id"),
+        typeof element.className === "string" ? element.className : ""
+      ].join(" ");
+      const clickable = element.tagName.toLowerCase() === "button" || element.getAttribute("role") === "button" || /btn|button|icon|click/i.test(attrs);
+      if (!clickable && !/^\+|^×$|^\(x\)$|複製|新增列|刪除列|duplicate|copy|addRow|deleteRow/i.test(`${text} ${attrs}`)) return [];
+      return [{
+        bodyIndex,
+        tagName: element.tagName.toLowerCase(),
+        text,
+        ariaLabel: element.getAttribute("aria-label"),
+        title: element.getAttribute("title"),
+        className: typeof element.className === "string" ? element.className.slice(0, 180) : "",
+        onclick: element.getAttribute("onclick"),
+        disabled: disabledFor(element),
+        rect: { x: Math.round(rect.x), y: Math.round(rect.y), width: Math.round(rect.width), height: Math.round(rect.height) }
+      }];
+    });
+    const bodyText = normalize(document.body.innerText || document.body.textContent);
+    const rowLabels = Array.from(bodyText.matchAll(/自訂欄位\s*\d+/g)).map((match) => match[0]);
+    const lineRows = bodyText
+      .split(/\n/)
+      .map((line) => normalize(line))
+      .filter((line) => /自訂欄位|請選擇報表|---|請點擊或輸入/.test(line))
+      .slice(0, 20);
+    return {
+      rowCountFromLabels: rowLabels.length,
+      rowLabels,
+      rowTextLines: lineRows,
+      controls: controls.slice(0, 120),
+      addCandidates: controls.filter((item) => /\+|新增列|addRow|add\s*row/i.test(`${item.text} ${item.ariaLabel ?? ""} ${item.title ?? ""} ${item.onclick ?? ""} ${item.className}`)).slice(0, 20),
+      duplicateCandidates: controls.filter((item) => /複製|duplicate|copy|clone/i.test(`${item.text} ${item.ariaLabel ?? ""} ${item.title ?? ""} ${item.onclick ?? ""} ${item.className}`)).slice(0, 20),
+      deleteCandidates: controls.filter((item) => /刪除|删除|delete|trash|remove|del|^\(x\)$|^×$/i.test(`${item.text} ${item.ariaLabel ?? ""} ${item.title ?? ""} ${item.onclick ?? ""} ${item.className}`)).slice(0, 20)
+    };
+  });
+};
+
+const clickMetricRowControl = async (page: Page, kind: "add" | "duplicate" | "delete-second"): Promise<Record<string, unknown>> => {
+  const before = await readMetricRowsSnapshot(page);
+  const controls = Array.isArray(before.controls) ? before.controls as Array<Record<string, unknown>> : [];
+  const textFor = (item: Record<string, unknown>) => [
+    item.text,
+    item.ariaLabel,
+    item.title,
+    item.onclick,
+    item.className
+  ].filter(Boolean).join(" ");
+  const candidates = controls.filter((item) => {
+    const text = textFor(item);
+    const rect = item.rect && typeof item.rect === "object" ? item.rect as Record<string, unknown> : {};
+    const y = typeof rect.y === "number" ? rect.y : 0;
+    if (kind === "add") return /\+|新增列|addRow|add\s*row/i.test(text) && !/新增欄位|新增報表|新增專案/.test(text);
+    if (kind === "duplicate") return /複製|duplicate|copy|clone/i.test(text);
+    return /刪除|删除|delete|trash|remove|del|^\(x\)$|^×$/i.test(text) && y > 0;
+  }).sort((a, b) => {
+    const rectA = a.rect && typeof a.rect === "object" ? a.rect as Record<string, unknown> : {};
+    const rectB = b.rect && typeof b.rect === "object" ? b.rect as Record<string, unknown> : {};
+    const yA = typeof rectA.y === "number" ? rectA.y : 0;
+    const yB = typeof rectB.y === "number" ? rectB.y : 0;
+    if (kind === "delete-second") return yB - yA;
+    return yA - yB;
+  });
+  const target = candidates[0];
+  if (typeof target?.bodyIndex !== "number") {
+    throw new HelperBlockedError(`METRIC_ROW_${kind.toUpperCase()}_CONTROL_NOT_FOUND; snapshot=${JSON.stringify(before).slice(0, 2000)}`);
+  }
+  await clickVisibleBodyElementByIndex(page, target.bodyIndex, 8000);
+  await page.waitForTimeout(700);
+  return {
+    kind,
+    clicked: target,
+    before,
+    after: await readMetricRowsSnapshot(page)
+  };
+};
+
 const observeFrontendState = async (options: CliOptions, page: Page, startedAt: string): Promise<HelperReport> => {
   const observationType = firstStringParam(options.params, ["observationType", "frontendObservationType", "uiObservationType"]) ?? "unknown";
   const observationContext = firstStringParam(options.params, ["observationContext", "frontendObservationContext", "uiObservationContext"]) ?? "unknown";
@@ -5907,7 +6097,7 @@ const observeFrontendState = async (options: CliOptions, page: Page, startedAt: 
   const operations: Array<Record<string, unknown>> = [];
 
   try {
-    if ((observationContext === "editor" || ["datePanel", "dateRangePresetSwitch", "validationMessage", "fieldPicker", "editorDownload"].includes(observationType)) &&
+    if ((observationContext === "editor" || ["datePanel", "dateRangePresetSwitch", "validationMessage", "fieldPicker", "editorDownload", "reportModeRadio", "metricRowControls", "metricRowAdd", "metricRowDuplicate", "metricRowDelete"].includes(observationType)) &&
       !/報表設定|儲存報表|\+ 新增欄位|執行|時間區間/.test(String(before.bodyTextExcerpt ?? ""))) {
       await ensureCollageProjectSelected(options, page).catch((error) => {
         warnings.push(`OBSERVATION_EDITOR_NAV_PROJECT_SELECTION_FAILED:${error instanceof Error ? error.message : String(error)}`);
@@ -5951,7 +6141,8 @@ const observeFrontendState = async (options: CliOptions, page: Page, startedAt: 
         break;
       }
       case "fieldPicker": {
-        const addOperation = await clickMetricAddFieldControl(page, String(firstStringParam(options.params, ["field", "metric", "metricField"]) ?? "")).catch((error) => {
+        const requestedField = normalizedMetricFieldRequest(firstStringParam(options.params, ["field", "metric", "metricField"])) ?? "新增帳號數";
+        const addOperation = await clickMetricAddFieldControl(page, requestedField).catch((error) => {
           warnings.push(`FIELD_PICKER_OPEN_NOT_VERIFIED:${error instanceof Error ? error.message : String(error)}`);
           return null;
         });
@@ -5960,7 +6151,7 @@ const observeFrontendState = async (options: CliOptions, page: Page, startedAt: 
           warnings.push(`FIELD_PICKER_DOM_EXTRACT_FAILED:${error instanceof Error ? error.message : String(error)}`);
           return [];
         });
-        operations.push({ type: "fieldPicker", addOperation, itemCount: items.length, items: items.slice(0, 80) });
+        operations.push({ type: "fieldPicker", requestedField, addOperation, itemCount: items.length, items: items.slice(0, 80) });
         break;
       }
       case "sourceReportPicker": {
@@ -5989,6 +6180,31 @@ const observeFrontendState = async (options: CliOptions, page: Page, startedAt: 
         operations.push({ type: "rowDeleteTooltip", ...(await hoverFirstMatchingControl(page, /刪除|删除|delete|trash|remove|🗑/i)) });
         break;
       }
+      case "rowDownloadTooltip": {
+        operations.push({ type: "rowDownloadTooltip", ...(await hoverFirstMatchingControl(page, /下載|download|CSV|匯出|export|⬇/i)) });
+        break;
+      }
+      case "metricRowControls": {
+        operations.push({ type: "metricRowControls", snapshot: await readMetricRowsSnapshot(page) });
+        break;
+      }
+      case "metricRowAdd": {
+        operations.push({ type: "metricRowAdd", firstAdd: await clickMetricRowControl(page, "add") });
+        operations.push({ type: "metricRowAdd", secondAdd: await clickMetricRowControl(page, "add") });
+        break;
+      }
+      case "metricRowDuplicate": {
+        operations.push({ type: "metricRowDuplicate", duplicate: await clickMetricRowControl(page, "duplicate") });
+        break;
+      }
+      case "metricRowDelete": {
+        const initial = await readMetricRowsSnapshot(page);
+        if (Number(initial.rowCountFromLabels ?? 0) < 2) {
+          operations.push({ type: "metricRowDelete.prepareSecondRow", add: await clickMetricRowControl(page, "add") });
+        }
+        operations.push({ type: "metricRowDelete", deleteSecond: await clickMetricRowControl(page, "delete-second") });
+        break;
+      }
       case "deleteCancelFlow": {
         operations.push({ type: "deleteCancelFlow", ...(await observeModalTriggerAndCancel(page, /刪除|删除|delete|trash|remove|🗑/i)) });
         break;
@@ -6002,6 +6218,7 @@ const observeFrontendState = async (options: CliOptions, page: Page, startedAt: 
         break;
       }
       case "editorDownload":
+      case "reportModeRadio":
       case "projectToolbar":
       case "sidebarGroup":
       case "userButton":

@@ -1064,6 +1064,85 @@ const main = (): void => {
     assert.ok(!datePresetObservationPlan.actions.some((item) => item.template === "collage.configureMetric"), "L-04 observation must not configure metrics");
     assert.ok(!datePresetObservationPlan.actions.some((item) => item.template === "collage.runPreviewAndCollectEvidence"), "L-04 observation must not require selected fields/preview");
 
+    const rowDownloadTooltipCase = {
+      ...collageSaveReopenCase,
+      caseNo: "BIUI_COLLAGE_R001-J-06",
+      caseTitle: "hover 列內「下載」icon 顯示 tooltip",
+      testType: "前端呈現",
+      riskLevel: "🟢 觀察",
+      testTarget: "前端呈現",
+      cleanupChecklist: "欄位=不影響;篩選=不影響;分組=不影響;時間=不影響;顯示=不影響",
+      preconditions: "起始頁面: 拼貼模式專案頁",
+      stepsSummary: "hover 第一列的下載 icon，驗證 tooltip 顯示下載；不可 hover 刪除 icon 替代。",
+      expected: "下載 tooltip 顯示"
+    };
+    const rowDownloadTooltipGate = evaluateCapabilityGate(rowDownloadTooltipCase, null);
+    assert.equal(rowDownloadTooltipGate.detected.observationType, "rowDownloadTooltip", "J-06 download tooltip must not route to rowDeleteTooltip");
+    assert.equal(rowDownloadTooltipGate.detected.observationContext, "project_list");
+
+    const metricRowAddCase = {
+      ...collageSaveReopenCase,
+      caseNo: "BIUI_COLLAGE_R001-K-05",
+      caseTitle: "「+ 新增列」新增一列",
+      testType: "前端呈現",
+      riskLevel: "🟢 觀察",
+      testTarget: "前端呈現",
+      cleanupChecklist: "欄位=空;篩選=不影響;分組=不影響;時間=不影響;顯示=不影響",
+      stepsSummary: "進入新增報表設定頁，點擊 metricRows.addRowButton「+ 新增列」，驗證列數由 1 變 2 再變 3。",
+      expected: "點擊新增列後列數增加",
+      validationMethod: "Evidence: DOM button state + screenshot"
+    };
+    const metricRowDuplicateCase = {
+      ...metricRowAddCase,
+      caseNo: "BIUI_COLLAGE_R001-K-06",
+      caseTitle: "「複製列」複製當前列",
+      stepsSummary: "點擊第一列的 metricRows.duplicateRowButton「複製列」按鈕，驗證列數變為 2。"
+    };
+    const metricRowDeleteCase = {
+      ...metricRowAddCase,
+      caseNo: "BIUI_COLLAGE_R001-K-07",
+      caseTitle: "非第一列的「刪除列」可刪除該列",
+      stepsSummary: "新增至 2 列，點擊第二列的刪除列按鈕，驗證列數回到 1。"
+    };
+    const metricRowAddPlan = buildHelperExecutionPlan({ runDir, currentCase: metricRowAddCase, helperHints: null });
+    assert.equal(evaluateCapabilityGate(metricRowAddCase, null).detected.observationType, "metricRowAdd");
+    assert.deepEqual(metricRowAddPlan.actions.map((item) => item.template), ["collage.openProject", "collage.createReport", "collage.observeFrontendState"], "K-05 should use metric-row frontend observation and avoid preview selected-field precondition");
+    assert.equal(evaluateCapabilityGate(metricRowDuplicateCase, null).detected.observationType, "metricRowDuplicate");
+    assert.equal(evaluateCapabilityGate(metricRowDeleteCase, null).detected.observationType, "metricRowDelete");
+
+    const n08MinimalCsvCase = {
+      ...collageSaveReopenCase,
+      caseNo: "BIUI_COLLAGE_R001-N-08",
+      caseTitle: "CSV row count 與 preview 一致",
+      testType: "前後端整合",
+      riskLevel: "🟢 觀察",
+      testTarget: "前後端整合",
+      cleanupChecklist: "欄位=1欄;篩選=不影響;分組=不影響;時間=過去 7 天;顯示=不影響",
+      stepsSummary: "完成最小設置並執行計算，讀取 preview row 數，透過 UI 下載 CSV，解析 CSV row 數。",
+      expected: "CSV row count 與 preview 一致"
+    };
+    const n08Plan = buildHelperExecutionPlan({ runDir, currentCase: n08MinimalCsvCase, helperHints: null });
+    const n08MetricAction = n08Plan.actions.find((item) => item.template === "collage.configureMetric") ?? n08Plan.actions.find((item) => item.template === "collage.runDateVariantsPreviewEvidence");
+    assert.deepEqual(n08MetricAction?.params.fields, ["新增帳號數"], "N-08 欄位=1欄 should resolve to the default single metric instead of selected fields = 0");
+    assert.equal(n08MetricAction?.params.sourceReport, "每日報表", "N-08 minimal metric setup should default to 每日報表");
+    assert.ok(n08Plan.actions.some((item) => item.template === "collage.downloadCsvAndComparePreview"), "N-08 should still download CSV after preview");
+
+    const n04ProjectRowDownloadCase = {
+      ...collageSaveReopenCase,
+      caseNo: "BIUI_COLLAGE_R001-N-04",
+      caseTitle: "專案頁列內下載 icon 觸發下載",
+      testType: "功能流程",
+      riskLevel: "🟢 觀察",
+      testTarget: "功能流程",
+      cleanupChecklist: "欄位=不影響;篩選=不影響;分組=不影響;時間=不影響;顯示=不影響",
+      preconditions: "起始頁面: 拼貼報表的任一專案頁；前置資源: 至少一筆既有報表",
+      stepsSummary: "進入專案頁，hover 第 1 row 的下載 icon，點擊列內下載 icon，透過 Playwright download API 取得下載檔。",
+      expected: "列內下載 icon 可觸發下載；本題不測項目: CSV 內容驗證"
+    };
+    const n04Plan = buildHelperExecutionPlan({ runDir, currentCase: n04ProjectRowDownloadCase, helperHints: null });
+    assert.deepEqual(n04Plan.actions.map((item) => item.template), ["collage.openProject", "collage.downloadCsvAndComparePreview"], "N-04 should download from an existing project row without entering editor/configuring metric");
+    assert.equal(n04Plan.actions[1]?.params.allowAnyReportListRowDownload, true, "N-04 can use the first existing downloadable report row");
+
     const selectAllCase = {
       ...collageSaveReopenCase,
       caseNo: "OTTEST004-D-02",
@@ -1215,6 +1294,10 @@ const main = (): void => {
           "delete temporary report cases create a pending Tool Bridge helper action",
           "frontend observation project-toolbar cases route to observeFrontendState without preview",
           "frontend observation date preset cases route to observeFrontendState without selected-field preview preconditions",
+          "row download tooltip cases route to rowDownloadTooltip instead of rowDeleteTooltip",
+          "metric row add/duplicate/delete cases route to editor observation without selected-field preview preconditions",
+          "minimal one-field CSV cases resolve 欄位=1欄 to default single metric/source",
+          "project-row download-only cases stay on project list and allow first existing downloadable row",
           "selectAllFields helper hints preserve sourceReports/expected count and avoid synthetic field text",
           "actual D-02 expectedSources/expectedTotalFieldCount infer select-all 4-source/72-field helper params",
           "A-06 all-zero field inspection uses a dedicated select-all preview evidence helper",

@@ -5,7 +5,13 @@ export type FrontendObservationType =
   | "userButton"
   | "projectToolbar"
   | "sidebarGroup"
+  | "rowDownloadTooltip"
   | "rowDeleteTooltip"
+  | "reportModeRadio"
+  | "metricRowControls"
+  | "metricRowAdd"
+  | "metricRowDuplicate"
+  | "metricRowDelete"
   | "projectLimitToast"
   | "sourceReportPicker"
   | "fieldPicker"
@@ -128,7 +134,7 @@ const isFrontendObservationEligible = (
   const frontendTarget = /前端呈現|功能流程/.test(target);
   if (!frontendTarget) return false;
   if (hasHardDataEvidenceRequirement(behaviorText)) return false;
-  return /(?:觀察|確認|檢查|顯示|可見|不可見|disabled|enabled|反灰|不可點|不能點|可點|按鈕|icon|頁籤|tab|下拉|picker|選單|modal|dialog|彈窗|toast|tooltip|防呆|文案|側邊欄|展開|收合|hover|滑過)/i.test(behaviorText);
+  return /(?:觀察|確認|檢查|顯示|可見|不可見|disabled|enabled|反灰|不可點|不能點|可點|按鈕|icon|頁籤|tab|下拉|picker|選單|modal|dialog|彈窗|toast|tooltip|防呆|文案|側邊欄|展開|收合|hover|滑過|metricRows|新增列|複製列|刪除列|列數|自訂欄位)/i.test(behaviorText);
 };
 
 const detectObservationType = (
@@ -146,7 +152,13 @@ const detectObservationType = (
       "userButton",
       "projectToolbar",
       "sidebarGroup",
+      "rowDownloadTooltip",
       "rowDeleteTooltip",
+      "reportModeRadio",
+      "metricRowControls",
+      "metricRowAdd",
+      "metricRowDuplicate",
+      "metricRowDelete",
       "projectLimitToast",
       "sourceReportPicker",
       "fieldPicker",
@@ -167,6 +179,7 @@ const detectObservationType = (
   if (/側邊欄|公司共享|我的自訂|展開|收合|sidebar/i.test(behaviorText)) return "sidebarGroup";
   if (/最高\s*5\s*個專案|達(?:到)?最高|專案數上限|project\s*limit/i.test(behaviorText)) return "projectLimitToast";
   if (/新增專案.{0,24}(?:modal|dialog|彈窗|取消|防呆|模式)|(?:modal|dialog|彈窗).{0,24}新增專案/i.test(behaviorText)) return "projectCreateModal";
+  if (/建構方式|建構模式\s*radio|拼貼模式.{0,20}(?:radio|選中|disabled|enabled)|精算模式.{0,20}(?:radio|選中|disabled|enabled)|明細檢視.{0,20}(?:radio|選中|disabled|enabled)/i.test(behaviorText)) return "reportModeRadio";
   if (/來源報表.{0,24}(?:下拉|選單|picker|搜尋|請選擇報表)|(?:下拉|選單|picker).{0,24}來源報表/i.test(behaviorText)) return "sourceReportPicker";
   if (/(?:\+\s*)?新增欄位|欄位選擇|field\s*picker|可選欄位/i.test(behaviorText)) return "fieldPicker";
   if (/防呆|錯誤訊息|validation|toast|欄位未設置|未設置完成/i.test(behaviorText)) return "validationMessage";
@@ -176,11 +189,18 @@ const detectObservationType = (
       : "datePanel";
   }
   if (/未勾選|勾選|toolbar|工具列|專案頁.{0,32}(?:下載|刪除|新增報表)|(?:下載|刪除|新增報表).{0,32}專案頁/i.test(behaviorText)) return "projectToolbar";
-  if (/tooltip|hover|滑過|刪除\s*icon/i.test(behaviorText)) return "rowDeleteTooltip";
   if (/儲存.{0,18}(?:modal|dialog|彈窗|取消)|(?:modal|dialog|彈窗).{0,18}儲存/i.test(behaviorText)) return "saveModalCancel";
   if (/複製.{0,18}(?:modal|dialog|彈窗|取消)|(?:modal|dialog|彈窗).{0,18}複製/i.test(behaviorText)) return "copyModalCancel";
   if (/刪除.{0,18}(?:modal|dialog|confirm|彈窗|取消)|(?:modal|dialog|confirm|彈窗).{0,18}刪除/i.test(behaviorText)) return "deleteCancelFlow";
   if (/(?:editor|報表設定|新增報表頁|設定頁|右上).{0,28}(?:下載|download)|(?:下載報表|download).{0,24}(?:editor|報表設定|新增報表頁|設定頁|右上)/i.test(behaviorText)) return "editorDownload";
+  if (/metricRows|欄位列|自訂欄位|新增列|複製列|刪除列|duplicateRow|addRow|deleteRow/i.test(behaviorText)) {
+    if (/複製列|duplicateRow|duplicate\s*row|copy\s*row/i.test(behaviorText)) return "metricRowDuplicate";
+    if (/刪除列|deleteRow|delete\s*row|非第一列.{0,16}刪除/i.test(behaviorText)) return "metricRowDelete";
+    if (/(?:\+|加|新增).{0,8}列|addRow|add\s*row/i.test(behaviorText)) return "metricRowAdd";
+    return "metricRowControls";
+  }
+  if (/(?:tooltip|hover|滑過).{0,24}(?:下載|download)|(?:下載|download).{0,24}(?:tooltip|hover|滑過|icon)/i.test(behaviorText)) return "rowDownloadTooltip";
+  if (/(?:tooltip|hover|滑過).{0,24}(?:刪除|delete|trash|remove)|(?:刪除|delete|trash|remove).{0,24}(?:tooltip|hover|滑過|icon)/i.test(behaviorText)) return "rowDeleteTooltip";
   return null;
 };
 
@@ -195,11 +215,11 @@ const detectObservationContext = (
     return explicitContext as FrontendObservationContext;
   }
   if (!observationType) return "unknown";
-  if (["datePanel", "dateRangePresetSwitch", "validationMessage", "editorDownload", "fieldPicker", "saveModalCancel", "copyModalCancel"].includes(observationType)) {
+  if (["datePanel", "dateRangePresetSwitch", "validationMessage", "editorDownload", "fieldPicker", "saveModalCancel", "copyModalCancel", "reportModeRadio", "metricRowControls", "metricRowAdd", "metricRowDuplicate", "metricRowDelete"].includes(observationType)) {
     return "editor";
   }
-  if (["projectToolbar", "sidebarGroup", "projectLimitToast", "projectCreateModal", "rowDeleteTooltip", "deleteCancelFlow"].includes(observationType)) {
-    return /清單|列表|報表列|row/i.test(behaviorText) ? "project_list" : "project";
+  if (["projectToolbar", "sidebarGroup", "projectLimitToast", "projectCreateModal", "rowDownloadTooltip", "rowDeleteTooltip", "deleteCancelFlow"].includes(observationType)) {
+    return /清單|列表|報表列|列內|第\s*\d+\s*(?:列|row)|row/i.test(behaviorText) ? "project_list" : "project";
   }
   if (observationType === "sourceReportPicker") return /報表設定|新增報表頁|editor|設定頁/i.test(behaviorText) ? "editor" : "project";
   return "unknown";
