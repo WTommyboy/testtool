@@ -271,11 +271,16 @@ type FrontendObservationType =
   | "validationMessage"
   | "sidebarGroup"
   | "projectCreateModal"
+  | "rowDownloadTooltip"
   | "rowDeleteTooltip"
   | "deleteCancelFlow"
   | "projectLimitToast"
   | "sourceReportPicker"
   | "fieldPicker"
+  | "metricRowControls"
+  | "metricRowAdd"
+  | "metricRowDuplicate"
+  | "metricRowDelete"
   | "dateTimeTypeTab"
   | "datePanelCancel"
   | "downloadToast"
@@ -285,6 +290,14 @@ type FrontendObservationType =
   | null;
 
 const inferFrontendObservationType = (currentCase: CaseManifestCase | null): FrontendObservationType => {
+  const coreText = [
+    currentCase?.caseNo,
+    currentCase?.caseTitle,
+    currentCase?.stepsSummary,
+    currentCase?.validationMethod
+  ]
+    .filter(Boolean)
+    .join("\n");
   const text = [
     currentCase?.caseNo,
     currentCase?.groupName,
@@ -300,8 +313,13 @@ const inferFrontendObservationType = (currentCase: CaseManifestCase | null): Fro
   if (/新增專案\s*modal|新增專案.*名稱輸入|專案名稱輸入|拼貼報表旁新增專案|project\s*create\s*modal|create\s*project/i.test(text)) return "projectCreateModal";
   if (/刪除確認|deleteConfirmModal|取消流程|取消刪除|刪除\s*modal|delete\s*cancel/i.test(text)) return "deleteCancelFlow";
   if (/側欄|公司共享|sidebar/i.test(text)) return "sidebarGroup";
-  if (/hover|tooltip|列內.*刪除|row.*delete/i.test(text)) return "rowDeleteTooltip";
+  if (/(?:hover|tooltip).{0,40}(?:下載|download)|(?:下載|download).{0,40}(?:hover|tooltip)|列內.*下載|row.*download/i.test(text)) return "rowDownloadTooltip";
+  if (/(?:hover|tooltip).{0,40}(?:刪除|delete)|(?:刪除|delete).{0,40}(?:hover|tooltip)|列內.*刪除|row.*delete/i.test(text)) return "rowDeleteTooltip";
   if (/5\s*個上限|最高\s*5\s*個專案|上限阻擋|project.*limit/i.test(text)) return "projectLimitToast";
+  if (/複製列|duplicateRow|metricRows\.duplicateRowButton|複製當前列/i.test(coreText)) return "metricRowDuplicate";
+  if (/刪除列|deleteRow|metricRows\.deleteRowButton|非第一列.*刪除/i.test(coreText)) return "metricRowDelete";
+  if (/新增列|addRow|metricRows\.addRowButton|\+\s*新增列/i.test(coreText)) return "metricRowAdd";
+  if (/metricRows|欄位列|列數|第一列|自訂欄位/i.test(text)) return "metricRowControls";
   if (/欄位\s*picker|field\s*picker|欄位選擇.*新增帳號數|選取.*新增帳號數/i.test(text)) return "fieldPicker";
   if (/報表\s*picker|來源報表|source\s*report|搜尋.*每日|每日報表/i.test(text)) return "sourceReportPicker";
   if (/下載\/刪除\s*icon|下載\s*icon|刪除\s*icon|toolbar|工具列|勾選.*下載|未勾選.*下載|disabled|enabled/i.test(text)) {
@@ -332,6 +350,8 @@ const observationRequiredEvidence = (observationType: FrontendObservationType): 
       return ["sidebar.companySharedGroup.state", "interactionLog", "screenshot"];
     case "projectCreateModal":
       return ["projectCreateModal.flow.state", "projectCreateModal.state", "interactionLog", "screenshot"];
+    case "rowDownloadTooltip":
+      return ["projectList.rowActionTooltip.state", "interactionLog", "screenshot"];
     case "rowDeleteTooltip":
       return ["projectList.rowActionTooltip.state", "interactionLog", "screenshot"];
     case "deleteCancelFlow":
@@ -342,6 +362,14 @@ const observationRequiredEvidence = (observationType: FrontendObservationType): 
       return ["sourceReportPicker.state", "sourceControl.after", "interactionLog", "screenshot"];
     case "fieldPicker":
       return ["fieldPicker.state", "fieldPicker.signature", "fieldControl.after", "interactionLog", "screenshot"];
+    case "metricRowControls":
+      return ["metricRows.state", "dom.state", "screenshot"];
+    case "metricRowAdd":
+      return ["metricRows.addFlow.state", "interactionLog", "screenshot"];
+    case "metricRowDuplicate":
+      return ["metricRows.duplicateFlow.state", "interactionLog", "screenshot"];
+    case "metricRowDelete":
+      return ["metricRows.deleteFlow.state", "interactionLog", "screenshot"];
     case "dateTimeTypeTab":
       return ["dateRange.timeTypeTab.state", "interactionLog", "screenshot"];
     case "datePanelCancel":
@@ -376,6 +404,8 @@ const fallbackObservationType = (value: string | null): FrontendObservationType 
       return "sidebarGroup";
     case "projectCreateModal":
       return "projectCreateModal";
+    case "rowDownloadTooltip":
+      return "rowDownloadTooltip";
     case "rowDeleteTooltip":
     case "rowActionTooltip":
       return "rowDeleteTooltip";
@@ -387,6 +417,14 @@ const fallbackObservationType = (value: string | null): FrontendObservationType 
       return "sourceReportPicker";
     case "fieldPicker":
       return "fieldPicker";
+    case "metricRowControls":
+      return "metricRowControls";
+    case "metricRowAdd":
+      return "metricRowAdd";
+    case "metricRowDuplicate":
+      return "metricRowDuplicate";
+    case "metricRowDelete":
+      return "metricRowDelete";
     case "dateTimeTypeTab":
       return "dateTimeTypeTab";
     case "datePanelCancel":
@@ -501,9 +539,9 @@ const paramsForStructuredContract = (
     next.dateVariants = variants;
   }
   if (contract.routeIntent === "download_execution" || contract.routeIntent === "report_mutation_flow") {
-    if (typeof next.field !== "string" || !next.field.trim()) next.field = "新增帳號數";
+    if (typeof next.field !== "string" || !next.field.trim()) next.field = DEFAULT_COLLAGE_METRIC_FIELD;
     if (!Array.isArray(next.fields) || next.fields.length === 0) next.fields = [next.field];
-    if (typeof next.source !== "string" || !next.source.trim()) next.source = "每日報表";
+    if (typeof next.source !== "string" || !next.source.trim()) next.source = DEFAULT_COLLAGE_SOURCE_REPORT;
     if (typeof next.sourceReport !== "string" || !next.sourceReport.trim()) next.sourceReport = next.source;
   }
   if (contract.routeIntent === "report_mutation_flow") {
@@ -639,6 +677,36 @@ const cleanupMetricFieldTarget = (value: string | null | undefined): string | nu
   return cleaned;
 };
 
+const cleanupMetricFieldIsCountOnly = (value: string | null | undefined): boolean => {
+  const cleaned = nonNeutral(value);
+  return Boolean(cleaned && /^\d+\s*(?:欄|欄位|field|fields?)$/i.test(cleaned));
+};
+
+const DEFAULT_COLLAGE_SOURCE_REPORT = "每日報表";
+const DEFAULT_COLLAGE_METRIC_FIELD = "新增帳號數";
+
+const caseNeedsDefaultSingleMetric = (
+  text: string,
+  cleanup: Record<string, string>,
+  params: Record<string, unknown>,
+  caseScopeContract: StructuredCaseScopeContract | null
+): boolean => {
+  if (!cleanupMetricFieldIsCountOnly(cleanup["欄位"])) return false;
+  if (caseScopeContract?.routeIntent === "download_execution") return true;
+  return helperRequestsDownload(params) ||
+    textExplicitlyRequiresDownload(text) ||
+    /CSV|preview|預覽|計算|最小設置|最小設定|row\s*count|數值.*preview/i.test(text);
+};
+
+const isProjectRowDownloadOnlyCase = (currentCase: CaseManifestCase | null, params: Record<string, unknown>): boolean => {
+  const text = textBlob(currentCase);
+  if (!(textRequestsReportListDownload(text) || paramsRequestReportListDownload(params))) return false;
+  if (!/(?:專案頁|清單|列表|row|報表列|列內).{0,40}(?:下載|download)|(?:下載|download).{0,40}(?:專案頁|清單|列表|row|報表列|列內)/i.test(text)) return false;
+  const explicitlyExcludesCsvContent = /本題不測項目.{0,32}CSV\s*內容驗證/i.test(text);
+  if (!explicitlyExcludesCsvContent && /CSV\s*row\s*count|row\s*count.*preview|CSV\s*數值|數值.*preview|內容驗證|完整輸出|完整比對/i.test(text)) return false;
+  return explicitlyExcludesCsvContent || /只驗(?:證)?.{0,16}(?:觸發下載|下載事件|下載檔|download event)|列內下載 icon 觸發下載/i.test(text);
+};
+
 const inferReportNamePattern = (text: string, params: Record<string, unknown>): string | null =>
   cleanReportNamePattern(
     stringParam(params, ["reportName", "reportNamePattern"]) ??
@@ -708,12 +776,14 @@ const inferCollageParams = (currentCase: CaseManifestCase | null, helperHints: H
     );
   const dateVariantLabels = firstStringArrayParam(params, ["dateVariants", "uiLabels"]);
   const rawDateVariants = rawArrayParam(params, "dateVariants");
+  const needsDefaultSingleMetric = caseNeedsDefaultSingleMetric(text, cleanup, params, caseScopeContract);
   const field = selectAllFields
     ? null
     : nonNeutral(stringParam(params, ["field", "metric", "metricField"])) ??
       cleanupMetricFieldTarget(cleanup["欄位"]) ??
       cleanupMetricFieldTarget(firstMatch(text, [/欄位[「=：: ]+([^」\n,，;；]+)/])) ??
-      (caseScopeContract?.routeIntent === "download_execution" ? "新增帳號數" : null);
+      (needsDefaultSingleMetric ? DEFAULT_COLLAGE_METRIC_FIELD : null) ??
+      (caseScopeContract?.routeIntent === "download_execution" ? DEFAULT_COLLAGE_METRIC_FIELD : null);
   const fields = splitCompositeMetricFields(field);
   const reportNamePattern = inferReportNamePattern(text, params);
   const modifiesExistingReport =
@@ -747,7 +817,11 @@ const inferCollageParams = (currentCase: CaseManifestCase | null, helperHints: H
     ? null
     : firstMatch(text, [/來源報表(?:[（(][^)）]+[)）])?[=：: ]*「?([^」\n,， ]+)/]);
   const cleanInferredSource = inferredSource && !/多源/.test(inferredSource) ? inferredSource : null;
-  const effectiveSource = explicitSource ?? cleanInferredSource ?? (sourceReportsFromText.length === 1 ? sourceReportsFromText[0] : null) ?? (caseScopeContract?.routeIntent === "download_execution" ? "每日報表" : null);
+  const effectiveSource = explicitSource ??
+    cleanInferredSource ??
+    (sourceReportsFromText.length === 1 ? sourceReportsFromText[0] : null) ??
+    (needsDefaultSingleMetric ? DEFAULT_COLLAGE_SOURCE_REPORT : null) ??
+    (caseScopeContract?.routeIntent === "download_execution" ? DEFAULT_COLLAGE_SOURCE_REPORT : null);
   const sourceReports = sourceReportsParam.length > 0
     ? sourceReportsParam
     : allZeroFieldInspection && effectiveSource
@@ -1017,6 +1091,30 @@ const buildActions = (currentCase: CaseManifestCase | null, helperHints: HelperH
         requiredEvidence: ["dom.state", "screenshot"],
         screenshotPolicy: "required_if_possible",
         notes: ["只點報表名稱進 editor，不點下載/刪除控制。"]
+      })
+    ];
+  }
+  if (isProjectRowDownloadOnlyCase(currentCase, params)) {
+    const rowDownloadParams = {
+      ...params,
+      downloadScope: "report_list",
+      allowAnyReportListRowDownload: true,
+      skipSave: true,
+      skipReopen: true,
+      skipDownload: false
+    };
+    return [
+      action("H1", "collage.openProject", "開啟指定拼貼專案", rowDownloadParams, {
+        requiredEvidence: ["dom.url", "dom.pageTitle", "dom.state", "screenshot"],
+        notes: ["專案頁列內下載題只定位報表清單，不進新增報表 editor。"]
+      }),
+      action("H2", "collage.downloadCsvAndComparePreview", "從專案頁第一個可下載報表 row 觸發下載", rowDownloadParams, {
+        requiredEvidence: ["downloaded.csv", "projectList.reportRow.state", "download.toast.state", "screenshot"],
+        screenshotPolicy: "required_if_possible",
+        notes: [
+          "本題只驗證 row 下載控制可觸發下載並取得檔案，不做 preview/CSV 內容比對。",
+          "若 testcase 未指定 savedReportName，helper 可選第一個可見且有下載控制的報表 row。"
+        ]
       })
     ];
   }

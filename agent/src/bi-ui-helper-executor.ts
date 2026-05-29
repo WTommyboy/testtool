@@ -246,11 +246,19 @@ const strictSelectAllFieldCountRequired = (params: Record<string, unknown>): boo
     (helperRequestsCsvDownload(params) || stringArrayParam(params, "sourceReports").length > 1)
   );
 
+const normalizedMetricFieldRequest = (value: string | null | undefined): string | null => {
+  const cleaned = nonNeutralUiTarget(value);
+  if (!cleaned) return null;
+  if (/^\d+\s*(?:欄|欄位|field|fields?|列|row|rows?)$/i.test(cleaned)) return null;
+  if (/^(?:空|無|0)\s*(?:→|->)?\s*\d+\s*(?:欄|欄位|field|fields?|列|row|rows?)$/i.test(cleaned)) return null;
+  return cleaned;
+};
+
 const metricFieldsFromParams = (params: Record<string, unknown>): string[] => {
   if (paramsRequestSelectAllFields(params)) return [];
   const explicit = stringArrayParam(params, "fields");
-  if (explicit.length > 0) return [...new Set(explicit.filter((item) => !isNeutralUiTarget(item)))];
-  return splitCompositeMetricFields(nonNeutralUiTarget(firstStringParam(params, ["field", "metric", "metricField"])));
+  if (explicit.length > 0) return [...new Set(explicit.flatMap((item) => splitCompositeMetricFields(normalizedMetricFieldRequest(item))))];
+  return splitCompositeMetricFields(normalizedMetricFieldRequest(firstStringParam(params, ["field", "metric", "metricField"])));
 };
 
 type MetricRowParam = {
@@ -790,7 +798,8 @@ const browserSessionWindowNamePrefix = (lease: BrowserSessionLease): string =>
   `uat-tool:${lease.runId}:${lease.caseNo}:${lease.generation}`;
 
 const GALAXY_BI_HOST = "galaxy.games.gamania.com";
-const GALAXY_BI_DEV_PATH_PREFIXES = ["/biapi-dev", "/bi-dev"] as const;
+const GALAXY_BI_DEV_PATH_PREFIXES = ["/biapi-dev", "/bi-dev", "/bi-rc"] as const;
+const GALAXY_BI_OFFICIAL_UI_PATH_PREFIXES = ["/bi-dev", "/bi-rc"] as const;
 const OFFICIAL_COLLAGE_DEFAULT_PROJECT_ID = "9";
 const OFFICIAL_COLLAGE_DEFAULT_PROJECT_NAME = "拼貼test_001";
 
@@ -805,6 +814,9 @@ const parseHttpUrl = (url: string | null | undefined): URL | null => {
 
 const isAllowedGalaxyBiPath = (pathname: string): boolean =>
   GALAXY_BI_DEV_PATH_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
+
+const officialBiUiPathPrefix = (pathname: string): "/bi-dev" | "/bi-rc" | null =>
+  GALAXY_BI_OFFICIAL_UI_PATH_PREFIXES.find((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`)) ?? null;
 
 const isGalaxyBiDevUrl = (url: string, expectedDevUrl?: string | null): boolean => {
   const candidate = parseHttpUrl(url);
@@ -823,7 +835,7 @@ const isGalaxyBiDevUrl = (url: string, expectedDevUrl?: string | null): boolean 
 
 const isOfficialBiUiPageUrl = (url: string): boolean => {
   const parsed = parseHttpUrl(url);
-  return Boolean(parsed && parsed.hostname.toLowerCase() === GALAXY_BI_HOST && (parsed.pathname === "/bi-dev" || parsed.pathname.startsWith("/bi-dev/")));
+  return Boolean(parsed && parsed.hostname.toLowerCase() === GALAXY_BI_HOST && officialBiUiPathPrefix(parsed.pathname));
 };
 
 const readPageBrowserSessionMarker = async (page: Page): Promise<{ windowName: string; sessionRaw: string | null; url: string } | null> => {
@@ -3037,10 +3049,10 @@ const isCollageReportListReady = (bodyText: string): boolean =>
   hasCreateReportEntry(bodyText) && !hasSelectProjectPrompt(bodyText);
 
 const isOfficialCollageProjectRouteUrl = (url: string): boolean =>
-  Boolean(parseHttpUrl(url)?.pathname.match(/\/bi-dev\/[^/]+\/report\/myCustom\/tileMode\/[^/]+$/));
+  Boolean(parseHttpUrl(url)?.pathname.match(/\/bi-(?:dev|rc)\/[^/]+\/report\/myCustom\/tileMode\/[^/]+$/));
 
 const isOfficialCollageEditorRouteUrl = (url: string): boolean =>
-  Boolean(parseHttpUrl(url)?.pathname.match(/\/bi-dev\/[^/]+\/report\/new$/));
+  Boolean(parseHttpUrl(url)?.pathname.match(/\/bi-(?:dev|rc)\/[^/]+\/report\/new$/));
 
 type OfficialCollageProjectRouteFallback = {
   url: string;
@@ -3057,6 +3069,7 @@ const buildOfficialCollageProjectRouteFallback = (
   const parsed = parseHttpUrl(currentUrl);
   if (!parsed) return null;
   const pathParts = parsed.pathname.split("/").filter(Boolean);
+  const basePath = officialBiUiPathPrefix(parsed.pathname) ?? "/bi-dev";
   const locale = pathParts[1] && pathParts[1] !== "report" ? pathParts[1] : "zh-TW";
   const explicitProjectId = firstStringParam(params, ["projectId", "collageProjectId", "defaultProjectId", "officialProjectId"]);
   if (explicitProjectName && !explicitProjectId) return null;
@@ -3067,7 +3080,7 @@ const buildOfficialCollageProjectRouteFallback = (
     firstStringParam(params, ["defaultProjectName", "collageProjectName", "officialProjectName"]) ??
     OFFICIAL_COLLAGE_DEFAULT_PROJECT_NAME;
   return {
-    url: `${parsed.origin}/bi-dev/${locale}/report/myCustom/tileMode/${projectId}`,
+    url: `${parsed.origin}${basePath}/${locale}/report/myCustom/tileMode/${projectId}`,
     projectId,
     projectName
   };
@@ -6557,7 +6570,7 @@ const isOfficialCollageEditorPage = async (page: Page): Promise<boolean> => {
       return null;
     }
   })();
-  if (parsed?.pathname.match(/\/bi-dev\/[^/]+\/report\/new$/)) return true;
+  if (parsed?.pathname.match(/\/bi-(?:dev|rc)\/[^/]+\/report\/new$/)) return true;
   if (!isOfficialBiUiPageUrl(page.url())) return false;
   const bodyText = await page.locator("body").innerText({ timeout: 2000 }).catch(() => "");
   return /自訂報表/.test(bodyText) && /欄位選擇/.test(bodyText) && /請選擇報表|---/.test(bodyText);
@@ -7787,6 +7800,83 @@ const readReportListRowState = async (page: Page, reportName: string): Promise<R
   }, reportName);
 };
 
+const readFirstDownloadableReportListRowState = async (page: Page): Promise<ReportListRowState> => {
+  return await page.evaluate(() => {
+    const normalize = (value: string | null | undefined) => (value ?? "").trim().replace(/\s+/g, " ");
+    const isVisible = (element: Element): boolean => {
+      const rect = element.getBoundingClientRect();
+      const style = window.getComputedStyle(element);
+      return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden" && style.opacity !== "0";
+    };
+    const bodyText = normalize(document.body?.innerText ?? "");
+    const downloadPattern = /下載|CSV|匯出|download|export|⬇/i;
+    const deletePattern = /刪除|删除|delete|trash|remove|🗑/i;
+    const allBodyElements = Array.from(document.querySelectorAll<HTMLElement>("body *"));
+    const rowElements = Array.from(document.querySelectorAll<HTMLElement>(
+      "tr, [role='row'], [class*=row], [class*=Row], [class*=card], [class*=Card], [class*=item], [class*=Item], [class*=list], [class*=List]"
+    ));
+    const controlsFor = (row: HTMLElement, pattern: RegExp) => Array.from(row.querySelectorAll<HTMLElement>("button, a, [role=button]")).flatMap((control) => {
+      if (!isVisible(control)) return [];
+      const text = normalize(control.innerText || control.textContent);
+      const attrs = [
+        control.getAttribute("aria-label"),
+        control.getAttribute("title"),
+        control.getAttribute("download"),
+        control.getAttribute("href"),
+        control.getAttribute("onclick"),
+        typeof control.className === "string" ? control.className : ""
+      ].join(" ");
+      if (!pattern.test(`${text} ${attrs}`)) return [];
+      const rect = control.getBoundingClientRect();
+      return [{
+        bodyIndex: allBodyElements.indexOf(control),
+        text,
+        tagName: control.tagName.toLowerCase(),
+        role: control.getAttribute("role"),
+        ariaLabel: control.getAttribute("aria-label"),
+        title: control.getAttribute("title"),
+        onclick: control.getAttribute("onclick"),
+        rect: { x: Math.round(rect.x), y: Math.round(rect.y), width: Math.round(rect.width), height: Math.round(rect.height) }
+      }];
+    });
+    const candidates = rowElements
+      .filter((element) => isVisible(element))
+      .flatMap((row) => {
+        const rowText = normalize(row.innerText || row.textContent);
+        const looksLikeReportRow =
+          /\d{4}[/-]\d{1,2}[/-]\d{1,2}\s*~\s*\d{4}[/-]\d{1,2}[/-]\d{1,2}|過去\s*\d+\s*天|最近\s*\d+\s*天|昨日|今日|上週|本週|上月|本月/.test(rowText) &&
+          /下載/.test(rowText);
+        const downloadControls = controlsFor(row, downloadPattern);
+        if (!looksLikeReportRow && downloadControls.length === 0) return [];
+        const deleteControls = controlsFor(row, deletePattern);
+        const firstLine = rowText.split(/\s{2,}|\n/).map((item) => item.trim()).find((item) =>
+          item && !/^(報表名稱|資料週期區間|操作|下載|刪除)$/.test(item)
+        ) ?? "first-visible-report-row";
+        const rect = row.getBoundingClientRect();
+        return [{
+          reportName: firstLine,
+          text: rowText.slice(0, 1000),
+          downloadControls,
+          deleteControls,
+          rect: { x: Math.round(rect.x), y: Math.round(rect.y), width: Math.round(rect.width), height: Math.round(rect.height) },
+          score: downloadControls.length * 100 + (looksLikeReportRow ? 20 : 0) + Math.max(0, 1000 - Math.round(rect.y))
+        }];
+      })
+      .filter((row) => row.downloadControls.length > 0)
+      .sort((a, b) => b.score - a.score);
+    const row = candidates[0] ?? null;
+    return {
+      found: Boolean(row),
+      reportName: row?.reportName ?? "first-visible-report-row",
+      url: window.location.href,
+      bodyTextExcerpt: bodyText.slice(0, 3000),
+      rowText: row?.text ?? null,
+      downloadControls: row?.downloadControls ?? [],
+      deleteControls: row?.deleteControls ?? []
+    };
+  });
+};
+
 const ensureSavedReportListRowVisible = async (
   options: CliOptions,
   page: Page,
@@ -8104,10 +8194,11 @@ const downloadCsvAndComparePreview = async (options: CliOptions, page: Page, sta
   ensureDir(downloadDir);
   const savedReportName = readSavedReportName(options);
   const downloadScope = stringParam(options.params, "downloadScope");
+  const allowAnyReportListRowDownload = booleanishParam(options.params, ["allowAnyReportListRowDownload", "allowAnyReportRowDownload"]);
   const bodyTextBefore = typeof domStateBefore.bodyTextExcerpt === "string" ? domStateBefore.bodyTextExcerpt : "";
   const wantsReportList = downloadScope === "report_list"
     || Boolean(savedReportName && bodyTextBefore.includes(savedReportName) && !/報表設定|儲存報表|執行/.test(bodyTextBefore));
-  if (wantsReportList && !savedReportName) throw new HelperBlockedError("SAVED_REPORT_NAME_MISSING_FOR_REPORT_LIST_CSV");
+  if (wantsReportList && !savedReportName && !allowAnyReportListRowDownload) throw new HelperBlockedError("SAVED_REPORT_NAME_MISSING_FOR_REPORT_LIST_CSV");
 
   let listRecovery: Awaited<ReturnType<typeof ensureSavedReportListRowVisible>> | null = null;
   let reportListState: ReportListRowState | null = null;
@@ -8139,12 +8230,39 @@ const downloadCsvAndComparePreview = async (options: CliOptions, page: Page, sta
         ]
       );
     }
+  } else if (wantsReportList && allowAnyReportListRowDownload) {
+    reportListState = await readFirstDownloadableReportListRowState(page);
+    if (!reportListState.found) {
+      const failedSubcondition = "downloadable_report_row_missing";
+      const shot = await screenshot(options, page, failedSubcondition);
+      const uiProfileAfterPrecondition = await captureUiDomProfile(options, page, `downloadCsv.${failedSubcondition}`);
+      return createReport(
+        options,
+        "blocked",
+        startedAt,
+        {
+          workflowStatus: "failed_precondition",
+          failedSubcondition,
+          csv_comparison_status: "not_reached",
+          requestedScope: downloadScope ?? "report_list",
+          domState: await readDomState(page),
+          uiProfiles: { before: uiProfileBefore, precondition: uiProfileAfterPrecondition },
+          reportList: reportListState
+        },
+        shot ? { screenshot: shot } : {},
+        [
+          ...(shot ? [] : ["SCREENSHOT_UNAVAILABLE"]),
+          "CSV_REPORT_LIST_DOWNLOADABLE_ROW_NOT_FOUND"
+        ]
+      );
+    }
   }
 
   const observedDownload = await observeUiTriggeredCsvDownload(page, async () => {
-    if (wantsReportList && savedReportName) {
-      const rowDownload = await clickReportListCsvDownload(page, savedReportName, reportListState);
-      return { ...rowDownload, reportName: savedReportName, requestedScope: downloadScope ?? "auto_report_list" };
+    if (wantsReportList && (savedReportName || allowAnyReportListRowDownload)) {
+      const targetReportName = savedReportName ?? reportListState?.reportName ?? "first-visible-report-row";
+      const rowDownload = await clickReportListCsvDownload(page, targetReportName, reportListState);
+      return { ...rowDownload, reportName: targetReportName, requestedScope: downloadScope ?? "auto_report_list", allowAnyReportListRowDownload };
     }
     const clicked = await clickFirstVisible([
       page.getByText(/下載.*CSV|CSV.*下載|匯出.*CSV|CSV|下載/i),
@@ -8530,6 +8648,166 @@ const projectListRowDeleteButtonCandidate = async (page: Page): Promise<Record<s
     visibleDeleteButtons: [],
     error: error instanceof Error ? error.message : String(error)
   }));
+
+const projectListRowDownloadButtonCandidate = async (page: Page): Promise<Record<string, unknown>> =>
+  page.evaluate(() => {
+    const isVisible = (element: Element): boolean => {
+      const rect = element.getBoundingClientRect();
+      const style = window.getComputedStyle(element);
+      return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden" && style.opacity !== "0";
+    };
+    const normalize = (value: string | null | undefined) => (value ?? "").trim().replace(/\s+/g, " ");
+    const rowLikeText = (button: HTMLButtonElement): string => {
+      let current: HTMLElement | null = button;
+      for (let depth = 0; depth < 6 && current; depth += 1) {
+        const text = normalize(current.innerText || current.textContent);
+        if (/\d{4}[/-]\d{1,2}[/-]\d{1,2}|過去\s*\d+\s*天|最近\s*\d+\s*天|昨日|今日|上週|本週|上月|本月|下載|刪除/.test(text)) {
+          return text.slice(0, 400);
+        }
+        current = current.parentElement;
+      }
+      return "";
+    };
+    const buttons = Array.from(document.querySelectorAll("button")).flatMap((button, domIndex) => {
+      const rect = button.getBoundingClientRect();
+      const style = window.getComputedStyle(button);
+      const text = normalize(button.innerText || button.textContent);
+      const ariaLabel = normalize(button.getAttribute("aria-label"));
+      const title = normalize(button.getAttribute("title"));
+      const className = String(button.className ?? "");
+      const disabled = button.disabled || button.getAttribute("aria-disabled") === "true" || style.pointerEvents === "none";
+      const labelText = `${text}\n${ariaLabel}\n${title}\n${className}`;
+      const labelMatchesDownload = /(^|\s)(下載|匯出)(\s|$)|download|export|csv|⬇/i.test(labelText);
+      const insideDialog = Boolean(button.closest("[role='dialog'], .modal, .ant-modal, .MuiDialog-root, .swal2-popup"));
+      if (!isVisible(button) || disabled || insideDialog || !labelMatchesDownload) return [];
+      const rowContextText = rowLikeText(button);
+      const iconSized = rect.width <= 96 && rect.height <= 72;
+      const belowToolbar = rect.y > Math.min(180, window.innerHeight * 0.22);
+      const rowContext = /\d{4}[/-]\d{1,2}[/-]\d{1,2}|過去\s*\d+\s*天|最近\s*\d+\s*天|昨日|今日|上週|本週|上月|本月|刪除/.test(rowContextText);
+      return [{
+        domIndex,
+        text,
+        ariaLabel,
+        title,
+        className,
+        rect: { x: Math.round(rect.x), y: Math.round(rect.y), width: Math.round(rect.width), height: Math.round(rect.height) },
+        rowContext,
+        rowContextText,
+        iconSized,
+        belowToolbar,
+        score: (rowContext ? 100 : 0) + (belowToolbar ? 20 : 0) + (iconSized ? 10 : 0)
+      }];
+    });
+    const candidates = buttons
+      .filter((button) => button.rowContext || button.belowToolbar)
+      .sort((a, b) => b.score - a.score || a.rect.y - b.rect.y || a.rect.x - b.rect.x);
+    return {
+      selected: candidates[0] ?? null,
+      candidates: candidates.slice(0, 8),
+      visibleDownloadButtons: buttons.slice(0, 12)
+    };
+  }).catch((error) => ({
+    selected: null,
+    candidates: [],
+    visibleDownloadButtons: [],
+    error: error instanceof Error ? error.message : String(error)
+  }));
+
+const readMetricRowsSnapshot = async (page: Page): Promise<Record<string, unknown>> =>
+  page.evaluate(() => {
+    const isVisible = (element: Element): boolean => {
+      const rect = element.getBoundingClientRect();
+      const style = window.getComputedStyle(element);
+      return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden" && style.opacity !== "0";
+    };
+    const normalize = (value: string | null | undefined) => (value ?? "").trim().replace(/\s+/g, " ");
+    const buttons = Array.from(document.querySelectorAll<HTMLButtonElement>("button")).flatMap((button, domIndex) => {
+      if (!isVisible(button)) return [];
+      const rect = button.getBoundingClientRect();
+      const text = normalize(button.innerText || button.textContent);
+      const ariaLabel = normalize(button.getAttribute("aria-label"));
+      const title = normalize(button.getAttribute("title"));
+      const style = window.getComputedStyle(button);
+      return [{
+        domIndex,
+        text,
+        ariaLabel,
+        title,
+        disabled: button.disabled || button.getAttribute("aria-disabled") === "true" || style.pointerEvents === "none",
+        rect: { x: Math.round(rect.x), y: Math.round(rect.y), width: Math.round(rect.width), height: Math.round(rect.height) }
+      }];
+    });
+    const rowHandles = buttons.filter((button) => /拖曳排序第\s*\d+\s*列/.test(button.ariaLabel));
+    const rowIndexes = rowHandles.flatMap((button) => {
+      const match = button.ariaLabel.match(/第\s*(\d+)\s*列/);
+      return match ? [Number(match[1])] : [];
+    });
+    const addButtons = buttons.filter((button) => button.ariaLabel === "新增欄位");
+    const duplicateButtons = buttons.filter((button) => /複製條件/.test(button.ariaLabel));
+    const deleteButtons = buttons.filter((button) => /刪除條件/.test(button.ariaLabel));
+    const sourceButtons = buttons.filter((button) => /請選擇報表|每日報表/.test(button.text));
+    const fieldButtons = buttons.filter((button) => /---|新增帳號|MAU/.test(button.text));
+    return {
+      rowCount: rowIndexes.length > 0 ? Math.max(...rowIndexes) : rowHandles.length,
+      rowHandles,
+      addButtons,
+      duplicateButtons,
+      deleteButtons,
+      sourceButtons,
+      fieldButtons,
+      controls: {
+        addEnabled: addButtons.some((button) => !button.disabled),
+        duplicateEnabledCount: duplicateButtons.filter((button) => !button.disabled).length,
+        deleteEnabledCount: deleteButtons.filter((button) => !button.disabled).length
+      }
+    };
+  });
+
+const metricRowControlButtonIndex = async (page: Page, action: "add" | "duplicate" | "delete-second"): Promise<number | null> =>
+  page.evaluate((requestedAction) => {
+    const isVisible = (element: Element): boolean => {
+      const rect = element.getBoundingClientRect();
+      const style = window.getComputedStyle(element);
+      return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden" && style.opacity !== "0";
+    };
+    const normalize = (value: string | null | undefined) => (value ?? "").trim().replace(/\s+/g, " ");
+    const candidates = Array.from(document.querySelectorAll<HTMLButtonElement>("button")).flatMap((button, domIndex) => {
+      if (!isVisible(button)) return [];
+      const rect = button.getBoundingClientRect();
+      const style = window.getComputedStyle(button);
+      const ariaLabel = normalize(button.getAttribute("aria-label"));
+      const text = normalize(button.innerText || button.textContent);
+      const disabled = button.disabled || button.getAttribute("aria-disabled") === "true" || style.pointerEvents === "none";
+      return [{ domIndex, ariaLabel, text, disabled, y: Math.round(rect.y), x: Math.round(rect.x) }];
+    }).filter((button) => !button.disabled);
+    if (requestedAction === "add") {
+      return candidates.find((button) => button.ariaLabel === "新增欄位")?.domIndex ?? null;
+    }
+    if (requestedAction === "duplicate") {
+      return candidates.find((button) => /複製條件/.test(button.ariaLabel))?.domIndex ?? null;
+    }
+    return candidates
+      .filter((button) => /刪除條件/.test(button.ariaLabel))
+      .sort((a, b) => b.y - a.y || b.x - a.x)[0]?.domIndex ?? null;
+  }, action);
+
+const clickMetricRowControl = async (page: Page, actionName: "add" | "duplicate" | "delete-second"): Promise<Record<string, unknown>> => {
+  const before = await readMetricRowsSnapshot(page);
+  const domIndex = await metricRowControlButtonIndex(page, actionName);
+  let clicked = false;
+  let clickError: string | null = null;
+  if (typeof domIndex === "number") {
+    try {
+      await clickVisibleButtonByIndex(page, domIndex, 7000);
+      clicked = true;
+      await page.waitForTimeout(700);
+    } catch (error) {
+      clickError = error instanceof Error ? error.message : String(error);
+    }
+  }
+  const after = await readMetricRowsSnapshot(page);
+  return { actionName, domIndex, clicked, clickError, before, after };
+};
 
 const clickModalCancelButton = async (page: Page): Promise<boolean> => {
   const clicked = await clickFirstVisible([
@@ -9820,11 +10098,16 @@ type FrontendObservationType =
   | "validationMessage"
   | "sidebarGroup"
   | "projectCreateModal"
+  | "rowDownloadTooltip"
   | "rowDeleteTooltip"
   | "deleteCancelFlow"
   | "projectLimitToast"
   | "sourceReportPicker"
   | "fieldPicker"
+  | "metricRowControls"
+  | "metricRowAdd"
+  | "metricRowDuplicate"
+  | "metricRowDelete"
   | "dateTimeTypeTab"
   | "datePanelCancel"
   | "downloadToast"
@@ -9843,12 +10126,17 @@ const frontendObservationType = (options: CliOptions): FrontendObservationType |
     value === "sidebarGroup" ||
     value === "sidebarCompanySharedGroup" ||
     value === "projectCreateModal" ||
+    value === "rowDownloadTooltip" ||
     value === "rowDeleteTooltip" ||
     value === "rowActionTooltip" ||
     value === "deleteCancelFlow" ||
     value === "projectLimitToast" ||
     value === "sourceReportPicker" ||
     value === "fieldPicker" ||
+    value === "metricRowControls" ||
+    value === "metricRowAdd" ||
+    value === "metricRowDuplicate" ||
+    value === "metricRowDelete" ||
     value === "dateTimeTypeTab" ||
     value === "datePanelCancel" ||
     value === "downloadToast" ||
@@ -9911,7 +10199,7 @@ const fieldPickerObservationMetricRows = (params: Record<string, unknown>): Metr
   if (explicit.length > 0) return explicit;
   return [{
     sourceReport: firstStringParam(params, ["sourceReport", "source", "report", "reportName"]) ?? "每日報表",
-    field: firstStringParam(params, ["field", "metric", "metricField", "targetField"]) ?? "新增帳號數",
+    field: normalizedMetricFieldRequest(firstStringParam(params, ["field", "metric", "metricField", "targetField"])) ?? "新增帳號數",
     metricIndex: numberParam(params, ["metricIndex", "rowIndex", "index"]) ?? 0
   }];
 };
@@ -10372,6 +10660,41 @@ const observeFrontendVisibleUiActions = async (
     return { actions, projectCreateModalFlow: flow };
   }
 
+  if (observationType === "rowDownloadTooltip") {
+    let hovered = false;
+    const candidate = await projectListRowDownloadButtonCandidate(page);
+    const selected = candidate.selected && typeof candidate.selected === "object" && !Array.isArray(candidate.selected)
+      ? candidate.selected as Record<string, unknown>
+      : null;
+    if (typeof selected?.domIndex === "number") {
+      try {
+        await hoverVisibleButtonByIndex(page, selected.domIndex, 5000);
+        hovered = true;
+      } catch {
+        // Fall back to text locators below.
+      }
+    }
+    if (!hovered) {
+      for (const locator of [
+        page.locator('button[aria-label="下載"]:not([disabled])').last(),
+        page.getByText("下載", { exact: true }).last(),
+        page.locator("button, a, [role=button], span, div").filter({ hasText: /^\s*下載\s*$/ }).last()
+      ]) {
+        try {
+          await locator.hover({ timeout: 5000 });
+          hovered = true;
+          break;
+        } catch {
+          // Try next candidate.
+        }
+      }
+    }
+    actions.push({ action: "hover", target: "projectList.rowDownloadAction", hovered, candidate });
+    if (!hovered) warnings.push("ROW_DOWNLOAD_ACTION_NOT_HOVERABLE");
+    await page.waitForTimeout(800);
+    return { actions };
+  }
+
   if (observationType === "rowDeleteTooltip") {
     let hovered = false;
     const candidate = await projectListRowDeleteButtonCandidate(page);
@@ -10405,6 +10728,42 @@ const observeFrontendVisibleUiActions = async (
     if (!hovered) warnings.push("ROW_DELETE_ACTION_NOT_HOVERABLE");
     await page.waitForTimeout(800);
     return { actions };
+  }
+
+  if (observationType === "metricRowControls") {
+    const snapshot = await readMetricRowsSnapshot(page);
+    actions.push({ action: "observe", target: "metricRows.controls", snapshot });
+    return { actions, metricRowsSnapshot: snapshot };
+  }
+
+  if (observationType === "metricRowAdd") {
+    const firstClick = await clickMetricRowControl(page, "add");
+    const secondClick = await clickMetricRowControl(page, "add");
+    actions.push(
+      { action: "click", target: "metricRows.addRowButton", ...firstClick },
+      { action: "click", target: "metricRows.addRowButton", ...secondClick }
+    );
+    if (firstClick.clicked !== true || secondClick.clicked !== true) warnings.push("METRIC_ROW_ADD_NOT_CLICKABLE");
+    return { actions, metricRowAddFlow: { firstClick, secondClick } };
+  }
+
+  if (observationType === "metricRowDuplicate") {
+    const duplicate = await clickMetricRowControl(page, "duplicate");
+    actions.push({ action: "click", target: "metricRows.duplicateRowButton", ...duplicate });
+    if (duplicate.clicked !== true) warnings.push("METRIC_ROW_DUPLICATE_NOT_CLICKABLE");
+    return { actions, metricRowDuplicateFlow: duplicate };
+  }
+
+  if (observationType === "metricRowDelete") {
+    const add = await clickMetricRowControl(page, "add");
+    const deleteSecond = await clickMetricRowControl(page, "delete-second");
+    actions.push(
+      { action: "click", target: "metricRows.addRowButton", ...add },
+      { action: "click", target: "metricRows.deleteRowButton.second", ...deleteSecond }
+    );
+    if (add.clicked !== true) warnings.push("METRIC_ROW_DELETE_PREPARE_ADD_NOT_CLICKABLE");
+    if (deleteSecond.clicked !== true) warnings.push("METRIC_ROW_DELETE_NOT_CLICKABLE");
+    return { actions, metricRowDeleteFlow: { add, deleteSecond } };
   }
 
   if (observationType === "deleteCancelFlow") {
@@ -10915,6 +11274,24 @@ const readFrontendObservationState = async (
       };
     }
 
+    if (type === "rowDownloadTooltip") {
+      const actionList = Array.isArray(actionData?.actions) ? actionData.actions as Array<Record<string, unknown>> : [];
+      const hoverAction = actionList.find((item) => item.target === "projectList.rowDownloadAction") ?? null;
+      const tooltipText = Array.from(document.querySelectorAll('[role="tooltip"], [class*="tooltip"], [class*="popover"], [class*="Tooltip"], [class*="Popover"]'))
+        .filter((element) => isVisible(element))
+        .map((element) => truncate(element.textContent, 200))
+        .find((text) => Boolean(text)) ?? null;
+      return {
+        evidenceObject: "projectList.rowActionTooltip.state",
+        hoveredTarget: hoverAction?.hovered === true ? "projectList.rowDownloadAction" : null,
+        tooltipVisible: Boolean(tooltipText),
+        visibleText: tooltipText,
+        expectedSemantic: "download",
+        interactionLog: actionList,
+        asserted: hoverAction?.hovered === true && Boolean(tooltipText) && /下載|download|CSV|匯出/i.test(tooltipText ?? "")
+      };
+    }
+
     if (type === "rowDeleteTooltip") {
       const actionList = Array.isArray(actionData?.actions) ? actionData.actions as Array<Record<string, unknown>> : [];
       const hoverAction = actionList.find((item) => item.target === "projectList.rowDeleteAction") ?? null;
@@ -10930,6 +11307,78 @@ const readFrontendObservationState = async (
         visibleText,
         interactionLog: actionList,
         asserted: hoverAction?.hovered === true && Boolean(tooltipText)
+      };
+    }
+
+    if (type === "metricRowControls" || type === "metricRowAdd" || type === "metricRowDuplicate" || type === "metricRowDelete") {
+      const actionList = Array.isArray(actionData?.actions) ? actionData.actions as Array<Record<string, unknown>> : [];
+      const stateFromAction = (value: unknown): Record<string, unknown> | null =>
+        value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
+      const rowCountOf = (snapshot: unknown): number | null => {
+        const state = stateFromAction(snapshot);
+        return typeof state?.rowCount === "number" ? state.rowCount : null;
+      };
+      if (type === "metricRowControls") {
+        const snapshot = stateFromAction(actionData?.metricRowsSnapshot);
+        return {
+          evidenceObject: "metricRows.state",
+          rowCount: rowCountOf(snapshot),
+          snapshot,
+          interactionLog: actionList,
+          asserted: rowCountOf(snapshot) !== null && rowCountOf(snapshot)! >= 1
+        };
+      }
+      const flowKey = type === "metricRowAdd"
+        ? "metricRowAddFlow"
+        : type === "metricRowDuplicate"
+          ? "metricRowDuplicateFlow"
+          : "metricRowDeleteFlow";
+      const flow = stateFromAction(actionData?.[flowKey]);
+      if (type === "metricRowAdd") {
+        const first = stateFromAction(flow?.firstClick);
+        const second = stateFromAction(flow?.secondClick);
+        const beforeCount = rowCountOf(first?.before);
+        const afterFirstCount = rowCountOf(first?.after);
+        const afterSecondCount = rowCountOf(second?.after);
+        return {
+          evidenceObject: "metricRows.addFlow.state",
+          beforeCount,
+          afterFirstCount,
+          afterSecondCount,
+          flow,
+          interactionLog: actionList,
+          asserted: first?.clicked === true && second?.clicked === true &&
+            beforeCount !== null && afterFirstCount === beforeCount + 1 && afterSecondCount === beforeCount + 2
+        };
+      }
+      if (type === "metricRowDuplicate") {
+        const beforeCount = rowCountOf(flow?.before);
+        const afterCount = rowCountOf(flow?.after);
+        return {
+          evidenceObject: "metricRows.duplicateFlow.state",
+          beforeCount,
+          afterCount,
+          flow,
+          interactionLog: actionList,
+          asserted: flow?.clicked === true && beforeCount !== null && afterCount === beforeCount + 1
+        };
+      }
+      const add = stateFromAction(flow?.add);
+      const deletion = stateFromAction(flow?.deleteSecond);
+      const afterAddCount = rowCountOf(add?.after);
+      const afterDeleteCount = rowCountOf(deletion?.after);
+      const firstDeleteButtons = stateFromAction(deletion?.after)?.deleteButtons;
+      const enabledDeleteCount = Array.isArray(firstDeleteButtons)
+        ? firstDeleteButtons.filter((item) => item && typeof item === "object" && (item as Record<string, unknown>).disabled === false).length
+        : null;
+      return {
+        evidenceObject: "metricRows.deleteFlow.state",
+        afterAddCount,
+        afterDeleteCount,
+        firstRowDeleteDisabledAfterDelete: enabledDeleteCount === 0,
+        flow,
+        interactionLog: actionList,
+        asserted: add?.clicked === true && deletion?.clicked === true && afterAddCount !== null && afterDeleteCount === afterAddCount - 1
       };
     }
 
@@ -11315,11 +11764,16 @@ const waitForFrontendObservationReadiness = async (
     validationMessage: /計算|執行|欄位選擇|報表設定/i,
     sidebarGroup: /公司共享|我的自訂|拼貼報表/i,
     projectCreateModal: /新增|專案|拼貼報表|我的自訂/i,
+    rowDownloadTooltip: /下載|刪除|拼貼報表|專案/i,
     rowDeleteTooltip: /下載|刪除|拼貼報表|專案/i,
     deleteCancelFlow: /下載|刪除|拼貼報表|專案/i,
     projectLimitToast: /新增|拼貼報表|專案/i,
     sourceReportPicker: /來源報表|每日報表|欄位|報表設定/i,
     fieldPicker: /欄位|來源報表|每日報表|報表設定/i,
+    metricRowControls: /欄位選擇|請選擇報表|新增欄位|報表設定/i,
+    metricRowAdd: /欄位選擇|請選擇報表|新增欄位|報表設定/i,
+    metricRowDuplicate: /欄位選擇|複製|請選擇報表|報表設定/i,
+    metricRowDelete: /欄位選擇|刪除|請選擇報表|報表設定/i,
     dateTimeTypeTab: /時間|動態|靜態|報表設定/i,
     datePanelCancel: /時間|取消|報表設定/i,
     downloadToast: /下載|計算|執行|報表設定/i,

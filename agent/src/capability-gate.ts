@@ -85,11 +85,8 @@ const helperExplicitlyDisablesDownload = (params: Record<string, unknown>): bool
 const textExplicitlyDisablesDownload = (text: string): boolean =>
   /本題不測項目[^\n]*(?:CSV|下載)|(?:不測|不做|不驗).{0,12}(?:CSV|下載)|(?:CSV|下載).{0,8}[\(（]屬/i.test(text);
 
-const textExplicitlyDisablesSave = (text: string): boolean =>
-  /(?:本題不測項目|本題不做|本題不測|本題不驗|不測|不做|不驗|禁止|絕不|不要|不用|不需|不應|不點).{0,40}(?:save|儲存|保存)|(?:不|勿)\s*(?:save|儲存|保存)/i.test(text);
-
-const textExplicitlyDisablesReopen = (text: string): boolean =>
-  /(?:本題不測項目|本題不做|本題不測|本題不驗|不測|不做|不驗|本題禁止|禁止|絕不|不要|不用|不需|不應|不點).{0,40}(?:reopen|重開|報表名稱)|(?:不|勿)\s*(?:reopen|重開)|不點報表名稱|不進入\s*editor\s*reopen/i.test(text);
+const textRequestsReportListDownload = (text: string): boolean =>
+  /(?:專案頁|清單|列表|該報表\s*row|報表\s*row|row|報表列|列內|project[-_ ]row).{0,32}(?:下載|download|CSV)|(?:下載|download|CSV).{0,32}(?:專案頁|清單|列表|該報表\s*row|報表\s*row|row|報表列|列內|project[-_ ]row)/i.test(text);
 
 const paramsRequestReportListDownload = (params: Record<string, unknown>): boolean => {
   const entry = stringParam(params, ["downloadEntry", "downloadTarget", "downloadSource", "csvEntry"]) ?? "";
@@ -98,8 +95,19 @@ const paramsRequestReportListDownload = (params: Record<string, unknown>): boole
     /project[_-]?page[_-]?row|project[-_ ]row|report[_-]?row|row[_-]?download|report[_-]?list|project[_-]?list/i.test(entry);
 };
 
-const textRequestsReportListDownload = (text: string): boolean =>
-  /(?:專案頁|清單|列表|該報表\s*row|報表\s*row|row|報表列|project[-_ ]row).{0,32}(?:下載|download|CSV)|(?:下載|download|CSV).{0,32}(?:專案頁|清單|列表|該報表\s*row|報表\s*row|row|報表列|project[-_ ]row)|project_page_row_download_button/i.test(text);
+const isProjectRowDownloadOnlyCase = (currentCase: CaseManifestCase | null, params: Record<string, unknown>): boolean => {
+  const text = detectCaseFeatures(currentCase, null).text;
+  if (!(textRequestsReportListDownload(text) || paramsRequestReportListDownload(params))) return false;
+  const explicitlyExcludesCsvContent = /本題不測項目.{0,32}CSV\s*內容驗證/i.test(text);
+  if (!explicitlyExcludesCsvContent && /CSV\s*row\s*count|row\s*count.*preview|CSV\s*數值|數值.*preview|內容驗證|完整輸出|完整比對/i.test(text)) return false;
+  return explicitlyExcludesCsvContent || /只驗(?:證)?.{0,16}(?:觸發下載|下載事件|下載檔|download event)|列內下載 icon 觸發下載/i.test(text);
+};
+
+const textExplicitlyDisablesSave = (text: string): boolean =>
+  /(?:本題不測項目|本題不做|本題不測|本題不驗|不測|不做|不驗|禁止|絕不|不要|不用|不需|不應|不點).{0,40}(?:save|儲存|保存)|(?:不|勿)\s*(?:save|儲存|保存)/i.test(text);
+
+const textExplicitlyDisablesReopen = (text: string): boolean =>
+  /(?:本題不測項目|本題不做|本題不測|本題不驗|不測|不做|不驗|本題禁止|禁止|絕不|不要|不用|不需|不應|不點).{0,40}(?:reopen|重開|報表名稱)|(?:不|勿)\s*(?:reopen|重開)|不點報表名稱|不進入\s*editor\s*reopen/i.test(text);
 
 const helperRequestsNoDownload = (params: Record<string, unknown>): boolean =>
   helperRequestsDownload(params)
@@ -281,7 +289,7 @@ const isFrontendObservationPreludeCase = (
   const projectOrSidebarObservation =
     /側欄|sidebar|公司共享|我的自訂|拼貼報表|專案頁|專案清單|報表清單|breadcrumb|勾選|全選|hover|tooltip|下載\/刪除\s*icon|刪除\s*icon|下載\s*icon|新增專案|重名|上限|分頁|每頁|game selector|使用者按鈕|入口|disabled|enabled/i.test(text);
   const editorObservation =
-    /新增自訂報表入口|新增報表入口|新增報表頁|報表設定頁|建構方式\s*radio|第一列|欄位預設|刪除列|複製列|報表\s*picker|欄位\s*picker|空設定|未完成設定|時間面板|時間區間\s*button|儲存報表.{0,16}disabled|editor\s*右上|preview table/i.test(text);
+    /新增自訂報表入口|新增報表入口|新增報表頁|報表設定頁|建構方式\s*radio|第一列|欄位預設|新增列|刪除列|複製列|metricRows|自訂欄位|報表\s*picker|欄位\s*picker|空設定|未完成設定|時間面板|時間區間\s*button|儲存報表.{0,16}disabled|editor\s*右上|preview table/i.test(text);
   const nonDownloadDataExecutionIntent =
     /network\.requestBody|network request body|request body|response|chart\.datasets|preview\s*成功|預覽成功|儲存報表成功|重開還原|公式|運算欄位|後端功能|daily\s*資料|指標\s*ID/i.test(text);
   const downloadDataExecutionIntent =
@@ -304,6 +312,8 @@ const inferFrontendObservationTemplate = (currentCase: CaseManifestCase | null):
     .filter(Boolean)
     .join("\n");
   if (/使用者按鈕|登入者名稱|user\s*button|account\s*button/i.test(text)) return "collage.observeFrontendState";
+  if (/(?:hover|tooltip).{0,40}(?:下載|download)|(?:下載|download).{0,40}(?:hover|tooltip)|列內.*下載|row.*download/i.test(text)) return "collage.observeFrontendState";
+  if (/新增列|複製列|刪除列|metricRows|自訂欄位/i.test(text)) return "collage.observeFrontendState";
   if (/下載\/刪除\s*icon|下載\s*icon|刪除\s*icon|toolbar|工具列|勾選.*下載|未勾選.*下載|disabled|enabled/i.test(text)) {
     return "collage.observeFrontendState";
   }
@@ -324,12 +334,17 @@ const helperSupportsStructuredObservationType = (value: string | null | undefine
   value === "sidebarGroup" ||
   value === "sidebarCompanySharedGroup" ||
   value === "projectCreateModal" ||
+  value === "rowDownloadTooltip" ||
   value === "rowDeleteTooltip" ||
   value === "rowActionTooltip" ||
   value === "deleteCancelFlow" ||
   value === "projectLimitToast" ||
   value === "sourceReportPicker" ||
   value === "fieldPicker" ||
+  value === "metricRowControls" ||
+  value === "metricRowAdd" ||
+  value === "metricRowDuplicate" ||
+  value === "metricRowDelete" ||
   value === "dateTimeTypeTab" ||
   value === "datePanelCancel" ||
   value === "downloadToast" ||
@@ -422,6 +437,7 @@ export const evaluateCapabilityGate = (
   const formulaHelperAllowed = mode === "collage" && !hasFilter && !hasGroup && hasFormulaParams(params);
   const createProjectAllowed = mode === "collage" && !hasFilter && !hasGroup && isCreateProjectOnlyFlow(currentCase, helperHints);
   const simpleProjectFlowAllowed = mode === "collage" && !hasFilter && !hasGroup && (isOpenReportFromProjectListFlow(currentCase, helperHints) || isBackToProjectListFlow(currentCase, helperHints));
+  const projectRowDownloadOnly = mode === "collage" && !hasFilter && !hasGroup && isProjectRowDownloadOnlyCase(currentCase, params);
 
   if (mode === "record") unsupportedFeatures.push("record_mode_helper_not_supported");
   if (mode === "metric") unsupportedFeatures.push("metric_mode_helper_not_supported");
@@ -461,6 +477,11 @@ export const evaluateCapabilityGate = (
     supportedHelperTemplates.push(
       "collage.openProject",
       "collage.createAndDeleteTemporaryReport"
+    );
+  } else if (projectRowDownloadOnly) {
+    supportedHelperTemplates.push(
+      "collage.openProject",
+      "collage.downloadCsvAndComparePreview"
     );
   } else if (scopeFrontendObservationPrelude.matched && !helperContractBlocker) {
     supportedHelperTemplates.push(

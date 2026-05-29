@@ -1089,6 +1089,121 @@ const main = (): void => {
       "K-10 previewRequired=false must execute observation evidence, not generic configureMetric/runPreview helpers"
     );
 
+    const rowDownloadTooltipCase = {
+      ...collageSaveReopenCase,
+      caseNo: "BIUI_COLLAGE_R001-J-06",
+      groupId: "J",
+      caseTitle: "hover 列內「下載」icon 顯示 tooltip",
+      testType: "前端呈現",
+      riskLevel: "🟢 觀察",
+      testTarget: "前端呈現",
+      cleanupChecklist: "欄位=不影響;篩選=不影響;分組=不影響;時間=不影響;顯示=不影響",
+      preconditions: "起始頁面: 拼貼報表的任一專案頁; 前置資源: 至少一筆既有報表",
+      stepsSummary: "1. 進入專案頁\n2. 將滑鼠移至第 1 row 的「下載」icon\n3. 讀取 tooltip 文字",
+      expected: "hover 列內下載 icon 顯示 tooltip；本題不測項目: 實際下載動作",
+      validationMethod: "DOM read tooltip + hover state;evidence: dom.state, screenshot"
+    };
+    const rowDownloadTooltipPlan = buildHelperExecutionPlan({ runDir, currentCase: rowDownloadTooltipCase, helperHints: null });
+    assert.deepEqual(
+      rowDownloadTooltipPlan.actions.map((item) => item.template),
+      ["collage.openProject", "collage.observeFrontendState"],
+      "J-06 must stay on project list and observe the download tooltip"
+    );
+    assert.equal(
+      rowDownloadTooltipPlan.actions.find((item) => item.template === "collage.observeFrontendState")?.params.observationType,
+      "rowDownloadTooltip",
+      "J-06 download tooltip must not be routed to rowDeleteTooltip"
+    );
+
+    const metricRowAddCase = {
+      ...collageSaveReopenCase,
+      caseNo: "BIUI_COLLAGE_R001-K-05",
+      caseTitle: "「+ 新增列」新增一列",
+      testType: "功能流程",
+      riskLevel: "🟢 觀察",
+      testTarget: "前端呈現",
+      cleanupChecklist: "欄位=空;篩選=不影響;分組=不影響;時間=不影響;顯示=不影響",
+      preconditions: "起始頁面: 拼貼報表新增報表設定頁; 前置資源: 初始 1 列",
+      stepsSummary: "點擊 metricRows.addRowButton「+ 新增列」並驗證列數增加",
+      expected: "點擊新增列後列數增加"
+    };
+    const metricRowAddPlan = buildHelperExecutionPlan({ runDir, currentCase: metricRowAddCase, helperHints: null });
+    assert.deepEqual(
+      metricRowAddPlan.actions.map((item) => item.template),
+      ["collage.openProject", "collage.createReport", "collage.observeFrontendState"],
+      "K-05 metric row add should run structured observation instead of generic preview"
+    );
+    assert.equal(metricRowAddPlan.actions.at(-1)?.params.observationType, "metricRowAdd");
+    assert.ok(!metricRowAddPlan.actions.some((item) => item.template === "collage.runPreviewAndCollectEvidence"));
+
+    const metricRowDuplicateCase = {
+      ...metricRowAddCase,
+      caseNo: "BIUI_COLLAGE_R001-K-06",
+      caseTitle: "「複製列」複製當前列",
+      stepsSummary: "點擊第一列的 metricRows.duplicateRowButton「複製列」按鈕並驗證列數變為 2"
+    };
+    const metricRowDuplicatePlan = buildHelperExecutionPlan({ runDir, currentCase: metricRowDuplicateCase, helperHints: null });
+    assert.equal(metricRowDuplicatePlan.actions.at(-1)?.params.observationType, "metricRowDuplicate");
+
+    const metricRowDeleteCase = {
+      ...metricRowAddCase,
+      caseNo: "BIUI_COLLAGE_R001-K-07",
+      caseTitle: "非第一列的「刪除列」可刪除該列",
+      stepsSummary: "新增至 2 列，點擊第二列的刪除列按鈕並驗證列數變為 1"
+    };
+    const metricRowDeletePlan = buildHelperExecutionPlan({ runDir, currentCase: metricRowDeleteCase, helperHints: null });
+    assert.equal(metricRowDeletePlan.actions.at(-1)?.params.observationType, "metricRowDelete");
+
+    const projectRowDownloadOnlyCase = {
+      ...collageSaveReopenCase,
+      caseNo: "BIUI_COLLAGE_R001-N-04",
+      caseTitle: "專案頁列內下載 icon 觸發下載",
+      testType: "功能流程",
+      riskLevel: "🟢 觀察",
+      testTarget: "前後端整合",
+      cleanupChecklist: "欄位=不影響;篩選=不影響;分組=不影響;時間=不影響;顯示=不影響",
+      preconditions: "起始頁面: 拼貼報表的任一專案頁; 前置資源: 至少一筆既有報表",
+      stepsSummary: "進入專案頁，點擊第 1 row 的列內下載 icon，驗證觸發下載事件",
+      expected: "列內下載 icon 可觸發下載；本題不測項目: CSV 內容驗證(屬 N-07~N-09)",
+      validationMethod: "DOM read toast + Playwright download;evidence: dom.state, csv.rows"
+    };
+    const projectRowDownloadOnlyGate = evaluateCapabilityGate(projectRowDownloadOnlyCase, null);
+    assert.deepEqual(
+      projectRowDownloadOnlyGate.supportedHelperTemplates,
+      ["collage.openProject", "collage.downloadCsvAndComparePreview"],
+      "N-04 project-row download-only case must not enter editor/configure preview"
+    );
+    const projectRowDownloadOnlyPlan = buildHelperExecutionPlan({ runDir, currentCase: projectRowDownloadOnlyCase, helperHints: null });
+    assert.deepEqual(
+      projectRowDownloadOnlyPlan.actions.map((item) => item.template),
+      ["collage.openProject", "collage.downloadCsvAndComparePreview"],
+      "N-04 project-row download-only plan should stay on report list"
+    );
+    assert.equal(projectRowDownloadOnlyPlan.actions.at(-1)?.params.downloadScope, "report_list");
+    assert.equal(projectRowDownloadOnlyPlan.actions.at(-1)?.params.allowAnyReportListRowDownload, true);
+
+    const countOnlyCsvCase = {
+      ...collageSaveReopenCase,
+      caseNo: "BIUI_COLLAGE_R001-N-08",
+      caseTitle: "CSV row count 與 preview 一致",
+      testType: "前後端整合",
+      riskLevel: "🟡 建立",
+      testTarget: "前後端整合",
+      cleanupChecklist: "欄位=1欄;篩選=不影響;分組=不影響;時間=過去 7 天;顯示=不影響",
+      preconditions: "起始頁面: 拼貼報表新增報表設定頁",
+      stepsSummary: "完成最小設置並執行計算，下載 CSV 並與 preview row count 比對",
+      expected: "CSV row count 與 preview 一致",
+      validationMethod: "CSV row count + DOM read;evidence: csv.aggregate, dom.list"
+    };
+    const countOnlyCsvPlan = buildHelperExecutionPlan({ runDir, currentCase: countOnlyCsvCase, helperHints: null });
+    const countOnlyPreviewAction = countOnlyCsvPlan.actions.find((item) => item.template === "collage.runDateVariantsPreviewEvidence");
+    assert.deepEqual(
+      countOnlyPreviewAction?.params.fields,
+      ["新增帳號數"],
+      "count-only cleanup 欄位=1欄 should use the domain default metric field instead of selected fields = 0"
+    );
+    assert.equal(countOnlyPreviewAction?.params.sourceReport, "每日報表");
+
     const selectAllCase = {
       ...collageSaveReopenCase,
       caseNo: "OTTEST004-D-02",
@@ -1240,6 +1355,10 @@ const main = (): void => {
           "relative D0 CSV baseline cases create unique reports and defer D+1 comparison",
           "delete temporary report cases create a pending Tool Bridge helper action",
           "no-hints frontend project/list observations route to structured observation after a safe openProject prelude",
+          "J-06 download tooltip routes to rowDownloadTooltip instead of rowDeleteTooltip",
+          "K-05/K-06/K-07 metric row controls route to observeFrontendState without generic preview",
+          "N-04 project-row download-only cases stay on report list and may download first visible row",
+          "N-08 count-only 欄位=1欄 uses default 每日報表/新增帳號數 instead of selected fields = 0",
           "selectAllFields helper hints preserve sourceReports/expected count and avoid synthetic field text",
           "actual D-02 expectedSources/expectedTotalFieldCount infer select-all 4-source/72-field helper params",
           "A-06 all-zero field inspection uses a dedicated select-all preview evidence helper",
