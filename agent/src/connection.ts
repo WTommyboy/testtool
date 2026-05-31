@@ -120,6 +120,32 @@ export class AgentConnection {
     return candidates[0] ?? null;
   }
 
+  private async sendHeartbeat(): Promise<void> {
+    try {
+      const capability = await buildAgentCapability(this.options.config);
+      this.send("agent.heartbeat", {
+        ...capability,
+        status: this.status,
+        current_run_id: this.currentRunId
+      }, false);
+    } catch (error) {
+      this.send("agent.heartbeat", {
+        status: this.status,
+        current_run_id: this.currentRunId,
+        doctor_ok: false,
+        doctor_checks: [
+          {
+            name: "agent-heartbeat-doctor",
+            verdict: "FAIL",
+            details: {
+              error: error instanceof Error ? error.message : String(error)
+            }
+          }
+        ]
+      }, false);
+    }
+  }
+
   connect(): Promise<void> {
     this.resetClosedPromise();
     return new Promise((resolve, reject) => {
@@ -147,7 +173,7 @@ export class AgentConnection {
           }, true);
           this.flushOutboundQueue();
           this.heartbeatTimer = setInterval(() => {
-            this.send("agent.heartbeat", { status: this.status, current_run_id: this.currentRunId }, false);
+            void this.sendHeartbeat();
           }, 30_000);
           resolve();
         })().catch((error) => {

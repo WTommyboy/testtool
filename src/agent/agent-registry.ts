@@ -130,6 +130,22 @@ class AgentRegistry {
     agent.lastSeenAt = new Date().toISOString();
     agent.status = isStatus(payload.status) ? payload.status : agent.status;
     agent.currentRunId = typeof payload.current_run_id === "string" ? payload.current_run_id : null;
+    agent.platform = asString(payload.platform) ?? agent.platform;
+    agent.codexVersion = asString(payload.codex_version) ?? agent.codexVersion;
+    agent.nodeVersion = asString(payload.node_version) ?? agent.nodeVersion;
+    agent.supportedTaskTypes = payload.supported_task_types === undefined
+      ? agent.supportedTaskTypes
+      : asStringArray(payload.supported_task_types);
+    agent.supportedExecutionModes = payload.supported_execution_modes === undefined
+      ? agent.supportedExecutionModes
+      : asStringArray(payload.supported_execution_modes);
+    agent.toolBridgeVersions = payload.tool_bridge_versions === undefined
+      ? agent.toolBridgeVersions
+      : asStringArray(payload.tool_bridge_versions);
+    agent.playwrightMcpAvailable = asBooleanOrNull(payload.playwright_mcp_available) ?? agent.playwrightMcpAvailable;
+    agent.chromeProfileReady = asBooleanOrNull(payload.chrome_profile_ready) ?? agent.chromeProfileReady;
+    agent.doctorOk = asBooleanOrNull(payload.doctor_ok) ?? agent.doctorOk;
+    agent.doctorChecks = payload.doctor_checks === undefined ? agent.doctorChecks : asDoctorChecks(payload.doctor_checks);
   }
 
   updateOnline(agentId: string, payload: Record<string, unknown>): void {
