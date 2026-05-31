@@ -407,11 +407,26 @@ const listDedicatedChromePids = async (config: AgentConfig): Promise<number[]> =
   }
 };
 
-export const closeChromeDebugSession = async (config: AgentConfig): Promise<void> => {
-  const endpoint = getChromeCdpEndpoint(config);
-  const pids = await listDedicatedChromePids(config);
-  if (pids.length === 0) return;
+const listChromeDebugPortPids = async (config: AgentConfig): Promise<number[]> => {
+  const port = getChromeDebugPort(config);
+  try {
+    const { stdout } = await execFileAsync("ps", ["-axo", "pid=,command="], { timeout: 1500 });
+    return stdout
+      .split(/\r?\n/)
+      .map((line) => /^\s*(\d+)\s+(.+)$/.exec(line))
+      .filter((match): match is RegExpExecArray => Boolean(match))
+      .filter((match) => {
+        const command = match[2];
+        return command.includes(`--remote-debugging-port=${port}`) && /\/(Google Chrome|Chromium)( Canary)?(?:\.app)?\//.test(command);
+      })
+      .map((match) => Number(match[1]))
+      .filter((pid) => Number.isInteger(pid) && pid > 0);
+  } catch {
+    return [];
+  }
+};
 
+const terminateChromePids = async (endpoint: string, pids: number[]): Promise<void> => {
   if (await isCdpAvailable(endpoint)) {
     await closeExistingPageTabs(endpoint);
   }
@@ -426,7 +441,7 @@ export const closeChromeDebugSession = async (config: AgentConfig): Promise<void
 
   if (await waitForProcessesToExit(pids, 3000)) return;
 
-  const remainingPids = await listDedicatedChromePids(config);
+  const remainingPids = pids.filter(processExists);
   for (const pid of remainingPids) {
     try {
       process.kill(pid, "SIGKILL");
@@ -434,6 +449,14 @@ export const closeChromeDebugSession = async (config: AgentConfig): Promise<void
       // The process may have already exited.
     }
   }
+};
+
+export const closeChromeDebugSession = async (config: AgentConfig): Promise<void> => {
+  const endpoint = getChromeCdpEndpoint(config);
+  const pids = await listDedicatedChromePids(config);
+  if (pids.length === 0) return;
+
+  await terminateChromePids(endpoint, pids);
 };
 
 export const diagnoseChromeDebugSession = async (config: AgentConfig): Promise<ChromeDebugSessionDiagnostics> => {
@@ -482,17 +505,28 @@ export const ensureChromeDebugSession = async (
   const openInitialUrl = options.openInitialUrl ?? true;
   if (await isCdpAvailable(endpoint)) {
     const dedicatedPids = await listDedicatedChromePids(config);
-    if (dedicatedPids.length === 0) {
+    if (dedicatedPids.length > 0) {
+      if (options.resetTabs) await closeExistingPageTabs(endpoint);
+      if (initialUrl && openInitialUrl) {
+        const target = await openCdpTab(endpoint, initialUrl);
+        if (target?.id) await closeExtraPageTabs(endpoint, target.id, { closeNewTab: true });
+      }
+      return endpoint;
+    }
+
+    const debugPortPids = await listChromeDebugPortPids(config);
+    if (debugPortPids.length === 0) {
       throw new Error(
         `CHROME_CDP_PROFILE_MISMATCH:${endpoint}:expected_profile=${path.resolve(config.chrome_profile_dir)}`
       );
     }
-    if (options.resetTabs) await closeExistingPageTabs(endpoint);
-    if (initialUrl && openInitialUrl) {
-      const target = await openCdpTab(endpoint, initialUrl);
-      if (target?.id) await closeExtraPageTabs(endpoint, target.id, { closeNewTab: true });
+
+    await terminateChromePids(endpoint, debugPortPids);
+    if (await isCdpAvailable(endpoint)) {
+      throw new Error(
+        `CHROME_CDP_PROFILE_MISMATCH:${endpoint}:expected_profile=${path.resolve(config.chrome_profile_dir)}`
+      );
     }
-    return endpoint;
   }
 
   const chromeExecutable = findChromeExecutable();
