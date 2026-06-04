@@ -62,8 +62,8 @@ Post-promote update: 2026-06-04 Asia/Taipei
 - Dev config now has `codex_model=""`; CLI status displays `(codex-cli-default)`.
 - Doctor includes `codex-model-config=PASS`, model `(codex-cli-default)`.
 - Doctor Chrome/CDP finding: `chrome-cdp-profile-isolation` PASS; CDP was not currently running, `profileMatched=true`, and the Agent will launch it on demand.
-- Production was promoted on 2026-06-04. Remote `dev/uat-agent-config-isolation`、`refactor/mac-agent-mvp`、`codex/uat-tool-mvp` all point to `05d6934`; runtime tree commit is `3c79ebb`.
-- Railway production `/version` / `/health` were healthy at closeout. `/version` showed branch `codex/uat-tool-mvp`, commit `3c79ebb`, deployment `f5d47f5c-22d4-4687-b153-72ae2addadb8`.
+- Production was promoted on 2026-06-04. Runtime tree commit is `3c79ebb`; ancestry merge commit is `05d6934`; later docs-only closeout commits may move the branch head without changing runtime behavior.
+- Railway production `/version` / `/health` were healthy at closeout. `/version` first showed runtime tree commit `3c79ebb`, then refreshed to ancestry merge commit `05d6934`; both have the same runtime tree.
 - Local production Agent `com.tommy.uat-agent` was rebuilt via generated `agent/dist` sync from the dev build and restarted; pid at closeout was `77258`; `node agent/dist/cli.js doctor` returned `ok=true`.
 - `/Users/tommy/.codex/config.toml` `service_tier` was changed from unsupported `priority` to `fast` so Codex CLI 0.125.0 can load MCP config and `codex mcp list` passes.
 
