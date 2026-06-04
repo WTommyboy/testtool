@@ -64,12 +64,22 @@ const hasEnabledMcpServer = (mcpListOutput: string, serverName: string): boolean
     .split(/\r?\n/)
     .some((line) => line.trim().startsWith(`${serverName} `) && /\benabled\b/i.test(line));
 
+const unsupportedCodexModel = (model: string): string | null => {
+  const normalized = model.trim();
+  if (!normalized) return null;
+  if (normalized === "gpt-5.3-codex") {
+    return "The local Codex CLI currently rejects gpt-5.3-codex for this account. Leave codex_model empty to use the CLI default, or set UAT_AGENT_CODEX_MODEL to a verified supported model.";
+  }
+  return null;
+};
+
 export const runDoctor = async (config: AgentConfig): Promise<DoctorCheck[]> => {
   const nodeMajor = Number(process.versions.node.split(".")[0]);
   const codexVersion = await run(config.codex_bin, ["--version"]);
   const codexMcpList = await run(config.codex_bin, ["mcp", "list"], 20_000);
   const chromeDiagnostics = await diagnoseChromeDebugSession(config);
   const playwrightMcpConfigured = codexMcpList.exitCode === 0 && hasEnabledMcpServer(codexMcpList.stdout, "playwright");
+  const unsupportedModelReason = unsupportedCodexModel(config.codex_model);
   const checks: DoctorCheck[] = [
     check("node-version", nodeMajor >= 20, { version: process.version }),
     check("agent-token-present", Boolean(config.token), { hasToken: Boolean(config.token) }),
@@ -117,6 +127,13 @@ export const runDoctor = async (config: AgentConfig): Promise<DoctorCheck[]> => 
         }),
     check("codex-version", codexVersion.exitCode === 0, {
       version: codexVersion.stdout.trim() || codexVersion.stderr.trim()
+    }),
+    check("codex-model-config", unsupportedModelReason === null, {
+      model: config.codex_model.trim() || "(codex-cli-default)",
+      reason: unsupportedModelReason ?? "Configured model is not on the local unsupported list.",
+      suggestion: config.codex_model.trim()
+        ? "Run a one-line `codex exec --json -m <model>` smoke after changing model configuration."
+        : "Codex CLI default model will be used."
     }),
     check("playwright-mcp-availability", playwrightMcpConfigured, {
       reason: "Verified from `codex mcp list`; live CDP connectivity is still checked per run.",

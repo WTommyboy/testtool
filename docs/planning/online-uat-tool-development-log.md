@@ -1,6 +1,6 @@
 # 線上 UAT Tool 開發與規劃日誌
 
-最後更新：2026-05-19
+最後更新：2026-06-02
 
 本文件記錄「UAT Tool 線上派工 + Mac Agent」這條路徑的歷史決策、設計理由、目前架構與後續待辦。它的用途是跨聊天室、跨 session 交接，不取代 `AGENTS.md`、Layer rules、authoring spec 或實作 spec。
 
@@ -781,7 +781,7 @@ Tommy 曾討論是否改成腳本。最後決策是採「半腳本化 / helper �
 - Capability gate：新增 `agent/src/capability-gate.ts`，每個 current case 產生 `input/capability-gate.json/md`，分類為 `supported / degraded / unsupported`。record/detail、metric、filter、group 目前會被標為 `unsupported`，Codex 指令為不可執行 trusted browser testcase steps，需寫 `BLOCKED / UNSUPPORTED_ONLINE_CAPABILITY`；metadata/dropdown 類降級為 `codex_visible_ui` 並停用 helper pre-run。`helper-pre-runner` 會讀 capability gate，`helperPreRunAllowed=false` 時直接 skipped，避免 DEMO-B-01 類 `欄位=空` 仍浪費 20 秒、DEMO-C-01 明細 case 被錯派 collage helper。
 - Helper save/reopen：`bi-ui-helper-executor` 補 `collage.saveReport` 的 visible UI 報表名填寫、第一個 native dialog 處理、saved report state artifact；若偵測到第二個 native dialog，立即回 `requires_approval` 並附 `playwright_recovery` request，不再等 Playwright timeout。`collage.reopenReport` 從 saved report state 或 params 取 reportName，回列表尋找並重開該報表，收集 reopened DOM/screenshot evidence。filter/group helper 改為明確 `not_implemented`，不再誤導為需授權後可跑。
 - PM review flow：server 新增 `POST /api/runs/:id/pm-review`，可對任一 case 寫入 `MANUAL_PASS / MANUAL_FAIL / MANUAL_BLOCKED`，保留 `Codex建議判定`、`PM最終判定`、複核者、時間與備註；UI 在 case detail 增加 PM 最終判定區。這讓工具產出與 PM 最終交付分層，不把 `BLOCKED` 混同為沒抓到。
-- Codex model：Agent config 新增 `codex_model`，預設 `gpt-5.3-codex`，可用 `UAT_AGENT_CODEX_MODEL` 覆蓋；`CodexRunner` 啟動/續跑都會傳 `-m <model>`，progress 也會顯示 model + reasoning。既有 config 沒有 `codex_model` 時會自動套預設，不需手動改 `~/.uat-agent/config.json`。
+- Codex model：Agent config 新增 `codex_model`，當時預設 `gpt-5.3-codex`，可用 `UAT_AGENT_CODEX_MODEL` 覆蓋；`CodexRunner` 啟動/續跑都會傳 `-m <model>`，progress 也會顯示 model + reasoning。既有 config 沒有 `codex_model` 時會自動套預設，不需手動改 `~/.uat-agent/config.json`。此預設已於 2026-06-03 P0.46 改為空字串 / Codex CLI default，避免本機帳號不支援指定模型時污染整輪 UAT。
 - 修改檔案：`agent/src/capability-gate.ts`、`agent/src/helper-pre-runner.ts`、`agent/src/helper-execution-plan.ts`、`agent/src/bi-ui-helper-executor.ts`、`agent/src/codex-runner.ts`、`agent/src/config.ts`、`agent/src/types.ts`、`agent/src/cli.ts`、`agent/src/rule-index.ts`、`agent/src/task-runner.ts`、`src/runs.ts`、`web/src/App.tsx`、`web/src/App.css`、`scripts/verify-agent-resume.ts`、`scripts/verify-helper-hints-fixture.ts`、本 planning log。
 - 驗證：`npm run typecheck --prefix agent`、`npm run build --prefix agent`、`npm run typecheck`、`npm run build`、`npm run build --prefix web`、`npm run verify:agent-resume`、`npm run verify:helper-hints`、`npm run verify:agent-result-contract`、`npm run verify:result-evidence-gate`、`npm run verify:package-consistency`、`npm run verify:tool-bridge`、`npm run verify:agent-roundtrip`、`git diff --check` 已通過。
 - 後續影響：下一輪不應再把 filter/group/detail/metric case 當 trusted online helper run 硬跑；DEMO-A-01 的重點變成 helper/Tool Bridge 能否穩定完成 save 後回列表與 reopen evidence，而不是讓 Codex 在 CDP wedged 狀態下判斷。PM review 可先用於 BLOCKED/灰區結果的最終交付收尾。
@@ -1866,3 +1866,62 @@ P0a v1 範圍釐清：containment 只處理唯一 self-check error 為 `RESULT_P
 - Report mutation：`M-11` update flow 新增 `prepareUpdateSettingButton`。若 `更新設定` 因「請先計算，在進行儲存」而 disabled，helper 會先按 `計算` 再重讀更新按鈕狀態。result evidence enricher 也不再把「缺少計算前置導致更新 disabled」直接提升成產品 FAIL；只有完成前置後仍有明確 interaction failure 才進產品 FAIL path。
 - 邊界：這批仍是 Gen1/Gen2 compatibility bridge。CSV shape normalization 是平台 evidence comparator；project/create/delete modal 與 `更新設定` 的文案/流程是 BI official UI domain semantics，但落點仍在 domain action/evidence contract 驅動的 runtime path，不新增 per-case oracle 或小 agent。`J-12` 五專案前置不足仍屬環境/前置資料問題，不在本 patch 內硬建專案。
 - 驗證：已跑 `npm run verify:helper-report-gate`、`npm run verify:p0-33-live-blocker-regressions`、`npm run verify:result-evidence-gate`、`npm run verify:p0-live-action-templates`、`npm run verify:official-observation-contract`、`npm run verify:bi-official-ui-object-vocabulary`、`npm run verify:shared-lifecycle-action-contracts`、`npm run verify:agent-result-contract`、`npm run typecheck`、`npm run build --prefix agent`、`git diff --check`，並用 49022034 實際 F-07 artifact 進行 normalized CSV/preview smoke。
+
+### 2026-05-27 - P0.40 BIUI_COLLAGE_R001 v1.14 full-ready package cleanup
+
+- 背景：v1.15 reduced smoke 證明主線工具已可穩定跑到 14 PASS / 1 false FAIL；false FAIL 來自 `L-10` 將不存在於目前正式 UI 的「自某日至昨日 / 自某日至今」當成 visible preset。`J-12` 專案 5 個上限則屬 environment-sensitive upper-limit case，混在 full run 會污染專案數。
+- Testcase package：產出 v1.14 full-ready 三文件，active case 數 95。移出 `J-12` 與 `L-10`；修 `L-02` preset inventory、`A-06` UI-current all-zero field inspection、`I-03` sidebar count judgment、`J-10` project count <=4 precondition。xlsx structured support sheets 已移除 J-12 rows。
+- Domain/authoring：BI domain pack 將 from-date-to-yesterday/today 標成 current official UI 非單一 visible preset，並新增 lint warning。`docs/authoring` 規則同步補上「上限型/環境型 case 拆包」與「visible UI inventory 必須有實際 UI/截圖/visual-alignment evidence」兩條，供未來 domain pack/testcase 生成使用。
+- 下一步：全量 dev live UAT 應使用 v1.14 full-ready 三文件，起始專案數建議 <=4。若 PM 要測 J-12，另開 project-limit focused package，不用 95 題主線承擔該環境污染。
+
+### 2026-05-27 - P0.41 RC retarget package + official URL support
+
+- 背景：RC run `b0fd7926-c89f-4c81-986b-a5ef98588272` 使用 `https://galaxy.games.gamania.com/bi-rc/zh-TW/report/myCustom/tileMode/2`，但 helper runtime 仍只把 `/bi-dev` 視為 official UI path，導致 `BROWSER_SESSION_URL_MISMATCH`；同時 v1.14 package 仍保留 dev URL。
+- 產出：新增 `BIUI_COLLAGE_R001_v1_14_rc` 三文件，case 數與題意沿用 v1.14，僅 retarget RC 起始 URL與路由驗證文字。
+- Runtime：`BI_OFFICIAL_UI_COLLAGE` helper 支援 `/bi-rc` official UI page/project/editor route，fallback project URL 組裝沿用目前環境 prefix，不再硬寫 `/bi-dev`。
+- 驗證：新增 `npm run verify:bi-official-rc-url-support`，並通過 agent build/typecheck、root typecheck、`v1_14_rc` package consistency。
+
+### 2026-06-02 - P0.42 dev Chrome CDP process-list hardening
+
+- 背景：dev Agent 近期出現 local Chrome/CDP 啟動與 profile mismatch 類問題；復現時 `ps -axo pid=,command=` 的 stdout 超過 Node `child_process` 預設 `maxBuffer`，導致 process inventory scan 拋 `ERR_CHILD_PROCESS_STDIO_MAXBUFFER`。這會讓 Agent 誤判 dedicated Chrome/profile/debug-port 狀態，不是 BI 產品、testcase 或 domain route 問題。
+- Runtime：`agent/src/browser-session.ts` 將 Chrome process scan 的 timeout/maxBuffer 抽成常數，`listDedicatedChromePids` 與 `listChromeDebugPortPids` 都以 `timeout=1500ms`、`maxBuffer=16MiB` 呼叫 `ps -axo pid=,command=`，避免本機 process table 較大時誤觸 false mismatch。
+- 邊界：這只修 Mac Agent browser-session lifecycle/process inventory。沒有改 BI helper route、result judgment、domain pack、testcase package，也沒有推 production。
+- Smoke：先跑再補文件，已通過 `npm run typecheck --prefix agent`、`npm run build --prefix agent`、`npm run verify:agent-browser-session-isolation`、`node agent/dist/cli.js --config /Users/tommy/.uat-agent-dev/config.json doctor`。Doctor 回 `ok=true`，CDP 當前未執行時會顯示 `profileMatched=true` 與 `reason=CDP is not currently running; Agent will launch it on demand.`。
+
+### 2026-06-02 - P0.43 unsafe FAIL classification guard
+
+- 背景：run `7ddf7fbb-de5a-4780-97d2-4c55d0025aa8` 完整跑完 95 題，但 aggregate 內有 auto FAIL/Bug row 需要重判：公式類 evidence 只達 `direct_fill_inline` 與 date setup failure 時，不可交付為產品 FAIL；create-project flow 卡在 `CREATE_PROJECT_MODAL_NOT_VISIBLE` 時，也需要先區分 project-limit/environment、route/helper gap 或產品流程失敗。
+- Runtime：`agent/src/result-evidence-enricher.ts` 新增 unsafe FAIL downgrade guard。若 FAIL 的 current-run helper evidence 顯示公式輸入只靠 `direct_fill_inline` 且沒有 trusted token/keypad evidence，Agent 會轉為 `BLOCKED / BLOCKED_TOOL_LIMITATION` 並移除 generated Bug row；若 create-project helper blocked at `CREATE_PROJECT_MODAL_NOT_VISIBLE`，有「已達最高5個專案」 evidence 時轉 `BLOCKED_ENVIRONMENT_PRECONDITION`，否則轉 `BLOCKED_NEEDS_REJUDGMENT`。
+- Guidance：`agent/src/task-runner.ts` 補公式 entry-method 提示，要求 Codex 遇到 `direct_fill_inline` / DOM mutation / internal setter evidence 時寫 `BLOCKED_TOOL_LIMITATION`，不能寫產品 PASS/FAIL。
+- 邊界：這是 Agent result safety classifier，消費 domain pack 已存在的 formula trusted-entry policy；不是把 `E-02` / `G-02` case 編號寫成 oracle。`B-08` 這類已有 preview/request body 的日期 regression 不符合 unsafe guard，仍可保留產品 FAIL。
+- 驗證：`npm run verify:p0-33-live-blocker-regressions` 新增三個 regression：`direct_fill_inline` false product FAIL -> `BLOCKED_TOOL_LIMITATION`、ambiguous create-project modal blocker -> `BLOCKED_NEEDS_REJUDGMENT`、project-limit create-project blocker -> `BLOCKED_ENVIRONMENT_PRECONDITION`；並通過 root/agent typecheck 與 agent build。
+
+### 2026-06-02 - P0.44 visual fallback contract pre-upload completion
+
+- 背景：run `7ddf7fbb-de5a-4780-97d2-4c55d0025aa8` 中 `J-15`、`K-04`、`L-11`、`M-03`、`M-04`、`M-05`、`N-01`、`N-02` 不是 runtime lifecycle failure，而是前端觀察題只剩 screenshot / helper assertion=false evidence，Codex 寫成普通 `EVIDENCE_INSUFFICIENT` 後由 server containment 改成 `BLOCKED_NEEDS_VISUAL_REVIEW`，導致 report 敘述過於泛用。
+- Runtime：`agent/src/result-evidence-enricher.ts` 新增 visual fallback contract completion。對 BI official UI `I/J/K/L/M/N` frontend observation BLOCKED row，若 current-run screenshot 存在、沒有 deterministic helper PASS/FAIL、且 detail_json 尚未具備完整 visual fallback contract，Agent upload 前會補成 `BLOCKED / BLOCKED_NEEDS_VISUAL_REVIEW`，寫入 `evidenceSource=screenshotVisual`、`screenshotPath`、`visualObservation`、`domEvidenceGap`、`currentRunEvidence.source=uat-agent-visual-fallback-contract` 與 `previous_blocked_detail_json`。
+- 邊界：screenshot 仍是 review-only fallback，不會自動 PASS；`frontend-observation-evidence.json` 若 `asserted=true` 仍走 deterministic PASS，若有 `recommendedFailureClassification=FAIL_*` 仍可走 deterministic FAIL。project-limit 等 structured frontend precondition blocker 不會被改寫成 visual review。
+- 驗證：`npm run verify:p0-33-live-blocker-regressions` 新增 K-04 類 screenshot-only frontend observation fixture，確認 upload 前補齊 visual fallback contract；另通過 `npm run verify:p0-visual-fallback-contract`、`npm run typecheck --prefix agent`、`npm run typecheck`、`npm run build --prefix agent`。
+
+### 2026-06-02 - P0.45 report-list row download action recovery
+
+- 背景：同一輪 full UAT 中 `N-04/N-05` 類 report-list download case 已停在專案頁且能讀到報表列表，但 `collage.downloadCsvAndComparePreview` 對列內下載 icon 的定位過於依賴文字/ARIA，遇到 official UI icon-only action 時回 `CSV_DOWNLOAD_BUTTON_NOT_CLICKABLE`。這是 helper 可達性 gap，不代表 CSV/preview 比對已失敗。
+- Helper：`agent/src/bi-ui-helper-executor.ts` 新增 `reportListRowActionCandidates`。在既有 row state 沒有 downloadControls 或點擊失敗時，helper 會從同一報表列的 DOM/ARIA/right-side action context 找候選；若下載 icon 沒有明確 label，會用同列右側 action buttons 與相鄰刪除按鈕推斷下載 control，再以 visible UI click 觸發下載。
+- 邊界：這不繞過 UI、不用 internal JS 設定狀態，也不把 `N-04/N-05` 直接轉 PASS。只有真的觀察到 browser download event 或 UI-triggered CSV response 後，後續 CSV/preview comparison 才能產生 PASS/FAIL；否則仍 BLOCKED。
+- 驗證：`npm run verify:p0-33-live-blocker-regressions` 新增靜態 regression，鎖住 row-local action recovery 與 inferred download trigger；另通過 `npm run verify:p0-visual-fallback-contract`、`npm run typecheck --prefix agent`、`npm run typecheck`、`npm run build --prefix agent`、`git diff --check`。
+
+### 2026-06-03 - P0.46 Codex model config hardening
+
+- 背景：NU_BI_p0_R072 (`a346b845-554a-4218-a3b0-52b735f42986`) 整體變快，但 95 題中 `BLOCKED=39`，其中 27 題為 `CODEX_RUNTIME_RESULT_WRITE_FAILED`。檢查本機 `output/agent.log` 後，真正錯誤是 Codex stdout 的 400：`The 'gpt-5.3-codex' model is not supported when using Codex with a ChatGPT account.` Report 主要露出 stderr 的 `failed to record rollout items: thread ... not found`，容易誤判成 thread/session 問題。Default `codex exec --json` smoke 成功，指定 `-m gpt-5.3-codex` smoke 失敗。
+- 決策：Agent 不再把 `gpt-5.3-codex` 當預設模型。`codex_model` 預設改為空字串，代表讓 Codex CLI 使用目前帳號可用的 default model；只有在人工 smoke 確認支援後才透過 config/env 指定。doctor 新增 `codex-model-config`，若 dev config 仍指定本機已知不支援的 `gpt-5.3-codex` 則直接 FAIL，避免整輪 UAT 被 runtime containment 污染成大量 BLOCKED。
+- 子行程隔離：`CodexRunner` 啟動子 Codex 時清掉 `CODEX_THREAD_ID` 與 `CODEX_INTERNAL_ORIGINATOR_OVERRIDE`，避免從 Codex Desktop session 重啟 dev agent 時把桌面 thread/originator 帶進 UAT 子行程。這不是 R072 的主因，但屬同一類 runtime hygiene。
+- 修改檔案：`agent/src/config.ts`、`agent/src/codex-runner.ts`、`agent/src/doctor.ts`、`agent/src/task-runner.ts`、`agent/src/cli.ts`、`scripts/verify-agent-resume.ts`、本 planning log、`docs/refactor/M1_Mac_Agent_MVP_Runbook.md`。
+- 下一輪判讀：R072 的 27 題 runtime BLOCKED 不應解讀成 BI 產品、domain pack 或 testcase regression。若下一輪仍出現 `CODEX_RUNTIME_RESULT_WRITE_FAILED`，先看 `output/agent.log` raw stdout 是否仍有 model unsupported；若無，再回到 thread/session 或 result-write runtime 分析。
+
+### 2026-06-03 - P0.47 post-result Codex exit continuation
+
+- 背景：NU_BI_p0_R073 (`241927aa-c85d-4cba-bca0-926893b2ed31`) 已明顯改善：95 題中已完成 36 題，`PASS=29 / BLOCKED=7 / PENDING=59 / FAIL=0`。但 run 在 `BIUI_COLLAGE_R001-I-03` 後停止。Timing 顯示 I-03 的 Codex turn `status=failed`，但 `output/result.xlsx` 已產生且 `upload_result` 成功，所以報告內 I-03 是 PASS；Agent 隨後仍因 `result.exitCode !== 0` 丟 `CODEX_RUN_FAILED`，導致 I-04 以後保持 PENDING。
+- 根因：這不是 BI 產品、domain pack、testcase 或 model unsupported 問題，而是 lifecycle policy 過嚴。舊 runtime containment 只涵蓋「Codex 沒寫出可信 result」或「Agent 需改寫 containment workbook」；未涵蓋「可信單題 `output/result.xlsx` 已通過 self-check 並成功上傳，但 Codex CLI 在 turn 尾端因外部 stderr/cleanup 類問題 exit=1」。
+- Runtime：新增 `agent/src/post-result-exit-policy.ts`。若 Codex exit 非 0，但 `uploadRunArtifacts` 已確認使用 Codex-generated result 且 `result.xlsx` 已成功上傳，Agent 會寫 `output/post-result-exit-policy.json`、發出 warning，並繼續 advance 下一題。若沒有可信 Codex result 或沒有成功上傳，仍照原規則 `CODEX_RUN_FAILED` / containment / `CODEX_NO_RESULT_XLSX` 中斷。
+- 觀察：本輪 launchd stderr 另有 `filesystem_error ... Operation not permitted [agent-skills/uat-tool]`，但同工作目錄手動 `codex exec --json --sandbox workspace-write --skip-git-repo-check` smoke 可成功。因此目前先把它視為 Codex CLI turn 尾端/環境 cleanup 類非決定性錯誤；平台必須以可信 result upload 為續跑 gate，而不是只看 process exit。
+- 驗證：新增 `npm run verify:post-result-exit-policy`，覆蓋 normal exit、runtime containment、trusted uploaded result + exit=1 可續跑、無可信上傳仍中斷。並通過 `npm run typecheck --prefix agent`、`npm run build --prefix agent`、`npm run typecheck`、`npm run build`、`npm run verify:runtime-containment-result`、`npm run verify:agent-resume`、`git diff --check`。

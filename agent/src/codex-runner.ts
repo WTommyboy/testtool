@@ -89,6 +89,13 @@ const extractAssistantText = (events: CodexJsonEvent[]): string => {
     .join("\n");
 };
 
+const buildCodexChildEnv = (): NodeJS.ProcessEnv => {
+  const env: NodeJS.ProcessEnv = { ...process.env, NO_COLOR: "1" };
+  delete env.CODEX_THREAD_ID;
+  delete env.CODEX_INTERNAL_ORIGINATOR_OVERRIDE;
+  return env;
+};
+
 export class CodexRunner {
   private child: ChildProcess | null = null;
   private cancelReason: string | null = null;
@@ -233,7 +240,7 @@ export class CodexRunner {
       const startedAt = new Date(startedAtMs).toISOString();
       const child = spawn(this.options.codexBin, [...this.configArgs(), ...args], {
         cwd: this.options.cwd,
-        env: { ...process.env, NO_COLOR: "1" },
+        env: buildCodexChildEnv(),
         detached: true,
         stdio: ["ignore", "pipe", "pipe"]
       });

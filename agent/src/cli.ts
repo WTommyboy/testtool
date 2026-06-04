@@ -45,6 +45,8 @@ const maskToken = (token: string): string => {
   return `${token.slice(0, 4)}...${token.slice(-4)}`;
 };
 
+const codexModelLabel = (model: string): string => model.trim() || "(codex-cli-default)";
+
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
 const getPayloadRunId = (message: { payload: Record<string, unknown> }): string | null => {
@@ -217,7 +219,7 @@ const main = async (): Promise<void> => {
       device_name: config.device_name,
       token: maskToken(config.token),
       codex_bin: config.codex_bin,
-      codex_model: config.codex_model,
+      codex_model: codexModelLabel(config.codex_model),
       codex_reasoning_effort: config.codex_reasoning_effort,
       auto_approve_tool_requests: config.auto_approve_tool_requests,
       keep_chrome_warm: config.keep_chrome_warm,

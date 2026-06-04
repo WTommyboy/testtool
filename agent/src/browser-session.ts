@@ -9,6 +9,8 @@ import type { AgentConfig } from "./types";
 const defaultDebugPort = 9222;
 const chromeLaunchCdpTimeoutMs = 15_000;
 const cdpOpenTabTimeoutMs = 5_000;
+const chromeProcessListTimeoutMs = 1_500;
+const chromeProcessListMaxBufferBytes = 16 * 1024 * 1024;
 
 type CdpTarget = {
   id?: string;
@@ -391,7 +393,10 @@ const listDedicatedChromePids = async (config: AgentConfig): Promise<number[]> =
   const profileDir = path.resolve(config.chrome_profile_dir);
   const port = getChromeDebugPort(config);
   try {
-    const { stdout } = await execFileAsync("ps", ["-axo", "pid=,command="], { timeout: 1500 });
+    const { stdout } = await execFileAsync("ps", ["-axo", "pid=,command="], {
+      timeout: chromeProcessListTimeoutMs,
+      maxBuffer: chromeProcessListMaxBufferBytes
+    });
     return stdout
       .split(/\r?\n/)
       .map((line) => /^\s*(\d+)\s+(.+)$/.exec(line))
@@ -410,7 +415,10 @@ const listDedicatedChromePids = async (config: AgentConfig): Promise<number[]> =
 const listChromeDebugPortPids = async (config: AgentConfig): Promise<number[]> => {
   const port = getChromeDebugPort(config);
   try {
-    const { stdout } = await execFileAsync("ps", ["-axo", "pid=,command="], { timeout: 1500 });
+    const { stdout } = await execFileAsync("ps", ["-axo", "pid=,command="], {
+      timeout: chromeProcessListTimeoutMs,
+      maxBuffer: chromeProcessListMaxBufferBytes
+    });
     return stdout
       .split(/\r?\n/)
       .map((line) => /^\s*(\d+)\s+(.+)$/.exec(line))

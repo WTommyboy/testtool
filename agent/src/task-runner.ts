@@ -52,6 +52,7 @@ import {
   writeEvidenceArtifactManifest,
   type EvidenceArtifactManifestEntry
 } from "./evidence-artifacts";
+import { evaluatePostResultExitPolicy } from "./post-result-exit-policy";
 
 const getRunId = (message: AgentMessage): string => {
   const runId = message.payload.run_id;
@@ -64,6 +65,11 @@ const getRunId = (message: AgentMessage): string => {
 const getStringPayload = (message: AgentMessage, key: string): string | null => {
   const value = message.payload[key];
   return typeof value === "string" && value.trim() ? value : null;
+};
+
+const codexModelLabel = (model: string | null | undefined): string => {
+  const trimmed = typeof model === "string" ? model.trim() : "";
+  return trimmed || "(codex-cli-default)";
 };
 
 const prepareChromeForCase = async (
@@ -304,6 +310,7 @@ export const prepareCodexContext = (config: AgentConfig, runDir: string): void =
     "- Native dialog guard: known BI save/overwrite dialogs may be handled only after a Tool Bridge response; unknown follow-up native dialogs become blocked unless there is a real recovery handler.",
     "- Save/list cases: `collage.saveReport` helper should provide reportListEvidence when possible, but do not mark the case BLOCKED only because an older helper report lacks that exact key. If save API 200, known success/return dialogs, reportName, and current-run DOM/list signals support the flow and there is no contradictory row-not-found evidence, judge against the testcase normally.",
     "- Calculated-field division cases: do not mark BLOCKED solely because one referenced field is zero for all rows. If the formula is present in UI/request, preview includes the calculated field, and every row matches the system's observed divide-by-zero behavior (for BI tile preview this can be 0), the calculation-function case may PASS unless the testcase explicitly requires non-zero denominator samples.",
+    "- Formula setup PASS/FAIL requires trusted visible inline-builder evidence such as token picker/keypad/operator clicks. If formula evidence is only `direct_fill_inline`, DOM mutation, or internal setter style evidence, write BLOCKED/BLOCKED_TOOL_LIMITATION instead of product PASS/FAIL.",
     "- Result detail_json hard gate: PASS must include 測試目的/設定條件/預期行為/實際行為; FAIL must also include 錯誤原因/根因層級/驗證方法/RD 分派; BLOCKED must include the same four core fields plus blocked_reason; PARTIAL must include 部分符合的子項清單/不符的子項清單.",
     ""
   ].join("\n");
@@ -338,6 +345,7 @@ export const prepareCodexContext = (config: AgentConfig, runDir: string): void =
   writeJson(path.join(runDir, "input", "codex-context.json"), {
     codex_workspace_root: workspaceRoot,
     codex_model: config.codex_model,
+    codex_model_label: codexModelLabel(config.codex_model),
     codex_reasoning_effort: config.codex_reasoning_effort,
     keep_chrome_warm: config.keep_chrome_warm,
     bi_metadata_csv: biMetadataCsv,
@@ -360,6 +368,7 @@ const writeRunBrief = (
   const resultXlsxPath = path.join(runDir, "output", "result.xlsx");
   const biMetadataCsvPath = path.join(runDir, "rules", "BI_DATA", "metadata.csv");
   const biMetadataCsv = fs.existsSync(biMetadataCsvPath) ? biMetadataCsvPath : null;
+  const modelLabel = codexModelLabel(config.codex_model);
   const domainLocatorRegistry = inputs.domain_locator_registry ?? null;
   const domainUiContract = inputs.domain_ui_contract ?? null;
   const domainActionSetMetricRows = inputs.domain_action_set_metric_rows ?? null;
@@ -383,7 +392,7 @@ const writeRunBrief = (
     `- domain: ${domain}`,
     `- dev_url: ${devUrl}`,
     `- workdir: ${runDir}`,
-    `- codex_model: ${config.codex_model}`,
+    `- codex_model: ${modelLabel}`,
     `- auto_approve_tool_requests: ${config.auto_approve_tool_requests ? "true_except_sso_login_and_package_gate_ambiguity" : "false"}`,
     `- chrome_session_policy: ${config.keep_chrome_warm ? "warm_process_reset_tabs_per_case" : "run_scoped_process_reset_tabs_per_case"}`,
     `- expected_result_xlsx: ${resultXlsxPath}`,
@@ -479,6 +488,7 @@ const writeRunBrief = (
     "- For save/download + CSV cases, judge required subconditions in order. If save/list-row visibility, save/reopen state restoration, current preview, or pre-save preview already failed, record that primary failure and mark CSV comparison as not reached; do not downgrade the known functional failure to BLOCKED merely because the later CSV download could not run.",
     "- For save/list cases, `collage.saveReport` evidence should include reportListEvidence when produced by current helper versions. Older helper reports may only have save API 200, reportName, success alert, return-to-list confirm and DOM/list signals; missing the exact reportListEvidence key alone is not sufficient to BLOCK a case.",
     "- For calculated-field division cases, an all-zero denominator is valid evidence when the testcase is about formula wiring/calculation behavior rather than data diversity. If request/UI formula and preview calculated values match BI's observed divide-by-zero behavior, do not BLOCK solely because denominator samples are all 0.",
+    "- Formula setup PASS/FAIL requires trusted visible inline-builder evidence such as token picker/keypad/operator clicks. If formula evidence is only `direct_fill_inline`, DOM mutation, or internal setter style evidence, write BLOCKED/BLOCKED_TOOL_LIMITATION instead of product PASS/FAIL.",
     "- For metadata/dropdown cases, use the canonical `rules/BI_DATA/metadata.csv` path from `input/reference-index.json` when present. If helper evidence exists, read `metadata-dropdown-evidence.json` actual/expected/missing/extra fields before judging, and record reference_csv/source_report/match_key/compare_fields in detail_json.",
     "- `input/run-state.json` defines allowed carryover. Evidence from a previous case is isolated and cannot prove a later case.",
     "- Prefer structured evidence first: DOM read, network observation, chart/table data. Use screenshots for Tool Bridge, FAIL/bug, major state transitions, and final evidence.",
@@ -1654,6 +1664,7 @@ const buildPrompt = (
     "- Metadata/detail_json should include reference_csv, source_report, match_key, compare_fields, normalizationNotes, actualVisibleItems, expectedFields, missingFields, and extraFields when the case compares UI fields to metadata.",
     "- Save/list detail_json should cite reportListEvidence when available. If current-run save helper is older and only has save API 200, reportName, success alert, return-to-list confirm and DOM/list signals, do not mark BLOCKED just because the exact reportListEvidence key is absent.",
     "- Calculated-field detail_json may record `division_by_zero_behavior=0` when all denominator rows are 0 and BI preview returns 0 for the calculated field; this can still support PASS for formula wiring/calculation cases unless the testcase explicitly asks for non-zero denominator verification.",
+    "- Formula setup detail_json must name the entry method. `direct_fill_inline` without trusted token/keypad interaction is BLOCKED_TOOL_LIMITATION, not product PASS/FAIL evidence.",
     "- FAIL/BLOCKED/PARTIAL workbooks that omit the required detail_json fields or current-run evidence will be rejected by result evidence gate.",
     "- If you cannot execute the real UAT because browser automation/tool access is unavailable and helper evidence is missing or incomplete, still create `output/result.xlsx` for the current case as BLOCKED with fail_category=TOOL_EXECUTION_UNAVAILABLE or EVIDENCE_INSUFFICIENT. Reserve Agent fallback for process crashes, cancellation, or cases where you cannot write a workbook at all.",
     "- Do not use Tool Bridge for missing testcase files; report the missing files and exit cleanly.",
@@ -3579,7 +3590,7 @@ const runFreshCasesUntilPauseOrDone = async (options: {
       runId,
       firstIteration ? "codex_starting" : "codex_next_case",
       firstIteration ? "啟動 Codex CLI" : "啟動下一題 Codex CLI",
-      `Codex 將用 model=${config.codex_model}, reasoning=${config.codex_reasoning_effort} 讀取 helper evidence、判定 ${guides.caseManifest.currentCaseNo ?? "current case"} 並寫 workbook。`,
+      `Codex 將用 model=${codexModelLabel(config.codex_model)}, reasoning=${config.codex_reasoning_effort} 讀取 helper evidence、判定 ${guides.caseManifest.currentCaseNo ?? "current case"} 並寫 workbook。`,
       () => activeRunner.start(buildPrompt(runId, message, config, runDir, inputs, guides))
     );
     firstIteration = false;
@@ -3690,7 +3701,35 @@ const runFreshCasesUntilPauseOrDone = async (options: {
 
     const runtimeFailureContained = runtimeContainment?.status === "written" && uploadedArtifacts.usedCodexGeneratedResult;
     const noResultContained = noResultContainment?.status === "written" && uploadedArtifacts.usedCodexGeneratedResult;
-    if (result.exitCode !== 0 && !runtimeFailureContained) {
+    const postResultExitPolicy = evaluatePostResultExitPolicy({
+      exitCode: result.exitCode,
+      signal: result.signal,
+      usedCodexGeneratedResult: uploadedArtifacts.usedCodexGeneratedResult,
+      resultXlsxUploaded: uploadedArtifacts.resultXlsxUploaded,
+      runtimeFailureContained,
+      noResultContained
+    });
+    writeJson(path.join(runDir, "output", "post-result-exit-policy.json"), {
+      ...postResultExitPolicy,
+      currentCaseNo: guides.caseManifest.currentCaseNo,
+      exitCode: result.exitCode,
+      signal: result.signal,
+      usedCodexGeneratedResult: uploadedArtifacts.usedCodexGeneratedResult,
+      resultXlsxUploaded: uploadedArtifacts.resultXlsxUploaded,
+      generatedAt: new Date().toISOString()
+    });
+    if (postResultExitPolicy.warning) {
+      sendBestEffort(
+        connection,
+        "run.stderr",
+        {
+          run_id: runId,
+          text: `uat-agent post-result Codex exit warning for ${guides.caseManifest.currentCaseNo ?? "current case"}: ${postResultExitPolicy.warning}`
+        },
+        false
+      );
+    }
+    if (postResultExitPolicy.shouldThrow) {
       throw new Error(`CODEX_RUN_FAILED exit=${result.exitCode} signal=${result.signal ?? "none"}`);
     }
     if (!uploadedArtifacts.usedCodexGeneratedResult && !noResultContained) {
@@ -4156,7 +4195,7 @@ export const handleToolResponse = async (
       runId,
       "codex_resuming",
       "續跑 Codex thread",
-      `thread: ${threadId}; model=${config.codex_model}; reasoning=${config.codex_reasoning_effort}`,
+      `thread: ${threadId}; model=${codexModelLabel(config.codex_model)}; reasoning=${config.codex_reasoning_effort}`,
       () => activeRunner.resume(threadId, buildToolResponsePrompt(runId, message))
     );
     const currentCaseNo =
@@ -4295,7 +4334,35 @@ export const handleToolResponse = async (
 
     const runtimeFailureContained = runtimeContainment?.status === "written" && uploadedArtifacts.usedCodexGeneratedResult;
     const noResultContained = noResultContainment?.status === "written" && uploadedArtifacts.usedCodexGeneratedResult;
-    if (result.exitCode !== 0 && !runtimeFailureContained) {
+    const postResultExitPolicy = evaluatePostResultExitPolicy({
+      exitCode: result.exitCode,
+      signal: result.signal,
+      usedCodexGeneratedResult: uploadedArtifacts.usedCodexGeneratedResult,
+      resultXlsxUploaded: uploadedArtifacts.resultXlsxUploaded,
+      runtimeFailureContained,
+      noResultContained
+    });
+    writeJson(path.join(runDir, "output", "post-result-exit-policy.json"), {
+      ...postResultExitPolicy,
+      currentCaseNo,
+      exitCode: result.exitCode,
+      signal: result.signal,
+      usedCodexGeneratedResult: uploadedArtifacts.usedCodexGeneratedResult,
+      resultXlsxUploaded: uploadedArtifacts.resultXlsxUploaded,
+      generatedAt: new Date().toISOString()
+    });
+    if (postResultExitPolicy.warning) {
+      sendBestEffort(
+        connection,
+        "run.stderr",
+        {
+          run_id: runId,
+          text: `uat-agent post-result Codex exit warning for ${currentCaseNo ?? "current case"}: ${postResultExitPolicy.warning}`
+        },
+        false
+      );
+    }
+    if (postResultExitPolicy.shouldThrow) {
       throw new Error(`CODEX_RUN_FAILED exit=${result.exitCode} signal=${result.signal ?? "none"}`);
     }
     if (!uploadedArtifacts.usedCodexGeneratedResult && !noResultContained) {

@@ -85,6 +85,21 @@ const writeBlockedEvidenceWorkbook = async (filePath: string): Promise<void> => 
   sheet.addRow(["編號", "結果", "失敗分類", "詳細紀錄JSON"]);
   sheet.addRow(["BIUI_COLLAGE_R001-B-05", "BLOCKED", "EVIDENCE_INSUFFICIENT", JSON.stringify({ 測試目的: "B-05 deterministic pass fixture", currentRunEvidence: { old: true } })]);
   sheet.addRow(["BIUI_COLLAGE_R001-J-03", "BLOCKED", "BLOCKED_NEEDS_VISUAL_REVIEW", JSON.stringify({ 測試目的: "J-03 deterministic pass fixture", currentRunEvidence: { old: true } })]);
+  sheet.addRow([
+    "BIUI_COLLAGE_R001-K-04",
+    "BLOCKED",
+    "EVIDENCE_INSUFFICIENT",
+    JSON.stringify({
+      測試目的: "K-04 visual fallback contract fixture",
+      設定條件: "Frontend observation helper ran but could not reach the row action target.",
+      預期行為: "Screenshot-only frontend observation blockers must carry an explicit visual fallback contract.",
+      實際行為: "Current-run screenshot exists, but structured DOM/ARIA evidence was insufficient.",
+      currentRunEvidence: {
+        source: "codex_generated",
+        screenshot: "output/helper-artifacts/BIUI_COLLAGE_R001-K-04/BIUI_COLLAGE_R001-K-04-observe-rowDeleteTooltip.png"
+      }
+    })
+  ]);
   sheet.addRow(["BIUI_COLLAGE_R001-L-05", "BLOCKED", "EVIDENCE_INSUFFICIENT", JSON.stringify({ 測試目的: "L-05 deterministic fail fixture", currentRunEvidence: { old: true } })]);
   sheet.addRow(["BIUI_COLLAGE_R001-M-11", "BLOCKED", "EVIDENCE_INSUFFICIENT", JSON.stringify({ 測試目的: "M-11 deterministic report mutation fail fixture", currentRunEvidence: { old: true } })]);
   sheet.addRow(["BIUI_COLLAGE_R001-I-04", "BLOCKED", "EVIDENCE_INSUFFICIENT", JSON.stringify({ 測試目的: "negative fixture", currentRunEvidence: { old: true } })]);
@@ -113,6 +128,51 @@ const writeFalseFailEvidenceWorkbook = async (filePath: string): Promise<void> =
   await workbook.xlsx.writeFile(filePath);
 };
 
+const writeUnsafeFailEvidenceWorkbook = async (filePath: string): Promise<void> => {
+  const workbook = new ExcelJS.Workbook();
+  const sheet = workbook.addWorksheet("測試案例");
+  sheet.addRow(["編號", "結果", "失敗分類", "詳細紀錄JSON"]);
+  sheet.addRow([
+    "BIUI_COLLAGE_R001-E-02",
+    "FAIL",
+    "",
+    JSON.stringify({
+      測試目的: "Formula direct-fill unsafe FAIL fixture",
+      設定條件: "Calculated formula evidence was collected for [A]/[B].",
+      預期行為: "Only trusted inline token/keypad evidence may support product FAIL.",
+      實際行為: "Codex wrote FAIL from request body mismatch even though formula setup used direct_fill_inline."
+    })
+  ]);
+  sheet.addRow([
+    "BIUI_COLLAGE_R001-G-02",
+    "FAIL",
+    "",
+    JSON.stringify({
+      測試目的: "Create-project modal blocker unsafe FAIL fixture",
+      設定條件: "Complete flow should start with create project.",
+      預期行為: "Create-project route/precondition must be clear before product FAIL.",
+      實際行為: "Codex wrote FAIL because the modal was not visible."
+    })
+  ]);
+  sheet.addRow([
+    "BIUI_COLLAGE_R001-G-01",
+    "FAIL",
+    "",
+    JSON.stringify({
+      測試目的: "Create-project project-limit environment fixture",
+      設定條件: "Project count is already at limit.",
+      預期行為: "Environment precondition must be separated from product FAIL.",
+      實際行為: "Codex wrote FAIL from create project being blocked by project limit."
+    })
+  ]);
+  const bugSheet = workbook.addWorksheet("Bug");
+  bugSheet.addRow(["嚴重度", "Bug ID", "關聯編號", "標題", "描述", "建議", "狀態", "Evidence"]);
+  bugSheet.addRow(["P2", "AUTO-BIUI_COLLAGE_R001-E-02", "BIUI_COLLAGE_R001-E-02", "[AUTO] E-02 unsafe formula FAIL", "Generated unsafe formula FAIL.", "Should be removed.", "OPEN", "fixture"]);
+  bugSheet.addRow(["P2", "AUTO-BIUI_COLLAGE_R001-G-02", "BIUI_COLLAGE_R001-G-02", "[AUTO] G-02 unsafe create-project FAIL", "Generated unsafe create-project FAIL.", "Should be removed.", "OPEN", "fixture"]);
+  bugSheet.addRow(["P2", "AUTO-BIUI_COLLAGE_R001-G-01", "BIUI_COLLAGE_R001-G-01", "[AUTO] G-01 project-limit FAIL", "Generated project-limit FAIL.", "Should be removed.", "OPEN", "fixture"]);
+  await workbook.xlsx.writeFile(filePath);
+};
+
 const readWorkbookStatuses = async (filePath: string): Promise<Record<string, { status: string; verdict: string }>> => {
   const workbook = new ExcelJS.Workbook();
   await workbook.xlsx.readFile(filePath);
@@ -125,6 +185,21 @@ const readWorkbookStatuses = async (filePath: string): Promise<Record<string, { 
       status: String(row.getCell(2).value ?? "").trim(),
       verdict: String(row.getCell(3).value ?? "").trim()
     };
+  }
+  return result;
+};
+
+const readWorkbookDetails = async (filePath: string): Promise<Record<string, JsonObject>> => {
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.readFile(filePath);
+  const sheet = workbook.getWorksheet("測試案例");
+  assert(sheet, "fixture result workbook must contain 測試案例 sheet");
+  const result: Record<string, JsonObject> = {};
+  for (let rowNo = 2; rowNo <= sheet.rowCount; rowNo += 1) {
+    const row = sheet.getRow(rowNo);
+    const caseNo = String(row.getCell(1).value ?? "").trim();
+    const raw = String(row.getCell(4).value ?? "").trim();
+    if (caseNo && raw) result[caseNo] = JSON.parse(raw) as JsonObject;
   }
   return result;
 };
@@ -186,6 +261,30 @@ const writeDeterministicEvidenceFixture = (runDir: string): void => {
         createEnabledAfterSelection: true
       }
     }
+  }, null, 2));
+
+  const k04Dir = path.join(runDir, "output", "helper-artifacts", "BIUI_COLLAGE_R001-K-04");
+  fs.mkdirSync(k04Dir, { recursive: true });
+  fs.writeFileSync(path.join(k04Dir, "BIUI_COLLAGE_R001-K-04-observe-rowDeleteTooltip.png"), "");
+  fs.writeFileSync(path.join(k04Dir, "frontend-observation-evidence.json"), JSON.stringify({
+    schemaVersion: "frontend-observation-evidence-v1",
+    observationType: "rowDeleteTooltip",
+    observationState: {
+      evidenceObject: "projectList.rowActionTooltip.state",
+      hoveredTarget: null,
+      tooltipVisible: false,
+      visibleText: null,
+      interactionLog: [
+        {
+          action: "hover",
+          target: "projectList.rowDeleteAction",
+          hovered: false,
+          candidate: { selected: null, candidates: [], visibleDeleteButtons: [] }
+        }
+      ],
+      asserted: false
+    },
+    warnings: ["ROW_DELETE_ACTION_NOT_HOVERABLE"]
   }, null, 2));
 
   const l05Dir = path.join(runDir, "output", "helper-artifacts-archive", "2026-05-21T00-02-00-000Z", "BIUI_COLLAGE_R001-L-05");
@@ -309,6 +408,44 @@ const writeFalseFailFunctionalFlowFixture = (runDir: string): void => {
   }, null, 2));
 };
 
+const writeUnsafeFailEvidenceFixture = (runDir: string): void => {
+  const e02Dir = path.join(runDir, "output", "helper-artifacts-archive", "2026-06-02T00-00-00-000Z", "BIUI_COLLAGE_R001-E-02");
+  fs.mkdirSync(e02Dir, { recursive: true });
+  fs.writeFileSync(path.join(e02Dir, "calculated-field-evidence.json"), JSON.stringify({
+    schemaVersion: "calculated-field-evidence-v1",
+    formulaUi: {
+      formula: "[新增帳號數]/[MAU(帳號)]",
+      mode: "official_inline_calculated_field",
+      selectedFormulaInput: {
+        value: "[新增帳號數]/[MAU(帳號)]",
+        entry: { method: "direct_fill_inline" },
+        matchMode: "display_formula"
+      }
+    },
+    dateRangeEvidence: {
+      ok: false,
+      warning: "DATE_RANGE_VERIFY_FAILED_AFTER_UI_INPUT"
+    },
+    warnings: ["CALCULATED_DATE_RANGE_UI_SETTING_NOT_COMPLETED:DATE_RANGE_VERIFY_FAILED_AFTER_UI_INPUT"]
+  }, null, 2));
+
+  const g02Dir = path.join(runDir, "output", "helper-artifacts-archive", "2026-06-02T00-01-00-000Z", "BIUI_COLLAGE_R001-G-02");
+  fs.mkdirSync(g02Dir, { recursive: true });
+  fs.writeFileSync(path.join(g02Dir, "collage.createProject-latest.json"), JSON.stringify({
+    status: "blocked",
+    error: "HelperBlockedError: CREATE_PROJECT_MODAL_NOT_VISIBLE: state={\"dialogs\":[],\"bodyTextExcerpt\":\"BI Web 報表 我的自訂 拼貼報表 拼貼test_001\"}",
+    artifacts: { screenshot: "BIUI_COLLAGE_R001-G-02-blocked.png" }
+  }, null, 2));
+
+  const g01Dir = path.join(runDir, "output", "helper-artifacts-archive", "2026-06-02T00-02-00-000Z", "BIUI_COLLAGE_R001-G-01");
+  fs.mkdirSync(g01Dir, { recursive: true });
+  fs.writeFileSync(path.join(g01Dir, "collage.createProject-latest.json"), JSON.stringify({
+    status: "blocked",
+    error: "HelperBlockedError: CREATE_PROJECT_MODAL_NOT_VISIBLE: state={\"dialogs\":[],\"bodyTextExcerpt\":\"已達最高5個專案 BI Web 報表 我的自訂 拼貼報表\"}",
+    artifacts: { screenshot: "BIUI_COLLAGE_R001-G-01-blocked.png" }
+  }, null, 2));
+};
+
 const main = async (): Promise<void> => {
   const executorSource = fs.readFileSync(executorPath, "utf8");
   const resultContractSource = fs.readFileSync(resultContractPath, "utf8");
@@ -359,6 +496,8 @@ const main = async (): Promise<void> => {
   assert(executorSource.includes("bodyTextReportList"), "executor must keep project-list body text row fallback");
   assert(executorSource.includes("rowDeleteButtonContext"), "executor must recover official project-list rows from row-local delete icon context");
   assert(executorSource.includes("projectListRowDeleteButtonCandidate"), "executor must locate row-local delete icon buttons by DOM/ARIA context");
+  assert(executorSource.includes("reportListRowActionCandidates"), "executor must recover row-local report actions from DOM/ARIA/right-side action context");
+  assert(executorSource.includes("report-list-row-inferred-download-control"), "report-list CSV helper must click inferred row-local download controls before blocking");
   assert(executorSource.includes("rowBeforeCancel: rowBefore"), "J-08 delete/cancel evidence must expose the before row snapshot under the result-facing key");
   assert(executorSource.includes("modalInteractionObserved"), "frontend modal observations must accept successful cancel/type interactions as modal evidence when DOM dialog wrappers are absent");
   assert(executorSource.includes("aria-label=\"刪除\""), "executor must support official UI delete icon aria-label fallback");
@@ -493,16 +632,24 @@ const main = async (): Promise<void> => {
   assert.equal(enrichment.status, "updated", "deterministic helper evidence should update blocked workbook");
   assert(enrichment.rows.some((item) => item.caseNo === "BIUI_COLLAGE_R001-B-05" && item.action === "deterministic_helper_pass"), "B-05 deterministic date evidence must promote BLOCKED to PASS");
   assert(enrichment.rows.some((item) => item.caseNo === "BIUI_COLLAGE_R001-J-03" && item.action === "deterministic_helper_pass"), "J-03 deterministic frontend observation must promote BLOCKED to PASS");
+  assert(enrichment.rows.some((item) => item.caseNo === "BIUI_COLLAGE_R001-K-04" && item.action === "completed_visual_fallback_contract"), "K-04 screenshot-only frontend observation blocker must get an explicit visual fallback contract");
   assert(enrichment.rows.some((item) => item.caseNo === "BIUI_COLLAGE_R001-L-05" && item.action === "deterministic_helper_fail"), "L-05 deterministic frontend interaction failure must promote BLOCKED to FAIL");
   assert(enrichment.rows.some((item) => item.caseNo === "BIUI_COLLAGE_R001-M-11" && item.action === "deterministic_helper_fail"), "M-11 deterministic report mutation failure must promote BLOCKED to FAIL");
   const statuses = await readWorkbookStatuses(fixtureResult);
   assert.equal(statuses["BIUI_COLLAGE_R001-B-05"]?.status, "PASS", "B-05 should become PASS");
   assert.equal(statuses["BIUI_COLLAGE_R001-J-03"]?.status, "PASS", "J-03 should become PASS");
+  assert.equal(statuses["BIUI_COLLAGE_R001-K-04"]?.status, "BLOCKED", "K-04 should remain BLOCKED");
+  assert.equal(statuses["BIUI_COLLAGE_R001-K-04"]?.verdict, "BLOCKED_NEEDS_VISUAL_REVIEW", "K-04 should carry explicit visual fallback classification");
   assert.equal(statuses["BIUI_COLLAGE_R001-L-05"]?.status, "FAIL", "L-05 should become FAIL");
   assert.equal(statuses["BIUI_COLLAGE_R001-L-05"]?.verdict, "FAIL_INTERACTION_FAILED", "L-05 should carry a deterministic failure classification");
   assert.equal(statuses["BIUI_COLLAGE_R001-M-11"]?.status, "FAIL", "M-11 should become FAIL");
   assert.equal(statuses["BIUI_COLLAGE_R001-M-11"]?.verdict, "FAIL_INTERACTION_FAILED", "M-11 should carry a deterministic failure classification");
   assert.equal(statuses["BIUI_COLLAGE_R001-I-04"]?.status, "BLOCKED", "negative non-deterministic observation should remain BLOCKED");
+  const enrichedDetails = await readWorkbookDetails(fixtureResult);
+  assert.equal(enrichedDetails["BIUI_COLLAGE_R001-K-04"]?.evidenceSource, "screenshotVisual", "K-04 visual fallback must declare screenshotVisual evidenceSource");
+  assert.equal(typeof enrichedDetails["BIUI_COLLAGE_R001-K-04"]?.visualObservation, "string", "K-04 visual fallback must include visualObservation");
+  assert.equal(typeof enrichedDetails["BIUI_COLLAGE_R001-K-04"]?.domEvidenceGap, "string", "K-04 visual fallback must include domEvidenceGap");
+  assert.equal(enrichedDetails["BIUI_COLLAGE_R001-K-04"]?.currentRunEvidence?.evidenceType, "frontendObservationVisualFallback", "K-04 visual fallback must preserve frontend observation evidence type");
 
   const falseFailRoot = fs.mkdtempSync(path.join(os.tmpdir(), "p0-33-l10-false-fail-"));
   const falseFailWorkbook = path.join(falseFailRoot, "false-fail-result.xlsx");
@@ -519,6 +666,31 @@ const main = async (): Promise<void> => {
   assert.equal(falseFailStatuses["BIUI_COLLAGE_R001-L-10"]?.status, "PASS", "L-10 false FAIL should become PASS when functional-flow stateChanged evidence is asserted");
   assert.equal(falseFailStatuses["BIUI_COLLAGE_R001-L-10"]?.verdict, "", "L-10 false FAIL override should clear the fail classification");
   assert(!falseFailBugRows.some((item) => item.caseNo === "BIUI_COLLAGE_R001-L-10"), "L-10 false FAIL override should remove matching generated bug rows");
+
+  const unsafeFailRoot = fs.mkdtempSync(path.join(os.tmpdir(), "p0-33-unsafe-fail-"));
+  const unsafeFailWorkbook = path.join(unsafeFailRoot, "unsafe-fail-result.xlsx");
+  writeUnsafeFailEvidenceFixture(unsafeFailRoot);
+  await writeUnsafeFailEvidenceWorkbook(unsafeFailWorkbook);
+  const unsafeFailEnrichment = await ensureBlockedResultCurrentRunEvidence({
+    filePath: unsafeFailWorkbook,
+    runId: "p0-33-unsafe-fail-fixture-run",
+    runDir: unsafeFailRoot
+  });
+  const unsafeFailStatuses = await readWorkbookStatuses(unsafeFailWorkbook);
+  const unsafeFailDetails = await readWorkbookDetails(unsafeFailWorkbook);
+  const unsafeFailBugRows = await readWorkbookBugRows(unsafeFailWorkbook);
+  assert(unsafeFailEnrichment.rows.some((item) => item.caseNo === "BIUI_COLLAGE_R001-E-02" && item.action === "downgraded_fail_to_blocked"), "E-02 direct_fill_inline FAIL must be downgraded to BLOCKED");
+  assert(unsafeFailEnrichment.rows.some((item) => item.caseNo === "BIUI_COLLAGE_R001-G-02" && item.action === "downgraded_fail_to_blocked"), "G-02 create-project modal blocker FAIL must be downgraded to BLOCKED");
+  assert(unsafeFailEnrichment.rows.some((item) => item.caseNo === "BIUI_COLLAGE_R001-G-01" && item.action === "downgraded_fail_to_blocked"), "G-01 project-limit FAIL must be downgraded to environment BLOCKED");
+  assert.equal(unsafeFailStatuses["BIUI_COLLAGE_R001-E-02"]?.status, "BLOCKED", "E-02 unsafe formula FAIL should become BLOCKED");
+  assert.equal(unsafeFailStatuses["BIUI_COLLAGE_R001-E-02"]?.verdict, "BLOCKED_TOOL_LIMITATION", "E-02 unsafe formula FAIL should carry tool limitation classification");
+  assert.equal(unsafeFailStatuses["BIUI_COLLAGE_R001-G-02"]?.status, "BLOCKED", "G-02 unsafe create-project FAIL should become BLOCKED");
+  assert.equal(unsafeFailStatuses["BIUI_COLLAGE_R001-G-02"]?.verdict, "BLOCKED_NEEDS_REJUDGMENT", "G-02 ambiguous create-project modal blocker should require rejudgment");
+  assert.equal(unsafeFailStatuses["BIUI_COLLAGE_R001-G-01"]?.status, "BLOCKED", "G-01 project-limit FAIL should become BLOCKED");
+  assert.equal(unsafeFailStatuses["BIUI_COLLAGE_R001-G-01"]?.verdict, "BLOCKED_ENVIRONMENT_PRECONDITION", "G-01 project-limit FAIL should carry environment precondition classification");
+  assert.equal(unsafeFailDetails["BIUI_COLLAGE_R001-E-02"]?.currentRunEvidence?.evidenceType, "formulaSetupUntrustedEntry", "E-02 detail must preserve unsafe formula evidence type");
+  assert.equal(unsafeFailDetails["BIUI_COLLAGE_R001-G-02"]?.currentRunEvidence?.evidenceType, "createProjectSetupBlocked", "G-02 detail must preserve create-project blocker evidence type");
+  assert(!unsafeFailBugRows.some((item) => ["BIUI_COLLAGE_R001-E-02", "BIUI_COLLAGE_R001-G-02", "BIUI_COLLAGE_R001-G-01"].includes(item.caseNo)), "unsafe FAIL downgrade should remove generated bug rows");
 
   const prereqRoot = fs.mkdtempSync(path.join(os.tmpdir(), "p0-33-update-prereq-"));
   const prereqWorkbook = path.join(prereqRoot, "blocked-result.xlsx");
@@ -580,9 +752,13 @@ const main = async (): Promise<void> => {
       "M-10 copy flow recovers to project list before row verification",
       "M-11 uses current-run saved-report state instead of stale TOOL_A01 pattern",
       "B-05/J-03 deterministic helper evidence promotes BLOCKED to PASS",
+      "K-04 screenshot-only frontend observation blocker gets explicit visual fallback contract before upload",
       "L-05 deterministic helper failure promotes BLOCKED to FAIL",
       "M-11 deterministic report mutation failure promotes BLOCKED to FAIL",
       "L-10 functional-flow deterministic helper pass evidence overrides false FAIL",
+      "E-02 direct_fill_inline false product FAIL downgrades to BLOCKED_TOOL_LIMITATION",
+      "G-02 ambiguous create-project modal blocker FAIL downgrades to BLOCKED_NEEDS_REJUDGMENT",
+      "G-01 project-limit create-project FAIL downgrades to BLOCKED_ENVIRONMENT_PRECONDITION",
       "M-11 disabled-by-calculation prerequisite does not promote to product FAIL"
     ]
   }, null, 2));

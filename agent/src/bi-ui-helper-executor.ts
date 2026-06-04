@@ -7931,6 +7931,135 @@ const ensureSavedReportListRowVisible = async (
   return { state, attempts, recoveryActions };
 };
 
+const reportListRowActionCandidates = async (
+  page: Page,
+  reportName: string,
+  action: "download" | "delete"
+): Promise<Array<Record<string, unknown>>> => {
+  return page.evaluate(({ targetReportName, actionName }) => {
+    const normalize = (value: string | null | undefined) => (value ?? "").trim().replace(/\s+/g, " ");
+    const isVisible = (element: Element): boolean => {
+      const rect = element.getBoundingClientRect();
+      const style = window.getComputedStyle(element);
+      return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden" && style.opacity !== "0";
+    };
+    const isDisabled = (element: HTMLElement): boolean => {
+      const style = window.getComputedStyle(element);
+      return (element instanceof HTMLButtonElement && element.disabled) ||
+        element.getAttribute("aria-disabled") === "true" ||
+        style.pointerEvents === "none";
+    };
+    const labelText = (element: HTMLElement): string => [
+      normalize(element.innerText || element.textContent),
+      normalize(element.getAttribute("aria-label")),
+      normalize(element.getAttribute("title")),
+      normalize(element.getAttribute("download")),
+      normalize(element.getAttribute("href")),
+      normalize(element.getAttribute("onclick")),
+      normalize(element.getAttribute("data-testid")),
+      normalize(element.getAttribute("data-action")),
+      typeof element.className === "string" ? element.className : ""
+    ].join("\n");
+    const downloadPattern = /(^|\s)(下載|匯出)(\s|$)|download|export|csv|⬇/i;
+    const deletePattern = /(^|\s)(刪除|删除)(\s|$)|delete|trash|remove|🗑/i;
+    const actionPattern = actionName === "download" ? downloadPattern : deletePattern;
+    const datePattern = /\d{4}[/-]\d{1,2}[/-]\d{1,2}|過去\s*\d+\s*天|最近\s*\d+\s*天|昨日|今日|上週|本週|上月|本月/;
+    const rowSelector = [
+      "tr",
+      "[role='row']",
+      ".ant-table-row",
+      "[class*=row]",
+      "[class*=Row]",
+      "[class*=card]",
+      "[class*=Card]",
+      "[class*=item]",
+      "[class*=Item]",
+      "[class*=list]",
+      "[class*=List]"
+    ].join(", ");
+    const allBodyElements = Array.from(document.querySelectorAll<HTMLElement>("body *"));
+    const rows = Array.from(document.querySelectorAll<HTMLElement>(rowSelector))
+      .filter((row) => isVisible(row))
+      .map((row) => {
+        const rowRect = row.getBoundingClientRect();
+        const rowText = normalize(row.innerText || row.textContent);
+        return { row, rowRect, rowText };
+      })
+      .filter(({ rowText }) => {
+        const targetMatches = targetReportName === "first-visible-report-row" || rowText.includes(targetReportName);
+        return targetMatches && datePattern.test(rowText);
+      });
+
+    const seen = new Set<number>();
+    const candidates = rows.flatMap(({ row, rowRect, rowText }) => {
+      const controls = Array.from(row.querySelectorAll<HTMLElement>("button, a, [role=button]"))
+        .filter((control) => isVisible(control) && !isDisabled(control) && !control.closest("[role='dialog'], .modal, .ant-modal, .MuiDialog-root, .swal2-popup"))
+        .map((control) => {
+          const rect = control.getBoundingClientRect();
+          const label = labelText(control);
+          const iconSized = rect.width <= 96 && rect.height <= 72;
+          const rightSideAction = rect.x >= rowRect.right - Math.min(260, Math.max(120, rowRect.width * 0.4));
+          return {
+            control,
+            bodyIndex: allBodyElements.indexOf(control),
+            label,
+            rect,
+            iconSized,
+            rightSideAction,
+            labelMatchesAction: actionPattern.test(label),
+            labelMatchesDelete: deletePattern.test(label),
+            labelMatchesDownload: downloadPattern.test(label)
+          };
+        })
+        .filter((item) => item.bodyIndex >= 0);
+
+      const actionControls = controls.filter((item) =>
+        item.labelMatchesAction ||
+        (item.iconSized && item.rightSideAction && !/checkbox/i.test(item.label))
+      );
+      const explicit = actionControls.filter((item) => item.labelMatchesAction);
+      let inferred: typeof actionControls = [];
+      if (explicit.length === 0 && actionName === "download" && actionControls.length >= 2) {
+        const deleteIndex = actionControls.findIndex((item) => item.labelMatchesDelete);
+        const inferredDownload = deleteIndex > 0
+          ? actionControls[deleteIndex - 1]
+          : actionControls.find((item) => !item.labelMatchesDelete);
+        inferred = inferredDownload ? [inferredDownload] : [];
+      }
+      if (explicit.length === 0 && actionName === "delete" && actionControls.length >= 2) {
+        const inferredDelete = [...actionControls].reverse().find((item) => !item.labelMatchesDownload);
+        inferred = inferredDelete ? [inferredDelete] : [];
+      }
+
+      return [...explicit, ...inferred].flatMap((item) => {
+        if (seen.has(item.bodyIndex)) return [];
+        seen.add(item.bodyIndex);
+        return [{
+          bodyIndex: item.bodyIndex,
+          action: actionName,
+          inferred: !item.labelMatchesAction,
+          text: normalize(item.control.innerText || item.control.textContent),
+          tagName: item.control.tagName.toLowerCase(),
+          role: item.control.getAttribute("role"),
+          ariaLabel: item.control.getAttribute("aria-label"),
+          title: item.control.getAttribute("title"),
+          onclick: item.control.getAttribute("onclick"),
+          rowText: rowText.slice(0, 800),
+          rect: {
+            x: Math.round(item.rect.x),
+            y: Math.round(item.rect.y),
+            width: Math.round(item.rect.width),
+            height: Math.round(item.rect.height)
+          },
+          score: (item.labelMatchesAction ? 100 : 60) + (item.rightSideAction ? 20 : 0) + (item.iconSized ? 10 : 0)
+        }];
+      });
+    });
+
+    return candidates.sort((a, b) => Number(b.score) - Number(a.score) || Number(a.rect.y) - Number(b.rect.y) || Number(a.rect.x) - Number(b.rect.x));
+  }, { targetReportName: reportName, actionName: action });
+};
+
 const clickReportListCsvDownload = async (
   page: Page,
   reportName: string,
@@ -7959,6 +8088,24 @@ const clickReportListCsvDownload = async (
         selectedControl,
         clickError: error instanceof Error ? error.message : String(error)
       };
+    }
+  }
+
+  const rowActionCandidates = await reportListRowActionCandidates(page, reportName, "download");
+  const rowActionTarget = rowActionCandidates[0] as { bodyIndex?: unknown; inferred?: unknown } | undefined;
+  let rowActionClickError: string | null = null;
+  if (typeof rowActionTarget?.bodyIndex === "number") {
+    try {
+      await clickVisibleBodyElementByIndex(page, rowActionTarget.bodyIndex, 8000);
+      return {
+        clicked: true,
+        trigger: rowActionTarget.inferred === true ? "report-list-row-inferred-download-control" : "report-list-row-action-download-control",
+        candidates: rowActionCandidates,
+        rowState,
+        selectedControl: rowActionTarget as Record<string, unknown>
+      };
+    } catch (error) {
+      rowActionClickError = error instanceof Error ? error.message : String(error);
     }
   }
 
@@ -8009,7 +8156,13 @@ const clickReportListCsvDownload = async (
     await clickVisibleBodyElementByIndex(page, target.index, 8000);
     return { clicked: true, trigger: "report-list-row-nearby-download-control", candidates, rowState };
   }
-  return { clicked: false, trigger: "report-list-row-download-not-found", candidates, rowState };
+  return {
+    clicked: false,
+    trigger: "report-list-row-download-not-found",
+    candidates: [...rowActionCandidates, ...candidates],
+    rowState,
+    ...(rowActionClickError ? { clickError: rowActionClickError } : {})
+  };
 };
 
 type DeleteReportTriggerEvidence = {

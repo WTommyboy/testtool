@@ -31,6 +31,7 @@
     "verify:agent-runtime-file-access": "tsx scripts/verify-agent-runtime-file-access.ts",
     "verify:agent-result-contract": "tsx scripts/verify-agent-result-contract.ts",
     "verify:runtime-containment-result": "tsx scripts/verify-runtime-containment-result.ts",
+    "verify:post-result-exit-policy": "tsx scripts/verify-post-result-exit-policy.ts",
     "verify:codex-no-result-containment": "tsx scripts/verify-codex-no-result-containment.ts",
     "verify:p0-helper-browser-session-containment": "tsx scripts/verify-p0-helper-browser-session-containment.ts",
     "verify:result-upload-retry": "tsx scripts/verify-result-upload-retry.ts",

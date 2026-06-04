@@ -76,7 +76,7 @@ Doctor should pass for required checks before using interactive execution.
 
 Relevant local runtime flags:
 
-- `UAT_AGENT_CODEX_MODEL` defaults to `gpt-5.3-codex`.
+- `UAT_AGENT_CODEX_MODEL` defaults to empty, which lets Codex CLI use the current account's default model. Set it only after a one-line `codex exec --json -m <model>` smoke confirms the model is supported.
 - `UAT_AGENT_CODEX_REASONING_EFFORT` defaults to `low`.
 - `UAT_AGENT_AUTO_APPROVE_TOOL_REQUESTS=false` disables non-SSO/login authorization auto approval. Package-gate ambiguity decisions, such as testcase/start-case conflicts, still wait for PM even when auto approval is enabled.
 - `UAT_AGENT_KEEP_CHROME_WARM=false` disables warm dedicated Chrome and returns to run-scoped Chrome.
@@ -222,6 +222,7 @@ Helper artifact behavior:
 Result workbook behavior:
 - Preferred path: spawned Codex writes `output/result.xlsx` itself after executing the UAT cases.
 - Fallback path: if Codex exits without creating `output/result.xlsx`, the agent creates a local diagnostic workbook only. It is not uploaded as trusted UAT output.
+- Post-result exit path: if Codex exits non-zero after a Codex-generated `output/result.xlsx` has passed local self-check and uploaded successfully, the agent records a warning and continues to the next case. If the trusted workbook is missing or upload failed, the run still fails or uses runtime containment.
 - Diagnostic mode does not call trusted result generation, does not write trusted `output/result.xlsx`, and cannot update PASS/FAIL/BLOCKED.
 
 ## Verification Commands

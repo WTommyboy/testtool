@@ -1,7 +1,8 @@
 # UAT Tool 最新工程 Spec
 
-**版本**: v2026-05-13
+**版本**: v2026-06-02
 **狀態**: Mac Agent MVP / App 1.1.8 + Agent 0.2.33 source / Indexed Guidance + Preflight Safeguards + groupId schema + final/partial aggregate result + complete archive MD export + OTTEST002 Collage helper P0 + metadata dropdown source-group scoping + metadata expected-source fallback + metadata source-scope count guard + list-page CSV row refresh + response-body fallback + preview table evidence + CSV header/date normalization + helper-plan auto continuation + existing-report field exact reconciliation + helper-evidence preflight replacement + support-file profile + result repair guard + FAIL-to-Bug linked row contract + server fallback bug candidate + duplicate fallback guard + PASS/ordinary BLOCKED no-auto-bug guard + degraded BLOCKED result guard + Tool Bridge run-event evidence gate + Tool Bridge lifecycle status panel + Tool Bridge result-gate false-positive guard + missing Tool Bridge response wording guard + negative native-confirm prose guard + formula-modal blocked gate guard + source-result runtime skip ingestion + execute selected-field precondition guard + non-destructive validation alert allowlist + A-06 all-zero field inspection helper + editor-session CSV helper chain + same-case project-row CSV planner guard + D0 baseline row-CSV planner guard + temporary report create/delete helper + formula/calculated-field preview helper + stable formula modal selector helper + create-project helper + dotted create-project template routing + dynamic/hybrid date helper support + strict select-all field-count guard + D-02 structured select-all source/count guard + PASS-vs-helper-false-check gate + PM skip classification + preview-only helper skip guards + case-type must-read rules + CSV/metadata/formula authoring contract + formula helper-hints parser compatibility + readonly formula keypad/token input + formula display/code token matching + divide-by-zero=0 calculation judgment + save reportListEvidence + hardened openProject prompt retry + total-refund exact alias/token matching + report-list row-nearby CSV fallback + create-project state carryover + project-page navigation helpers + save-load create-before-reopen guard + same-case save/reopen report-name-prefix guard + save-only no-open-existing/no-reopen/no-download guard + structured date variants/staged boundary helper support + exact metadata source filename contract + background-safe browser lease + no-foreground helper policy + field-list loading wait + inline cleanup consistency parser guard / helper project auto-selection guard / manual_ai helper pre-run guard / manual_ai safe navigation prelude guard / date-variants preview evidence helper / multi-variant date visible-UI routing guard / date UI represented-range evidence / Monday-week date preset guard with weekStart override / select-all fields params guard / selected-field code-label reconciliation / Playwright browser_tabs availability guard / active-question-first session handoff contract / Agent WebSocket reconnect resilience / Dev URL dedicated Chrome open action / scope-aware P0 runtime guards / Agent active-run connection-loss continuation guard
+**本次補記**: 2026-06-02 dev source 補 Chrome CDP process-list buffer hardening、unsafe FAIL classification guard、visual fallback contract pre-upload completion；`agent/src/browser-session.ts` 的 Chrome PID scan 以 1500ms timeout 與 16MiB stdout buffer 執行，`agent/src/result-evidence-enricher.ts` 會把 `direct_fill_inline` / ambiguous create-project setup blocker 的不可信 FAIL 降為 BLOCKED，並在 screenshot-only frontend observation blocker 上傳前補齊 `BLOCKED_NEEDS_VISUAL_REVIEW` 合約，避免 auto Bug row 與泛用 server containment 誤導產品判讀。
 **適用分支**: `refactor/mac-agent-mvp` / `codex/uat-tool-mvp`  
 **說明**: 檔名沿用 Tommy 提供的 `工程spac.md`;本文內容為工程 spec。
 
@@ -331,6 +332,18 @@ CodexRunner responsibilities:
 - Detect thread id.
 - Support cancellation.
 - Persist raw stdout/stderr.
+
+Model config policy:
+
+- `codex_model` may be empty; empty means Codex CLI default model.
+- Agent must not hard-code experimental/new model names as defaults. A non-empty model may be configured only after a one-line `codex exec --json -m <model>` smoke confirms the local account supports it.
+- Doctor must fail known unsupported local model configs before dispatch, instead of letting every case become `CODEX_RUNTIME_RESULT_WRITE_FAILED`.
+- CodexRunner must not pass desktop thread/originator env such as `CODEX_THREAD_ID` or `CODEX_INTERNAL_ORIGINATOR_OVERRIDE` into child Codex processes.
+
+Post-result exit policy:
+
+- If Codex exits non-zero after a Codex-generated single-case `output/result.xlsx` has passed local self-check and uploaded successfully, Agent records a warning and advances to the next case.
+- If the trusted workbook is missing, invalid, fallback-only, or failed to upload, the non-zero exit remains fatal or goes through runtime containment.
 
 ### 3.5 Browser Session
 
@@ -2664,3 +2677,49 @@ Status update 2026-05-20 P0.29 BI official inline formula-builder alignment: Tom
 - 調整：CSV comparator 支援「CSV 日期列 vs preview 日期欄矩陣」對齊，避免 `F-07` 這類同一份資料因表格方向不同而 false FAIL。`I-04/J-08` lifecycle observation 改為接受實際 modal-only interaction evidence，不只看 dialog wrapper 是否存在。`M-11` helper 會在 `更新設定` disabled 且 UI 提示需先計算時先按 `計算`，result enricher 也不再把未滿足計算前置的 disabled 狀態直接升產品 FAIL。
 - 邊界：平台層修 CSV shape / result evidence ordering；BI-specific 的 project modal、delete cancel、更新設定前置計算語意仍屬 `BI_OFFICIAL_UI_COLLAGE` domain action/evidence semantics。這仍是 P0 compatibility bridge，不是 Gen4 interpreter，也不是 oracle hard-code。
 - 驗證：`verify:helper-report-gate`、`verify:p0-33-live-blocker-regressions`、`verify:result-evidence-gate`、`verify:p0-live-action-templates`、`verify:official-observation-contract`、`verify:bi-official-ui-object-vocabulary`、`verify:shared-lifecycle-action-contracts`、`verify:agent-result-contract`、root `typecheck`、agent `build`、`git diff --check`；另用 49022034 實際 `F-07` artifact smoke，62 個日期值與區間總和皆匹配。
+
+### 2026-05-27 - P0.40 full-ready v1.14 testcase/domain-authoring cleanup
+
+- 背景：reduced v1.15 `project4_smoke_no_j12` 已跑到 14 PASS / 1 false FAIL；剩餘 `L-10` 失敗不是產品或 runtime regression，而是 testcase 仍把目前正式 UI 不存在的「自某日至昨日 / 自某日至今」寫成單一 visible preset。J-12 專案上限也不適合混在 95+ 題 full run，因為它需要刻意把專案數推到 5，會污染 J-10/J-11/J-13/J-14 與後續 project lifecycle evidence。
+- 產出：新增 `BIUI_COLLAGE_R001` v1.14 full-ready 三文件。Active package 從 97 題調整為 95 題：移出 `BIUI_COLLAGE_R001-J-12` 與 `BIUI_COLLAGE_R001-L-10`，同步刪除 xlsx `步驟` / `Vocabulary Contract` 中的 J-12 structured rows。`L-02` preset list 只列目前正式 UI 可見項；`A-06` 改為以 UI 當下每日報表可選欄位清單列全 0 欄位，不再因 metadata 預期欄位數判 BLOCKED；`I-03` 不再因專案數 >=5 BLOCKED；`J-10` 明確要求起始專案數 <=4。
+- Domain pack：`BI_OFFICIAL_UI_COLLAGE` 將 `dateRange.preset.fromDateToYesterday` / `fromDateToToday` 標記為 current official UI 非單一 visible preset，v1.14 full-ready 不列入 active visible preset assertion。lint rule 增加 authoring warning：若 future testcase 使用「自某日至昨日 / 自某日至今」，必須當 composite endpoint-control flow 或 focused package，不可當可見 preset 清單。
+- Authoring：`docs/authoring` 補兩條跨 domain 規則：環境型/上限型 case 預設拆包，不混入長篇 full-ready 主線；visible UI inventory 不可憑 PRD 概念或語意猜測補字，必須由 live UI、截圖、設計稿或 visual alignment 證實。
+- 邊界：這是 testcase/domain-authoring cleanup，不是 runtime 修復，不新增 helper，也不是把小測 oracle 寫死。J-12 後續若要測，應建立獨立 project-limit package 並由 PM 準備 5-project state 或提供完整 precondition builder/cleanup policy。
+
+### 2026-05-27 - P0.41 RC environment retarget support
+
+- 背景：`BIUI_COLLAGE_R001` v1.14 full-ready 部署到 RC 後，run `b0fd7926-c89f-4c81-986b-a5ef98588272` 在前 4 題即 BLOCKED/CANCELLED。Archive 顯示 helper `collage.openProject` 回報 `BROWSER_SESSION_URL_MISMATCH`，但 `url` 與 `leaseDevUrl` 皆為 `https://galaxy.games.gamania.com/bi-rc/zh-TW/report/myCustom/tileMode/2`。根因是 runtime URL allowlist 與 official UI route matcher 仍只允許 `/bi-dev`，且 v1.14 三文件仍含大量 dev URL。
+- Runtime：Agent helper URL safety gate 增加 `/bi-rc`；official UI page 判斷、project route matcher、editor route matcher 都支援 `/bi-dev` 與 `/bi-rc`。Project fallback URL 組裝不再硬寫 `/bi-dev`，會沿用目前頁面的 official UI prefix。
+- Test package：產出 `v1_14_rc` 三文件，active case 數仍為 95，case 題意沿用 v1.14，只將執行環境 retarget 至 `https://galaxy.games.gamania.com/bi-rc/zh-TW/report/myCustom/tileMode/2`，並保留 RC home fallback。
+- 邊界：這是環境 retarget/runtime URL support，不是 BI case 判定修正。`v1_14` dev package 不覆蓋；RC 走獨立 `v1_14_rc` package。
+- 驗證：`npm run build --prefix agent`、`npm run typecheck --prefix agent`、`npm run typecheck`、`npm run verify:bi-official-rc-url-support`、`check:package-consistency(v1_14_rc)` 通過。Package consistency 仍為 warning-only，warning 類型與 v1.14 相同。
+
+### 2026-06-02 - P0.42 Chrome CDP process-list buffer hardening
+
+- 背景：dev Agent 啟動/重用 dedicated Chrome 時，process inventory 會用 `ps -axo pid=,command=` 掃本機 Chrome process。近期本機 process table stdout 超過 Node `child_process.execFile` 預設 `maxBuffer`，造成 `ERR_CHILD_PROCESS_STDIO_MAXBUFFER`，進而讓 browser-session lifecycle 誤判 CDP/profile/debug-port 狀態。這是 Agent runtime 問題，不是 Galaxy BI 產品或 testcase/result 判定。
+- 實作：`agent/src/browser-session.ts` 新增 `chromeProcessListTimeoutMs=1500` 與 `chromeProcessListMaxBufferBytes=16 * 1024 * 1024`。`listDedicatedChromePids` 與 `listChromeDebugPortPids` 都用同一組 option 呼叫 `execFileAsync("ps", ["-axo", "pid=,command="], ...)`，避免 dedicated profile scan 與 debug-port scan 採不同容錯。
+- 行為邊界：若 CDP 未執行，doctor 仍可回 `profileMatched=true` 並說明 Agent 會 on-demand launch；若 CDP 正在執行，process scan 不應再因 stdout buffer 過小造成 false `CHROME_CDP_PROFILE_MISMATCH`。此 patch 不變更 helper planning、domain action contract、result evidence gate 或 production deploy policy。
+- 驗證：先 smoke 再修文件；已通過 `npm run typecheck --prefix agent`、`npm run build --prefix agent`、`npm run verify:agent-browser-session-isolation`、`node agent/dist/cli.js --config /Users/tommy/.uat-agent-dev/config.json doctor`。
+
+### 2026-06-02 - P0.43 unsafe FAIL classification guard
+
+- 背景：`7ddf7fbb-de5a-4780-97d2-4c55d0025aa8` 的 aggregate 有 3 個 FAIL，其中 `B-08` 是乾淨日期 regression，但 `E-02` 與 `G-02` 的 evidence 不足以直接交付產品 Bug。`E-02` 的 calculated-field evidence 顯示 formula entry method 是 `direct_fill_inline` 且 date UI setup failed；`G-02` 的 create-project helper 停在 `CREATE_PROJECT_MODAL_NOT_VISIBLE`，需要先分辨 environment precondition、route/helper gap 或產品流程失敗。
+- 實作：`agent/src/result-evidence-enricher.ts` 新增 `unsafeFailBlockedEvidence`。`calculated-field-evidence.json` 若只有 `direct_fill_inline` 且沒有 trusted token/keypad/operator evidence，FAIL 轉 `BLOCKED_TOOL_LIMITATION`；`collage.createProject-latest.json` 若 status=blocked 且含 `CREATE_PROJECT_MODAL_NOT_VISIBLE`，有 project-limit text 時轉 `BLOCKED_ENVIRONMENT_PRECONDITION`，否則轉 `BLOCKED_NEEDS_REJUDGMENT`。轉換後會保留 `previous_fail_detail_json` 與 current-run evidence，並移除 matching generated Bug row。
+- Prompt/guidance：`agent/src/task-runner.ts` 補 formula setup rule，要求 Codex 明確記錄 entry method；`direct_fill_inline`、DOM mutation、internal setter style evidence 只能寫 tool limitation / BLOCKED，不可寫產品 PASS/FAIL。
+- 邊界：server fail-to-bug fallback 不改；真正產品 FAIL 仍需 Bug row。這個 guard 只在 Agent upload 前攔截 unsafe FAIL，且只依 evidence type / blocker code / domain policy，不依特定 case 編號。`BI_OFFICIAL_UI_COLLAGE` domain pack 中既有的 formula trusted-entry policy 是本 guard 的語意來源。
+- 驗證：`npm run verify:p0-33-live-blocker-regressions` 覆蓋 direct-fill unsafe FAIL、ambiguous create-project blocker、project-limit blocker 三種降級；另跑 `npm run typecheck --prefix agent`、`npm run typecheck`、`npm run build --prefix agent`。
+
+### 2026-06-02 - P0.44 visual fallback contract pre-upload completion
+
+- 背景：前端觀察 cases 若 detail_json 含 screenshot evidence 但缺 `evidenceSource=screenshotVisual`、`visualObservation`、`domEvidenceGap`，server result gate 會用 `RESULT_FRONTEND_OBSERVATION_VISUAL_FALLBACK_REQUIRED` containment 改成 `BLOCKED_NEEDS_VISUAL_REVIEW`。這能保住 run，但 aggregate/report 會留下泛用 server containment 敘述，不利於 UAT 分類。
+- 實作：`agent/src/result-evidence-enricher.ts` 新增 `visualFallbackBlockedEvidence` 與 `buildVisualFallbackBlockedDetail`，並新增 enrichment action `completed_visual_fallback_contract`。BLOCKED row 若屬 `BIUI_COLLAGE_R001-I/J/K/L/M/N`、有 current-run screenshot、沒有 deterministic helper PASS/FAIL、且尚未完整宣告 visual fallback，Agent 會在 upload 前寫回 `BLOCKED / BLOCKED_NEEDS_VISUAL_REVIEW`。
+- Detail contract：補入 `evidenceSource=screenshotVisual`、`screenshotPath`、`visualObservation`、`domEvidenceGap`、`currentRunEvidence.source=uat-agent-visual-fallback-contract`、`previous_blocked_detail_json`，並保留 `frontend-observation-evidence.json` 的 `observationType`、`asserted`、`assertions`、`interactionLog`、warnings。
+- 邊界：不把 screenshot 轉成 PASS；`asserted=true` 仍由 deterministic helper pass 處理，`recommendedFailureClassification=FAIL_*` 仍由 deterministic helper fail 處理。`PROJECT_CREATE_MODAL_PRECONDITION_PROJECT_LIMIT_REACHED` 等 structured frontend precondition blocker 不轉 visual review。
+- 驗證：`scripts/verify-p0-33-live-blocker-regressions.ts` 新增 K-04 screenshot-only fixture，確認 action=`completed_visual_fallback_contract`、verdict=`BLOCKED_NEEDS_VISUAL_REVIEW` 且 detail fields 完整；另通過 `npm run verify:p0-visual-fallback-contract`、`npm run typecheck --prefix agent`、`npm run typecheck`、`npm run build --prefix agent`。
+
+### 2026-06-02 - P0.45 report-list row download action recovery
+
+- 背景：`7ddf7fbb-de5a-4780-97d2-4c55d0025aa8` 的 `N-04/N-05` 類下載 blocker 不是 lifecycle failure，也不是 CSV comparison failure；helper 已在專案頁讀到報表列表，但列內下載 icon 無文字/ARIA 時，舊 `clickReportListCsvDownload` 無法穩定取得 clickable control，最後停在 `CSV_DOWNLOAD_BUTTON_NOT_CLICKABLE`。
+- 實作：`agent/src/bi-ui-helper-executor.ts` 新增 `reportListRowActionCandidates`，以 target report row 的 DOM/ARIA/right-side action context 找 row-local action controls。`clickReportListCsvDownload` 會在既有 `downloadControls` 不足時使用此 fallback；若下載 icon 是 unlabeled icon-only button，會用同列右側 action buttons 與相鄰 delete control 推斷 `report-list-row-inferred-download-control`。
+- 邊界：此 helper 只補 visible UI click 可達性，不直接呼叫 BI API、不改頁面 state、不自動把 row download case 判 PASS。`observeUiTriggeredCsvDownload` 仍要求 browser download event 或 CSV network response；後續 CSV/preview comparator 仍照既有 evidence contract 判斷。
+- 驗證：`scripts/verify-p0-33-live-blocker-regressions.ts` 新增 source-level guard，要求保留 `reportListRowActionCandidates` 與 inferred download trigger；已通過 `npm run verify:p0-33-live-blocker-regressions`、`npm run verify:p0-visual-fallback-contract`、`npm run typecheck --prefix agent`、`npm run typecheck`、`npm run build --prefix agent`、`git diff --check`。

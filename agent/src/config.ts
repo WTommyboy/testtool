@@ -55,7 +55,7 @@ export const defaultAgentConfig = (
     token: "",
     device_name: os.hostname(),
     codex_bin: "codex",
-    codex_model: process.env.UAT_AGENT_CODEX_MODEL?.trim() || "gpt-5.3-codex",
+    codex_model: process.env.UAT_AGENT_CODEX_MODEL?.trim() || "",
     codex_reasoning_effort: process.env.UAT_AGENT_CODEX_REASONING_EFFORT === "medium" ||
       process.env.UAT_AGENT_CODEX_REASONING_EFFORT === "high" ||
       process.env.UAT_AGENT_CODEX_REASONING_EFFORT === "xhigh"
