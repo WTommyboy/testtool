@@ -2,11 +2,12 @@
 
 Date: 2026-06-02 Asia/Taipei
 Updated: 2026-06-03 Asia/Taipei
+Post-promote update: 2026-06-04 Asia/Taipei
 
 ## Active User Question / Next Conversation Objective
 
-- Tommy is currently asking: after five staged dev fixes, run the next UAT on dev and judge whether the remaining `UAT_report` / `UAT_archive` failures are real product bugs, route/planning gaps, domain/helper contract gaps, testcase/precondition issues, tool limitations, or runtime lifecycle issues.
-- The next assistant should answer first: confirm the repo/dev-agent state below, then inspect only the newly provided UAT evidence and classify the remaining issues by evidence. Do not start by rereading every spec/planning/domain-pack file.
+- Tommy first asked: after five staged dev fixes, run the next UAT on dev and judge whether the remaining `UAT_report` / `UAT_archive` failures are real product bugs, route/planning gaps, domain/helper contract gaps, testcase/precondition issues, tool limitations, or runtime lifecycle issues.
+- Tommy later approved promoting the current dev version to production before doing speed optimization. The next assistant should treat production promote as complete, then inspect only newly provided UAT evidence and classify remaining issues by evidence. Do not start by rereading every spec/planning/domain-pack file.
 - Current mode: implementation completed on dev source; next mode is UAT evidence review first. Code changes are allowed only if the new evidence shows a clear platform/runtime/helper gap.
 - Do not start with generic status inventory. Use repo/run status only to support the next evidence judgment.
 
@@ -29,7 +30,7 @@ Updated: 2026-06-03 Asia/Taipei
 ## Do Not Read / Do Not Touch
 
 - Do not read raw Codex session JSONL unless this handoff and the planning logs are insufficient.
-- Do not push production.
+- Do not push production again unless Tommy explicitly asks. Production was promoted on 2026-06-04 after Tommy asked for it.
 - Do not commit unrelated dirty files with the runtime fixes.
 - Do not modify these unrelated dirty files unless Tommy explicitly asks:
   - `docs/authoring/UAT_三文件撰寫規則.md`
@@ -61,11 +62,14 @@ Updated: 2026-06-03 Asia/Taipei
 - Dev config now has `codex_model=""`; CLI status displays `(codex-cli-default)`.
 - Doctor includes `codex-model-config=PASS`, model `(codex-cli-default)`.
 - Doctor Chrome/CDP finding: `chrome-cdp-profile-isolation` PASS; CDP was not currently running, `profileMatched=true`, and the Agent will launch it on demand.
-- Production was not pushed or promoted in this session.
+- Production was promoted on 2026-06-04. Remote `dev/uat-agent-config-isolation`、`refactor/mac-agent-mvp`、`codex/uat-tool-mvp` all point to `05d6934`; runtime tree commit is `3c79ebb`.
+- Railway production `/version` / `/health` were healthy at closeout. `/version` showed branch `codex/uat-tool-mvp`, commit `3c79ebb`, deployment `f5d47f5c-22d4-4687-b153-72ae2addadb8`.
+- Local production Agent `com.tommy.uat-agent` was rebuilt via generated `agent/dist` sync from the dev build and restarted; pid at closeout was `77258`; `node agent/dist/cli.js doctor` returned `ok=true`.
+- `/Users/tommy/.codex/config.toml` `service_tier` was changed from unsupported `priority` to `fast` so Codex CLI 0.125.0 can load MCP config and `codex mcp list` passes.
 
 ## Unverified Or Risky Assumptions
 
-- Production backend/runtime health was not freshly verified in this session because Tommy explicitly did not ask for prod promote.
+- Production backend/runtime health was freshly verified after Tommy explicitly asked for prod promote on 2026-06-04.
 - The next live UAT still depends on Tommy/SSO session readiness; doctor intentionally skips `galaxy-sso-session`.
 - The report-list row download fallback is source/typechecked smoke only in this session; it still needs a live UAT run to prove it reaches actual download events on the current official UI.
 - Existing unrelated dirty domain-pack/authoring/package changes may be useful future work, but they are outside this five-step runtime slice.
@@ -198,7 +202,7 @@ Latest dev agent restart:
 2. Provide the new `UAT_report_<run_id>.md` and `UAT_archive_<run_id>.md`.
 3. The next assistant should first classify remaining FAIL/BLOCKED by the categories above.
 4. Only then decide whether any remaining item is a runtime/helper patch, domain-pack/testcase adjustment, or product bug.
-5. Do not push production until Tommy explicitly asks after dev verification.
+5. Do not push production again until Tommy explicitly asks after the next evidence review or optimization slice.
 
 ## Ready-To-Paste New Chat Prompt
 
@@ -213,5 +217,5 @@ Latest dev agent restart:
 3. 下一輪 UAT_report / UAT_archive 應如何分類判讀 lifecycle/runtime、route/planning、domain pack/contract gap、testcase、product bug、tool limitation
 4. 哪些 dirty files 是 unrelated，不可混入 commit
 
-先不要改程式，也不要推 prod。等我提供新的 UAT_report / UAT_archive 後，請只依 handoff 和新 evidence 判斷；只有判定邊界不清楚或需要確認架構規則時，再精讀相關 spec / planning / domain pack 文件。
+production 已在 2026-06-04 依 Tommy 後續指示完成 promote。下一輪若 Tommy 提供新的 UAT_report / UAT_archive，請只依 handoff 和新 evidence 判斷；只有判定邊界不清楚或需要確認架構規則時，再精讀相關 spec / planning / domain pack 文件。
 ```
