@@ -16,6 +16,9 @@ export type HelperPreRunActionResult = {
   stderrExcerpt: string;
   reportPath: string | null;
   warnings: string[];
+  substepCount?: number;
+  slowWaits?: Array<Record<string, unknown>>;
+  evidenceDecision?: Record<string, unknown>;
   error?: string;
 };
 
@@ -188,21 +191,43 @@ export const validateHelperReportArtifact = (options: {
   };
 };
 
+const reportArray = (value: unknown): Array<Record<string, unknown>> =>
+  Array.isArray(value)
+    ? value.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === "object" && !Array.isArray(item))
+    : [];
+
+const reportRecord = (value: unknown): Record<string, unknown> | null =>
+  value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
+
 const readLatestReport = (
   runDir: string,
   caseId: string | null,
   action: HelperPlanAction,
   filePath: string
-): { status: HelperPreRunActionResult["status"] | null; warnings: string[]; error?: string } => {
+): {
+  status: HelperPreRunActionResult["status"] | null;
+  warnings: string[];
+  error?: string;
+  substepCount?: number;
+  slowWaits?: Array<Record<string, unknown>>;
+  evidenceDecision?: Record<string, unknown>;
+} => {
   const validation = validateHelperReportArtifact({
     runDir,
     reportPath: filePath,
     expectedCaseId: caseId,
     expectedAction: action.template
   });
+  const parsed = readJsonIfExists<Record<string, unknown>>(filePath);
+  const substeps = reportArray(parsed?.substeps);
+  const slowWaits = reportArray(parsed?.slowWaits);
+  const evidenceDecision = reportRecord(parsed?.evidenceDecision) ?? undefined;
   return {
     status: validation.ok ? validation.status : "error",
     warnings: validation.warnings,
+    substepCount: substeps.length,
+    slowWaits: slowWaits.slice(0, 12),
+    evidenceDecision,
     error: validation.error ?? undefined
   };
 };
@@ -274,6 +299,9 @@ const runHelperAction = async (
         stderrExcerpt: stderr.slice(-2000),
         reportPath: fs.existsSync(reportPath) ? reportPath : null,
         warnings: latestReport.warnings,
+        substepCount: latestReport.substepCount,
+        slowWaits: latestReport.slowWaits,
+        evidenceDecision: latestReport.evidenceDecision,
         error: latestReport.error
       });
     });
@@ -576,12 +604,20 @@ export const runSafeHelperActions = async (
 
 export const summarizeHelperPreRun = (summary: HelperPreRunSummary): string => {
   if (summary.status === "skipped") return `helper pre-run skipped: ${summary.skippedReason ?? "unknown"}`;
-  const parts = summary.actions.map((item) => `${item.template}=${item.status}(${formatDuration(item.durationMs)})`);
+  const parts = summary.actions.map((item) => {
+    const slowCount = item.slowWaits?.length ?? 0;
+    const suffix = slowCount > 0 ? `,slow=${slowCount}` : "";
+    return `${item.template}=${item.status}(${formatDuration(item.durationMs)}${suffix})`;
+  });
   return `helper pre-run ${summary.status}: ${summary.executedCount}/${summary.actionCount} actions in ${formatDuration(summary.durationMs)}${parts.length ? `; ${parts.join(", ")}` : ""}`;
 };
 
 export const summarizeHelperContinuation = (summary: HelperContinuationSummary): string => {
   if (summary.status === "skipped") return `helper continuation skipped: ${summary.skippedReason ?? "unknown"}`;
-  const parts = summary.actions.map((item) => `${item.template}=${item.status}(${formatDuration(item.durationMs)})`);
+  const parts = summary.actions.map((item) => {
+    const slowCount = item.slowWaits?.length ?? 0;
+    const suffix = slowCount > 0 ? `,slow=${slowCount}` : "";
+    return `${item.template}=${item.status}(${formatDuration(item.durationMs)}${suffix})`;
+  });
   return `helper continuation ${summary.status}: ${summary.executedCount}/${summary.actionCount} actions in ${formatDuration(summary.durationMs)}${parts.length ? `; ${parts.join(", ")}` : ""}`;
 };

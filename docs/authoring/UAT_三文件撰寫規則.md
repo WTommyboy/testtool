@@ -14,6 +14,9 @@
 > 新測試包應優先使用 vNext 的 structured package 寫法。若 domain pack 已有 platform action vocabulary、domain UI object vocabulary、case-scope contract 或 evidence schema,`測試案例.xlsx` 可附加 `步驟` / `Vocabulary Contract` sheets,把自然語言步驟對齊到 canonical action、domain UI object、expected outcome、evidence requirements 與 judgment policy。Legacy 本檔中較舊的 helper hints / metadata / date helper 寫法只作相容參考,不應阻止新包採用 structured support sheets。
 >
 > 已確認本輪不執行的 PM-skip / design-excluded case,預設應移出 active testcase package,不要以 `BLOCKED` 預填留在結果統計中。若 PM 要保留在 xlsx,必須明確標成不進 runtime、不計入 runtime BLOCKED,且不得附 helper hints 或 structured actions。
+>
+> v1.14 full-ready 後補充（2026-05-27）:
+> 需要刻意準備共享環境的 case（例如專案數上限、容量上限、跨日驗證、租戶/game 切換）預設拆成 focused package,不要混進長篇 full run 主線。可見 UI 清單 assertion 只能列目前 live UI / 截圖 / domain visual alignment 已確認存在的項目；組合型 date range 不能寫成單一 visible preset。
 
 本文件規範每輪 UAT 測試包必備三份文件的寫法：
 
@@ -704,6 +707,8 @@ CSV 下載驗證的正式 evidence 路徑是 UI 觸發下載後的本機檔案�
 
 helper 對應資訊應寫在 `測試執行說明_*.md` 的 `Helper hints` 區塊，讓工具讀取。
 
+若目前 UI 沒有單一可見 preset,不得把產品概念名寫成 preset 清單 assertion。例:若 UI 只有 start/end endpoint 控制,請寫成 `dateMode=composite_endpoint` 或 focused package,不要寫「preset 清單含自某日至昨日」。此類物件也應在 domain pack 標記為 not visible preset / known gap。
+
 若 domain pack 已有 action vocabulary 與 UI object vocabulary,可在 xlsx 追加 structured support sheets,而不是把機器契約塞進 17 欄:
 
 - `步驟`:每列一個 canonical action,欄位至少包含 `案例編號 / 步驟序號 / 動作類型 / 目標類型 / 目標值 / 輸入值 / 預期值 / role / actionId / evidenceRequirements`。
@@ -719,6 +724,8 @@ helper 對應資訊應寫在 `測試執行說明_*.md` 的 `Helper hints` 區塊
 - 人工 oracle / 歷史 run 正確答案不可放進 active testcase contract。oracle 應是 fixture 或 review artifact,不是產品規格。
 
 PM-skip / design-excluded case 預設不要留在 active package。若只是為了未來補測保留脈絡,請放 archive 或另開補測包;不要在 active xlsx 預填 `BLOCKED`,避免讓工具與報告把「本輪不測」誤當 runtime blocked。
+
+環境型 / 上限型 case 預設也不放進 full-ready 主線。若 case 需要先把共享資源補到某個數量、或會污染後續 case,請另開 focused package；若必須留在同一 package,需寫清楚 PM 前置、precondition builder、cleanup policy 與後續影響。
 
 ---
 

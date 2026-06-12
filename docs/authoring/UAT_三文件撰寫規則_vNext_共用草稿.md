@@ -270,6 +270,33 @@ caseNo, routeIntent, testTarget, requiresEditor, observationType, requiredAction
 - 不要求 Agent 開 browser 跑該 case。
 - 不用 helper hints 或 structured actions 包裝成可執行 case。
 
+### 5.8 環境型 / 上限型 case 應拆包
+
+若 case 需要刻意改變共享環境才能成立,例如把專案數補到上限、建立大量資料、清空資料池、或切換 tenant/game,預設不要混入長篇 full run 主線。
+
+建議處理:
+
+- 主線 full-ready package 只保留不會污染後續 case 的一般流程。
+- 上限、防呆、容量、跨日、跨環境類 case 另開 focused package,並在 package 前置明確寫出 PM 需準備的環境狀態。
+- 若必須在同一 package 中建立前置資料,需提供可驗證的 precondition builder、建立上限、cleanup policy,並說明會污染哪些後續 case。
+- 如果前置資料不足且 case 無法自行安全建立,應在設計階段拆包或移出 active package,不要讓 runtime 才用 BLOCKED 消化。
+
+### 5.9 Visible UI inventory 不可憑產品語意補字
+
+測試步驟與預期結果若要求「可見清單包含某項」,該項必須已由 live UI、截圖、設計稿或 domain pack visual alignment 證實為目前 UI 真的可見。
+
+禁止寫法:
+
+- 把組合型操作寫成單一 visible preset。
+- 把 PRD 概念名直接塞進 UI 清單 assertion。
+- 把未截到、未確認的按鈕 / tab / toast / picker option 寫成必然存在。
+
+正確寫法:
+
+- 若目前 UI 只有 start/end 控制,就寫 composite endpoint flow,不要寫 visible preset。
+- 若該能力尚未確認,移到 focused package 或待確認清單,不要放進 full-ready active package。
+- domain pack 應記錄 `visiblePresetInCurrentOfficialUi=false`、known gap 或 locator hazard,讓後續 testcase authoring 不再重複誤寫。
+
 ---
 
 ## 6. 結果與 detail_json

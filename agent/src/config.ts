@@ -19,6 +19,19 @@ const envNumber = (name: string, fallback: number): number => {
   return Number.isInteger(value) && value > 0 ? value : fallback;
 };
 
+const envBoolean = (name: string, fallback: boolean): boolean => {
+  const value = process.env[name]?.trim().toLowerCase();
+  if (value === "true" || value === "1" || value === "yes") return true;
+  if (value === "false" || value === "0" || value === "no") return false;
+  return fallback;
+};
+
+const envServiceTier = (value: string | undefined): "flex" | "fast" => {
+  const normalized = value?.trim().toLowerCase();
+  if (normalized === "flex" || normalized === "fast") return normalized;
+  return "fast";
+};
+
 const envConfigPath = envPath("UAT_AGENT_CONFIG_PATH");
 
 export const defaultAgentHome = envPath("UAT_AGENT_HOME")
@@ -55,12 +68,14 @@ export const defaultAgentConfig = (
     token: "",
     device_name: os.hostname(),
     codex_bin: "codex",
-    codex_model: process.env.UAT_AGENT_CODEX_MODEL?.trim() || "",
+    codex_model: process.env.UAT_AGENT_CODEX_MODEL?.trim() || "gpt-5.4-mini",
     codex_reasoning_effort: process.env.UAT_AGENT_CODEX_REASONING_EFFORT === "medium" ||
       process.env.UAT_AGENT_CODEX_REASONING_EFFORT === "high" ||
       process.env.UAT_AGENT_CODEX_REASONING_EFFORT === "xhigh"
       ? process.env.UAT_AGENT_CODEX_REASONING_EFFORT
       : "low",
+    codex_ignore_user_config: envBoolean("UAT_AGENT_CODEX_IGNORE_USER_CONFIG", true),
+    codex_service_tier: envServiceTier(process.env.UAT_AGENT_CODEX_SERVICE_TIER),
     auto_approve_tool_requests: process.env.UAT_AGENT_AUTO_APPROVE_TOOL_REQUESTS !== "false",
     keep_chrome_warm: process.env.UAT_AGENT_KEEP_CHROME_WARM !== "false",
     chrome_debug_port: envNumber("UAT_AGENT_CHROME_DEBUG_PORT", 9222),

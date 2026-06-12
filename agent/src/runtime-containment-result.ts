@@ -2,9 +2,12 @@ import fs from "node:fs";
 import path from "node:path";
 import { readFirstInputCase, writeAgentResultXlsx } from "./result-writer";
 import type { HelperPreRunActionResult, HelperPreRunSummary } from "./helper-pre-runner";
+import { isCodexUsageLimitFailure } from "./codex-run-failure";
 
 type RuntimeResultLike = {
   assistantText?: string;
+  rawStdout?: string;
+  events?: Array<Record<string, unknown>>;
   exitCode: number | null;
   signal: string | null;
   stderr?: string;
@@ -204,6 +207,17 @@ export const writeCodexRuntimeContainmentResultIfNeeded = async (input: {
       generatedAt,
       status: "skipped",
       reason: "CODEX_EXIT_NOT_FAILED",
+      runId: input.runId,
+      caseNo: input.currentCaseNo
+    });
+  }
+
+  if (isCodexUsageLimitFailure(input.result)) {
+    return writeReport({
+      schemaVersion: "codex-runtime-containment-result-v1",
+      generatedAt,
+      status: "skipped",
+      reason: "CODEX_USAGE_LIMIT_RUN_LEVEL_FAILURE",
       runId: input.runId,
       caseNo: input.currentCaseNo
     });

@@ -111,11 +111,13 @@ PM 需提供:
 
 - PRD。
 - 正確 UI 截圖或設計稿。
+- live UI 可見 inventory:目前畫面上真的存在的 button、tab、preset、modal、toast、picker option、row action；未截到或未確認的項目不得直接寫進 full-ready case 的可見清單 assertion。
 - dev URL。
 - 舊版 testcase / BDD / 既有測試包,若有。
 - 哪些既有 case 要保留。
 - 這次與上一版工具 / UI / testcase 的差異。
 - 是否允許建立 / 修改 / 刪除測試資源。
+- 是否存在需要特殊共享環境的上限/容量/跨日/跨租戶 case；這類 case 預設另開 focused package,不要混進主線 full run。
 - 是否需要 SSO 或特殊前置。
 
 Codex / Agent 應輸出:
@@ -138,6 +140,8 @@ Intake 不完整時,不要急著 scaffold tool pack。最多只能先做草稿,�
 - 不可逆操作授權方式。
 - dev/prod URL 與 SSO 前置。
 - 測試資源命名規則。
+- 哪些 case 必須從主線拆包,例如專案數上限、容量上限、跨日結果、需要 PM 先準備固定環境的流程。
+- UI inventory 與 PRD 概念差異:若 PRD 有某概念但 live UI 只有組合操作,domain pack 應標成 composite action 或 known gap,不應在 testcase 寫成 visible preset / visible option。
 
 決策確認後,寫回 intake,不要只留在 chat。
 

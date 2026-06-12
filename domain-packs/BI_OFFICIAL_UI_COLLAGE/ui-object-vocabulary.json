@@ -1981,7 +1981,7 @@
       "page": "collageEditor",
       "component": "dateRange.panel",
       "objectType": "compositeDateRangeAction",
-      "purpose": "Composite date range action: set a static start date and a dynamic end date of yesterday.",
+      "purpose": "Composite date range action: set a static start date and a dynamic end date of yesterday. This is not a single visible preset in the current official UI and must not be listed in visible preset-list assertions.",
       "aliases": [
         "自某日至昨日",
         "自訂起日至昨日",
@@ -2007,15 +2007,18 @@
         "not a visible preset label; open date panel, set start side to static date, set end side to dynamic 1 天前, then confirm"
       ],
       "hazards": [
-        "legacy testcase wording may call this a preset, but the official UI exposes it as endpoint controls rather than a single visible preset button"
-      ]
+        "legacy testcase wording may call this a preset, but the official UI exposes it as endpoint controls rather than a single visible preset button",
+        "Tests must model this as a composite endpoint-control flow, not as a visible preset-list assertion."
+      ],
+      "visiblePresetInCurrentOfficialUi": false,
+      "uiAvailability": "not_visible_as_single_preset"
     },
     {
       "id": "dateRange.preset.fromDateToToday",
       "page": "collageEditor",
       "component": "dateRange.panel",
       "objectType": "compositeDateRangeAction",
-      "purpose": "Composite date range action: set a static start date and a dynamic end date of today.",
+      "purpose": "Composite date range action: set a static start date and a dynamic end date of today. This is not a single visible preset in the current official UI and must not be listed in visible preset-list assertions.",
       "aliases": [
         "自某日至今",
         "自訂起日至今",
@@ -2041,8 +2044,11 @@
         "not a visible preset label; open date panel, set start side to static date, set end side to dynamic 0 天前, then confirm"
       ],
       "hazards": [
-        "legacy testcase wording may call this a preset, but the official UI exposes it as endpoint controls rather than a single visible preset button"
-      ]
+        "legacy testcase wording may call this a preset, but the official UI exposes it as endpoint controls rather than a single visible preset button",
+        "Tests must model this as a composite endpoint-control flow, not as a visible preset-list assertion."
+      ],
+      "visiblePresetInCurrentOfficialUi": false,
+      "uiAvailability": "not_visible_as_single_preset"
     },
     {
       "id": "dateRange.preset.past30Days",

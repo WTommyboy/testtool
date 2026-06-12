@@ -1,7 +1,9 @@
 import fs from "node:fs";
+import { spawnSync } from "node:child_process";
 import path from "node:path";
 import { closeChromeDebugSession, ensureChromeDebugSession, prepareChromeBrowserSession } from "./browser-session";
 import { CodexRunner, type CodexJsonEvent, type CodexTurnResult } from "./codex-runner";
+import { CODEX_USAGE_LIMIT_CATEGORY, extractCodexUsageLimitMessage, isCodexUsageLimitFailure } from "./codex-run-failure";
 import type { AgentConfig, AgentMessage } from "./types";
 import type { AgentConnection } from "./connection";
 import { readFirstInputCase, writeAgentResultXlsx } from "./result-writer";
@@ -136,11 +138,25 @@ const copyDirectoryRecursive = (sourceDir: string, targetDir: string): void => {
   }
 };
 
+const copyDirectoryBySystemCp = (source: string, target: string): boolean => {
+  if (process.platform !== "darwin") return false;
+  const cp = spawnSync("/bin/cp", ["-R", source, target], {
+    stdio: ["ignore", "pipe", "pipe"],
+    encoding: "utf8"
+  });
+  return cp.status === 0;
+};
+
 export const copyDirectoryIfExists = (source: string, target: string): boolean => {
   try {
     if (!fs.existsSync(source) || !fs.statSync(source).isDirectory()) return false;
     fs.mkdirSync(path.dirname(target), { recursive: true });
     fs.rmSync(target, { recursive: true, force: true });
+
+    if (copyDirectoryBySystemCp(source, target)) {
+      return true;
+    }
+
     copyDirectoryRecursive(source, target);
     return true;
   } catch {
@@ -276,11 +292,10 @@ export const prepareCodexContext = (config: AgentConfig, runDir: string): void =
     "This file is generated for a single Mac Agent run.",
     "",
     "Platform entrypoint:",
-    "- Start by reading `input/run-brief.md` when present.",
-    "- The run brief is a compact dispatch packet generated from Layer 1 + the current run inputs.",
-    "- Always read `agent-skills/uat-tool/SKILL.md` and `agent-skills/uat-tool/rules/domain-routing.md` before judging a testcase.",
-    "- Always read `rules/PROJECT_AGENTS_FULL.md` as the BI domain rule source before judging a testcase.",
-    "- Use `input/rule-index.json` to decide which additional Layer 1 / BI rule files are needed for the current case.",
+    "- Start by reading `input/codex-input-summary.md` when present, then `input/run-brief.md`.",
+    "- The Codex input summary and run brief are compact dispatch packets generated from Layer 1 + the current run inputs.",
+    "- Full platform and BI rule files remain binding escalation references; load the exact source text when the summary says escalation is required, when evidence conflicts, or when writing FAIL/BLOCKED/PARTIAL.",
+    "- Use `input/rule-index.json` to decide which Layer 1 / BI rule files are needed for the current case instead of rereading all rulebooks by default.",
     "- Perform `input/preflight-auth-check.md` before deep domain loading or testcase actions.",
     "- Read `input/document-consistency.json` before any browser action; status=error requires Tool Bridge ambiguity handling.",
     "- Use `input/current-case-pack.md` as the compact current-case card; it is not result evidence.",
@@ -396,6 +411,8 @@ const writeRunBrief = (
     `- auto_approve_tool_requests: ${config.auto_approve_tool_requests ? "true_except_sso_login_and_package_gate_ambiguity" : "false"}`,
     `- chrome_session_policy: ${config.keep_chrome_warm ? "warm_process_reset_tabs_per_case" : "run_scoped_process_reset_tabs_per_case"}`,
     `- expected_result_xlsx: ${resultXlsxPath}`,
+    `- codex_input_summary: ${path.join(runDir, "input", "codex-input-summary.md")}`,
+    `- codex_input_summary_json: ${path.join(runDir, "input", "codex-input-summary.json")}`,
     `- case_manifest: ${guides.caseManifest.manifestPath ?? "(unavailable)"}`,
     `- current_case: ${guides.caseManifest.currentCasePath ?? "(unavailable)"}`,
     `- current_case_no: ${guides.caseManifest.currentCaseNo ?? "(unavailable)"}`,
@@ -450,15 +467,15 @@ const writeRunBrief = (
       : "- manifest_warnings: none",
     "",
     "## Fast Path",
-    "1. Confirm testcase workbook and startup instruction exist.",
+    "1. Read `input/codex-input-summary.md` first when present; it is the compact current-case reading plan and escalation map.",
     "2. Read `input/test-package-consistency.json` and `input/document-consistency.json`. If either status=error, do not touch the browser; emit Tool Bridge ambiguity_decision.",
     "3. Read `input/preflight-auth-check.md`. Perform browser preflight only when the current case still needs Codex-owned browser actions; successful current-run helper browser evidence for this same case satisfies auth/reachability for judgment.",
-    "4. Read `input/current-case-pack.md`, `input/current-case-pack.json`, and `input/run-state.json` before loading full testcase/supporting docs. Load every file named by `current-case-pack.json.mustReadRuleKeys` before testcase UI execution or result judgment. If Helper hints are present, treat them as single-case UI guidance only.",
+    "4. Read `input/current-case-pack.md`, `input/current-case-pack.json`, and `input/run-state.json` before loading full testcase/supporting docs. Treat current-case rule keys as an escalation shortlist; do not reread full Layer 1/BI rulebooks for straightforward PASS judgment when compact guidance and current-run evidence are complete.",
     "5. Read `input/capability-gate.md` before testcase UI execution. If support_status=unsupported, do not run trusted browser testcase steps; write BLOCKED/UNSUPPORTED_ONLINE_CAPABILITY with the gate reason. If support_status=degraded and both helper evidence and browser automation are unavailable, or the UI path is not reachable, write BLOCKED/TOOL_EXECUTION_UNAVAILABLE with the gate/helper-skipped evidence instead of leaving output/result.xlsx absent.",
     "6. Read `input/helper-execution-plan.md` when present. Helper actions may operate UI and collect evidence, but cannot judge PASS/FAIL or write result.xlsx.",
     "7. If `output/helper-pre-run-summary.json` exists, inspect helper reports before repeating UI actions. Reuse successful current-run helper evidence when sufficient; repeat only incomplete steps.",
     "8. Read `input/reference-index.json` for exact paths and `input/supporting-docs-manifest.json` profiles for optional support-file headers/headings; avoid broad filesystem search.",
-    "9. Read `input/rule-index.json` and load the current-case mandatory/recommended rule shortlist. For BI runs, the mandatory bundle includes the generated AGENTS/platform rules plus the three canonical BI rulebooks.",
+    "9. Read `input/rule-index.json` only as needed to resolve the exact rule file for an escalation trigger. Escalate to full rule text for FAIL/BLOCKED/PARTIAL, metadata/dropdown comparison, destructive/native dialog/Tool Bridge, unsupported/degraded capability, helper evidence contradiction, product bug/bug-row, formula direct-fill/tool limitation, or CSV/download mismatch/not-reached judgment.",
     biMetadataCsv
       ? "10. If the current BI case needs metadata counts, use the copied canonical reference `rules/BI_DATA/metadata.csv`; include the original metadata filename only as traceability and do not search the workspace for another metadata source first."
       : "10. If the current BI case needs metadata counts and no baseline/reference CSV is downloaded, use uploaded supporting docs before doing broad filesystem searches.",
@@ -657,6 +674,329 @@ const helperHintSourcePaths = (inputs: DownloadedInputs): string[] => {
 
 const currentCaseForManifest = (caseManifest: CaseManifestResult) =>
   caseManifest.cases.find((item) => item.caseNo === caseManifest.currentCaseNo) ?? null;
+
+type JsonObject = Record<string, unknown>;
+
+const isJsonObject = (value: unknown): value is JsonObject =>
+  Boolean(value) && typeof value === "object" && !Array.isArray(value);
+
+const readJsonIfExists = <T>(filePath: string): T | null => {
+  try {
+    if (!fs.existsSync(filePath)) return null;
+    return readJson<T>(filePath);
+  } catch {
+    return null;
+  }
+};
+
+const stringValue = (value: unknown): string | null =>
+  typeof value === "string" && value.trim() ? value.trim() : null;
+
+const numberValue = (value: unknown): number | null =>
+  typeof value === "number" && Number.isFinite(value) ? value : null;
+
+const stringArrayValue = (value: unknown): string[] =>
+  Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string" && item.trim().length > 0).map((item) => item.trim())
+    : [];
+
+const summarizeHelperSummaryFile = (filePath: string): JsonObject => {
+  const summary = readJsonIfExists<JsonObject>(filePath);
+  if (!summary) {
+    return {
+      path: filePath,
+      exists: false
+    };
+  }
+  const rawActions = Array.isArray(summary.actions) ? summary.actions : [];
+  const actions = rawActions
+    .filter(isJsonObject)
+    .map((action) => ({
+      actionId: stringValue(action.actionId),
+      template: stringValue(action.template),
+      status: stringValue(action.status),
+      durationMs: numberValue(action.durationMs),
+      reportPath: stringValue(action.reportPath),
+      warnings: stringArrayValue(action.warnings),
+      substepCount: numberValue(action.substepCount),
+      slowWaits: Array.isArray(action.slowWaits)
+        ? action.slowWaits.filter(isJsonObject).slice(0, 8).map((step) => ({
+            name: stringValue(step.name),
+            type: stringValue(step.type),
+            status: stringValue(step.status),
+            durationMs: numberValue(step.durationMs),
+            error: stringValue(step.error)
+          }))
+        : [],
+      evidenceDecision: isJsonObject(action.evidenceDecision)
+        ? {
+            evidenceUsability: stringValue(action.evidenceDecision.evidenceUsability),
+            primaryEvidence: stringArrayValue(action.evidenceDecision.primaryEvidence),
+            artifactKeys: stringArrayValue(action.evidenceDecision.artifactKeys),
+            warningCount: numberValue(action.evidenceDecision.warningCount),
+            slowWaitCount: numberValue(action.evidenceDecision.slowWaitCount),
+            blockingReason: stringValue(action.evidenceDecision.blockingReason),
+            notReached: stringArrayValue(action.evidenceDecision.notReached)
+          }
+        : null
+    }));
+  const statusCounts = actions.reduce<Record<string, number>>((counts, action) => {
+    const key = action.status ?? "unknown";
+    counts[key] = (counts[key] ?? 0) + 1;
+    return counts;
+  }, {});
+  return {
+    path: filePath,
+    exists: true,
+    status: stringValue(summary.status),
+    caseId: stringValue(summary.caseId),
+    actionCount: numberValue(summary.actionCount) ?? actions.length,
+    executedCount: numberValue(summary.executedCount),
+    durationMs: numberValue(summary.durationMs),
+    skippedReason: stringValue(summary.skippedReason),
+    statusCounts,
+    actions
+  };
+};
+
+const compactCurrentCase = (currentCase: unknown): JsonObject | null => {
+  if (!isJsonObject(currentCase)) return null;
+  return {
+    caseNo: stringValue(currentCase.caseNo),
+    caseTitle: stringValue(currentCase.caseTitle),
+    groupId: stringValue(currentCase.groupId),
+    groupName: stringValue(currentCase.groupName),
+    testType: stringValue(currentCase.testType),
+    executionMethod: stringValue(currentCase.executionMethod),
+    riskLevel: stringValue(currentCase.riskLevel),
+    testTarget: stringValue(currentCase.testTarget),
+    cleanupChecklist: stringValue(currentCase.cleanupChecklist),
+    preconditions: stringValue(currentCase.preconditions),
+    stepsSummary: stringValue(currentCase.stepsSummary),
+    expected: stringValue(currentCase.expected),
+    validationMethod: stringValue(currentCase.validationMethod)
+  };
+};
+
+const markdownList = (values: string[]): string =>
+  values.length > 0 ? values.map((item) => `- ${item}`).join("\n") : "- none";
+
+export const writeCodexInputSummary = (
+  runId: string,
+  message: AgentMessage,
+  config: AgentConfig,
+  runDir: string,
+  inputs: DownloadedInputs,
+  guides: GeneratedRunGuides
+): string => {
+  const inputDir = path.join(runDir, "input");
+  fs.mkdirSync(inputDir, { recursive: true });
+  const jsonPath = path.join(inputDir, "codex-input-summary.json");
+  const markdownPath = path.join(inputDir, "codex-input-summary.md");
+  const helperPreRunPath = path.join(runDir, "output", "helper-pre-run-summary.json");
+  const helperContinuationPath = path.join(runDir, "output", "helper-continuation-summary.json");
+  const helperReportPath = path.join(
+    runDir,
+    "output",
+    "helper-artifacts",
+    guides.caseManifest.currentCaseNo ?? "unknown-case",
+    "helper-report.jsonl"
+  );
+  const currentCasePack = readJsonIfExists<JsonObject>(guides.currentCasePackJsonPath);
+  const capabilityGate = readJsonIfExists<JsonObject>(guides.capabilityGateJsonPath);
+  const helperExecutionPlan = readJsonIfExists<JsonObject>(guides.helperExecutionPlanJsonPath);
+  const fallbackCurrentCase = currentCaseForManifest(guides.caseManifest);
+  const currentCase = compactCurrentCase(currentCasePack?.currentCase) ?? compactCurrentCase(fallbackCurrentCase);
+  const helperHints = isJsonObject(currentCasePack?.helperHints) ? currentCasePack.helperHints : null;
+  const caseScope = isJsonObject(currentCasePack?.caseScope) ? currentCasePack.caseScope : null;
+  const requiredEvidence = stringArrayValue(currentCasePack?.requiredEvidence);
+  const evidenceTemplates = stringArrayValue(currentCasePack?.evidenceTemplates);
+  const mustReadRuleKeys = stringArrayValue(currentCasePack?.mustReadRuleKeys);
+  const recommendedRuleKeys = stringArrayValue(currentCasePack?.recommendedRuleKeys);
+  const supportStatus = stringValue(capabilityGate?.supportStatus) ?? stringValue(capabilityGate?.support_status);
+  const gateReason = stringValue(capabilityGate?.reason) ?? stringValue(capabilityGate?.blockingReason);
+  const helperPlanActions = Array.isArray(helperExecutionPlan?.actions)
+    ? helperExecutionPlan.actions.filter(isJsonObject).map((action) => ({
+        actionId: stringValue(action.actionId),
+        template: stringValue(action.template),
+        title: stringValue(action.title),
+        requiresToolBridge: action.requiresToolBridge === true
+      }))
+    : [];
+  const escalationTriggers = [
+    "writing FAIL, BLOCKED, or PARTIAL",
+    "metadata/dropdown/reference comparison or naming normalization",
+    "destructive operation, native dialog, irreversible action, or Tool Bridge request",
+    "capability gate unsupported/degraded, browser/session helper blocker, or tool execution unavailable",
+    "helper evidence contradicts testcase/current UI or is incomplete for required evidence",
+    "product bug or Bug sheet row creation",
+    "formula evidence uses direct_fill_inline/tool limitation instead of trusted visible token/keypad operation",
+    "CSV/download mismatch, CSV comparison not reached, or save/reopen/list workflow subcondition failure",
+    "compact summary conflicts with current-case pack, helper report, or visible UI evidence"
+  ];
+  const fastReadOrder = [
+    "input/codex-input-summary.md",
+    "input/current-case-pack.md and input/current-case-pack.json",
+    "input/capability-gate.md and input/capability-gate.json",
+    "output/helper-pre-run-summary.json when present",
+    "output/helper-continuation-summary.json when present",
+    "output/helper-artifacts/<case>/helper-report.jsonl when helper summary points to reports",
+    "input/run-state.json",
+    "input/reference-index.json and input/rule-index.json only when a path or escalation source is needed"
+  ];
+  const summary = {
+    schemaVersion: "codex-input-summary-v1",
+    generatedAt: new Date().toISOString(),
+    run: {
+      runId,
+      roundId: getStringPayload(message, "round_id") ?? runId,
+      domain: getStringPayload(message, "domain") ?? "BI",
+      devUrl: getStringPayload(message, "dev_url") ?? null,
+      workdir: runDir,
+      codexModel: codexModelLabel(config.codex_model),
+      currentCaseNo: guides.caseManifest.currentCaseNo,
+      autoApproveToolRequests: config.auto_approve_tool_requests
+    },
+    files: {
+      resultXlsx: path.join(runDir, "output", "result.xlsx"),
+      runBrief: path.join(inputDir, "run-brief.md"),
+      currentCasePack: guides.currentCasePackMarkdownPath,
+      currentCasePackJson: guides.currentCasePackJsonPath,
+      capabilityGate: guides.capabilityGateMarkdownPath,
+      capabilityGateJson: guides.capabilityGateJsonPath,
+      helperExecutionPlan: guides.helperExecutionPlanMarkdownPath,
+      helperExecutionPlanJson: guides.helperExecutionPlanJsonPath,
+      helperPreRunSummary: helperPreRunPath,
+      helperContinuationSummary: helperContinuationPath,
+      helperReport: helperReportPath,
+      runState: guides.runStatePath,
+      referenceIndex: guides.referenceIndexPath,
+      ruleIndex: guides.ruleIndexPath,
+      resultTemplate: guides.resultTemplatePath,
+      testcaseWorkbook: inputs.xlsx ?? null,
+      startupInstruction: inputs.startup_instruction ?? inputs.md ?? null,
+      biMetadataCsv: fs.existsSync(path.join(runDir, "rules", "BI_DATA", "metadata.csv"))
+        ? path.join(runDir, "rules", "BI_DATA", "metadata.csv")
+        : null
+    },
+    fullRulePolicy: {
+      defaultMode: "summary_first",
+      note: "Full AGENTS/platform/BI rulebooks remain binding references, but straightforward PASS judgment should not reread every full rulebook when compact guidance and current-run evidence are complete.",
+      escalationTriggers
+    },
+    fastReadOrder,
+    currentCase,
+    evidencePlan: {
+      evidenceTemplates,
+      requiredEvidence,
+      screenshotPolicy: stringValue(currentCasePack?.screenshotPolicy),
+      helperHints: helperHints
+        ? {
+            found: helperHints.found === true,
+            operationTemplate: stringValue(helperHints.operationTemplate),
+            automationLevel: stringValue(helperHints.automationLevel),
+            aiDecisionRequired: helperHints.aiDecisionRequired === true,
+            warnings: stringArrayValue(helperHints.warnings)
+          }
+        : null,
+      caseScopeContract: isJsonObject(caseScope?.caseScopeContract) ? caseScope.caseScopeContract : null
+    },
+    capabilityGate: {
+      supportStatus,
+      reason: gateReason,
+      path: guides.capabilityGateJsonPath
+    },
+    helperExecutionPlan: {
+      path: guides.helperExecutionPlanJsonPath,
+      actionCount: helperPlanActions.length,
+      actions: helperPlanActions
+    },
+    helperPreRun: summarizeHelperSummaryFile(helperPreRunPath),
+    helperContinuation: summarizeHelperSummaryFile(helperContinuationPath),
+    ruleShortlist: {
+      mustReadRuleKeys,
+      recommendedRuleKeys,
+      ruleIndexPath: guides.ruleIndexPath,
+      note: "Use these as exact escalation pointers, not as a default instruction to load every full source for every case."
+    }
+  };
+  writeJson(jsonPath, summary);
+
+  const helperPre = summary.helperPreRun as JsonObject;
+  const helperCont = summary.helperContinuation as JsonObject;
+  const helperPreActions = Array.isArray(helperPre.actions)
+    ? helperPre.actions.filter(isJsonObject).map((action) =>
+        `${stringValue(action.template) ?? stringValue(action.actionId) ?? "helper_action"}: ${stringValue(action.status) ?? "unknown"}; durationMs=${numberValue(action.durationMs) ?? "n/a"}; substeps=${numberValue(action.substepCount) ?? "n/a"}; slow=${Array.isArray(action.slowWaits) ? action.slowWaits.length : 0}; usability=${isJsonObject(action.evidenceDecision) ? stringValue(action.evidenceDecision.evidenceUsability) ?? "unknown" : "unknown"}; report=${stringValue(action.reportPath) ?? "(missing)"}`
+      )
+    : [];
+  const helperContActions = Array.isArray(helperCont.actions)
+    ? helperCont.actions.filter(isJsonObject).map((action) =>
+        `${stringValue(action.template) ?? stringValue(action.actionId) ?? "helper_action"}: ${stringValue(action.status) ?? "unknown"}; durationMs=${numberValue(action.durationMs) ?? "n/a"}; substeps=${numberValue(action.substepCount) ?? "n/a"}; slow=${Array.isArray(action.slowWaits) ? action.slowWaits.length : 0}; usability=${isJsonObject(action.evidenceDecision) ? stringValue(action.evidenceDecision.evidenceUsability) ?? "unknown" : "unknown"}; report=${stringValue(action.reportPath) ?? "(missing)"}`
+      )
+    : [];
+  const markdown = [
+    "# Codex Input Summary",
+    "",
+    "Summary-first dispatch artifact for this UAT case. Full platform and BI rulebooks remain binding escalation references; load exact full text only when an escalation trigger applies or compact evidence is insufficient.",
+    "",
+    "## Run",
+    `- run_id: ${runId}`,
+    `- round_id: ${summary.run.roundId}`,
+    `- domain: ${summary.run.domain}`,
+    `- current_case_no: ${summary.run.currentCaseNo ?? "(unavailable)"}`,
+    `- codex_model: ${summary.run.codexModel}`,
+    `- expected_result_xlsx: ${summary.files.resultXlsx}`,
+    "",
+    "## Fast Read Order",
+    markdownList(fastReadOrder),
+    "",
+    "## Full Rule Escalation Triggers",
+    markdownList(escalationTriggers),
+    "",
+    "## Current Case",
+    currentCase
+      ? [
+          `- title: ${currentCase.caseTitle ?? "(missing)"}`,
+          `- risk_level: ${currentCase.riskLevel ?? "(missing)"}`,
+          `- test_target: ${currentCase.testTarget ?? "(missing)"}`,
+          `- cleanup_checklist: ${currentCase.cleanupChecklist ?? "(missing)"}`,
+          `- steps: ${currentCase.stepsSummary ?? "(missing)"}`,
+          `- expected: ${currentCase.expected ?? "(missing)"}`,
+          `- validation_method: ${currentCase.validationMethod ?? "(missing)"}`
+        ].join("\n")
+      : "- current case unavailable; inspect current-case-pack/current-case JSON before judging.",
+    "",
+    "## Evidence Plan",
+    `- evidence_templates: ${evidenceTemplates.join(", ") || "none"}`,
+    `- required_evidence: ${requiredEvidence.join(" | ") || "none"}`,
+    `- screenshot_policy: ${stringValue(currentCasePack?.screenshotPolicy) ?? "(none)"}`,
+    `- helper_hint_operation: ${helperHints ? stringValue(helperHints.operationTemplate) ?? "(none)" : "(not found)"}`,
+    `- capability_gate: ${supportStatus ?? "(unknown)"}${gateReason ? `; reason=${gateReason}` : ""}`,
+    "",
+    "## Helper Evidence",
+    `- pre_run_summary: ${helperPreRunPath}; exists=${helperPre.exists === true}; status=${stringValue(helperPre.status) ?? "(unknown)"}; durationMs=${numberValue(helperPre.durationMs) ?? "n/a"}`,
+    markdownList(helperPreActions),
+    `- continuation_summary: ${helperContinuationPath}; exists=${helperCont.exists === true}; status=${stringValue(helperCont.status) ?? "(unknown)"}; durationMs=${numberValue(helperCont.durationMs) ?? "n/a"}`,
+    markdownList(helperContActions),
+    `- helper_report_default_path: ${helperReportPath}`,
+    "",
+    "## Key Paths",
+    `- current_case_pack_json: ${guides.currentCasePackJsonPath}`,
+    `- capability_gate_json: ${guides.capabilityGateJsonPath}`,
+    `- helper_execution_plan_json: ${guides.helperExecutionPlanJsonPath}`,
+    `- run_state: ${guides.runStatePath}`,
+    `- reference_index: ${guides.referenceIndexPath}`,
+    `- rule_index: ${guides.ruleIndexPath}`,
+    `- result_template: ${guides.resultTemplatePath}`,
+    "",
+    "## Rule Shortlist",
+    `- must_read_keys_as_escalation_pointers: ${mustReadRuleKeys.join(", ") || "none"}`,
+    `- recommended_keys: ${recommendedRuleKeys.join(", ") || "none"}`,
+    ""
+  ].join("\n");
+  fs.writeFileSync(markdownPath, markdown);
+  return markdownPath;
+};
 
 const sanitizeArtifactName = (value: string): string => value.replace(/[^a-zA-Z0-9._-]+/g, "_").replace(/^_+|_+$/g, "") || "artifact";
 
@@ -1179,6 +1519,101 @@ const uploadEvidenceArtifacts = async (
   }
 };
 
+const helperActionsFromSummary = (filePath: string, source: string): Array<Record<string, unknown>> => {
+  const summary = readJsonIfExists<JsonObject>(filePath);
+  const actions = Array.isArray(summary?.actions) ? summary.actions.filter(isJsonObject) : [];
+  return actions.map((action) => ({
+    source,
+    caseId: stringValue(summary?.caseId),
+    template: stringValue(action.template),
+    status: stringValue(action.status),
+    durationMs: numberValue(action.durationMs),
+    reportPath: stringValue(action.reportPath),
+    substepCount: numberValue(action.substepCount),
+    slowWaitCount: Array.isArray(action.slowWaits) ? action.slowWaits.length : 0,
+    evidenceUsability: isJsonObject(action.evidenceDecision) ? stringValue(action.evidenceDecision.evidenceUsability) : null,
+    blockingReason: isJsonObject(action.evidenceDecision) ? stringValue(action.evidenceDecision.blockingReason) : null,
+    slowWaits: Array.isArray(action.slowWaits)
+      ? action.slowWaits.filter(isJsonObject).slice(0, 12).map((step) => ({
+          name: stringValue(step.name),
+          type: stringValue(step.type),
+          status: stringValue(step.status),
+          durationMs: numberValue(step.durationMs),
+          error: stringValue(step.error)
+        }))
+      : []
+  }));
+};
+
+export const writeSlowStepsReport = (
+  runDir: string,
+  runId: string,
+  timing: RunTimingRecorder
+): string => {
+  const timingSummary = timing.summary() as JsonObject;
+  const timingEntries = Array.isArray(timingSummary.entries) ? timingSummary.entries.filter(isJsonObject) : [];
+  const completedTimingEntries = timingEntries
+    .map((entry) => ({
+      name: stringValue(entry.name),
+      type: stringValue(entry.type),
+      status: stringValue(entry.status),
+      durationMs: numberValue(entry.durationMs),
+      startedAt: stringValue(entry.startedAt),
+      endedAt: stringValue(entry.endedAt),
+      context: isJsonObject(entry.context) ? entry.context : null
+    }))
+    .filter((entry) => entry.durationMs !== null)
+    .sort((a, b) => (b.durationMs ?? 0) - (a.durationMs ?? 0));
+  const helperActions = [
+    ...helperActionsFromSummary(path.join(runDir, "output", "helper-pre-run-summary.json"), "helper-pre-run"),
+    ...helperActionsFromSummary(path.join(runDir, "output", "helper-continuation-summary.json"), "helper-continuation")
+  ];
+  const helperSlowWaits = helperActions.flatMap((action) =>
+    Array.isArray(action.slowWaits)
+      ? action.slowWaits.filter(isJsonObject).map((step) => ({
+          source: action.source,
+          caseId: action.caseId,
+          template: action.template,
+          name: stringValue(step.name),
+          type: stringValue(step.type),
+          status: stringValue(step.status),
+          durationMs: numberValue(step.durationMs),
+          error: stringValue(step.error)
+        }))
+      : []
+  ).sort((a, b) => (numberValue(b.durationMs) ?? 0) - (numberValue(a.durationMs) ?? 0));
+  const slowThresholdMs = 5000;
+  const report = {
+    schemaVersion: "uat-agent-slow-steps-v1",
+    generatedAt: new Date().toISOString(),
+    runId,
+    runDir,
+    thresholds: {
+      slowTimingEntryMs: slowThresholdMs,
+      helperSlowWaitDefaultMs: 5000,
+      helperTimeoutOverrides: {
+        UAT_HELPER_WAIT_TIMEOUT_MS: process.env.UAT_HELPER_WAIT_TIMEOUT_MS ?? null,
+        UAT_HELPER_SLOW_THRESHOLD_MS: process.env.UAT_HELPER_SLOW_THRESHOLD_MS ?? null
+      }
+    },
+    topTimingEntries: completedTimingEntries.filter((entry) => (entry.durationMs ?? 0) >= slowThresholdMs).slice(0, 25),
+    topHelperActions: helperActions
+      .filter((action) => (numberValue(action.durationMs) ?? 0) >= slowThresholdMs || (numberValue(action.slowWaitCount) ?? 0) > 0 || action.status !== "ok")
+      .sort((a, b) => (numberValue(b.durationMs) ?? 0) - (numberValue(a.durationMs) ?? 0))
+      .slice(0, 25),
+    topHelperSubsteps: helperSlowWaits.slice(0, 40),
+    codexTurns: completedTimingEntries
+      .filter((entry) => entry.type === "codex_turn" || /^codex_/i.test(entry.name ?? ""))
+      .slice(0, 20),
+    helperActionCount: helperActions.length,
+    timingEntryCount: completedTimingEntries.length,
+    policy: "Diagnostic optimization artifact only. It identifies slow runtime phases and helper waits; it is not testcase evidence by itself."
+  };
+  const filePath = path.join(runDir, "output", "slow-steps.json");
+  writeJson(filePath, report);
+  return filePath;
+};
+
 const uploadFinalSidecarArtifacts = async (
   connection: AgentConnection,
   config: AgentConfig,
@@ -1221,6 +1656,13 @@ const uploadFinalSidecarArtifacts = async (
       filePath: path.join(runDir, "output", "timing-summary.json"),
       fieldName: "timingSummary",
       uploadName: "timing-summary.json"
+    },
+    {
+      key: "slow_steps",
+      url: outputUrls.slow_steps,
+      filePath: path.join(runDir, "output", "slow-steps.json"),
+      fieldName: "slowSteps",
+      uploadName: "slow-steps.json"
     },
     {
       key: "diagnostic_summary",
@@ -1452,6 +1894,7 @@ const buildPrompt = (
     .map(([key, filePath]) => `- ${key}: ${filePath}`);
   const resultXlsxPath = path.join(runDir, "output", "result.xlsx");
   const runBriefPath = path.join(runDir, "input", "run-brief.md");
+  const codexInputSummaryPath = path.join(runDir, "input", "codex-input-summary.md");
   const browserSessionPath = path.join(runDir, "input", "browser-session.json");
   const platformSkillPath = path.join(runDir, "agent-skills", "uat-tool", "SKILL.md");
   const biMetadataCsvPath = path.join(runDir, "rules", "BI_DATA", "metadata.csv");
@@ -1471,7 +1914,8 @@ const buildPrompt = (
     "You are executing a Galaxy UAT Tool run inside the Mac Agent.",
     "",
     "Start here:",
-    `- Read the compact run brief first: ${runBriefPath}`,
+    `- Read the Codex input summary first: ${codexInputSummaryPath}`,
+    `- Then read the compact run brief: ${runBriefPath}`,
     `- Read the test package consistency report before browser execution: ${guides.testPackageConsistencyPath}`,
     `- Read the document consistency gate before browser execution: ${guides.documentConsistencyPath}`,
     `- Perform preflight before deep rule loading or testcase action: ${guides.preflightGuidancePath}`,
@@ -1527,9 +1971,10 @@ const buildPrompt = (
     `- For network request observation, use: ${guides.networkObservationGuidancePath}`,
     `- Result workbook template reference: ${guides.resultTemplatePath}`,
     `- Full Layer 1 platform skill is available if needed: ${platformSkillPath}`,
-    "- Always read the generated `AGENTS.md`, `agent-skills/uat-tool/SKILL.md`, `agent-skills/uat-tool/rules/domain-routing.md`, `rules/PROJECT_AGENTS_FULL.md`, and the three canonical BI rulebooks under `rules/BI_TEST_RULES/` before judging a testcase.",
-    "- Read `input/current-case-pack.json.mustReadRuleKeys`, then `input/rule-index.json`, and load every mandatory rule file for the current case. This is intentionally slower than relying only on compact summaries.",
-    "- Treat `rules/PROJECT_AGENTS_FULL.md` and all `rules/BI_TEST_RULES/*.md` files as binding BI domain references for case interpretation. For metadata comparison, the canonical copied CSV is `rules/BI_DATA/metadata.csv` when present; confirm it via `input/reference-index.json` key `bi_metadata_csv` or the testcase source filename such as `metadata＿1.2.5 - 工作表1.csv`.",
+    "- Summary-first reading policy: use `input/codex-input-summary.md/json` plus current-case-pack, capability gate, helper summaries, and result contract for straightforward current-run PASS judgment when evidence is complete and non-contradictory.",
+    "- Full rule escalation policy: generated `AGENTS.md`, `agent-skills/uat-tool/SKILL.md`, `agent-skills/uat-tool/rules/domain-routing.md`, `rules/PROJECT_AGENTS_FULL.md`, and `rules/BI_TEST_RULES/*.md` remain binding references. Load exact full text when writing FAIL/BLOCKED/PARTIAL, comparing metadata/dropdowns, handling Tool Bridge/destructive/native dialogs, judging unsupported/degraded capability, resolving helper evidence contradiction, opening product bug/Bug rows, judging formula direct-fill/tool limitation, or handling CSV/download mismatch/not-reached.",
+    "- Use `input/current-case-pack.json.mustReadRuleKeys` and `input/rule-index.json` as escalation pointers, not as a default command to load every full rule file for every case.",
+    "- Treat `rules/PROJECT_AGENTS_FULL.md` and all `rules/BI_TEST_RULES/*.md` files as binding BI domain references when escalation is required. For metadata comparison, the canonical copied CSV is `rules/BI_DATA/metadata.csv` when present; confirm it via `input/reference-index.json` key `bi_metadata_csv` or the testcase source filename such as `metadata＿1.2.5 - 工作表1.csv`.",
     "- Respect startup/case instructions about pause points and next-case dispatch. If the packet says Agent mode runs only the current case, do not assume a multi-case batch.",
     "- If `input/document-consistency.json` has status=error, do not touch the browser. Emit a Tool Bridge ambiguity_decision with the conflict and wait.",
     "- If `input/test-package-consistency.json` has status=error, treat it as a testcase package design conflict and do not touch the browser.",
@@ -1587,6 +2032,7 @@ const buildPrompt = (
     `Round ID: ${roundId}`,
     `Agent workdir: ${runDir}`,
     `Copied context manifest: ${path.resolve(runDir, "input", "codex-context.json")}`,
+    `Codex input summary: ${codexInputSummaryPath}`,
     `Case manifest: ${guides.caseManifest.manifestPath ?? "(unavailable)"}`,
     `Test package consistency: ${guides.testPackageConsistencyPath}`,
     `Document consistency: ${guides.documentConsistencyPath}`,
@@ -1954,6 +2400,8 @@ const buildAutoToolResponsePrompt = (
     "",
     "Tommy configured the Mac Agent to auto-approve Tool Bridge authorization requests except SSO/login/auth blockers and package-gate ambiguity decisions.",
     "This is a current-run Tool Bridge response. Continue the paused UAT task from the prior point.",
+    `Read the refreshed compact Codex input summary first when present: ${helperContinuation ? path.join(helperContinuation.runDir, "input", "codex-input-summary.md") : "input/codex-input-summary.md in the current run workspace"}`,
+    "Use summary-first reading on auto-resume too: inspect helper continuation evidence and escalate to full rules only for FAIL/BLOCKED/PARTIAL, metadata/dropdown, Tool Bridge/destructive/native dialog, unsupported/degraded capability, product bug, formula tool limitation, or CSV/download mismatch/not-reached judgment.",
     "Helper executor is Agent-owned. Do not run `bi-ui-helper-executor` through Codex shell command_execution.",
     "If the next blocker is SSO/login/auth, emit a playwright_recovery Tool Bridge request and stop for PM handling.",
     ""
@@ -1970,8 +2418,11 @@ const buildAutoToolResponsePrompt = (
       ""
     );
     for (const action of helperContinuation.actions) {
+      const decision = action.evidenceDecision ?? {};
+      const usability = typeof decision.evidenceUsability === "string" ? decision.evidenceUsability : "unknown";
+      const slowCount = action.slowWaits?.length ?? 0;
       lines.push(
-        `- ${action.template}: ${action.status}; report=${action.reportPath ?? "(missing)"}; warnings=${action.warnings.join(", ") || "none"}`
+        `- ${action.template}: ${action.status}; durationMs=${action.durationMs}; substeps=${action.substepCount ?? "n/a"}; slow=${slowCount}; usability=${usability}; report=${action.reportPath ?? "(missing)"}; warnings=${action.warnings.join(", ") || "none"}`
       );
     }
     if (helperContinuation.actions.length > 0) lines.push("");
@@ -2270,6 +2721,8 @@ const createCodexRunner = (
     model: config.codex_model,
     cwd: runDir,
     reasoningEffort: config.codex_reasoning_effort,
+    ignoreUserConfig: config.codex_ignore_user_config,
+    serviceTier: config.codex_service_tier,
     playwrightCdpEndpoint: chromeCdpEndpoint,
     playwrightOutputDir: path.join(runDir, "mcp-output"),
     onJsonEvent: (event) => {
@@ -2429,6 +2882,21 @@ const makeSyntheticCodexResult = (errorMessage: string): CodexTurnResult => ({
   endedAt: new Date().toISOString(),
   durationMs: 0
 });
+
+const throwIfRunLevelCodexFailure = (result: CodexTurnResult): void => {
+  if (!isCodexUsageLimitFailure(result)) return;
+  const usageMessage = extractCodexUsageLimitMessage(result) ?? "Codex CLI usage limit reached.";
+  throw new Error(`${CODEX_USAGE_LIMIT_CATEGORY}: ${usageMessage}`);
+};
+
+const failCategoryFromRunError = (errorMessage: string, cancelled: boolean): string => {
+  if (cancelled) return "CODEX_RUN_CANCELLED";
+  if (errorMessage.startsWith(CODEX_USAGE_LIMIT_CATEGORY)) return CODEX_USAGE_LIMIT_CATEGORY;
+  if (errorMessage.startsWith("TOOL_BRIDGE_POLICY_VIOLATION")) return "TOOL_BRIDGE_POLICY_VIOLATION";
+  if (errorMessage.startsWith("BATCH_CASE_POLICY_VIOLATION")) return "BATCH_CASE_POLICY_VIOLATION";
+  if (errorMessage.startsWith("TOOL_BRIDGE_SCHEMA_INVALID")) return "TOOL_BRIDGE_SCHEMA_INVALID";
+  return "AGENT_RUN_FAILED";
+};
 
 const makeSyntheticContainedCodexResult = (message: string): CodexTurnResult => {
   const at = new Date().toISOString();
@@ -3310,12 +3778,19 @@ const prepareNextCaseIfAny = async (options: {
     () => writeRunBrief(runId, message, config, runDir, inputs, guides),
     { currentCaseNo: guides.caseManifest.currentCaseNo }
   );
+  const codexInputSummaryPath = timeAgentStep(
+    timing,
+    "write_codex_input_summary",
+    "agent_phase",
+    () => writeCodexInputSummary(runId, message, config, runDir, inputs, guides),
+    { currentCaseNo: guides.caseManifest.currentCaseNo, stage: "next_case_initial" }
+  );
   sendPhase(
     connection,
     runId,
     "advance_case",
     "下一題輸入已就緒",
-    `current_case=${guides.caseManifest.currentCaseNo ?? "(unavailable)"}；run brief: ${runBriefPath}`,
+    `current_case=${guides.caseManifest.currentCaseNo ?? "(unavailable)"}；run brief: ${runBriefPath}；codex summary: ${codexInputSummaryPath}`,
     "done"
   );
 
@@ -3363,6 +3838,13 @@ const prepareNextCaseIfAny = async (options: {
     timing,
     currentCaseNo: guides.caseManifest.currentCaseNo
   });
+  timeAgentStep(
+    timing,
+    "write_codex_input_summary_after_helper",
+    "agent_phase",
+    () => writeCodexInputSummary(runId, message, config, runDir, inputs, guides),
+    { currentCaseNo: guides.caseManifest.currentCaseNo, stage: "next_case_after_helper" }
+  );
 
   return { guides, chromeCdpEndpoint };
 };
@@ -3584,6 +4066,13 @@ const runFreshCasesUntilPauseOrDone = async (options: {
       }
     });
 
+    timeAgentStep(
+      timing,
+      "write_codex_input_summary_before_codex",
+      "agent_phase",
+      () => writeCodexInputSummary(runId, message, config, runDir, inputs, guides),
+      { currentCaseNo: guides.caseManifest.currentCaseNo, stage: "before_codex_start" }
+    );
     let result = await timeAgentPhase(
       timing,
       connection,
@@ -3602,6 +4091,7 @@ const runFreshCasesUntilPauseOrDone = async (options: {
       if (cancelReason) {
         throw new Error(`CODEX_RUN_CANCELLED reason=${cancelReason}`);
       }
+      throwIfRunLevelCodexFailure(result);
 
       const postProcess = processCodexTurnAfterExit({
         connection,
@@ -3648,6 +4138,13 @@ const runFreshCasesUntilPauseOrDone = async (options: {
           text: summarizeHelperContinuation(helperContinuation)
         },
         false
+      );
+      timeAgentStep(
+        timing,
+        "write_codex_input_summary_after_auto_helper",
+        "agent_phase",
+        () => writeCodexInputSummary(runId, message, config, runDir, inputs, guides),
+        { currentCaseNo: guides.caseManifest.currentCaseNo, stage: "after_auto_helper", autoResumeCount }
       );
       result = await timeAgentPhase(
         timing,
@@ -3830,12 +4327,19 @@ export const handleTaskDispatch = async (
       () => writeRunBrief(runId, message, config, runDir, downloadedInputs, generatedGuides),
       { currentCaseNo: generatedGuides.caseManifest.currentCaseNo }
     );
+    const codexInputSummaryPath = timeAgentStep(
+      timing,
+      "write_codex_input_summary",
+      "agent_phase",
+      () => writeCodexInputSummary(runId, message, config, runDir, downloadedInputs, generatedGuides),
+      { currentCaseNo: generatedGuides.caseManifest.currentCaseNo, stage: "initial" }
+    );
     sendPhase(
       connection,
       runId,
       "download_inputs",
       "測試輸入已就緒",
-      `已下載 ${Object.keys(downloadedInputs).length} 個輸入檔；run brief: ${runBriefPath}`,
+      `已下載 ${Object.keys(downloadedInputs).length} 個輸入檔；run brief: ${runBriefPath}；codex summary: ${codexInputSummaryPath}`,
       "done"
     );
     let chromeCdpEndpoint = await timeAgentPhase(
@@ -3905,6 +4409,13 @@ export const handleTaskDispatch = async (
       timing,
       currentCaseNo: generatedGuides.caseManifest.currentCaseNo
     });
+    timeAgentStep(
+      timing,
+      "write_codex_input_summary_after_helper",
+      "agent_phase",
+      () => writeCodexInputSummary(runId, message, config, runDir, downloadedInputs, generatedGuides),
+      { currentCaseNo: generatedGuides.caseManifest.currentCaseNo, stage: "after_helper" }
+    );
 
     if (isDiagnosticRun(message)) {
       const diagnosticSummaryPath = writeDiagnosticSummary(runId, runDir, message, generatedGuides, helperPreRunSummary);
@@ -4030,15 +4541,7 @@ export const handleTaskDispatch = async (
             runDir,
             inputs: downloadedInputs,
             result: partialResult,
-            failCategory: cancelled
-              ? "CODEX_RUN_CANCELLED"
-              : errorMessage.startsWith("TOOL_BRIDGE_POLICY_VIOLATION")
-                ? "TOOL_BRIDGE_POLICY_VIOLATION"
-                : errorMessage.startsWith("BATCH_CASE_POLICY_VIOLATION")
-                  ? "BATCH_CASE_POLICY_VIOLATION"
-                : errorMessage.startsWith("TOOL_BRIDGE_SCHEMA_INVALID")
-                  ? "TOOL_BRIDGE_SCHEMA_INVALID"
-                : "AGENT_RUN_FAILED",
+            failCategory: failCategoryFromRunError(errorMessage, cancelled),
             preferCodexGeneratedResult: Boolean(getCodexGeneratedResultXlsx(runDir)),
             throwOnResultUploadError: false
           })
@@ -4077,6 +4580,7 @@ export const handleTaskDispatch = async (
 	  } finally {
 	    try {
 	      timing.write();
+	      writeSlowStepsReport(runDir, runId, timing);
 	      await uploadFinalSidecarArtifacts(connection, config, message, runId, runDir);
 	      if (!keepChromeOpenForToolBridge && closeChromeOnFinish) {
 	        await closeChromeDebugSession(config);
@@ -4210,6 +4714,7 @@ export const handleToolResponse = async (
       if (cancelReason) {
         throw new Error(`CODEX_RUN_CANCELLED reason=${cancelReason}`);
       }
+      throwIfRunLevelCodexFailure(result);
 
       const postProcess = processCodexTurnAfterExit({
         connection,
@@ -4465,15 +4970,7 @@ export const handleToolResponse = async (
             runDir,
             inputs: downloadedInputs,
             result: partialResult,
-            failCategory: cancelled
-              ? "CODEX_RUN_CANCELLED"
-              : errorMessage.startsWith("TOOL_BRIDGE_POLICY_VIOLATION")
-                ? "TOOL_BRIDGE_POLICY_VIOLATION"
-                : errorMessage.startsWith("BATCH_CASE_POLICY_VIOLATION")
-                  ? "BATCH_CASE_POLICY_VIOLATION"
-                : errorMessage.startsWith("TOOL_BRIDGE_SCHEMA_INVALID")
-                  ? "TOOL_BRIDGE_SCHEMA_INVALID"
-                : "AGENT_RUN_FAILED",
+            failCategory: failCategoryFromRunError(errorMessage, cancelled),
             preferCodexGeneratedResult: Boolean(getCodexGeneratedResultXlsx(runDir)),
             throwOnResultUploadError: false
           })
@@ -4512,6 +5009,7 @@ export const handleToolResponse = async (
 	  } finally {
 	    try {
 	      timing.write();
+	      writeSlowStepsReport(runDir, runId, timing);
 	      await uploadFinalSidecarArtifacts(connection, config, originalDispatch ?? message, runId, runDir);
 	      if (!keepChromeOpenForToolBridge && closeChromeOnFinish) {
 	        await closeChromeDebugSession(config);

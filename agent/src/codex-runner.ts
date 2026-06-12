@@ -25,6 +25,8 @@ export type CodexRunnerOptions = {
   cwd: string;
   timeoutMs?: number;
   reasoningEffort?: string | null;
+  ignoreUserConfig?: boolean;
+  serviceTier?: "flex" | "fast";
   playwrightMcpCommand?: string | null;
   playwrightCdpEndpoint?: string | null;
   playwrightOutputDir?: string | null;
@@ -213,6 +215,9 @@ export class CodexRunner {
     if (this.options.model) {
       args.push("-m", this.options.model);
     }
+    if (this.options.serviceTier) {
+      args.push("-c", `service_tier=${JSON.stringify(this.options.serviceTier)}`);
+    }
     if (this.options.reasoningEffort) {
       args.push("-c", `model_reasoning_effort=${JSON.stringify(this.options.reasoningEffort)}`);
     }
@@ -292,6 +297,7 @@ export class CodexRunner {
     return this.run(
       [
         "exec",
+        ...(this.options.ignoreUserConfig !== false ? ["--ignore-user-config"] : []),
         "--json",
         "--sandbox",
         "workspace-write",
@@ -307,6 +313,7 @@ export class CodexRunner {
     return this.run(
       [
         "exec",
+        ...(this.options.ignoreUserConfig !== false ? ["--ignore-user-config"] : []),
         "--json",
         "--sandbox",
         "workspace-write",

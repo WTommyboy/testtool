@@ -102,6 +102,32 @@ const main = async (): Promise<void> => {
     });
     assert.equal(gate.status, "ok", JSON.stringify(gate.issues));
 
+    const usageLimitRoot = fs.mkdtempSync(path.join(os.tmpdir(), "uat-runtime-containment-usage-limit-"));
+    cleanupRoots.push(usageLimitRoot);
+    await writeCommonRunFiles(usageLimitRoot);
+    const usageLimitSkipped = await writeCodexRuntimeContainmentResultIfNeeded({
+      runId: path.basename(usageLimitRoot),
+      roundId: "BIUI_COLLAGE_R001",
+      runDir: usageLimitRoot,
+      xlsxPath: path.join(usageLimitRoot, "input", "testcase.xlsx"),
+      currentCaseNo: "BIUI_COLLAGE_R001-B-12",
+      result: {
+        exitCode: 1,
+        signal: null,
+        rawStdout: [
+          JSON.stringify({ type: "thread.started", thread_id: "thread-quota-fixture" }),
+          JSON.stringify({ type: "turn.started" }),
+          JSON.stringify({ type: "error", message: "You've hit your usage limit. Visit https://chatgpt.com/codex/settings/usage to purchase more credits or try again at 11:21 PM." }),
+          JSON.stringify({ type: "turn.failed", error: { message: "You've hit your usage limit. Visit https://chatgpt.com/codex/settings/usage to purchase more credits or try again at 11:21 PM." } })
+        ].join("\n"),
+        stderr: "failed to record rollout items: thread thread-quota-fixture not found",
+        assistantText: ""
+      }
+    });
+    assert.equal(usageLimitSkipped.status, "skipped", JSON.stringify(usageLimitSkipped));
+    assert.equal(usageLimitSkipped.reason, "CODEX_USAGE_LIMIT_RUN_LEVEL_FAILURE");
+    assert.equal(fs.existsSync(path.join(usageLimitRoot, "output", "result.xlsx")), false);
+
     const blockedByGateRoot = fs.mkdtempSync(path.join(os.tmpdir(), "uat-runtime-containment-gate-"));
     cleanupRoots.push(blockedByGateRoot);
     await writeCommonRunFiles(blockedByGateRoot);

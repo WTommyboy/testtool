@@ -1496,7 +1496,9 @@
         "from date to yesterday",
         "date panel start static date plus end dynamic 1 天前"
       ],
-      "alignmentNotes": "No single visible preset button exists in the official UI; this is a composite endpoint-control action."
+      "alignmentNotes": "No single visible preset button exists in the official UI; this is a composite endpoint-control action. Tests must treat it as a composite endpoint-control action, not as a visible preset button.",
+      "visiblePresetInCurrentOfficialUi": false,
+      "uiAvailability": "not_visible_as_single_preset"
     },
     "dateRange.preset.fromDateToToday": {
       "status": "confirmed",
@@ -1510,7 +1512,9 @@
         "from date to today",
         "date panel start static date plus end dynamic 0 天前"
       ],
-      "alignmentNotes": "No single visible preset button exists in the official UI; this is a composite endpoint-control action."
+      "alignmentNotes": "No single visible preset button exists in the official UI; this is a composite endpoint-control action. Tests must treat it as a composite endpoint-control action, not as a visible preset button.",
+      "visiblePresetInCurrentOfficialUi": false,
+      "uiAvailability": "not_visible_as_single_preset"
     },
     "dateRange.dynamicStartOffsetInput": {
       "status": "notCaptured",

@@ -195,6 +195,25 @@
         "requiredEvidence includes dateRange.applyPreset.state/dateRange.timeTypeTab.state/dateRange.cancelFlow.state as appropriate"
       ],
       "message": "Date-panel cases must prove the visible panel action and resulting button/request state. Request-body correctness alone is not enough for UI-flow cases."
+    },
+    {
+      "id": "BI_OFFICIAL_COLLAGE_FROM_DATE_TO_X_IS_NOT_VISIBLE_PRESET",
+      "severity": "warning_until_gen4_contract",
+      "appliesWhen": {
+        "domain": "BI_OFFICIAL_UI_COLLAGE",
+        "stepsContainAny": [
+          "自某日至昨日",
+          "自某日至今",
+          "fromDateToYesterday",
+          "fromDateToToday"
+        ]
+      },
+      "require": [
+        "Do not list these as visible dateRange.preset options in panel inventory assertions",
+        "If tested, model as composite endpoint-control action with explicit start/end controls and evidence",
+        "Prefer a separate package instead of main full-ready flow when current UI support is uncertain"
+      ],
+      "message": "The current official UI does not expose 自某日至昨日 / 自某日至今 as single visible preset buttons. Treat them as composite endpoint flows or exclude them from full-ready active packages."
     }
   ]
 }

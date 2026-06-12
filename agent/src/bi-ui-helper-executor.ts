@@ -44,8 +44,64 @@ type HelperReport = {
   evidence: Record<string, unknown>;
   artifacts: Record<string, string>;
   warnings: string[];
+  substeps?: HelperSubstep[];
+  slowWaits?: HelperSubstep[];
+  evidenceDecision?: HelperEvidenceDecision;
   error?: string;
   toolRequest?: Record<string, unknown>;
+};
+
+type HelperSubstepType =
+  | "browser_connect"
+  | "session_resolve"
+  | "navigation_wait"
+  | "readiness_wait"
+  | "locator_action"
+  | "network_wait"
+  | "download_wait"
+  | "screenshot"
+  | "dom_profile"
+  | "evidence_read"
+  | "report_write"
+  | "other";
+
+type HelperSubstepStatus = "ok" | "blocked" | "error";
+
+type HelperSubstep = {
+  name: string;
+  type: HelperSubstepType;
+  status: HelperSubstepStatus;
+  startedAt: string;
+  endedAt: string;
+  durationMs: number;
+  context?: Record<string, unknown>;
+  error?: string;
+};
+
+type HelperEvidenceDecision = {
+  schemaVersion: "helper-evidence-decision-v1";
+  status: HelperReport["status"];
+  evidenceUsability:
+    | "usable_for_codex_review"
+    | "requires_codex_review_with_warnings"
+    | "blocked_current_run_evidence"
+    | "requires_tool_bridge"
+    | "not_implemented"
+    | "error";
+  helperCanJudgeResult: false;
+  primaryEvidence: string[];
+  artifactKeys: string[];
+  warningCount: number;
+  slowWaitCount: number;
+  blockingReason: string | null;
+  notReached: string[];
+  codexGuidance: string;
+};
+
+type HelperStepRecorder = {
+  run<T>(name: string, type: HelperSubstepType, fn: () => Promise<T>, context?: Record<string, unknown>): Promise<T>;
+  snapshot(): HelperSubstep[];
+  slowWaits(): HelperSubstep[];
 };
 
 type BrowserSessionRuntimeEvidence = {
@@ -98,6 +154,98 @@ const withTimeout = async <T>(promise: Promise<T>, timeoutMs: number, reason: st
       }
     );
   });
+};
+
+const helperSlowThresholdMs = (): number => {
+  const raw = process.env.UAT_HELPER_SLOW_THRESHOLD_MS;
+  const parsed = raw ? Number(raw) : NaN;
+  return Number.isFinite(parsed) && parsed >= 1000 ? parsed : 5000;
+};
+
+const helperWaitTimeoutMs = (name: string, defaultMs: number): number => {
+  const exact = process.env[`UAT_HELPER_${name.toUpperCase().replace(/[^A-Z0-9]+/g, "_")}_TIMEOUT_MS`];
+  const global = process.env.UAT_HELPER_WAIT_TIMEOUT_MS;
+  const candidate = exact ?? global;
+  const parsed = candidate ? Number(candidate) : NaN;
+  return Number.isFinite(parsed) && parsed >= 500 ? parsed : defaultMs;
+};
+
+let activeStepRecorder: HelperStepRecorder | null = null;
+
+const createHelperStepRecorder = (options: CliOptions): HelperStepRecorder => {
+  const substeps: HelperSubstep[] = [];
+  const slowThresholdMs = helperSlowThresholdMs();
+  const writeStepObservation = (step: HelperSubstep): void => {
+    observeHelper(options, {
+      eventType: step.type === "locator_action" ? "locator_attempt" : "action_event",
+      severity: step.status === "ok" ? (step.durationMs >= slowThresholdMs ? "warning" : "debug") : step.status === "blocked" ? "blocked" : "error",
+      appUrl: null,
+      data: {
+        phase: "substep",
+        substep: step.name,
+        type: step.type,
+        status: step.status,
+        durationMs: step.durationMs,
+        slowThresholdMs,
+        ...(step.context ? { context: step.context } : {}),
+        ...(step.error ? { error: step.error } : {})
+      }
+    });
+  };
+  return {
+    async run<T>(name: string, type: HelperSubstepType, fn: () => Promise<T>, context?: Record<string, unknown>): Promise<T> {
+      const startedAtMs = Date.now();
+      const startedAt = new Date(startedAtMs).toISOString();
+      try {
+        const result = await fn();
+        const endedAtMs = Date.now();
+        const step: HelperSubstep = {
+          name,
+          type,
+          status: "ok",
+          startedAt,
+          endedAt: new Date(endedAtMs).toISOString(),
+          durationMs: Math.max(0, endedAtMs - startedAtMs),
+          ...(context ? { context } : {})
+        };
+        substeps.push(step);
+        writeStepObservation(step);
+        return result;
+      } catch (error) {
+        const endedAtMs = Date.now();
+        const isBlocked = error instanceof HelperBlockedError || isActionabilityFailure(error);
+        const step: HelperSubstep = {
+          name,
+          type,
+          status: isBlocked ? "blocked" : "error",
+          startedAt,
+          endedAt: new Date(endedAtMs).toISOString(),
+          durationMs: Math.max(0, endedAtMs - startedAtMs),
+          ...(context ? { context } : {}),
+          error: error instanceof Error ? error.message : String(error)
+        };
+        substeps.push(step);
+        writeStepObservation(step);
+        throw error;
+      }
+    },
+    snapshot(): HelperSubstep[] {
+      return [...substeps];
+    },
+    slowWaits(): HelperSubstep[] {
+      return substeps.filter((step) => step.durationMs >= slowThresholdMs || step.status !== "ok");
+    }
+  };
+};
+
+const helperStep = async <T>(
+  name: string,
+  type: HelperSubstepType,
+  fn: () => Promise<T>,
+  context?: Record<string, unknown>
+): Promise<T> => {
+  if (!activeStepRecorder) return await fn();
+  return await activeStepRecorder.run(name, type, fn, context);
 };
 
 const isActionabilityFailure = (error: unknown): boolean => {
@@ -752,6 +900,59 @@ const resolveExistingReportName = async (options: CliOptions, page: Page): Promi
   throw new HelperBlockedError(`EXISTING_REPORT_ROW_NOT_FOUND_PRECONDITION:pattern=${pattern ?? "none"};selectionMode=${selectionMode ?? "default"};savedReports=${JSON.stringify(savedReports).slice(0, 1000)}`);
 };
 
+const buildEvidenceDecision = (
+  status: HelperReport["status"],
+  evidence: Record<string, unknown>,
+  artifacts: Record<string, string>,
+  warnings: string[],
+  slowWaits: HelperSubstep[],
+  extra: Partial<HelperReport>
+): HelperEvidenceDecision => {
+  const primaryEvidence = Object.entries(evidence)
+    .filter(([, value]) => value !== null && value !== undefined)
+    .map(([key]) => key);
+  const notReached = warnings
+    .filter((warning) => /NOT_REACHED|NOT_OBSERVED|MISSING|UNAVAILABLE|TIMEOUT|FAILED|BLOCKED/i.test(warning))
+    .slice(0, 20);
+  const blockingReason =
+    status === "blocked"
+      ? typeof evidence.reason === "string"
+        ? evidence.reason
+        : warnings.find((warning) => /BLOCKED|TIMEOUT|MISSING|FAILED|UNAVAILABLE/i.test(warning)) ?? null
+      : status === "requires_approval"
+        ? "TOOL_BRIDGE_APPROVAL_REQUIRED"
+        : status === "not_implemented"
+          ? "HELPER_ACTION_NOT_IMPLEMENTED"
+          : status === "error"
+            ? extra.error ?? "HELPER_EXECUTOR_ERROR"
+            : null;
+  const evidenceUsability: HelperEvidenceDecision["evidenceUsability"] =
+    status === "ok" && warnings.length === 0
+      ? "usable_for_codex_review"
+      : status === "ok"
+        ? "requires_codex_review_with_warnings"
+        : status === "blocked"
+          ? "blocked_current_run_evidence"
+          : status === "requires_approval"
+            ? "requires_tool_bridge"
+            : status === "not_implemented"
+              ? "not_implemented"
+              : "error";
+  return {
+    schemaVersion: "helper-evidence-decision-v1",
+    status,
+    evidenceUsability,
+    helperCanJudgeResult: false,
+    primaryEvidence,
+    artifactKeys: Object.keys(artifacts),
+    warningCount: warnings.length,
+    slowWaitCount: slowWaits.length,
+    blockingReason,
+    notReached,
+    codexGuidance: "Helper evidence is current-run evidence only; Codex must still compare it against testcase expected behavior and write PASS/FAIL/BLOCKED/PARTIAL."
+  };
+};
+
 const createReport = (
   options: CliOptions,
   status: HelperReport["status"],
@@ -764,6 +965,9 @@ const createReport = (
   const generatedAt = new Date().toISOString();
   const endedAt = generatedAt;
   const runId = runIdFromOptions(options);
+  const substeps = activeStepRecorder?.snapshot() ?? [];
+  const slowWaits = activeStepRecorder?.slowWaits() ?? [];
+  const evidenceDecision = buildEvidenceDecision(status, evidence, artifacts, warnings, slowWaits, extra);
   return {
     schemaVersion: "bi-ui-helper-report-v1",
     generatedAt,
@@ -790,6 +994,9 @@ const createReport = (
     evidence,
     artifacts,
     warnings,
+    substeps,
+    slowWaits,
+    evidenceDecision,
     ...extra
   };
 };
@@ -937,7 +1144,12 @@ const screenshot = async (options: CliOptions, page: Page, label: string): Promi
   const filePath = path.join(artifactRoot(options), `${sanitize(options.caseId)}-${sanitize(label)}.png`);
   ensureDir(path.dirname(filePath));
   try {
-    await page.screenshot({ path: filePath, fullPage: false, timeout: 7000 });
+    await helperStep(
+      `screenshot.${label}`,
+      "screenshot",
+      () => page.screenshot({ path: filePath, fullPage: false, timeout: helperWaitTimeoutMs("screenshot", 5000) }),
+      { label, timeoutMs: helperWaitTimeoutMs("screenshot", 5000) }
+    );
     return filePath;
   } catch {
     return null;
@@ -1245,7 +1457,12 @@ const readUiDomProfile = async (options: CliOptions, page: Page, context: string
 
 const captureUiDomProfile = async (options: CliOptions, page: Page, context: string): Promise<UiDomProfileRef> => {
   try {
-    const profile = await readUiDomProfile(options, page, context);
+    const profile = await helperStep(
+      `dom_profile.${context}`,
+      "dom_profile",
+      () => readUiDomProfile(options, page, context),
+      { context }
+    );
     const dir = path.join(artifactRoot(options), "dom-profiles");
     const filePath = path.join(dir, `${sanitize(context)}-${profile.signature.slice(0, 12)}.json`);
     ensureDir(dir);
@@ -4621,57 +4838,59 @@ const metricFieldControlsVisible = async (page: Page): Promise<boolean> => {
   return false;
 };
 
-const waitForMetricFieldControls = async (page: Page, timeoutMs = 30000): Promise<string> => {
-  const startedAt = Date.now();
-  let lastBodyText = "";
-  while (Date.now() - startedAt < timeoutMs) {
-    if (await metricFieldControlsVisible(page)) {
-      return `fieldControls:ready:${Date.now() - startedAt}ms`;
+const waitForMetricFieldControls = async (page: Page, timeoutMs = helperWaitTimeoutMs("field_controls", 15000)): Promise<string> =>
+  helperStep("wait.field_controls", "readiness_wait", async () => {
+    const startedAt = Date.now();
+    let lastBodyText = "";
+    while (Date.now() - startedAt < timeoutMs) {
+      if (await metricFieldControlsVisible(page)) {
+        return `fieldControls:ready:${Date.now() - startedAt}ms`;
+      }
+      lastBodyText = await page.locator("body").innerText({ timeout: 1000 }).catch(() => "");
+      const normalized = normalizeUiText(lastBodyText);
+      const stillLoading = /載入欄位中|載入指標中|載入資料中/i.test(normalized);
+      if (!stillLoading && Date.now() - startedAt > 1500) {
+        return `fieldControls:notLoadingNoControl:${Date.now() - startedAt}ms`;
+      }
+      await page.waitForTimeout(300);
     }
-    lastBodyText = await page.locator("body").innerText({ timeout: 1000 }).catch(() => "");
-    const normalized = normalizeUiText(lastBodyText);
-    const stillLoading = /載入欄位中|載入指標中|載入資料中/i.test(normalized);
-    if (!stillLoading && Date.now() - startedAt > 1500) {
-      return `fieldControls:notLoadingNoControl:${Date.now() - startedAt}ms`;
-    }
-    await page.waitForTimeout(300);
-  }
-  throw new HelperBlockedError(`FIELD_LIST_LOAD_TIMEOUT:${timeoutMs}ms; bodyText=${lastBodyText.slice(0, 1200)}`);
-};
+    throw new HelperBlockedError(`FIELD_LIST_LOAD_TIMEOUT:${timeoutMs}ms; bodyText=${lastBodyText.slice(0, 1200)}`);
+  }, { timeoutMs });
 
-const waitForReportEditorSettle = async (page: Page, timeoutMs = 30000): Promise<Record<string, unknown>> => {
-  const startedAt = Date.now();
-  let lastBodyText = "";
-  let lastDomState: Record<string, unknown> | null = null;
-  let lastFieldControlsVisible = false;
-  while (Date.now() - startedAt < timeoutMs) {
-    await page.waitForLoadState("domcontentloaded", { timeout: 1000 }).catch(() => undefined);
-    await page.waitForLoadState("networkidle", { timeout: 1000 }).catch(() => undefined);
-    lastBodyText = await page.locator("body").innerText({ timeout: 1500 }).catch(() => "");
-    lastDomState = await readDomState(page).catch(() => null);
-    lastFieldControlsVisible = await metricFieldControlsVisible(page).catch(() => false);
-    const normalized = normalizeUiText(lastBodyText);
-    const loading = /載入(?:欄位|指標|資料|報表)?中|載入中|loading|請稍候/i.test(normalized);
-    const editorVisible = /報表設定|儲存報表|執行|\+ 新增欄位|\+ 新增運算欄位|時間區間/i.test(normalized);
-    if (!loading && (editorVisible || lastFieldControlsVisible) && Date.now() - startedAt > 1200) {
-      return {
-        status: "settled",
-        elapsedMs: Date.now() - startedAt,
-        fieldControlsVisible: lastFieldControlsVisible,
-        editorVisible,
-        bodyTextExcerpt: lastBodyText.slice(0, 1200)
-      };
+const waitForReportEditorSettle = async (page: Page, timeoutMs = helperWaitTimeoutMs("editor_settle", 18000)): Promise<Record<string, unknown>> =>
+  helperStep("wait.report_editor_settle", "readiness_wait", async () => {
+    const startedAt = Date.now();
+    let lastBodyText = "";
+    let lastDomState: Record<string, unknown> | null = null;
+    let lastFieldControlsVisible = false;
+    while (Date.now() - startedAt < timeoutMs) {
+      await page.waitForLoadState("domcontentloaded", { timeout: 1000 }).catch(() => undefined);
+      await page.waitForLoadState("networkidle", { timeout: 1000 }).catch(() => undefined);
+      lastBodyText = await page.locator("body").innerText({ timeout: 1500 }).catch(() => "");
+      lastDomState = await readDomState(page).catch(() => null);
+      lastFieldControlsVisible = await metricFieldControlsVisible(page).catch(() => false);
+      const normalized = normalizeUiText(lastBodyText);
+      const loading = /載入(?:欄位|指標|資料|報表)?中|載入中|loading|請稍候/i.test(normalized);
+      const editorVisible = /報表設定|儲存報表|執行|\+ 新增欄位|\+ 新增運算欄位|時間區間/i.test(normalized);
+      if (!loading && (editorVisible || lastFieldControlsVisible) && Date.now() - startedAt > 1200) {
+        return {
+          status: "settled",
+          elapsedMs: Date.now() - startedAt,
+          fieldControlsVisible: lastFieldControlsVisible,
+          editorVisible,
+          bodyTextExcerpt: lastBodyText.slice(0, 1200)
+        };
+      }
+      await page.waitForTimeout(400);
     }
-    await page.waitForTimeout(400);
-  }
-  return {
-    status: "timeout",
-    elapsedMs: Date.now() - startedAt,
-    fieldControlsVisible: lastFieldControlsVisible,
-    domState: lastDomState,
-    bodyTextExcerpt: lastBodyText.slice(0, 1200)
-  };
-};
+    return {
+      status: "timeout",
+      elapsedMs: Date.now() - startedAt,
+      fieldControlsVisible: lastFieldControlsVisible,
+      domState: lastDomState,
+      bodyTextExcerpt: lastBodyText.slice(0, 1200)
+    };
+  }, { timeoutMs });
 
 const clickMetricAddFieldControl = async (page: Page, field: string): Promise<string> => {
   const clickedByLocator = await clickFirstVisible([
@@ -5128,11 +5347,21 @@ const runPreview = async (options: CliOptions, page: Page, startedAt: string): P
   const uiProfileBefore = await captureUiDomProfile(options, page, "runPreview.before");
   const executePrecondition = await ensureMetricFieldSelectedBeforeExecute(page, "runPreview");
   const observed = await observeDuring(page, async () => {
-    await clickRunPreviewButton(page, 15000);
-    await page.waitForTimeout(2500);
+    await helperStep(
+      "preview.click_execute",
+      "locator_action",
+      () => clickRunPreviewButton(page, helperWaitTimeoutMs("preview_click", 10000)),
+      { timeoutMs: helperWaitTimeoutMs("preview_click", 10000) }
+    );
+    await helperStep(
+      "preview.settle_after_click",
+      "network_wait",
+      () => page.waitForTimeout(helperWaitTimeoutMs("preview_settle", 1600)),
+      { timeoutMs: helperWaitTimeoutMs("preview_settle", 1600) }
+    );
   });
-  const chart = await readChartSummary(page);
-  const table = await readPreviewTableSummary(page);
+  const chart = await helperStep("preview.read_chart_summary", "evidence_read", () => readChartSummary(page));
+  const table = await helperStep("preview.read_table_summary", "evidence_read", () => readPreviewTableSummary(page));
   ensureDir(artifactRoot(options));
   fs.writeFileSync(
     previewEvidencePath(options),
@@ -8315,7 +8544,8 @@ const observeUiTriggeredCsvDownload = async (
   page.on("request", onRequest);
   page.on("response", onResponse);
   let downloadError: string | null = null;
-  const downloadPromise: Promise<Download | null> = page.waitForEvent("download", { timeout: 20000 }).catch((error) => {
+  const downloadTimeoutMs = helperWaitTimeoutMs("csv_download", 12000);
+  const downloadPromise: Promise<Download | null> = page.waitForEvent("download", { timeout: downloadTimeoutMs }).catch((error) => {
     downloadError = error instanceof Error ? error.message : String(error);
     return null;
   });
@@ -8325,7 +8555,12 @@ const observeUiTriggeredCsvDownload = async (
       downloadPromise.catch(() => undefined);
       return { triggerEvidence, download: null, downloadError: null, csvResponse: null, requests, responses };
     }
-    const download = await downloadPromise;
+    const download = await helperStep(
+      "download.wait_for_csv_event",
+      "download_wait",
+      () => downloadPromise,
+      { timeoutMs: downloadTimeoutMs, trigger: triggerEvidence.trigger }
+    );
     return {
       triggerEvidence,
       download,
@@ -10102,72 +10337,75 @@ const waitForBackToProjectListReadiness = async (
   options: CliOptions,
   page: Page
 ): Promise<BackToProjectListReadiness> => {
-  const attempts: BackToProjectListReadiness["attempts"] = [];
-  let lastBodyText = "";
-  let lastUrl = page.url();
-  let reselectedProject = false;
-  const deadline = Date.now() + 9000;
+  const timeoutMs = helperWaitTimeoutMs("project_list_readiness", 6000);
+  return helperStep("wait.project_list_readiness", "readiness_wait", async () => {
+    const attempts: BackToProjectListReadiness["attempts"] = [];
+    let lastBodyText = "";
+    let lastUrl = page.url();
+    let reselectedProject = false;
+    const deadline = Date.now() + timeoutMs;
 
-  for (let attempt = 0; Date.now() < deadline; attempt += 1) {
-    lastUrl = page.url();
-    let bodyText = "";
-    let error: string | undefined;
-    try {
-      bodyText = await page.locator("body").innerText({ timeout: 2500 });
-    } catch (readError) {
-      error = readError instanceof Error ? readError.message : String(readError);
-      bodyText = await page.evaluate(() => document.body?.innerText ?? "").catch((evaluateError) => {
-        const evaluateMessage = evaluateError instanceof Error ? evaluateError.message : String(evaluateError);
-        error = `${error}; evaluate=${evaluateMessage}`;
-        return "";
-      });
-    }
-    if (bodyText.trim()) lastBodyText = bodyText;
-    const effectiveBodyText = bodyText.trim() ? bodyText : lastBodyText;
-    const editorUrl = /\/testview\/edit\b/i.test(lastUrl) || isOfficialCollageEditorRouteUrl(lastUrl);
-    const reportListSignals = reportListSignalsForPage(page, effectiveBodyText);
-    const hasSelectProjectPrompt = /請從左側選擇專案查看報表/.test(effectiveBodyText);
-    attempts.push({
-      label: `poll_${attempt + 1}`,
-      url: lastUrl,
-      bodyTextLength: effectiveBodyText.length,
-      hasCreateReportEntry: hasCreateReportEntry(effectiveBodyText),
-      hasSelectProjectPrompt,
-      reportListSignals,
-      editorUrl,
-      ...(error ? { error: error.slice(0, 300) } : {})
-    });
-    if (!editorUrl && reportListSignals) {
-      return { url: lastUrl, bodyText: effectiveBodyText, reportListSignals, editorUrl, attempts };
-    }
-    if ((editorUrl || hasSelectProjectPrompt) && !reselectedProject) {
-      reselectedProject = true;
-      await ensureCollageProjectSelected(options, page).catch((selectError) => {
-        attempts.push({
-          label: "reselect_project_failed",
-          url: page.url(),
-          bodyTextLength: effectiveBodyText.length,
-          hasCreateReportEntry: hasCreateReportEntry(effectiveBodyText),
-          hasSelectProjectPrompt,
-          reportListSignals,
-          editorUrl,
-          error: selectError instanceof Error ? selectError.message.slice(0, 300) : String(selectError).slice(0, 300)
+    for (let attempt = 0; Date.now() < deadline; attempt += 1) {
+      lastUrl = page.url();
+      let bodyText = "";
+      let error: string | undefined;
+      try {
+        bodyText = await page.locator("body").innerText({ timeout: 1800 });
+      } catch (readError) {
+        error = readError instanceof Error ? readError.message : String(readError);
+        bodyText = await page.evaluate(() => document.body?.innerText ?? "").catch((evaluateError) => {
+          const evaluateMessage = evaluateError instanceof Error ? evaluateError.message : String(evaluateError);
+          error = `${error}; evaluate=${evaluateMessage}`;
+          return "";
         });
+      }
+      if (bodyText.trim()) lastBodyText = bodyText;
+      const effectiveBodyText = bodyText.trim() ? bodyText : lastBodyText;
+      const editorUrl = /\/testview\/edit\b/i.test(lastUrl) || isOfficialCollageEditorRouteUrl(lastUrl);
+      const reportListSignals = reportListSignalsForPage(page, effectiveBodyText);
+      const hasSelectProjectPrompt = /請從左側選擇專案查看報表/.test(effectiveBodyText);
+      attempts.push({
+        label: `poll_${attempt + 1}`,
+        url: lastUrl,
+        bodyTextLength: effectiveBodyText.length,
+        hasCreateReportEntry: hasCreateReportEntry(effectiveBodyText),
+        hasSelectProjectPrompt,
+        reportListSignals,
+        editorUrl,
+        ...(error ? { error: error.slice(0, 300) } : {})
       });
+      if (!editorUrl && reportListSignals) {
+        return { url: lastUrl, bodyText: effectiveBodyText, reportListSignals, editorUrl, attempts };
+      }
+      if ((editorUrl || hasSelectProjectPrompt) && !reselectedProject) {
+        reselectedProject = true;
+        await ensureCollageProjectSelected(options, page).catch((selectError) => {
+          attempts.push({
+            label: "reselect_project_failed",
+            url: page.url(),
+            bodyTextLength: effectiveBodyText.length,
+            hasCreateReportEntry: hasCreateReportEntry(effectiveBodyText),
+            hasSelectProjectPrompt,
+            reportListSignals,
+            editorUrl,
+            error: selectError instanceof Error ? selectError.message.slice(0, 300) : String(selectError).slice(0, 300)
+          });
+        });
+      }
+      await page.waitForTimeout(500);
     }
-    await page.waitForTimeout(500);
-  }
 
-  const finalUrl = page.url();
-  const finalEditorUrl = /\/testview\/edit\b/i.test(finalUrl) || isOfficialCollageEditorRouteUrl(finalUrl);
-  const finalReportListSignals = reportListSignalsForPage(page, lastBodyText);
-  return {
-    url: finalUrl,
-    bodyText: lastBodyText,
-    reportListSignals: finalReportListSignals,
-    editorUrl: finalEditorUrl,
-    attempts
-  };
+    const finalUrl = page.url();
+    const finalEditorUrl = /\/testview\/edit\b/i.test(finalUrl) || isOfficialCollageEditorRouteUrl(finalUrl);
+    const finalReportListSignals = reportListSignalsForPage(page, lastBodyText);
+    return {
+      url: finalUrl,
+      bodyText: lastBodyText,
+      reportListSignals: finalReportListSignals,
+      editorUrl: finalEditorUrl,
+      attempts
+    };
+  }, { timeoutMs });
 };
 
 const clickBackToProjectList = async (options: CliOptions, page: Page, startedAt: string): Promise<HelperReport> => {
@@ -11936,13 +12174,19 @@ const waitForFrontendObservationReadiness = async (
   };
   const marker = markerByType[observationType];
   try {
-    await page.waitForFunction(
-      (patternSource) => {
-        const pattern = new RegExp(patternSource, "i");
-        return pattern.test(document.body?.innerText ?? "");
-      },
-      marker.source,
-      { timeout: 8000 }
+    const timeoutMs = helperWaitTimeoutMs("frontend_observation_readiness", 5000);
+    await helperStep(
+      `wait.frontend_observation.${observationType}`,
+      "readiness_wait",
+      () => page.waitForFunction(
+        (patternSource) => {
+          const pattern = new RegExp(patternSource, "i");
+          return pattern.test(document.body?.innerText ?? "");
+        },
+        marker.source,
+        { timeout: timeoutMs }
+      ),
+      { observationType, timeoutMs }
     );
   } catch {
     warnings.push(`FRONTEND_OBSERVATION_READINESS_TIMEOUT:${observationType}`);
@@ -12009,6 +12253,7 @@ const notImplemented = async (options: CliOptions, page: Page, reason: string, s
 
 const run = async (): Promise<void> => {
   const options = parseArgs();
+  activeStepRecorder = createHelperStepRecorder(options);
   const startedAt = new Date().toISOString();
   const config = readConfig();
 
@@ -12017,10 +12262,15 @@ const run = async (): Promise<void> => {
   let runtimeEvidence: BrowserSessionRuntimeEvidence | null = null;
   let report: HelperReport;
   try {
-    const endpoint = await ensureChromeDebugSession(config, null, {
-      resetTabs: false,
-      openInitialUrl: false
-    });
+    const endpoint = await helperStep(
+      "browser.ensure_cdp_session",
+      "browser_connect",
+      () => ensureChromeDebugSession(config, null, {
+        resetTabs: false,
+        openInitialUrl: false
+      }),
+      { resetTabs: false, openInitialUrl: false }
+    );
     if (!endpoint) {
       const diagnostics = await diagnoseChromeDebugSession(config);
       report = createReport(
@@ -12037,8 +12287,18 @@ const run = async (): Promise<void> => {
       process.exitCode = 1;
       return;
     }
-    browser = await chromium.connectOverCDP(endpoint);
-    const resolved = await resolveBrowserSessionPage(options, browser);
+    browser = await helperStep(
+      "browser.connect_over_cdp",
+      "browser_connect",
+      () => chromium.connectOverCDP(endpoint),
+      { endpoint }
+    );
+    const resolved = await helperStep(
+      "browser.resolve_session_page",
+      "session_resolve",
+      () => resolveBrowserSessionPage(options, browser as Browser),
+      { caseId: options.caseId }
+    );
     page = resolved.page;
     runtimeEvidence = resolved.runtimeEvidence;
     observeHelper(options, {
@@ -12194,6 +12454,7 @@ const run = async (): Promise<void> => {
     console.error(JSON.stringify(report, null, 2));
     process.exitCode = 1;
   } finally {
+    activeStepRecorder = null;
     if (options.closeAfter) {
       if (browser) await browser.close().catch(() => undefined);
       await closeChromeDebugSession(config).catch(() => undefined);

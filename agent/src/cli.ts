@@ -220,6 +220,8 @@ const main = async (): Promise<void> => {
       token: maskToken(config.token),
       codex_bin: config.codex_bin,
       codex_model: codexModelLabel(config.codex_model),
+      codex_ignore_user_config: config.codex_ignore_user_config,
+      codex_service_tier: config.codex_service_tier,
       codex_reasoning_effort: config.codex_reasoning_effort,
       auto_approve_tool_requests: config.auto_approve_tool_requests,
       keep_chrome_warm: config.keep_chrome_warm,

@@ -8,12 +8,14 @@
 
 - [ ] PRD / spec is available.
 - [ ] UI screenshots or design reference are available.
+- [ ] Live UI visible inventory is available for buttons, tabs, presets, modals, toasts, picker options, and row actions used by testcase assertions.
 - [ ] Dev URL is known.
 - [ ] SSO / login precondition is known.
 - [ ] Existing testcase assets are available, if any.
 - [ ] Existing cases to preserve are explicitly listed.
 - [ ] Specification priority is written down.
 - [ ] Resource create / update / delete policy is written down.
+- [ ] Environment-sensitive cases are identified, including upper limits, capacity limits, cross-day checks, tenant/game switching, and cases that require a PM-prepared shared state.
 - [ ] Irreversible action approval rule is written down.
 - [ ] Open decisions are either answered or marked as non-blocking.
 
@@ -23,6 +25,7 @@
 - [ ] `<feature>_boundary_rules.md` exists.
 - [ ] `<feature>_Claude_testcase_request.md` or equivalent exists.
 - [ ] PRD vs UI conflicts are listed.
+- [ ] PRD concepts that are not visible UI objects are listed as composite actions, known gaps, or excluded/focused-package candidates.
 - [ ] Old case preservation rules are explicit.
 - [ ] New case groups are explicit.
 - [ ] Xlsx v2.0 required columns are explicit.
@@ -55,6 +58,8 @@
 - [ ] Generic action verbs are referenced from `contracts/platform-action-vocabulary.v1.json`; no domain action verbs were invented in testcase prose only.
 - [ ] Domain-specific UI object ids, aliases, locator hints, state attributes, hazards, and known product gaps live in the domain pack, not platform runtime.
 - [ ] Repeated lifecycle flows have been identified across the testcase set and assigned to domain action contracts with required evidence.
+- [ ] Full-ready active package excludes cases that intentionally pollute shared environment, unless a safe precondition builder and cleanup policy are explicitly provided.
+- [ ] Visible-list assertions only include objects confirmed by live UI, screenshots, design reference, or domain visual-alignment data.
 - [ ] Each shared lifecycle contract declares:
   - [ ] precondition page/state
   - [ ] step sequence using platform actions and domain UI object ids
@@ -119,6 +124,7 @@ Expected:
 - [ ] A workflow smoke proves required action coverage, not only page navigation.
 - [ ] A lifecycle smoke proves repeated flows do not stop at partial evidence.
   Examples: save evidence must include row visibility or an explicit row-search failure; delete-cancel evidence must include modal open, cancel click, and row unchanged; date preset evidence must include before/after label or request body.
+- [ ] Any upper-limit/capacity case is smoke-tested in a focused package or explicitly marked out of the main full-ready package.
 - [ ] One case completes and uploads `result.xlsx`.
 - [ ] Result parser ingests the case.
 - [ ] Final aggregate can be downloaded.

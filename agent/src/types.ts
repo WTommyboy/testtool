@@ -6,6 +6,8 @@ export type AgentConfig = {
   codex_bin: string;
   codex_model: string;
   codex_reasoning_effort: "low" | "medium" | "high" | "xhigh";
+  codex_ignore_user_config: boolean;
+  codex_service_tier: "flex" | "fast";
   auto_approve_tool_requests: boolean;
   keep_chrome_warm: boolean;
   chrome_debug_port: number;

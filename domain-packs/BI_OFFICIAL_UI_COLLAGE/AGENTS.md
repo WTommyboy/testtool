@@ -8,7 +8,7 @@ This domain pack is the domain entrypoint downloaded as `input/domain_AGENTS.md`
 
 In scope:
 
-- Galaxy Next BI official frontend dev site.
+- Galaxy Next BI official frontend dev/RC site.
 - Collage mode only.
 - Existing OTTEST004-style data-logic regression cases.
 - Official UI behavior cases for entry navigation, sidebar, project page, report editor, time picker, save/update/copy, download, delete, hover, tooltip, modal, toast, and enabled/disabled button states.
@@ -27,7 +27,7 @@ Record-centric and metric-centric radio controls may be checked for existence or
 Use this priority order:
 
 1. PRD.
-2. Official UI screenshots and live dev site.
+2. Official UI screenshots and live dev/RC site.
 3. Existing OTTEST004 44-case test package.
 4. Shared BI UAT rules and project instructions.
 
@@ -35,10 +35,12 @@ If PRD and live UI conflict, expected behavior follows the PRD. Record the live 
 
 ## Fixed Preconditions
 
-- Start URL: `https://galaxy.games.gamania.com/bi-dev/zh-TW/home`.
+- Start URL is run-package specific. Supported official UI prefixes are `/bi-dev` and `/bi-rc`; do not hard-code one environment when the uploaded package/run brief points to the other.
 - Tommy must complete SSO in the same Playwright session before trusted UAT execution.
 - Do not use right-top game selector switching as a test precondition unless the uploaded testcase explicitly asks for it.
-- For project-limit cases, Tommy will prepare the collage project count below 5 before execution. If the count is still 5 or more, report environment not ready; do not skip the case silently.
+- For normal create-project cases, the uploaded package should declare whether the collage project count must be `<= 4`. If the count is already 5 or more, report environment not ready; do not delete projects to reduce the count.
+- For project-limit cases, prefer a separate package with an explicit PM-prepared 5-project state or a verified precondition builder and cleanup policy. Do not mix project-limit setup into a long full-run package unless the testcase explicitly scopes that side effect.
+- The current official UI does not expose `自某日至昨日` / `自某日至今` as single visible date preset buttons. Do not require them in visible preset-list assertions. If a testcase needs that behavior, model it as a composite start/end date-control flow, not as `dateRange.preset.*`.
 
 ## UI Text Judgment
 

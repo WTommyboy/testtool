@@ -135,6 +135,14 @@ export const runDoctor = async (config: AgentConfig): Promise<DoctorCheck[]> => 
         ? "Run a one-line `codex exec --json -m <model>` smoke after changing model configuration."
         : "Codex CLI default model will be used."
     }),
+    check("codex-runtime-config", true, {
+      ignore_user_config: config.codex_ignore_user_config,
+      service_tier: config.codex_service_tier,
+      reasoning_effort: config.codex_reasoning_effort,
+      strategy: config.codex_ignore_user_config
+        ? "batch-baseline: isolate global codex config"
+        : "legacy: inherit global codex config"
+    }),
     check("playwright-mcp-availability", playwrightMcpConfigured, {
       reason: "Verified from `codex mcp list`; live CDP connectivity is still checked per run.",
       command: "codex mcp list",
