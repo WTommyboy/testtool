@@ -3422,7 +3422,8 @@ const uploadRunArtifacts = async (options: UploadArtifactsOptions): Promise<Uplo
       ? await repairSingleCaseResultWorkbook({
         filePath: resultXlsxPath,
         currentCase: currentSourceCase,
-        expectedCaseNos: resultUploadMetadata.expectedCaseNos
+        expectedCaseNos: resultUploadMetadata.expectedCaseNos,
+        runDir
       })
       : null;
     if (repairReport) {

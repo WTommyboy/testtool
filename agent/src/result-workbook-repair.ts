@@ -1,3 +1,5 @@
+import fs from "node:fs";
+import path from "node:path";
 import ExcelJS from "exceljs";
 import type { AgentResultSourceCase } from "./result-writer";
 import { loadResultParserAdapter } from "./result-contract";
@@ -13,6 +15,7 @@ export type ResultWorkbookRepairReport = {
     rowCount?: number;
     caseNo?: string | null;
     groupId?: string | null;
+    detailJsonSourcePath?: string;
   }>;
   warnings: string[];
 };
@@ -21,6 +24,7 @@ type RepairInput = {
   filePath: string;
   currentCase: AgentResultSourceCase | null;
   expectedCaseNos: string[];
+  runDir?: string;
 };
 
 const cellText = (value: unknown): string => {
@@ -45,6 +49,96 @@ const rowValues = (row: ExcelJS.Row): string[] => {
 
 const sameCaseNo = (a: string, b: string): boolean =>
   normalize(a).replace(/^demo-/i, "") === normalize(b).replace(/^demo-/i, "");
+
+const findHeaderIndex = (headers: string[], names: string[]): number => {
+  const expected = new Set(names.map((name) => normalize(name)));
+  return headers.findIndex((header) => expected.has(normalize(header))) + 1;
+};
+
+const parseJsonObject = (raw: string): Record<string, unknown> | null => {
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? parsed as Record<string, unknown>
+      : null;
+  } catch {
+    return null;
+  }
+};
+
+const isPathInside = (parent: string, child: string): boolean => {
+  const relative = path.relative(parent, child);
+  return relative === "" || (Boolean(relative) && !relative.startsWith("..") && !path.isAbsolute(relative));
+};
+
+const resolveRunLocalJsonPath = (
+  rawValue: string,
+  runDir: string | undefined,
+  workbookPath: string
+): string | null => {
+  if (!runDir) return null;
+  const trimmed = rawValue.trim();
+  if (!trimmed || trimmed.includes("\n") || trimmed.includes("\r")) return null;
+  if (parseJsonObject(trimmed)) return null;
+
+  const candidates = path.isAbsolute(trimmed)
+    ? [path.resolve(trimmed)]
+    : [
+        path.resolve(path.dirname(workbookPath), trimmed),
+        path.resolve(runDir, trimmed)
+      ];
+  const resolvedRunDir = path.resolve(runDir);
+  for (const candidate of candidates) {
+    if (path.extname(candidate).toLowerCase() !== ".json") continue;
+    if (!isPathInside(resolvedRunDir, candidate)) continue;
+    if (fs.existsSync(candidate) && fs.statSync(candidate).isFile()) return candidate;
+  }
+  return null;
+};
+
+const repairDetailJsonPathCells = (
+  workbook: ExcelJS.Workbook,
+  input: RepairInput,
+  report: ResultWorkbookRepairReport
+): boolean => {
+  const adapter = loadResultParserAdapter();
+  const sheet = workbook.getWorksheet(adapter.sheets.cases);
+  if (!sheet || !input.runDir) return false;
+
+  const headers = rowValues(sheet.getRow(1));
+  const caseNoColumn = findHeaderIndex(headers, ["編號", "case_no", "caseno", "案例編號"]);
+  const detailColumn = findHeaderIndex(headers, ["詳細紀錄JSON", "詳細紀錄json", "detail_json", "detailjson"]);
+  if (caseNoColumn <= 0 || detailColumn <= 0) return false;
+
+  let updated = false;
+  for (let rowNo = 2; rowNo <= sheet.rowCount; rowNo += 1) {
+    const row = sheet.getRow(rowNo);
+    const caseNo = cellText(row.getCell(caseNoColumn).value);
+    if (!caseNo) continue;
+    if (input.expectedCaseNos.length > 0 && !input.expectedCaseNos.some((expected) => sameCaseNo(caseNo, expected))) continue;
+
+    const rawDetail = cellText(row.getCell(detailColumn).value);
+    const detailPath = resolveRunLocalJsonPath(rawDetail, input.runDir, input.filePath);
+    if (!detailPath) continue;
+    const detail = parseJsonObject(fs.readFileSync(detailPath, "utf8"));
+    if (!detail) {
+      report.warnings.push(`Skipped detail_json path expansion for ${caseNo}; file is not a JSON object: ${detailPath}`);
+      continue;
+    }
+
+    row.getCell(detailColumn).value = JSON.stringify(detail, null, 2);
+    report.repairs.push({
+      action: "expand_detail_json_path",
+      sheetName: adapter.sheets.cases,
+      header: "詳細紀錄JSON",
+      rowCount: 1,
+      caseNo,
+      detailJsonSourcePath: path.relative(path.resolve(input.runDir), detailPath)
+    });
+    updated = true;
+  }
+  return updated;
+};
 
 const inferGroupId = (sourceCase: AgentResultSourceCase | null, groupName: string, caseNo: string): string | null => {
   const explicit = sourceCase?.groupId?.trim();
@@ -79,18 +173,28 @@ export const repairSingleCaseResultWorkbook = async (input: RepairInput): Promis
     return report;
   }
 
+  let workbookUpdated = repairDetailJsonPathCells(workbook, input, report);
   const expectedHeaders = adapter.headers.cases;
   const groupIdHeader = expectedHeaders[0] ?? "群組ID";
   const legacyHeaders = expectedHeaders.filter((header) => normalize(header) !== normalize(groupIdHeader));
   const headers = rowValues(sheet.getRow(1));
 
   if (headers.some((header) => normalize(header) === normalize(groupIdHeader))) {
+    if (workbookUpdated) {
+      await workbook.xlsx.writeFile(input.filePath);
+      report.status = "updated";
+    }
     return report;
   }
 
   const isLegacyCaseHeader = legacyHeaders.length === headers.length
     && legacyHeaders.every((header, index) => normalize(headers[index]) === normalize(header));
   if (!isLegacyCaseHeader) {
+    if (workbookUpdated) {
+      await workbook.xlsx.writeFile(input.filePath);
+      report.status = "updated";
+      return report;
+    }
     report.status = "skipped";
     report.warnings.push(`Case sheet is missing ${groupIdHeader}, but headers do not match the legacy single-case layout.`);
     return report;
@@ -147,7 +251,7 @@ export const repairSingleCaseResultWorkbook = async (input: RepairInput): Promis
 
   sheet.spliceColumns(1, 0, [groupIdHeader, groupId ?? ""]);
   sheet.getRow(1).font = { bold: true };
-  await workbook.xlsx.writeFile(input.filePath);
+  workbookUpdated = true;
 
   report.status = "updated";
   report.repairs.push({
@@ -158,5 +262,8 @@ export const repairSingleCaseResultWorkbook = async (input: RepairInput): Promis
     caseNo: dataRow.caseNo,
     groupId
   });
+  if (workbookUpdated) {
+    await workbook.xlsx.writeFile(input.filePath);
+  }
   return report;
 };

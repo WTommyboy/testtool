@@ -136,6 +136,47 @@ const writeLegacySingleCaseWithoutGroupId = async (filePath: string): Promise<vo
   await workbook.xlsx.writeFile(filePath);
 };
 
+const detailJsonPathFixture = (): Record<string, unknown> => ({
+  測試目的: "驗證 result workbook repair 可展開本輪 run 目錄內的 detail_json path。",
+  設定條件: "fixture: detail_json cell contains a run-local json path.",
+  預期行為: "agent self-check 前會把 path 展開成 JSON object 字串。",
+  實際行為: "fixture result row was repaired before validation.",
+  錯誤原因: "Codex wrote a file path into 詳細紀錄JSON instead of the JSON object.",
+  根因層級: "runtime/result-contract",
+  驗證方法: "repairSingleCaseResultWorkbook + validateResultWorkbookContract",
+  "RD 分派": "UAT platform"
+});
+
+const writeResultContractWithDetailPath = async (
+  filePath: string,
+  caseNo: string,
+  detailPath: string
+): Promise<void> => {
+  const workbook = new ExcelJS.Workbook();
+  const index = workbook.addWorksheet("索引");
+  index.getCell("A1").value = "schema_version";
+  index.getCell("B1").value = "fixture-result-v1";
+
+  const cases = workbook.addWorksheet("測試案例");
+  cases.addRow(["群組ID", "群組", "編號", "測試項目", "測試類型", "執行方式", "結果", "失敗分類", "詳細紀錄JSON"]);
+  cases.addRow([
+    "B",
+    "B:日期區間邏輯",
+    caseNo,
+    "半動態區間",
+    "功能流程",
+    "agent",
+    "FAIL",
+    "PRODUCT_REGRESSION",
+    detailPath
+  ]);
+
+  const bugs = workbook.addWorksheet("Bug");
+  bugs.addRow(["嚴重度", "Bug ID", "關聯編號", "標題", "描述", "建議", "狀態"]);
+  bugs.addRow(["P2", `BUG-${caseNo}`, caseNo, "fixture", "fixture", "fixture", "OPEN"]);
+  await workbook.xlsx.writeFile(filePath);
+};
+
 const writeTestcaseStyleCodexWorkbook = async (filePath: string): Promise<void> => {
   const workbook = new ExcelJS.Workbook();
   const index = workbook.addWorksheet("索引");
@@ -237,6 +278,60 @@ const main = async (): Promise<void> => {
     assert.equal(repairedReport.status, "ok", JSON.stringify(repairedReport.issues));
     const repairedParsed = await parseResultXlsx(legacySingleCase);
     assert.equal(repairedParsed.cases[0]?.groupId, "A");
+
+    const detailJsonPath = path.join(tempRoot, "output", "detail.json");
+    fs.mkdirSync(path.dirname(detailJsonPath), { recursive: true });
+    fs.writeFileSync(detailJsonPath, JSON.stringify(detailJsonPathFixture(), null, 2));
+    const detailPathWorkbook = path.join(tempRoot, "result-contract-detail-path.xlsx");
+    await writeResultContractWithDetailPath(detailPathWorkbook, "TOOL-B-08", detailJsonPath);
+    const detailPathBefore = await validateResultWorkbookContract(detailPathWorkbook);
+    assert.equal(detailPathBefore.status, "error");
+    assert.ok(detailPathBefore.issues.some((item) => item.code === "RESULT_XLSX_DETAIL_JSON_INVALID"));
+    const detailPathRepairReport = await repairSingleCaseResultWorkbook({
+      filePath: detailPathWorkbook,
+      currentCase: {
+        groupId: "B",
+        groupName: "B:日期區間邏輯",
+        caseNo: "TOOL-B-08",
+        caseTitle: "半動態區間",
+        testType: "功能流程",
+        executionMethod: "agent"
+      },
+      expectedCaseNos: ["TOOL-B-08"],
+      runDir: tempRoot
+    });
+    assert.equal(detailPathRepairReport.status, "updated", JSON.stringify(detailPathRepairReport));
+    assert.ok(detailPathRepairReport.repairs.some((item) => item.action === "expand_detail_json_path"));
+    const detailPathAfter = await validateResultWorkbookContract(detailPathWorkbook);
+    assert.equal(detailPathAfter.status, "ok", JSON.stringify(detailPathAfter.issues));
+    const detailPathParsed = await parseResultXlsx(detailPathWorkbook);
+    assert.equal(detailPathParsed.cases[0]?.detailJson?.["根因層級"], "runtime/result-contract");
+
+    const outsideDetailPath = path.join(os.tmpdir(), `uat-agent-outside-detail-${process.pid}.json`);
+    fs.writeFileSync(outsideDetailPath, JSON.stringify(detailJsonPathFixture(), null, 2));
+    try {
+      const outsidePathWorkbook = path.join(tempRoot, "result-contract-outside-detail-path.xlsx");
+      await writeResultContractWithDetailPath(outsidePathWorkbook, "TOOL-B-09", outsideDetailPath);
+      const outsideRepairReport = await repairSingleCaseResultWorkbook({
+        filePath: outsidePathWorkbook,
+        currentCase: {
+          groupId: "B",
+          groupName: "B:日期區間邏輯",
+          caseNo: "TOOL-B-09",
+          caseTitle: "半動態區間",
+          testType: "功能流程",
+          executionMethod: "agent"
+        },
+        expectedCaseNos: ["TOOL-B-09"],
+        runDir: tempRoot
+      });
+      assert.equal(outsideRepairReport.status, "unchanged", JSON.stringify(outsideRepairReport));
+      const outsideAfter = await validateResultWorkbookContract(outsidePathWorkbook);
+      assert.equal(outsideAfter.status, "error");
+      assert.ok(outsideAfter.issues.some((item) => item.code === "RESULT_XLSX_DETAIL_JSON_INVALID"));
+    } finally {
+      fs.rmSync(outsideDetailPath, { force: true });
+    }
 
     const testcaseStyle = path.join(tempRoot, "testcase-style-codex-result.xlsx");
     await writeTestcaseStyleCodexWorkbook(testcaseStyle);
@@ -605,6 +700,8 @@ const main = async (): Promise<void> => {
         "legacy Bug header 來源 Case is rejected by agent self-check",
         "FAIL detail_json missing required fields is rejected before upload",
         "single-case legacy result workbook missing 群組ID is repaired before self-check",
+        "run-local detail_json path cells are expanded before self-check",
+        "detail_json paths outside the current run directory are not expanded",
         "testcase-style Codex output is normalized to one current-case result-contract row before self-check",
         "BLOCKED detail_json with core fields but without current-run evidence is enriched before upload",
         "PASS result contradicting helper false checks is rejected before upload",
