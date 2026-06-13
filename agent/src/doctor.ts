@@ -1,7 +1,9 @@
 import { spawn } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
+import path from "node:path";
 import { diagnoseChromeDebugSession } from "./browser-session";
+import { findAgentStartProcessesForConfig } from "./process-lock";
 import type { AgentCapability, AgentConfig, DoctorCheck } from "./types";
 
 const check = (name: string, condition: boolean, details?: Record<string, unknown>): DoctorCheck => ({
@@ -80,6 +82,8 @@ export const runDoctor = async (config: AgentConfig): Promise<DoctorCheck[]> => 
   const chromeDiagnostics = await diagnoseChromeDebugSession(config);
   const playwrightMcpConfigured = codexMcpList.exitCode === 0 && hasEnabledMcpServer(codexMcpList.stdout, "playwright");
   const unsupportedModelReason = unsupportedCodexModel(config.codex_model);
+  const inferredConfigPath = path.resolve(config.workdir_root, "..", "config.json");
+  const sameConfigAgentProcesses = findAgentStartProcessesForConfig(inferredConfigPath);
   const checks: DoctorCheck[] = [
     check("node-version", nodeMajor >= 20, { version: process.version }),
     check("agent-token-present", Boolean(config.token), { hasToken: Boolean(config.token) }),
@@ -96,6 +100,14 @@ export const runDoctor = async (config: AgentConfig): Promise<DoctorCheck[]> => 
       policy: config.keep_chrome_warm
         ? "warm_process_reset_tabs_per_case"
         : "run_scoped_process_reset_tabs_per_case"
+    }),
+    check("agent-singleton-process", sameConfigAgentProcesses.length <= 1, {
+      config: inferredConfigPath,
+      count: sameConfigAgentProcesses.length,
+      processes: sameConfigAgentProcesses,
+      reason: sameConfigAgentProcesses.length <= 1
+        ? "At most one running uat-agent start process is attached to this config."
+        : "Multiple running uat-agent start processes share this config and can race to claim the same dev tasks."
     }),
     check("chrome-cdp-profile-isolation", !chromeDiagnostics.profileMismatch, {
       endpoint: chromeDiagnostics.endpoint,

@@ -26,6 +26,7 @@ export type CodexRunnerOptions = {
   timeoutMs?: number;
   reasoningEffort?: string | null;
   ignoreUserConfig?: boolean;
+  ephemeralStart?: boolean;
   serviceTier?: "flex" | "fast";
   playwrightMcpCommand?: string | null;
   playwrightCdpEndpoint?: string | null;
@@ -243,7 +244,7 @@ export class CodexRunner {
     return new Promise((resolve, reject) => {
       const startedAtMs = Date.now();
       const startedAt = new Date(startedAtMs).toISOString();
-      const child = spawn(this.options.codexBin, [...this.configArgs(), ...args], {
+      const child = spawn(this.options.codexBin, args, {
         cwd: this.options.cwd,
         env: buildCodexChildEnv(),
         detached: true,
@@ -298,6 +299,8 @@ export class CodexRunner {
       [
         "exec",
         ...(this.options.ignoreUserConfig !== false ? ["--ignore-user-config"] : []),
+        ...(this.options.ephemeralStart !== false ? ["--ephemeral"] : []),
+        ...this.configArgs(),
         "--json",
         "--sandbox",
         "workspace-write",
@@ -314,6 +317,7 @@ export class CodexRunner {
       [
         "exec",
         ...(this.options.ignoreUserConfig !== false ? ["--ignore-user-config"] : []),
+        ...this.configArgs(),
         "--json",
         "--sandbox",
         "workspace-write",

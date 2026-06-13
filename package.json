@@ -25,6 +25,8 @@
     "verify:result-evidence-gate": "tsx scripts/verify-result-evidence-gate.ts",
     "verify:result-evidence-upload-containment": "tsx scripts/verify-result-evidence-upload-containment.ts",
     "verify:agent-resume": "tsx scripts/verify-agent-resume.ts",
+    "verify:agent-process-lock": "tsx scripts/verify-agent-process-lock.ts",
+    "verify:codex-runner-real-smoke": "tsx scripts/verify-codex-runner-real-smoke.ts",
     "verify:agent-browser-session-isolation": "tsx scripts/verify-agent-browser-session-isolation.ts",
     "verify:agent-connection-resilience": "tsx scripts/verify-agent-connection-resilience.ts",
     "verify:agent-context-prep": "tsx scripts/verify-agent-context-prep.ts",

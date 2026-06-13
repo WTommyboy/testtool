@@ -448,6 +448,7 @@ const writeUnsafeFailEvidenceFixture = (runDir: string): void => {
 
 const main = async (): Promise<void> => {
   const executorSource = fs.readFileSync(executorPath, "utf8");
+  const codexRunnerSource = fs.readFileSync(path.join(root, "agent", "src", "codex-runner.ts"), "utf8");
   const resultContractSource = fs.readFileSync(resultContractPath, "utf8");
   const byCase = new Map(contracts().map((item) => [item.caseNo, item]));
 
@@ -498,6 +499,8 @@ const main = async (): Promise<void> => {
   assert(executorSource.includes("projectListRowDeleteButtonCandidate"), "executor must locate row-local delete icon buttons by DOM/ARIA context");
   assert(executorSource.includes("reportListRowActionCandidates"), "executor must recover row-local report actions from DOM/ARIA/right-side action context");
   assert(executorSource.includes("report-list-row-inferred-download-control"), "report-list CSV helper must click inferred row-local download controls before blocking");
+  assert(executorSource.includes("selectedControlClickError"), "report-list CSV helper must continue to inferred fallback after a stale selected control click fails");
+  assert(executorSource.includes("const editorPage = await isOfficialCollageEditorPage(page)"), "editor toolbar download must not be misrouted through saved-report list CSV contract");
   assert(executorSource.includes("rowBeforeCancel: rowBefore"), "J-08 delete/cancel evidence must expose the before row snapshot under the result-facing key");
   assert(executorSource.includes("modalInteractionObserved"), "frontend modal observations must accept successful cancel/type interactions as modal evidence when DOM dialog wrappers are absent");
   assert(executorSource.includes("aria-label=\"刪除\""), "executor must support official UI delete icon aria-label fallback");
@@ -516,6 +519,14 @@ const main = async (): Promise<void> => {
   assert(executorSource.includes("projectLimitToastAfterClick"), "projectCreateModal evidence must preserve post-click project-limit toast state");
   assert(executorSource.includes("isTextLikeInputType"), "projectCreateModal name input helper must only fill text-like inputs");
   assert(!executorSource.includes("modalInputs.at(-1)"), "projectCreateModal must not fallback to arbitrary modal input");
+  assert(executorSource.includes("scope: \"save-report-modal\""), "save report helper must prefer modal-scoped text inputs before page-level inputs");
+  assert(executorSource.includes("ensureMetricFieldSelectedOrDefaultBeforeExecute"), "date-only preview helpers must add a default metric field before executing preview");
+  assert(executorSource.includes("preview_requires_at_least_one_metric_field"), "default metric fallback must be explicit in helper evidence");
+  assert(executorSource.includes("official:fieldPicker:retryAfterEmpty"), "official field picker must retry once after empty/stale options caused by source change");
+  assert(executorSource.includes("!isTemporaryDeleteReportName(explicitSourceReport)"), "temporary report delete flow must keep reportName separate from source report selection");
+  assert(executorSource.includes("browserSessionLease?.endpoint"), "helper executor must connect to the run browser-session lease endpoint instead of falling back to a default CDP port");
+  assert(codexRunnerSource.includes("ephemeralStart !== false"), "CodexRunner.start must default to ephemeral sessions to avoid rollout thread persistence failures");
+  assert(!/resume\(threadId[\s\S]*--ephemeral/.test(codexRunnerSource), "CodexRunner.resume must not use ephemeral sessions because resume requires persisted thread state");
 
   const l10 = byCase.get("BIUI_COLLAGE_R001-L-10");
   assert(l10, "L-10 contract must exist");
@@ -734,6 +745,14 @@ const main = async (): Promise<void> => {
       "B-05 preset label evidence accepted by result contract",
       "J-08 report rows recoverable from body text",
       "J-08 delete/cancel can target row-local aria-label delete icons",
+      "CodexRunner.start uses ephemeral sessions to avoid rollout thread persistence failures",
+      "report-list CSV fallback continues after stale selected control click failure",
+      "editor toolbar download is not misrouted through saved-report list CSV contract",
+      "save report helper prefers modal-scoped text inputs",
+      "date-only preview helpers add an explicit default metric field before execute",
+      "official field picker retries once after empty/stale source-change options",
+      "temporary delete flow separates reportName from source report selection",
+      "helper executor follows the browser-session lease endpoint",
       "J-10 projectCreateModal short-circuits on established project-limit precondition",
       "J-10 projectCreateModal short-circuits on post-click project-limit toast",
       "J-10 projectCreateModal never fills arbitrary non-text inputs",

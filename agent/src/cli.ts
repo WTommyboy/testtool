@@ -6,6 +6,7 @@ import { runDoctor } from "./doctor";
 import { installLaunchd, uninstallLaunchd } from "./launchd";
 import { handleTaskDispatch, handleToolResponse } from "./task-runner";
 import { closeChromeDebugSession, openUrlInDedicatedChrome } from "./browser-session";
+import { acquireAgentProcessLock } from "./process-lock";
 import type { AgentConfig, AgentMessage } from "./types";
 
 const rawArgs = process.argv.slice(2);
@@ -239,8 +240,25 @@ const main = async (): Promise<void> => {
   if (command === "start") {
     const config = readConfig(configPath);
     ensureAgentDirectories(config);
+    const releaseProcessLock = acquireAgentProcessLock(configPath);
     let stopping = false;
     let activeTask: { runId: string; cancel: (reason?: string) => void } | null = null;
+    const readRuntimeConfig = (): AgentConfig => {
+      const latestConfig = readConfig(configPath);
+      ensureAgentDirectories(latestConfig);
+      return latestConfig;
+    };
+    printJson({
+      event: "agent_start",
+      pid: process.pid,
+      configPath,
+      device_name: config.device_name,
+      server: config.server,
+      codex_model: codexModelLabel(config.codex_model),
+      codex_ignore_user_config: config.codex_ignore_user_config,
+      codex_service_tier: config.codex_service_tier,
+      codex_reasoning_effort: config.codex_reasoning_effort
+    });
     const noteActiveTaskConnectionLoss = (status: "closed" | "error", detail?: unknown): void => {
       if (!activeTask || stopping) return;
       printJson({
@@ -275,7 +293,13 @@ const main = async (): Promise<void> => {
             activeTask.cancel(reason);
             printJson({ event: "task_cancelled", runId: activeTask.runId, reason });
           } else {
-            void closeChromeDebugSession(config);
+            let cancelConfig = config;
+            try {
+              cancelConfig = readRuntimeConfig();
+            } catch {
+              // Keep cancellation best-effort even if the config file is temporarily unreadable.
+            }
+            void closeChromeDebugSession(cancelConfig);
             printJson({ event: "task_cancel_ignored", runId, reason, activeRunId: activeTask?.runId ?? null });
           }
           return;
@@ -288,7 +312,26 @@ const main = async (): Promise<void> => {
             });
             return;
           }
-          void handleTaskDispatch(connection, config, message, {
+          let taskConfig: AgentConfig;
+          try {
+            taskConfig = readRuntimeConfig();
+          } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            sendRejection(connection, "run.rejected", message, "agent_config_reload_failed", {
+              error: errorMessage
+            });
+            printJson({ event: "task_rejected", type: message.type, id: message.id, reason: "agent_config_reload_failed", error: errorMessage });
+            return;
+          }
+          printJson({
+            event: "task_config_loaded",
+            runId,
+            codex_model: codexModelLabel(taskConfig.codex_model),
+            codex_ignore_user_config: taskConfig.codex_ignore_user_config,
+            codex_service_tier: taskConfig.codex_service_tier,
+            codex_reasoning_effort: taskConfig.codex_reasoning_effort
+          });
+          void handleTaskDispatch(connection, taskConfig, message, {
             onCancelReady: (readyRunId, cancel) => {
               activeTask = { runId: readyRunId, cancel };
             },
@@ -313,7 +356,18 @@ const main = async (): Promise<void> => {
             });
             return;
           }
-          void handleBrowserOpenUrl(connection, config, message).catch((error) => {
+          let browserConfig: AgentConfig;
+          try {
+            browserConfig = readRuntimeConfig();
+          } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            sendRejection(connection, "task.rejected", message, "agent_config_reload_failed", {
+              error: errorMessage
+            });
+            printJson({ event: "browser_open_rejected", type: message.type, id: message.id, reason: "agent_config_reload_failed", error: errorMessage });
+            return;
+          }
+          void handleBrowserOpenUrl(connection, browserConfig, message).catch((error) => {
             printJson({
               event: "browser_open_error",
               type: message.type,
@@ -331,7 +385,18 @@ const main = async (): Promise<void> => {
             });
             return;
           }
-          void handleToolResponse(connection, config, message, {
+          let toolConfig: AgentConfig;
+          try {
+            toolConfig = readRuntimeConfig();
+          } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            sendRejection(connection, "run.rejected", message, "agent_config_reload_failed", {
+              error: errorMessage
+            });
+            printJson({ event: "tool_response_rejected", type: message.type, id: message.id, reason: "agent_config_reload_failed", error: errorMessage });
+            return;
+          }
+          void handleToolResponse(connection, toolConfig, message, {
             onCancelReady: (readyRunId, cancel) => {
               activeTask = { runId: readyRunId, cancel };
             },
@@ -368,6 +433,7 @@ const main = async (): Promise<void> => {
       }
       void closeChromeDebugSession(config);
       connection.close();
+      releaseProcessLock();
     };
     process.once("SIGINT", stop);
     process.once("SIGTERM", stop);
@@ -388,6 +454,7 @@ const main = async (): Promise<void> => {
         await sleep(delayMs);
       }
     }
+    releaseProcessLock();
     printJson({ event: "stopped" });
     return;
   }

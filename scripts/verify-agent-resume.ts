@@ -51,11 +51,12 @@ const main = async (): Promise<void> => {
 
     const args = JSON.parse(fs.readFileSync(argvPath, "utf8")) as string[];
     assert.deepEqual(args, [
+      "exec",
+      "--ignore-user-config",
       "-m",
       "gpt-5.3-codex",
       "-c",
       'model_reasoning_effort="low"',
-      "exec",
       "--json",
       "--sandbox",
       "workspace-write",
@@ -78,6 +79,7 @@ const main = async (): Promise<void> => {
     assert.equal(defaultModelResult.exitCode, 0);
     const defaultModelArgs = JSON.parse(fs.readFileSync(argvPath, "utf8")) as string[];
     assert.equal(defaultModelArgs.includes("-m"), false, "Empty codex_model should let Codex CLI use its default model");
+    assert.ok(defaultModelArgs.includes("--ephemeral"), "CodexRunner.start should use ephemeral sessions for isolated single-case runs");
 
     const unsupportedDoctor = await runDoctor(defaultAgentConfig({
       codex_bin: fakeCodexPath,
@@ -117,6 +119,7 @@ const main = async (): Promise<void> => {
     assert.equal(browserResult.exitCode, 0);
 
     const browserArgs = JSON.parse(fs.readFileSync(argvPath, "utf8")) as string[];
+    assert.ok(browserArgs.includes("--ephemeral"), "Browser-backed CodexRunner.start should avoid persistent rollout writes");
     assert.ok(
       browserArgs.includes('-c') && browserArgs.includes('mcp_servers.playwright.command="/tmp/fake-playwright-mcp"'),
       "CodexRunner should inject the Playwright MCP command, not only args"

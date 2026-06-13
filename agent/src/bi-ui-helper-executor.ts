@@ -4822,6 +4822,41 @@ const ensureMetricFieldSelectedBeforeExecute = async (page: Page, context: strin
   return evidence;
 };
 
+const ensureMetricFieldSelectedOrDefaultBeforeExecute = async (
+  options: CliOptions,
+  page: Page,
+  context: string
+): Promise<Record<string, unknown>> => {
+  const before = await selectedMetricFieldGuardEvidence(page);
+  if (Number(before.selectedCount ?? 0) > 0) return before;
+  if (!await isOfficialCollageEditorPage(page)) {
+    throw new HelperBlockedError(
+      `EXECUTE_PRECONDITION_NO_SELECTED_FIELDS:${context}; evidence=${JSON.stringify(before).slice(0, 1200)}`
+    );
+  }
+  const fallbackMetric = {
+    sourceReport: firstStringParam(options.params, ["sourceReport", "source"]) ?? "每日報表",
+    field: firstStringParam(options.params, ["field", "metric", "metricField"]) ?? "新增帳號數",
+    metricIndex: 0
+  };
+  const metricRowsEvidence = await setMetricRowsThroughOfficialUi(options, page, [fallbackMetric]);
+  const after = await selectedMetricFieldGuardEvidence(page);
+  if (Number(after.selectedCount ?? 0) <= 0) {
+    throw new HelperBlockedError(
+      `EXECUTE_PRECONDITION_NO_SELECTED_FIELDS:${context}; fallback=${JSON.stringify(fallbackMetric)}; before=${JSON.stringify(before).slice(0, 800)}; after=${JSON.stringify(after).slice(0, 800)}`
+    );
+  }
+  return {
+    ...after,
+    fallbackMetricSelection: {
+      reason: "preview_requires_at_least_one_metric_field",
+      requestedContext: context,
+      fallbackMetric,
+      metricRowsEvidence
+    }
+  };
+};
+
 const metricAddFieldPattern = /(?:\+\s*)?新增(?:欄位|指標|資料)|(?:欄位|指標).{0,6}(?:新增|選擇)|選擇(?:欄位|指標)|\+.*欄位/i;
 
 const metricFieldControlsVisible = async (page: Page): Promise<boolean> => {
@@ -5345,7 +5380,7 @@ const captureDateUiEvidenceReport = async (options: CliOptions, page: Page, star
 
 const runPreview = async (options: CliOptions, page: Page, startedAt: string): Promise<HelperReport> => {
   const uiProfileBefore = await captureUiDomProfile(options, page, "runPreview.before");
-  const executePrecondition = await ensureMetricFieldSelectedBeforeExecute(page, "runPreview");
+  const executePrecondition = await ensureMetricFieldSelectedOrDefaultBeforeExecute(options, page, "runPreview");
   const observed = await observeDuring(page, async () => {
     await helperStep(
       "preview.click_execute",
@@ -6121,7 +6156,7 @@ const runDateVariantsPreviewEvidence = async (options: CliOptions, page: Page, s
     let table: Record<string, unknown> | null = null;
     let executePrecondition: Record<string, unknown> | null = null;
     if (setResult.ok) {
-      executePrecondition = await ensureMetricFieldSelectedBeforeExecute(page, `dateVariant:${label}`);
+      executePrecondition = await ensureMetricFieldSelectedOrDefaultBeforeExecute(options, page, `dateVariant:${label}`);
       const previewObserved = await observeDuring(page, async () => {
         await clickRunPreviewButton(page, 15000);
         await page.waitForTimeout(2500);
@@ -7272,7 +7307,21 @@ const setSingleMetricRowThroughOfficialUi = async (
       if (selectedFieldOption) break;
     }
   }
-  const fieldPickerSignature = officialPickerSignature(fieldPickerItems);
+  let fieldPickerSignature = officialPickerSignature(fieldPickerItems);
+  if (fieldPickerItems.length === 0) {
+    await dismissOfficialPickerOverlay(page);
+    await page.waitForTimeout(500);
+    const rowsAfterStalePicker = await readOfficialCollageFieldRows(page);
+    const retryRow = officialRowByStablePosition(rowsAfterStalePicker, requestedRowIndex, beforeRow);
+    if (retryRow?.fieldButtonIndex !== null && retryRow?.fieldButtonIndex !== undefined) {
+      await clickVisibleButtonByIndex(page, retryRow.fieldButtonIndex, 8000);
+      operations.push(`official:fieldPicker:retryAfterEmpty:row${requestedRowIndex}`);
+      await page.waitForTimeout(1200);
+      fieldPickerItems = await readOfficialVisiblePickerItems(page, "field", sourceSelection.selectedSource);
+      fieldPickerSignature = officialPickerSignature(fieldPickerItems);
+      selectedFieldOption = fieldPickerItems.find((item) => officialFieldItemMatches(item, metric.field, sourceSelection.selectedSource ?? metric.sourceReport)) ?? null;
+    }
+  }
   if (fieldPickerItems.length === 0) {
     throw new HelperBlockedError(`FIELD_PICKER_STALE_AFTER_SOURCE_CHANGE:row=${requestedRowIndex}; source=${sourceSelection.selectedSource}; optionCount=0; search=${JSON.stringify(fieldPickerSearch).slice(0, 1200)}`);
   }
@@ -8297,6 +8346,7 @@ const clickReportListCsvDownload = async (
   const rowState = state ?? await readReportListRowState(page, reportName);
   if (!rowState.found) return { clicked: false, trigger: "report-list-row-not-found", rowState };
   const selectedControl = rowState.downloadControls[0];
+  let selectedControlClickError: string | null = null;
   if (typeof selectedControl?.bodyIndex === "number" && selectedControl.bodyIndex >= 0) {
     try {
       await clickVisibleBodyElementByIndex(page, selectedControl.bodyIndex, 8000);
@@ -8310,13 +8360,7 @@ const clickReportListCsvDownload = async (
           .filter({ hasText: /下載|CSV|匯出|⬇/i })
       ], 8000);
       if (fallbackClicked) return { clicked: true, trigger: "report-list-row-text-button", rowState, selectedControl };
-      return {
-        clicked: false,
-        trigger: "report-list-row-download-click-failed",
-        rowState,
-        selectedControl,
-        clickError: error instanceof Error ? error.message : String(error)
-      };
+      selectedControlClickError = error instanceof Error ? error.message : String(error);
     }
   }
 
@@ -8390,7 +8434,9 @@ const clickReportListCsvDownload = async (
     trigger: "report-list-row-download-not-found",
     candidates: [...rowActionCandidates, ...candidates],
     rowState,
-    ...(rowActionClickError ? { clickError: rowActionClickError } : {})
+    ...(rowActionClickError || selectedControlClickError
+      ? { clickError: [selectedControlClickError, rowActionClickError].filter(Boolean).join("; ") }
+      : {})
   };
 };
 
@@ -8584,8 +8630,11 @@ const downloadCsvAndComparePreview = async (options: CliOptions, page: Page, sta
   const downloadScope = stringParam(options.params, "downloadScope");
   const allowAnyReportListRowDownload = booleanishParam(options.params, ["allowAnyReportListRowDownload", "allowAnyReportRowDownload"]);
   const bodyTextBefore = typeof domStateBefore.bodyTextExcerpt === "string" ? domStateBefore.bodyTextExcerpt : "";
-  const wantsReportList = downloadScope === "report_list"
-    || Boolean(savedReportName && bodyTextBefore.includes(savedReportName) && !/報表設定|儲存報表|執行/.test(bodyTextBefore));
+  const editorPage = await isOfficialCollageEditorPage(page).catch(() => false);
+  const wantsReportList = !editorPage && (
+    downloadScope === "report_list" ||
+    Boolean(savedReportName && bodyTextBefore.includes(savedReportName) && !/報表設定|儲存報表|執行|計算/.test(bodyTextBefore))
+  );
   if (wantsReportList && !savedReportName && !allowAnyReportListRowDownload) throw new HelperBlockedError("SAVED_REPORT_NAME_MISSING_FOR_REPORT_LIST_CSV");
 
   let listRecovery: Awaited<ReturnType<typeof ensureSavedReportListRowVisible>> | null = null;
@@ -8785,17 +8834,44 @@ const approvalRequired = (options: CliOptions, action: string, startedAt: string
 };
 
 const fillVisibleReportNameInput = async (page: Page, reportName: string): Promise<Record<string, unknown>> => {
+  const modalState = await readVisibleModalState(page).catch(() => null);
+  const dialogs = Array.isArray(modalState?.dialogs) ? modalState.dialogs as Array<Record<string, unknown>> : [];
+  for (const dialog of dialogs) {
+    const dialogIndex = typeof dialog.dialogIndex === "number" ? dialog.dialogIndex : null;
+    const modalInputs = Array.isArray(dialog.inputs) ? dialog.inputs as Array<Record<string, unknown>> : [];
+    const fillableModalInputs = modalInputs.filter((item) =>
+      isTextLikeInputType(String(item.type ?? "")) &&
+      !Boolean(item.disabled) &&
+      !/專案|project/i.test(String(item.placeholder ?? ""))
+    );
+    const modalCandidate =
+      fillableModalInputs.find((item) => /報表|report|名稱|name/i.test(String(item.placeholder ?? ""))) ??
+      fillableModalInputs.find((item) => String(item.value ?? "").trim().length === 0) ??
+      fillableModalInputs.at(-1);
+    if (dialogIndex !== null && modalCandidate && typeof modalCandidate.inputIndex === "number") {
+      const locator = page.locator("[role='dialog'], .modal, .ant-modal, .MuiDialog-root, .swal2-popup").nth(dialogIndex).locator("input, textarea").nth(modalCandidate.inputIndex);
+      await locator.fill(reportName, { timeout: 8000 });
+      const observedValue = await locator.inputValue({ timeout: 3000 }).catch(() => null);
+      return {
+        selectedInput: { ...modalCandidate, dialogIndex, scope: "save-report-modal" },
+        observedValue,
+        verified: observedValue === reportName,
+        modalState
+      };
+    }
+  }
   const inputs = await visibleInputIndexes(page);
-  const candidates = inputs.filter((item) => item.type === "text" && !/專案|project/i.test(item.placeholder));
+  const candidates = inputs.filter((item) => isTextLikeInputType(item.type) && !/專案|project/i.test(item.placeholder));
   const preferred =
     candidates.find((item) => /報表|report|名稱|name/i.test(item.placeholder)) ??
     candidates.find((item) => item.value.trim().length === 0) ??
     candidates.at(-1);
   if (!preferred) {
-    throw new HelperBlockedError(`SAVE_REPORT_NAME_INPUT_NOT_FOUND inputs=${JSON.stringify(inputs).slice(0, 1000)}`);
+    throw new HelperBlockedError(`SAVE_REPORT_NAME_INPUT_NOT_FOUND modalState=${JSON.stringify(modalState).slice(0, 1200)}; inputs=${JSON.stringify(inputs).slice(0, 1000)}`);
   }
   await page.locator("input").nth(preferred.index).fill(reportName, { timeout: 8000 });
-  return { selectedInput: preferred, visibleInputs: inputs };
+  const observedValue = await page.locator("input").nth(preferred.index).inputValue({ timeout: 3000 }).catch(() => null);
+  return { selectedInput: preferred, observedValue, verified: observedValue === reportName, visibleInputs: inputs, modalState };
 };
 
 const clickExactVisibleButtonText = async (page: Page, labels: string[], timeout = 8000): Promise<boolean> => {
@@ -9995,11 +10071,17 @@ const createAndDeleteTemporaryReport = async (options: CliOptions, page: Page, s
   if (!options.approvedToolRequestId) return approvalRequired(options, "create then delete current-case temporary report", startedAt);
 
   const requestedFields = metricFieldsFromParams(options.params);
+  const explicitSourceReport = firstStringParam(options.params, ["sourceReport", "source"]);
+  const requestedSourceReport = explicitSourceReport && !isTemporaryDeleteReportName(explicitSourceReport)
+    ? explicitSourceReport
+    : "每日報表";
   const reportNameOptions: CliOptions = {
     ...options,
     params: {
       ...options.params,
       reportNamePattern: firstStringParam(options.params, ["reportName", "reportNamePattern", "name"]) ?? "OTTEST004_G03_temp_<timestamp>",
+      sourceReport: requestedSourceReport,
+      source: requestedSourceReport,
       field: firstStringParam(options.params, ["field", "metric", "metricField"]) ?? requestedFields[0] ?? "新增帳號數",
       fields: requestedFields.length > 0 ? requestedFields : ["新增帳號數"],
       dateRange: stringParam(options.params, "dateRange") ?? "2026/03/01~2026/03/31",
@@ -12262,14 +12344,17 @@ const run = async (): Promise<void> => {
   let runtimeEvidence: BrowserSessionRuntimeEvidence | null = null;
   let report: HelperReport;
   try {
+    const browserSessionLease = readBrowserSessionLease(options.runDir);
     const endpoint = await helperStep(
       "browser.ensure_cdp_session",
       "browser_connect",
-      () => ensureChromeDebugSession(config, null, {
-        resetTabs: false,
-        openInitialUrl: false
-      }),
-      { resetTabs: false, openInitialUrl: false }
+      () => browserSessionLease?.endpoint
+        ? Promise.resolve(browserSessionLease.endpoint)
+        : ensureChromeDebugSession(config, null, {
+          resetTabs: false,
+          openInitialUrl: false
+        }),
+      { resetTabs: false, openInitialUrl: false, leaseEndpoint: browserSessionLease?.endpoint ?? null }
     );
     if (!endpoint) {
       const diagnostics = await diagnoseChromeDebugSession(config);
