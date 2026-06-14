@@ -398,8 +398,13 @@ export const evaluateCapabilityGate = (
   const caseScope = inferCaseScope(currentCase, helperHints);
   const helperContractBlocker = missingActionTemplateBlocker(caseScope);
   const reportMutationFlow = caseScope.caseScopeContract?.routeIntent === "report_mutation_flow";
+  const previewExecutionFlow = caseScope.caseScopeContract?.routeIntent === "preview_execution";
+  const downloadExecutionFlow = caseScope.caseScopeContract?.routeIntent === "download_execution";
   const frontendObservationTemplate = inferFrontendObservationTemplate(currentCase);
   const scopeFrontendObservationPrelude =
+    caseScope.caseScopeContract && caseScope.caseScopeContract.routeIntent !== "frontend_observation"
+      ? { matched: false, needsEditor: false }
+      :
     caseScope.testIntent === "frontend_observation" &&
     !caseScope.previewRequired &&
     !caseScope.executionRequired &&
@@ -489,10 +494,24 @@ export const evaluateCapabilityGate = (
       ...(scopeFrontendObservationPrelude.needsEditor ? ["collage.createReport"] : []),
       ...(effectiveFrontendObservationTemplate ? [effectiveFrontendObservationTemplate] : [])
     );
+  } else if ((previewExecutionFlow || downloadExecutionFlow) && !helperContractBlocker) {
+    supportedHelperTemplates.push(
+      "collage.openProject",
+      "collage.createReport",
+      "collage.configureMetric",
+      "collage.runPreviewAndCollectEvidence"
+    );
+    if (datePreviewEvidenceAllowed) supportedHelperTemplates.push("collage.runDateVariantsPreviewEvidence");
+    if (downloadExecutionFlow) supportedHelperTemplates.push("collage.downloadCsvAndComparePreview");
   } else if (reportMutationFlow && !helperContractBlocker) {
     supportedHelperTemplates.push("collage.openProject");
     if (/M-06$/i.test(caseScope.caseScopeContract?.caseNo ?? "")) {
-      supportedHelperTemplates.push("collage.createReport", "collage.observeFrontendState");
+      supportedHelperTemplates.push(
+        "collage.createReport",
+        "collage.configureMetric",
+        "collage.runPreviewAndCollectEvidence",
+        "collage.observeFrontendState"
+      );
     } else if (/F-02$/i.test(caseScope.caseScopeContract?.caseNo ?? "") || /M-07$/i.test(caseScope.caseScopeContract?.caseNo ?? "")) {
       supportedHelperTemplates.push(
         "collage.createReport",

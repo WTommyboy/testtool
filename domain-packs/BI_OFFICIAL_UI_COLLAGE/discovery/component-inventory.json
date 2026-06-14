@@ -214,6 +214,34 @@
       ]
     },
     {
+      "id": "preview.table",
+      "page": "collageEditor",
+      "type": "table",
+      "purpose": "Preview result table shown after a valid collage calculation.",
+      "candidateSignals": [
+        "result table/grid after clicking 計算",
+        "selected metric header text in preview result area",
+        "numeric result cells under date columns"
+      ],
+      "assertAfterAction": [
+        "preview table headers and row state can be read after the current preview request completes"
+      ]
+    },
+    {
+      "id": "preview.pagination",
+      "page": "collageEditor",
+      "type": "paginationControl",
+      "purpose": "Pagination/page-size controls attached to the preview result table.",
+      "candidateSignals": [
+        "20筆/頁 near preview result table",
+        "current page control near preview table",
+        "total row count text near preview table"
+      ],
+      "assertAfterAction": [
+        "preview pagination state can be read after the current preview request completes"
+      ]
+    },
+    {
       "id": "editorToolbar.saveButton",
       "page": "collageEditor",
       "type": "button",

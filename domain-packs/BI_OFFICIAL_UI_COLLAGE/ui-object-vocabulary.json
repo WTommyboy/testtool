@@ -1571,6 +1571,74 @@
       ]
     },
     {
+      "id": "preview.table",
+      "page": "collageEditor",
+      "component": "preview.table",
+      "objectType": "table",
+      "purpose": "Preview result table shown after a valid collage calculation.",
+      "aliases": [
+        "preview table",
+        "預覽表格",
+        "計算結果表格",
+        "結果表格"
+      ],
+      "supportedActions": [
+        "read",
+        "assertVisible",
+        "assertValue",
+        "compare"
+      ],
+      "stateAttributes": [
+        "visible",
+        "headers",
+        "rowCount",
+        "bodyText"
+      ],
+      "evidenceObjects": [
+        "preview.result"
+      ],
+      "locatorHints": [
+        "table/grid region rendered after clicking 計算",
+        "result area containing selected metric headers and numeric cells"
+      ],
+      "hazards": [
+        "preview table is valid only after the current case's calculation request completes"
+      ]
+    },
+    {
+      "id": "preview.pagination",
+      "page": "collageEditor",
+      "component": "preview.pagination",
+      "objectType": "pagination",
+      "purpose": "Pagination or page-size controls attached to the preview result table.",
+      "aliases": [
+        "preview pagination",
+        "預覽分頁",
+        "結果分頁",
+        "20筆/頁"
+      ],
+      "supportedActions": [
+        "read",
+        "assertVisible",
+        "assertValue"
+      ],
+      "stateAttributes": [
+        "visible",
+        "pageSizeText",
+        "currentPage",
+        "totalText"
+      ],
+      "evidenceObjects": [
+        "preview.result"
+      ],
+      "locatorHints": [
+        "pagination/page-size controls near the preview result table"
+      ],
+      "hazards": [
+        "do not confuse project-list pagination with preview table pagination"
+      ]
+    },
+    {
       "id": "dateRange.button",
       "page": "collageEditor",
       "component": "dateRange.button",
@@ -2373,6 +2441,7 @@
       "supportedActions": [
         "click",
         "download",
+        "assertVisible",
         "assertDownload",
         "assertToast"
       ],

@@ -155,6 +155,35 @@ const main = (): void => {
     "download_execution contract must include download helper even when prose lacks 下載/CSV keywords"
   );
 
+  const explicitLiveActionExpectations: Record<string, string[]> = {
+    "BIUI_COLLAGE_R001-N-02": [
+      "collage.openProject",
+      "collage.createReport",
+      "collage.configureMetric",
+      "collage.runPreviewAndCollectEvidence",
+      "collage.downloadCsvAndComparePreview"
+    ],
+    "BIUI_COLLAGE_R001-N-06": [
+      "collage.openProject",
+      "collage.createReport",
+      "collage.configureMetric",
+      "collage.runPreviewAndCollectEvidence"
+    ],
+    "BIUI_COLLAGE_R001-N-07": [
+      "collage.openProject",
+      "collage.createReport",
+      "collage.configureMetric",
+      "collage.runPreviewAndCollectEvidence",
+      "collage.downloadCsvAndComparePreview"
+    ]
+  };
+  for (const [caseNo, expectedTemplates] of Object.entries(explicitLiveActionExpectations)) {
+    const contract = allContracts.find((item) => item.caseNo === caseNo);
+    assert(contract, `${caseNo} contract must exist`);
+    const plan = buildHelperExecutionPlan({ runDir: os.tmpdir(), currentCase: fixtureCase(contract), helperHints: null });
+    assert.deepEqual(plan.actions.map((item) => item.template), expectedTemplates, `${caseNo} structured route drift`);
+  }
+
   const multiSourceCase: CaseManifestCase = {
     order: 1,
     rowNumber: 2,

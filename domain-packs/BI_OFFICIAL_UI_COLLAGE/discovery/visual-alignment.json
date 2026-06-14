@@ -811,6 +811,30 @@
       ],
       "alignmentNotes": "Confirmed by Tommy screenshots on 2026-05-18. Runtime must match the row-indexed message pattern, not one fixed literal."
     },
+    "preview.table": {
+      "status": "notCaptured",
+      "sourceIds": [
+        "ui.vocabularyAlignment"
+      ],
+      "screenContext": "collageEditor / preview.table",
+      "visualCues": [
+        "preview result table",
+        "計算結果表格",
+        "selected metric headers and numeric cells after preview"
+      ]
+    },
+    "preview.pagination": {
+      "status": "notCaptured",
+      "sourceIds": [
+        "ui.vocabularyAlignment"
+      ],
+      "screenContext": "collageEditor / preview.pagination",
+      "visualCues": [
+        "preview result pagination",
+        "preview page-size control",
+        "20筆/頁 near preview result table"
+      ]
+    },
     "editorToolbar.downloadButton": {
       "status": "confirmed",
       "sourceIds": [
@@ -1835,6 +1859,14 @@
     },
     {
       "objectId": "projectList.table",
+      "reason": "Vocabulary coverage added from testcase terminology; requires future visual confirmation in live UI discovery pass."
+    },
+    {
+      "objectId": "preview.table",
+      "reason": "Vocabulary coverage added from testcase terminology; requires future visual confirmation in live UI discovery pass."
+    },
+    {
+      "objectId": "preview.pagination",
       "reason": "Vocabulary coverage added from testcase terminology; requires future visual confirmation in live UI discovery pass."
     },
     {

@@ -1174,7 +1174,7 @@ const buildActions = (currentCase: CaseManifestCase | null, helperHints: HelperH
   }
   const frontendObservationPrelude = isFrontendObservationPreludeCase(currentCase, helperHints);
   const scopeFrontendObservationPrelude =
-    caseScopeContract?.routeIntent === "preview_execution"
+    caseScopeContract && caseScopeContract.routeIntent !== "frontend_observation"
       ? { matched: false, needsEditor: false }
       :
     caseScope.testIntent === "frontend_observation" &&
@@ -1328,7 +1328,15 @@ const buildActions = (currentCase: CaseManifestCase | null, helperHints: HelperH
         action("H2", "collage.createReport", "進入新增報表頁", structuredParams, {
           requiredEvidence: ["dom.url", "dom.pageTitle", "dom.state", "screenshot"]
         }),
-        action("H3", "collage.observeFrontendState", "收集儲存 modal 取消 evidence", observeParams, {
+        action("H3", "collage.configureMetric", "建立有效 preview 前置設定", structuredParams, {
+          requiredEvidence: ["dom.state", "state.delta", "date.uiState", "date.representedRange", "screenshot"],
+          notes: ["M-06 驗證儲存 modal 取消流程；開 modal 前必須先讓儲存按鈕進入可點狀態。"]
+        }),
+        action("H4", "collage.runPreviewAndCollectEvidence", "執行 preview 讓儲存流程可用", structuredParams, {
+          requiredEvidence: ["network.requestBody", "network.responseBody", "chart.datasets", "dom.previewState", "screenshot"],
+          screenshotPolicy: "required_if_possible"
+        }),
+        action("H5", "collage.observeFrontendState", "收集儲存 modal 取消 evidence", observeParams, {
           mutatesUi: true,
           requiredEvidence: structuredEvidenceList(caseScopeContract),
           screenshotPolicy: "required_if_possible",

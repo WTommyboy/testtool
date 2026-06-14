@@ -637,8 +637,6 @@ const structuredDatePreviewSpecFromText = (
   if (tokens.length < 2) return null;
   const [start, end] = tokens;
   if (!start || !end) return null;
-  const hasRelativeEndpoint = start.type === "relative" || end.type === "relative";
-  if (!hasRelativeEndpoint) return null;
   return {
     requestedLabel,
     mode: "structured",
@@ -748,6 +746,24 @@ export const readDateUiEvidence = async (page: Page, requested: string | null, p
         const element = document.querySelector(selector);
         return element && element.innerText ? element.innerText.trim() : null;
       };
+      const visible = (element) => {
+        if (!element) return false;
+        const rect = element.getBoundingClientRect();
+        const style = window.getComputedStyle(element);
+        return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden";
+      };
+      const normalize = (value) => (value || "").replace(/\\s+/g, " ").trim();
+      const looksLikeDateControlText = (value) =>
+        /(?:上週|本週|上月|本月|昨日|昨天|今日|今天|過去\\s*\\d+\\s*天|最近\\s*\\d+\\s*天|\\d{1,3}\\s*天\\s*前|\\d{4}[/-]\\d{1,2}[/-]\\d{1,2})/.test(value);
+      const fallbackDateButtonText = () => {
+        const controls = [...document.querySelectorAll("button,[role='button']")];
+        for (const element of controls) {
+          if (!visible(element)) continue;
+          const value = normalize(element.innerText || element.textContent || "");
+          if (value && looksLikeDateControlText(value)) return value;
+        }
+        return null;
+      };
       const popup = document.querySelector("#datePickerPopup");
       const popupVisible = popup
         ? (() => {
@@ -757,7 +773,7 @@ export const readDateUiEvidence = async (page: Page, requested: string | null, p
           })()
         : null;
       return {
-        dateRangeButtonText: text("#dateRangeBtn"),
+        dateRangeButtonText: text("#dateRangeBtn") || fallbackDateButtonText(),
         dateRangeDisplayText: text("#dateRangeDisplay"),
         popupVisible,
         popupText: popup && popup.innerText ? popup.innerText.trim() : null,

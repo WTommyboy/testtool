@@ -1911,6 +1911,74 @@
       }
     },
     {
+      "caseNo": "BIUI_COLLAGE_R001-N-02",
+      "routeIntent": "download_execution",
+      "testTarget": "frontend_presentation",
+      "requiresEditor": true,
+      "observationType": "downloadToast",
+      "requiredActions": [
+        {
+          "actionId": "executeValidPreview",
+          "action": "execute",
+          "target": "preview.calculateButton",
+          "role": "precondition",
+          "expectedOutcome": "request_sent",
+          "requiredForPass": true,
+          "evidenceRequirements": [
+            "network.requestBody",
+            "chart.datasets"
+          ]
+        },
+        {
+          "actionId": "assertEditorDownloadControlVisible",
+          "action": "assertVisible",
+          "target": "editorToolbar.downloadButton",
+          "role": "under_test",
+          "expectedOutcome": "visible",
+          "requiredForPass": true,
+          "evidenceRequirements": [
+            "download.toast.state",
+            "interactionLog",
+            "screenshot"
+          ]
+        },
+        {
+          "actionId": "clickEditorDownload",
+          "action": "download",
+          "target": "editorToolbar.downloadButton",
+          "role": "verification",
+          "expectedOutcome": "download_started",
+          "requiredForPass": true,
+          "evidenceRequirements": [
+            "downloadArtifact",
+            "download.toast.state",
+            "screenshot"
+          ]
+        }
+      ],
+      "evidenceRequirements": {
+        "outcome": [
+          "network.requestBody",
+          "chart.datasets"
+        ],
+        "artifact": [
+          "downloadArtifact"
+        ],
+        "observation": [
+          "download.toast.state",
+          "screenshot"
+        ]
+      },
+      "judgmentPolicy": {
+        "failWhen": [
+          "valid preview completes but editor download remains disabled or cannot start a download"
+        ],
+        "blockedWhen": [
+          "valid preview precondition cannot be established"
+        ]
+      }
+    },
+    {
       "caseNo": "BIUI_COLLAGE_R001-N-03",
       "routeIntent": "download_execution",
       "testTarget": "frontend_backend_integration",
@@ -1975,6 +2043,153 @@
         ],
         "blockedWhen": [
           "valid preview precondition cannot be established"
+        ]
+      }
+    },
+    {
+      "caseNo": "BIUI_COLLAGE_R001-N-06",
+      "routeIntent": "preview_execution",
+      "testTarget": "frontend_presentation",
+      "requiresEditor": true,
+      "observationType": null,
+      "requiredActions": [
+        {
+          "actionId": "configureMetricForPreviewTable",
+          "action": "select",
+          "target": "metricRows.fieldControl",
+          "role": "precondition",
+          "expectedOutcome": "selected",
+          "requiredForPass": true,
+          "evidenceRequirements": [
+            "metricRows.state",
+            "interactionLog"
+          ]
+        },
+        {
+          "actionId": "executePreview",
+          "action": "execute",
+          "target": "preview.calculateButton",
+          "role": "under_test",
+          "expectedOutcome": "request_sent",
+          "requiredForPass": true,
+          "evidenceRequirements": [
+            "network.requestBody",
+            "network.responseBody",
+            "chart.datasets",
+            "screenshot"
+          ]
+        },
+        {
+          "actionId": "assertPreviewTableVisible",
+          "action": "assertVisible",
+          "target": "preview.table",
+          "role": "verification",
+          "expectedOutcome": "visible",
+          "requiredForPass": true,
+          "evidenceRequirements": [
+            "dom.previewState",
+            "screenshot"
+          ]
+        },
+        {
+          "actionId": "assertPreviewPaginationVisible",
+          "action": "assertVisible",
+          "target": "preview.pagination",
+          "role": "verification",
+          "expectedOutcome": "visible",
+          "requiredForPass": true,
+          "evidenceRequirements": [
+            "dom.previewState",
+            "screenshot"
+          ]
+        }
+      ],
+      "evidenceRequirements": {
+        "outcome": [
+          "network.requestBody",
+          "network.responseBody",
+          "chart.datasets"
+        ],
+        "observation": [
+          "dom.previewState",
+          "screenshot"
+        ]
+      },
+      "judgmentPolicy": {
+        "failWhen": [
+          "valid preview request succeeds but preview table or pagination state is absent"
+        ],
+        "blockedWhen": [
+          "editor, metric controls, or preview request cannot be reached"
+        ]
+      }
+    },
+    {
+      "caseNo": "BIUI_COLLAGE_R001-N-07",
+      "routeIntent": "download_execution",
+      "testTarget": "frontend_backend_integration",
+      "requiresEditor": true,
+      "observationType": "downloadToast",
+      "requiredActions": [
+        {
+          "actionId": "executeValidPreview",
+          "action": "execute",
+          "target": "preview.calculateButton",
+          "role": "precondition",
+          "expectedOutcome": "request_sent",
+          "requiredForPass": true,
+          "evidenceRequirements": [
+            "network.requestBody",
+            "chart.datasets",
+            "dom.previewState"
+          ]
+        },
+        {
+          "actionId": "clickEditorDownload",
+          "action": "download",
+          "target": "editorToolbar.downloadButton",
+          "role": "under_test",
+          "expectedOutcome": "download_started",
+          "requiredForPass": true,
+          "evidenceRequirements": [
+            "downloadArtifact",
+            "download.toast.state",
+            "screenshot"
+          ]
+        },
+        {
+          "actionId": "assertCsvHeaderMatchesPreview",
+          "action": "compare",
+          "target": "preview.table",
+          "role": "verification",
+          "expectedOutcome": "value_matches",
+          "requiredForPass": true,
+          "evidenceRequirements": [
+            "downloadArtifact",
+            "dom.previewState"
+          ]
+        }
+      ],
+      "evidenceRequirements": {
+        "outcome": [
+          "network.requestBody",
+          "chart.datasets",
+          "dom.previewState"
+        ],
+        "artifact": [
+          "downloadArtifact"
+        ],
+        "observation": [
+          "download.toast.state",
+          "screenshot"
+        ]
+      },
+      "judgmentPolicy": {
+        "failWhen": [
+          "download starts but CSV headers/content contradict the preview state"
+        ],
+        "blockedWhen": [
+          "valid preview precondition or download artifact cannot be established"
         ]
       }
     }

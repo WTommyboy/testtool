@@ -41,6 +41,20 @@ const main = async (): Promise<void> => {
     assert.equal(sundayEvidence.requestedRange?.startIso, "2026-04-26");
     assert.equal(sundayEvidence.requestedRange?.endIso, "2026-05-02");
 
+    await page.setContent(`
+      <!doctype html>
+      <html>
+        <body>
+          <button class="plain-date-button">本週</button>
+          <main>自訂報表 計算 本週 新增帳號數</main>
+        </body>
+      </html>
+    `);
+    const fallbackEvidence = await readDateUiEvidence(page, "本週", { baseDate: "2026-05-05" });
+    assert.equal(fallbackEvidence.observed.dateRangeButtonText, "本週");
+    assert.equal(fallbackEvidence.checks.requestedLabelVisible, true);
+    assert.equal(fallbackEvidence.warnings.includes("DATE_UI_CONTROL_TEXT_NOT_FOUND"), false);
+
     console.log(
       JSON.stringify(
         {
@@ -52,7 +66,8 @@ const main = async (): Promise<void> => {
             "#datePickerPopup visibility/text read",
             "shortcut label normalization from selector-captured DOM",
             "Monday-week represented range computed from baseDate by default",
-            "Sunday-week represented range override from params"
+            "Sunday-week represented range override from params",
+            "date control fallback reads visible date-like button without #dateRangeBtn"
           ]
         },
         null,

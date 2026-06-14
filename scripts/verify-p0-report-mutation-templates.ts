@@ -67,6 +67,30 @@ const fixtureCase = (contract: StructuredCaseScopeContract): CaseManifestCase =>
 const templatesFor = (contract: StructuredCaseScopeContract): string[] =>
   buildHelperExecutionPlan({ runDir: os.tmpdir(), currentCase: fixtureCase(contract), helperHints: null }).actions.map((item) => item.template);
 
+const templatesForManualAiHints = (contract: StructuredCaseScopeContract): string[] =>
+  buildHelperExecutionPlan({
+    runDir: os.tmpdir(),
+    currentCase: fixtureCase(contract),
+    helperHints: {
+      caseId: contract.caseNo,
+      automationLevel: "manual_ai",
+      operationTemplate: "manual_ai",
+      params: {
+        cleanupChecklist: "欄位=不影響;篩選=不影響;分組=不影響;時間=不影響;顯示=不影響",
+        skipSave: true,
+        skipDownload: false,
+        openExistingReport: false
+      },
+      requiredEvidence: [],
+      forbiddenAutomation: [],
+      aiDecisionRequired: true,
+      raw: {},
+      sourcePath: "fixture",
+      sourceRelativePath: null,
+      warnings: []
+    }
+  }).actions.map((item) => item.template);
+
 const main = (): void => {
   const byCase = new Map(contracts().map((item) => [item.caseNo, item]));
   const cases = ["BIUI_COLLAGE_R001-M-06", "BIUI_COLLAGE_R001-M-09", "BIUI_COLLAGE_R001-M-10", "BIUI_COLLAGE_R001-M-11"];
@@ -84,7 +108,13 @@ const main = (): void => {
   }
 
   const expectedTemplates: Record<string, string[]> = {
-    "BIUI_COLLAGE_R001-M-06": ["collage.openProject", "collage.createReport", "collage.observeFrontendState"],
+    "BIUI_COLLAGE_R001-M-06": [
+      "collage.openProject",
+      "collage.createReport",
+      "collage.configureMetric",
+      "collage.runPreviewAndCollectEvidence",
+      "collage.observeFrontendState"
+    ],
     "BIUI_COLLAGE_R001-M-09": ["collage.openProject", "collage.openReportFromProjectList", "collage.observeFrontendState"],
     "BIUI_COLLAGE_R001-M-10": ["collage.openProject", "collage.openReportFromProjectList", "collage.copyReportAndVerify"],
     "BIUI_COLLAGE_R001-M-11": ["collage.openProject", "collage.openReportFromProjectList", "collage.updateExistingReportAndReopen"]
@@ -102,6 +132,8 @@ const main = (): void => {
     }
     const templates = templatesFor(contract);
     assert.deepEqual(templates, expectedTemplates[contract.caseNo], `${contract.caseNo} template route drift`);
+    const hintedTemplates = templatesForManualAiHints(contract);
+    assert.deepEqual(hintedTemplates, expectedTemplates[contract.caseNo], `${contract.caseNo} manual_ai hint route drift`);
     const plan = buildHelperExecutionPlan({ runDir: os.tmpdir(), currentCase, helperHints: null });
     const terminalAction = plan.actions.at(-1);
     assert(terminalAction, `${contract.caseNo} plan has no terminal action`);

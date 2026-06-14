@@ -485,6 +485,10 @@ const main = async (): Promise<void> => {
   assert.equal(b08HybridSpec?.mode, "structured", "B-08 hybrid date label must become structured endpoint evidence, not a missing preset");
   assert.deepEqual(b08HybridSpec?.start, { type: "static", date: "2026-03-25" });
   assert.deepEqual(b08HybridSpec?.end, { type: "relative", offsetDays: -1 });
+  const eStaticRangeSpec = helperHooks.structuredDatePreviewSpecFromText("2026/03/01~2026/03/31");
+  assert.equal(eStaticRangeSpec?.mode, "structured", "static YYYY/MM/DD~YYYY/MM/DD range must use structured endpoint setting, not legacy text input fallback");
+  assert.deepEqual(eStaticRangeSpec?.start, { type: "static", date: "2026-03-01" });
+  assert.deepEqual(eStaticRangeSpec?.end, { type: "static", date: "2026-03-31" });
   const b08 = byCase.get("BIUI_COLLAGE_R001-B-08");
   assert(b08, "B-08 contract must exist");
   const b08Plan = buildHelperExecutionPlan({
