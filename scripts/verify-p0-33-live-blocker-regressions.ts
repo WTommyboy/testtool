@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import ExcelJS from "exceljs";
 import type { CaseManifestCase } from "../agent/src/case-manifest";
+import { __metricFieldIdentityTestHooks as helperHooks } from "../agent/src/bi-ui-helper-executor";
 import { buildDateUiEvidence } from "../agent/src/date-ui-evidence";
 import { buildHelperExecutionPlan } from "../agent/src/helper-execution-plan";
 import { ensureBlockedResultCurrentRunEvidence } from "../agent/src/result-evidence-enricher";
@@ -478,6 +479,78 @@ const main = async (): Promise<void> => {
   });
   assert.equal(b07DynamicLabelEvidence.checks.requestedLabelVisible, true, "B-07 dynamic range label must accept Galaxy > separator");
   assert(resultContractSource.includes("requestedRange?.basis === \"preset\" && checks?.requestedLabelVisible === true"), "result contract must accept visible preset label as date UI match");
+  assert(executorSource.includes("dateRange.staticCalendarFallbackPopupOpened"), "static date input verification failure must reopen the date panel for calendar fallback");
+  assert(executorSource.includes("inputAttemptFailed"), "static date fallback evidence must preserve that the input attempt failed before calendar fallback");
+  const b08HybridSpec = helperHooks.structuredDatePreviewSpecFromText("2026/03/25 > 1 天前");
+  assert.equal(b08HybridSpec?.mode, "structured", "B-08 hybrid date label must become structured endpoint evidence, not a missing preset");
+  assert.deepEqual(b08HybridSpec?.start, { type: "static", date: "2026-03-25" });
+  assert.deepEqual(b08HybridSpec?.end, { type: "relative", offsetDays: -1 });
+  const b08 = byCase.get("BIUI_COLLAGE_R001-B-08");
+  assert(b08, "B-08 contract must exist");
+  const b08Plan = buildHelperExecutionPlan({
+    runDir: os.tmpdir(),
+    currentCase: fixtureCase(b08),
+    helperHints: {
+      caseId: "BIUI_COLLAGE_R001-B-08",
+      automationLevel: "manual_ai",
+      operationTemplate: "manual_ai",
+      params: {
+        sourceReport: "每日報表",
+        field: "新增帳號數",
+        dateRange: "2026/03/25 > 1 天前",
+        display: "每天",
+        skipSave: true,
+        skipDownload: true
+      },
+      requiredEvidence: [],
+      forbiddenAutomation: [],
+      aiDecisionRequired: true,
+      raw: {},
+      sourcePath: "fixture",
+      sourceRelativePath: null,
+      warnings: []
+    }
+  });
+  assert(
+    b08Plan.actions.some((item) => item.template === "collage.runDateVariantsPreviewEvidence"),
+    `B-08 preview_execution must route through date preview evidence helper for hybrid date ranges; actual=${JSON.stringify(b08Plan.actions.map((item) => item.template))}`
+  );
+  assert(executorSource.includes("project-toolbar-batch-download-control"), "project toolbar batch download helper must click the toolbar download control, not a row-local download icon");
+  assert(executorSource.includes("selectProjectListRowsForToolbarBatch"), "project toolbar batch download helper must first select visible report-list rows");
+  const n05ToolbarBatchCase: CaseManifestCase = {
+    order: 1,
+    rowNumber: 2,
+    groupId: "N",
+    groupName: "P0.33 project toolbar batch fixture",
+    caseNo: "BIUI_COLLAGE_R001-N-05",
+    caseTitle: "專案頁多列勾選後右上批次下載",
+    testType: "功能流程",
+    executionMethod: "agent",
+    riskLevel: "🟢 觀察",
+    testTarget: "功能流程",
+    cleanupChecklist: "欄位=不影響;篩選=不影響;分組=不影響;時間=不影響;顯示=不影響",
+    preconditions: "起始頁面: BI official UI；已進入拼貼報表專案頁。",
+    stepsSummary: "在專案頁多列勾選後，點右上 toolbar 下載。",
+    expected: "應從專案頁 toolbar 觸發批次下載，不應改點任一報表 row 的列內下載 icon。",
+    resultStatus: null,
+    testDate: null,
+    detailJson: null,
+    validationMethod: "P0.33 live blocker regression smoke",
+    currentCaseFile: path.join(os.tmpdir(), "BIUI_COLLAGE_R001-N-05.json")
+  };
+  const n05Plan = buildHelperExecutionPlan({
+    runDir: os.tmpdir(),
+    currentCase: n05ToolbarBatchCase,
+    helperHints: null
+  });
+  assert.deepEqual(
+    n05Plan.actions.map((item) => item.template),
+    ["collage.openProject", "collage.downloadCsvAndComparePreview"],
+    `N-05 toolbar batch download must stay on project page and use downloadCsv helper; actual=${JSON.stringify(n05Plan.actions.map((item) => item.template))}`
+  );
+  const n05DownloadAction = n05Plan.actions.find((item) => item.template === "collage.downloadCsvAndComparePreview");
+  assert.equal(n05DownloadAction?.params.downloadScope, "project_toolbar_batch", "N-05 route must request project_toolbar_batch scope");
+  assert.equal(n05DownloadAction?.params.projectToolbarSelectionCount, 2, "N-05 route must default to selecting two rows for a batch download");
 
   const bodyText = [
     "報表名稱",

@@ -609,6 +609,47 @@ const dateEndpointSpecFromValue = (value: unknown): DateEndpointSpec | null => {
 const labelForDateEndpointSpec = (spec: DateEndpointSpec): string =>
   spec.type === "static" ? spec.date.replaceAll("-", "/") : formatOffsetLabel(spec.offsetDays);
 
+const dateEndpointSpecFromTextToken = (value: string): DateEndpointSpec | null => {
+  const token = value.trim();
+  if (!token) return null;
+  if (/^\d{4}[/-]\d{1,2}[/-]\d{1,2}$/.test(token)) {
+    return { type: "static", date: normalizeIsoDateString(token) };
+  }
+  if (/^(?:今天|今日)$/.test(token)) return { type: "relative", offsetDays: 0 };
+  if (/^(?:昨日|昨天)$/.test(token)) return { type: "relative", offsetDays: -1 };
+  if (/^(?:明日|明天)$/.test(token)) return { type: "relative", offsetDays: 1 };
+  const relative = token.match(/^(\d+)\s*天\s*(前|後)$/);
+  if (!relative) return null;
+  const days = Number(relative[1]);
+  if (!Number.isFinite(days)) return null;
+  return { type: "relative", offsetDays: relative[2] === "前" ? -days : days };
+};
+
+const structuredDatePreviewSpecFromText = (
+  value: string | null | undefined,
+  options: { expectedRowCount?: number | null; expectedDateRange?: string | null; expectUiBlock?: boolean } = {}
+): DatePreviewSpec | null => {
+  const requestedLabel = (value ?? "").trim();
+  if (!requestedLabel) return null;
+  const tokens = [...requestedLabel.matchAll(/\d{4}[/-]\d{1,2}[/-]\d{1,2}|(?:\d+\s*天\s*(?:前|後))|今天|今日|昨日|昨天|明日|明天/g)]
+    .map((match) => dateEndpointSpecFromTextToken(match[0]))
+    .filter((item): item is DateEndpointSpec => Boolean(item));
+  if (tokens.length < 2) return null;
+  const [start, end] = tokens;
+  if (!start || !end) return null;
+  const hasRelativeEndpoint = start.type === "relative" || end.type === "relative";
+  if (!hasRelativeEndpoint) return null;
+  return {
+    requestedLabel,
+    mode: "structured",
+    start,
+    end,
+    expectedRowCount: options.expectedRowCount ?? undefined,
+    expectedDateRange: options.expectedDateRange ?? `${labelForDateEndpointSpec(start)} > ${labelForDateEndpointSpec(end)}`,
+    expectUiBlock: options.expectUiBlock
+  };
+};
+
 const structuredDatePreviewSpecFromParams = (params: Record<string, unknown>): DatePreviewSpec | null => {
   const dateMode = String(params.dateMode ?? "").trim().toLowerCase();
   if (dateMode === "relative") {
@@ -650,6 +691,8 @@ const datePreviewSpecFromRecord = (record: Record<string, unknown>, fallbackInde
   const expectedRowCount = numberParam(record, ["expectedRowCount", "rowCount"]);
   const expectedDateRange = firstStringParam(record, ["expectedDateRange", "dateRange"]);
   const expectUiBlock = booleanishParam(record, ["expectUiBlock", "uiBlock", "expectBlocked", "expectError"]);
+  const structuredFromLabel = structuredDatePreviewSpecFromText(label, { expectedRowCount, expectedDateRange, expectUiBlock });
+  if (structuredFromLabel) return structuredFromLabel;
 
   if (type === "preset" || (!record.start && !record.end && label)) {
     return {
@@ -689,9 +732,12 @@ const datePreviewSpecsFromParams = (params: Record<string, unknown>): DatePrevie
   if (variants.length > 0) return variants.map((requestedLabel) => ({ requestedLabel, mode: "preset_or_static_label" as const }));
   const structured = structuredDatePreviewSpecFromParams(params);
   if (structured) return [structured];
+  const directDateText = nonNeutralUiTarget(firstStringParam(params, ["dateRange", "timeRange", "datePreset"]));
+  const structuredFromText = structuredDatePreviewSpecFromText(directDateText);
+  if (structuredFromText) return [structuredFromText];
   const staticRange = structuredStaticDateRangeParam(params);
   if (staticRange) return [{ requestedLabel: staticRange, mode: "preset_or_static_label" }];
-  const direct = nonNeutralUiTarget(firstStringParam(params, ["dateRange", "timeRange", "datePreset"]));
+  const direct = directDateText;
   return direct ? [{ requestedLabel: direct, mode: "preset_or_static_label" }] : [];
 };
 
@@ -2315,6 +2361,10 @@ type DateRangeUiResult = {
   inputs?: unknown;
   uiProfiles?: UiDomProfileRef[];
   interactionLog?: Record<string, unknown>;
+  mode?: string;
+  requestedLabel?: string;
+  expectedDateRange?: string;
+  dateSpec?: Record<string, unknown>;
 };
 
 const staticDateRangeInteractionLog = (
@@ -2572,6 +2622,22 @@ const setStructuredDateRange = async (
 
 const setDateRange = async (options: CliOptions, page: Page, dateRange: string): Promise<DateRangeUiResult> => {
   const uiProfiles: UiDomProfileRef[] = [];
+  const structured = structuredDatePreviewSpecFromText(dateRange);
+  if (structured) {
+    const result = await setStructuredDateRange(options, page, structured);
+    const { uiProfiles: structuredProfiles, ...structuredEvidence } = result;
+    return {
+      ...structuredEvidence,
+      mode: "structured_from_label",
+      requestedLabel: structured.requestedLabel,
+      expectedDateRange: structured.expectedDateRange,
+      dateSpec: {
+        start: structured.start ?? null,
+        end: structured.end ?? null
+      },
+      uiProfiles: structuredProfiles
+    };
+  }
   const parsed = parseDateRange(dateRange);
   if (!parsed) return setDatePreset(options, page, dateRange);
 
@@ -2647,6 +2713,38 @@ const setDateRange = async (options: CliOptions, page: Page, dateRange: string):
   await page.waitForTimeout(800);
 
   const ok = await bodyContainsDateRange(page, parsed.display);
+  if (!ok) {
+    const reopened = await openDatePicker(options, page, "dateRange.staticCalendarFallbackPopupOpened");
+    const fallbackProfiles = [...uiProfiles, ...(reopened.uiProfiles ?? [])];
+    if (reopened.ok) {
+      const calendarResult = await setStaticDateRangeByCalendar(options, page, parsed);
+      const combinedProfiles = [...fallbackProfiles, ...(calendarResult.uiProfiles ?? [])];
+      if (calendarResult.ok) {
+        return {
+          ...calendarResult,
+          inputs,
+          uiProfiles: combinedProfiles,
+          interactionLog: staticDateRangeInteractionLog("succeeded", {
+            ...staticTabEvidence,
+            inputAttemptFailed: true,
+            calendarFallback: true
+          }, staticTabOutcome)
+        };
+      }
+      return {
+        ...calendarResult,
+        inputs,
+        uiProfiles: combinedProfiles,
+        warning: `${calendarResult.warning ?? "DATE_RANGE_CALENDAR_FAILED"};DATE_RANGE_VERIFY_FAILED_AFTER_UI_INPUT`,
+        interactionLog: staticDateRangeInteractionLog("wrong_state_change", {
+          ...staticTabEvidence,
+          inputAttemptFailed: true,
+          calendarFallback: true,
+          calendarWarning: calendarResult.warning ?? null
+        }, staticTabOutcome)
+      };
+    }
+  }
   return {
     ok,
     warning: ok ? undefined : "DATE_RANGE_VERIFY_FAILED_AFTER_UI_INPUT",
@@ -6724,7 +6822,8 @@ export const __metricFieldIdentityTestHooks = {
   metricRowsFromParams,
   metricRowsFromBaseFieldsParams,
   officialMetricRowHasSelectedField,
-  officialMetricRowFieldMatches
+  officialMetricRowFieldMatches,
+  structuredDatePreviewSpecFromText
 };
 
 const clickMetricFieldPickerDomTarget = async (
@@ -8440,6 +8539,246 @@ const clickReportListCsvDownload = async (
   };
 };
 
+type ProjectToolbarSelectionEvidence = {
+  requestedCount: number;
+  selectedCount: number;
+  candidates: Array<Record<string, unknown>>;
+  selected: Array<Record<string, unknown>>;
+  clickErrors: string[];
+};
+
+const projectListCheckboxCandidates = async (page: Page): Promise<Array<Record<string, unknown>>> =>
+  page.evaluate(() => {
+    const normalize = (value: string | null | undefined) => (value ?? "").trim().replace(/\s+/g, " ");
+    const isVisible = (element: Element): boolean => {
+      const rect = element.getBoundingClientRect();
+      const style = window.getComputedStyle(element);
+      return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden" && style.opacity !== "0";
+    };
+    const isDisabled = (element: HTMLElement): boolean => {
+      const style = window.getComputedStyle(element);
+      return (element instanceof HTMLInputElement && element.disabled) ||
+        element.getAttribute("aria-disabled") === "true" ||
+        style.pointerEvents === "none";
+    };
+    const checkedState = (element: HTMLElement): boolean => {
+      if (element instanceof HTMLInputElement && element.type === "checkbox") return element.checked;
+      return element.getAttribute("aria-checked") === "true" || /\bchecked\b/i.test(String(element.className ?? ""));
+    };
+    const rectFor = (element: Element) => {
+      const rect = element.getBoundingClientRect();
+      return {
+        x: Math.round(rect.x),
+        y: Math.round(rect.y),
+        width: Math.round(rect.width),
+        height: Math.round(rect.height)
+      };
+    };
+    const allBodyElements = Array.from(document.querySelectorAll<HTMLElement>("body *"));
+    const seen = new Set<number>();
+    const checkboxSelector = [
+      "input[type='checkbox']",
+      "[role='checkbox']",
+      ".ant-checkbox",
+      ".ant-checkbox-input",
+      "[class*='checkbox']",
+      "[class*='Checkbox']"
+    ].join(", ");
+    const datePattern = /\d{4}[/-]\d{1,2}[/-]\d{1,2}|過去\s*\d+\s*天|最近\s*\d+\s*天|昨日|今日|上週|本週|上月|本月/;
+    return Array.from(document.querySelectorAll<HTMLElement>(checkboxSelector)).flatMap((element) => {
+      const clickable =
+        (isVisible(element) ? element : null) ??
+        Array.from([element.closest("label"), element.closest("[role='checkbox']"), element.closest("[class*='checkbox']"), element.closest("[class*='Checkbox']")])
+          .find((item): item is HTMLElement => Boolean(item && item instanceof HTMLElement && isVisible(item))) ??
+        null;
+      if (!clickable || isDisabled(clickable)) return [];
+      const bodyIndex = allBodyElements.indexOf(clickable);
+      if (bodyIndex < 0 || seen.has(bodyIndex)) return [];
+      seen.add(bodyIndex);
+      const row = clickable.closest("tr, [role='row'], [class*=row], [class*=Row], [class*=card], [class*=Card], [class*=item], [class*=Item], [class*=list], [class*=List]") as HTMLElement | null;
+      const rowText = normalize(row?.innerText || row?.textContent);
+      const rowRect = row ? rectFor(row) : null;
+      const rect = rectFor(clickable);
+      const isHeader =
+        /報表名稱|資料週期區間|操作/.test(rowText) &&
+        !datePattern.test(rowText);
+      const looksLikeReportRow = datePattern.test(rowText) || (rowRect ? rowRect.y > 160 : rect.y > 160);
+      return [{
+        bodyIndex,
+        checked: checkedState(element),
+        disabled: isDisabled(element),
+        isHeader,
+        looksLikeReportRow,
+        text: normalize(clickable.innerText || clickable.textContent).slice(0, 200),
+        rowText: rowText.slice(0, 800),
+        rect,
+        rowRect
+      }];
+    }).sort((a, b) => {
+      const reportScore = Number(Boolean(b.looksLikeReportRow)) - Number(Boolean(a.looksLikeReportRow));
+      if (reportScore !== 0) return reportScore;
+      const headerScore = Number(Boolean(a.isHeader)) - Number(Boolean(b.isHeader));
+      if (headerScore !== 0) return headerScore;
+      return Number(a.rect.y) - Number(b.rect.y) || Number(a.rect.x) - Number(b.rect.x);
+    });
+  }).catch(() => []);
+
+const selectProjectListRowsForToolbarBatch = async (
+  page: Page,
+  requestedCount: number
+): Promise<ProjectToolbarSelectionEvidence> => {
+  const safeCount = Math.max(1, Math.min(10, Math.trunc(requestedCount || 2)));
+  const candidates = await projectListCheckboxCandidates(page);
+  const preferred = candidates.filter((item) => item.looksLikeReportRow === true && item.isHeader !== true && item.checked !== true);
+  const fallback = candidates.filter((item) => item.isHeader !== true && item.checked !== true);
+  const targets = (preferred.length >= safeCount ? preferred : fallback.length >= safeCount ? fallback : candidates.filter((item) => item.checked !== true))
+    .slice(0, safeCount);
+  const selected: Array<Record<string, unknown>> = [];
+  const clickErrors: string[] = [];
+  for (const target of targets) {
+    if (typeof target.bodyIndex !== "number") continue;
+    try {
+      await clickVisibleBodyElementByIndex(page, target.bodyIndex, 8000);
+      selected.push(target);
+      await page.waitForTimeout(250);
+    } catch (error) {
+      clickErrors.push(error instanceof Error ? error.message : String(error));
+    }
+  }
+  const after = await projectListCheckboxCandidates(page);
+  const selectedAfter = after.filter((item) => item.checked === true && item.isHeader !== true);
+  return {
+    requestedCount: safeCount,
+    selectedCount: selectedAfter.length > 0 ? selectedAfter.length : selected.length,
+    candidates: candidates.slice(0, 12),
+    selected,
+    clickErrors
+  };
+};
+
+const projectToolbarDownloadButtonCandidate = async (page: Page): Promise<Record<string, unknown> | null> =>
+  page.evaluate(() => {
+    const normalize = (value: string | null | undefined) => (value ?? "").trim().replace(/\s+/g, " ");
+    const isVisible = (element: Element): boolean => {
+      const rect = element.getBoundingClientRect();
+      const style = window.getComputedStyle(element);
+      return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden" && style.opacity !== "0";
+    };
+    const buttonLabel = (button: HTMLButtonElement) => [
+      normalize(button.innerText || button.textContent),
+      normalize(button.getAttribute("aria-label")),
+      normalize(button.getAttribute("title")),
+      normalize(button.getAttribute("data-testid")),
+      normalize(button.getAttribute("data-action")),
+      String(button.className ?? "")
+    ].join("\n");
+    const buttons = Array.from(document.querySelectorAll("button")).map((button, domIndex) => {
+      const rect = button.getBoundingClientRect();
+      const label = buttonLabel(button);
+      return {
+        domIndex,
+        text: normalize(button.innerText || button.textContent),
+        ariaLabel: button.getAttribute("aria-label") || "",
+        title: button.getAttribute("title") || "",
+        className: String(button.className ?? ""),
+        disabled: button.disabled || button.getAttribute("aria-disabled") === "true" || window.getComputedStyle(button).pointerEvents === "none",
+        visible: isVisible(button),
+        label,
+        rect: { x: Math.round(rect.x), y: Math.round(rect.y), width: Math.round(rect.width), height: Math.round(rect.height) }
+      };
+    }).filter((button) => button.visible && button.rect.y <= Math.max(260, window.innerHeight * 0.36));
+    const explicit = buttons
+      .filter((button) =>
+        !button.disabled &&
+        /下載|download|export|csv|匯出|⬇/i.test(button.label) &&
+        button.rect.x >= window.innerWidth * 0.45
+      )
+      .sort((a, b) => b.rect.x - a.rect.x || a.rect.y - b.rect.y)[0];
+    if (explicit) return { ...explicit, semanticAction: "download", selectionMethod: "explicitLabel" };
+
+    const byRow = new Map<number, typeof buttons>();
+    for (const button of buttons) {
+      const rowKey = Math.round(button.rect.y / 12) * 12;
+      byRow.set(rowKey, [...(byRow.get(rowKey) ?? []), button]);
+    }
+    for (const row of [...byRow.values()].map((items) => items.sort((a, b) => a.rect.x - b.rect.x))) {
+      const rightSide = row.filter((button) =>
+        button.rect.x >= window.innerWidth * 0.45 &&
+        button.rect.width <= 96 &&
+        button.rect.height <= 72
+      );
+      if (rightSide.length < 3) continue;
+      for (let index = 0; index <= rightSide.length - 3; index += 1) {
+        const triplet = rightSide.slice(index, index + 3);
+        const allIconSized = triplet.every((button) => button.rect.width <= 96 && button.rect.height <= 72);
+        const createLooksEnabled = triplet[2]?.disabled === false;
+        if (!allIconSized || !createLooksEnabled) continue;
+        const downloadButton = triplet[0];
+        if (!downloadButton || downloadButton.disabled) continue;
+        return {
+          ...downloadButton,
+          semanticAction: "download",
+          selectionMethod: "toolbarTripletFirstButton",
+          toolbarTriplet: triplet.map((button, semanticIndex) => ({
+            ...button,
+            semanticIndex,
+            semanticAction: semanticIndex === 0 ? "download" : semanticIndex === 1 ? "delete" : semanticIndex === 2 ? "create" : "unknown"
+          }))
+        };
+      }
+    }
+    return null;
+  }).catch(() => null);
+
+const clickProjectToolbarBatchDownload = async (
+  page: Page,
+  selectionCount: number
+): Promise<CsvDownloadTriggerEvidence> => {
+  const rowBefore = await readProjectListRowsForObservation(page).catch((error) => ({ error: error instanceof Error ? error.message : String(error) }));
+  const selectionFlow = await selectProjectListRowsForToolbarBatch(page, selectionCount);
+  if (selectionFlow.selectedCount < selectionFlow.requestedCount) {
+    return {
+      clicked: false,
+      trigger: "project-toolbar-batch-selection-incomplete",
+      requestedScope: "project_toolbar_batch",
+      rowBefore,
+      selectionFlow
+    };
+  }
+  const toolbarCandidate = await projectToolbarDownloadButtonCandidate(page);
+  if (typeof toolbarCandidate?.domIndex !== "number") {
+    return {
+      clicked: false,
+      trigger: "project-toolbar-batch-download-control-not-found",
+      requestedScope: "project_toolbar_batch",
+      rowBefore,
+      selectionFlow,
+      toolbarCandidate
+    };
+  }
+  try {
+    await clickVisibleButtonByIndex(page, toolbarCandidate.domIndex, 8000);
+    return {
+      clicked: true,
+      trigger: "project-toolbar-batch-download-control",
+      requestedScope: "project_toolbar_batch",
+      rowBefore,
+      selectionFlow,
+      selectedControl: toolbarCandidate
+    };
+  } catch (error) {
+    return {
+      clicked: false,
+      trigger: "project-toolbar-batch-download-click-failed",
+      requestedScope: "project_toolbar_batch",
+      rowBefore,
+      selectionFlow,
+      selectedControl: toolbarCandidate,
+      clickError: error instanceof Error ? error.message : String(error)
+    };
+  }
+};
+
 type DeleteReportTriggerEvidence = {
   clicked: boolean;
   trigger: string;
@@ -8631,6 +8970,7 @@ const downloadCsvAndComparePreview = async (options: CliOptions, page: Page, sta
   const allowAnyReportListRowDownload = booleanishParam(options.params, ["allowAnyReportListRowDownload", "allowAnyReportRowDownload"]);
   const bodyTextBefore = typeof domStateBefore.bodyTextExcerpt === "string" ? domStateBefore.bodyTextExcerpt : "";
   const editorPage = await isOfficialCollageEditorPage(page).catch(() => false);
+  const wantsProjectToolbarBatch = !editorPage && downloadScope === "project_toolbar_batch";
   const wantsReportList = !editorPage && (
     downloadScope === "report_list" ||
     Boolean(savedReportName && bodyTextBefore.includes(savedReportName) && !/報表設定|儲存報表|執行|計算/.test(bodyTextBefore))
@@ -8696,6 +9036,10 @@ const downloadCsvAndComparePreview = async (options: CliOptions, page: Page, sta
   }
 
   const observedDownload = await observeUiTriggeredCsvDownload(page, async () => {
+    if (wantsProjectToolbarBatch) {
+      const selectionCount = numberParam(options.params, ["projectToolbarSelectionCount", "selectionCount", "selectedRowCount"]) ?? 2;
+      return clickProjectToolbarBatchDownload(page, selectionCount);
+    }
     if (wantsReportList && (savedReportName || allowAnyReportListRowDownload)) {
       const targetReportName = savedReportName ?? reportListState?.reportName ?? "first-visible-report-row";
       const rowDownload = await clickReportListCsvDownload(page, targetReportName, reportListState);

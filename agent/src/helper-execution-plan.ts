@@ -700,11 +700,22 @@ const caseNeedsDefaultSingleMetric = (
 
 const isProjectRowDownloadOnlyCase = (currentCase: CaseManifestCase | null, params: Record<string, unknown>): boolean => {
   const text = textBlob(currentCase);
+  if (isProjectToolbarBatchDownloadCase(currentCase, params)) return false;
   if (!(textRequestsReportListDownload(text) || paramsRequestReportListDownload(params))) return false;
   if (!/(?:專案頁|清單|列表|row|報表列|列內).{0,40}(?:下載|download)|(?:下載|download).{0,40}(?:專案頁|清單|列表|row|報表列|列內)/i.test(text)) return false;
   const explicitlyExcludesCsvContent = /本題不測項目.{0,32}CSV\s*內容驗證/i.test(text);
   if (!explicitlyExcludesCsvContent && /CSV\s*row\s*count|row\s*count.*preview|CSV\s*數值|數值.*preview|內容驗證|完整輸出|完整比對/i.test(text)) return false;
   return explicitlyExcludesCsvContent || /只驗(?:證)?.{0,16}(?:觸發下載|下載事件|下載檔|download event)|列內下載 icon 觸發下載/i.test(text);
+};
+
+const isProjectToolbarBatchDownloadCase = (currentCase: CaseManifestCase | null, params: Record<string, unknown>): boolean => {
+  const explicitScope = stringParam(params, ["downloadScope", "downloadEntry", "downloadTarget"]);
+  if (explicitScope === "project_toolbar_batch") return true;
+  const text = textBlob(currentCase);
+  const hasBatchIntent = /多列|多筆|批次|batch|multi/i.test(text);
+  const hasDownloadIntent = /下載|download|export|csv|匯出/i.test(text);
+  const hasProjectToolbarContext = /專案頁|專案清單|報表清單|toolbar|工具列|右上/i.test(text);
+  return hasBatchIntent && hasDownloadIntent && hasProjectToolbarContext;
 };
 
 const inferReportNamePattern = (text: string, params: Record<string, unknown>): string | null =>
@@ -893,6 +904,11 @@ const canRunDatePreviewEvidenceHelper = (params: Record<string, unknown>, curren
   const dateVariants = stringArrayParam(params, "dateVariants");
   const dateMode = String(params.dateMode ?? "").trim().toLowerCase();
   const dateRange = typeof params.dateRange === "string" ? params.dateRange.trim() : "";
+  const dateEndpointTokens = [...dateRange.matchAll(/\d{4}[/-]\d{1,2}[/-]\d{1,2}|(?:\d+\s*天\s*(?:前|後))|今天|今日|昨日|昨天|明日|明天/g)]
+    .map((match) => match[0]);
+  const hasHybridDateRangeText =
+    dateEndpointTokens.length >= 2 &&
+    dateEndpointTokens.some((item) => /天\s*(?:前|後)|今天|今日|昨日|昨天|明日|明天/.test(item));
   if (dateVariants.length > 0 && (!dateMode || dateMode === "preset")) return true;
   if (hasStructuredDateVariantSpecs(params)) return true;
   if (
@@ -902,11 +918,25 @@ const canRunDatePreviewEvidenceHelper = (params: Record<string, unknown>, curren
     return true;
   }
   if (dateMode === "static" && dateRange) return true;
+  if (hasHybridDateRangeText) return true;
   if (/^(?:昨日|今日|上週|本週|上月|本月|過去\s*\d+\s*天|最近\s*\d+\s*天)$/.test(dateRange)) return true;
   if ((dateRange.match(/\d{4}[/-]\d{1,2}[/-]\d{1,2}/g) ?? []).length >= 2) return true;
   if (dateObjectParam(params.dateRange)) return true;
   if (structuredStaticDateRangeParam(params)) return true;
   return /operationTemplate[：:]\s*collage_date_variants_preview/.test(textBlob(currentCase));
+};
+
+const previewExecutionPrefersDatePreviewEvidenceHelper = (params: Record<string, unknown>): boolean => {
+  const dateMode = String(params.dateMode ?? "").trim().toLowerCase();
+  if (dateMode === "relative" || dateMode === "hybrid") return true;
+  if (hasStructuredDateVariantSpecs(params)) return true;
+  const dateVariants = stringArrayParam(params, "dateVariants");
+  if (dateVariants.length > 1) return true;
+  const dateRange = typeof params.dateRange === "string" ? params.dateRange.trim() : "";
+  const dateEndpointTokens = [...dateRange.matchAll(/\d{4}[/-]\d{1,2}[/-]\d{1,2}|(?:\d+\s*天\s*(?:前|後))|今天|今日|昨日|昨天|明日|明天/g)]
+    .map((match) => match[0]);
+  return dateEndpointTokens.length >= 2 &&
+    dateEndpointTokens.some((item) => /天\s*(?:前|後)|今天|今日|昨日|昨天|明日|明天/.test(item));
 };
 
 const hasFormulaParams = (params: Record<string, unknown>): boolean =>
@@ -1094,6 +1124,30 @@ const buildActions = (currentCase: CaseManifestCase | null, helperHints: HelperH
       })
     ];
   }
+  if (isProjectToolbarBatchDownloadCase(currentCase, params)) {
+    const batchDownloadParams = {
+      ...params,
+      downloadScope: "project_toolbar_batch",
+      projectToolbarSelectionCount: numberParam(params, ["projectToolbarSelectionCount", "selectionCount", "selectedRowCount"]) ?? 2,
+      skipSave: true,
+      skipReopen: true,
+      skipDownload: false
+    };
+    return [
+      action("H1", "collage.openProject", "開啟指定拼貼專案", batchDownloadParams, {
+        requiredEvidence: ["dom.url", "dom.pageTitle", "dom.state", "screenshot"],
+        notes: ["專案頁批次下載題只定位報表清單，不進新增報表 editor。"]
+      }),
+      action("H2", "collage.downloadCsvAndComparePreview", "勾選多筆報表後從專案頁 toolbar 觸發批次下載", batchDownloadParams, {
+        requiredEvidence: ["downloaded.csv", "projectToolbar.selectionFlow.state", "download.toast.state", "screenshot"],
+        screenshotPolicy: "required_if_possible",
+        notes: [
+          "本題驗證 project toolbar batch download route；不可退回列內 row download。",
+          "helper 必須先透過 visible UI 勾選報表列，再點 toolbar download 控制。"
+        ]
+      })
+    ];
+  }
   if (isProjectRowDownloadOnlyCase(currentCase, params)) {
     const rowDownloadParams = {
       ...params,
@@ -1120,6 +1174,9 @@ const buildActions = (currentCase: CaseManifestCase | null, helperHints: HelperH
   }
   const frontendObservationPrelude = isFrontendObservationPreludeCase(currentCase, helperHints);
   const scopeFrontendObservationPrelude =
+    caseScopeContract?.routeIntent === "preview_execution"
+      ? { matched: false, needsEditor: false }
+      :
     caseScope.testIntent === "frontend_observation" &&
     !caseScope.previewRequired &&
     !caseScope.executionRequired &&
@@ -1183,6 +1240,9 @@ const buildActions = (currentCase: CaseManifestCase | null, helperHints: HelperH
   if (caseScopeContract?.routeIntent === "preview_execution") {
     const structuredParams = paramsForStructuredContract(params, caseScopeContract);
     const structuredDateVariants = structuredDateVariantLabels(caseScopeContract);
+    const useDatePreviewEvidenceHelper =
+      structuredDateVariants.length > 1 ||
+      previewExecutionPrefersDatePreviewEvidenceHelper(structuredParams);
     const structuredActions: HelperPlanAction[] = [
       action("H1", "collage.openProject", "開啟指定拼貼專案", structuredParams, {
         requiredEvidence: ["dom.url", "dom.pageTitle", "dom.state", "screenshot"],
@@ -1192,14 +1252,14 @@ const buildActions = (currentCase: CaseManifestCase | null, helperHints: HelperH
         requiredEvidence: ["dom.url", "dom.pageTitle", "dom.state", "screenshot"]
       })
     ];
-    if (structuredDateVariants.length > 1) {
+    if (useDatePreviewEvidenceHelper) {
       structuredActions.push(
         action("H3", "collage.runDateVariantsPreviewEvidence", "依 structured date variants 逐輪設定日期並收集 preview evidence", structuredParams, {
           requiredEvidence: ["dom.state", "date.uiState", "date.representedRange", "network.requestBody", "chart.datasets", "screenshot"],
           screenshotPolicy: "required_if_possible",
           notes: [
-            "多個 dateRange preset under_test 需由同一 case 逐輪設定並各自按計算；不可只取最後一次 preview。",
-            "dateVariants 由 caseScopeContract target 推導，不使用 legacy composite cleanup dateRange。"
+            "dateRange under_test 需由同一 helper 透過 visible UI 設定並按計算；不可只取既有預設 preview。",
+            "dateVariants 由 caseScopeContract target 或 structured/hybrid dateRange 推導，不使用 legacy composite cleanup dateRange。"
           ]
         })
       );
