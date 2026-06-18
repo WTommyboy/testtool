@@ -885,6 +885,55 @@
       }
     },
     {
+      "caseNo": "BIUI_COLLAGE_R001-K-04",
+      "routeIntent": "frontend_observation",
+      "testTarget": "frontend_presentation",
+      "requiresEditor": true,
+      "observationType": "metricRowControls",
+      "requiredActions": [
+        {
+          "actionId": "assertFirstMetricRowDeleteDisabled",
+          "action": "assertDisabled",
+          "target": "metricRows.deleteRowButton",
+          "role": "under_test",
+          "expectedOutcome": "disabled_or_no_change",
+          "requiredForPass": true,
+          "evidenceRequirements": [
+            "metricRows.state",
+            "screenshot"
+          ]
+        },
+        {
+          "actionId": "assertFirstMetricRowDuplicateEnabled",
+          "action": "assertEnabled",
+          "target": "metricRows.duplicateRowButton",
+          "role": "under_test",
+          "expectedOutcome": "visible",
+          "requiredForPass": true,
+          "evidenceRequirements": [
+            "metricRows.state",
+            "screenshot"
+          ]
+        }
+      ],
+      "evidenceRequirements": {
+        "observation": [
+          "metricRows.state",
+          "domSnapshot",
+          "screenshot"
+        ]
+      },
+      "judgmentPolicy": {
+        "failWhen": [
+          "first metric row delete control is enabled or can remove the only metric row",
+          "first metric row duplicate control is absent or disabled"
+        ],
+        "blockedWhen": [
+          "editor cannot be reached or metric row controls cannot be observed"
+        ]
+      }
+    },
+    {
       "caseNo": "BIUI_COLLAGE_R001-K-08",
       "routeIntent": "frontend_observation",
       "testTarget": "functional_flow",
@@ -1430,6 +1479,97 @@
       }
     },
     {
+      "caseNo": "BIUI_COLLAGE_R001-L-11",
+      "routeIntent": "frontend_observation",
+      "testTarget": "frontend_presentation",
+      "requiresEditor": true,
+      "observationType": "dateRangeLimit",
+      "requiredActions": [
+        {
+          "actionId": "openDatePanel",
+          "action": "open",
+          "target": "dateRange.button",
+          "role": "precondition",
+          "expectedOutcome": "visible",
+          "requiredForPass": true,
+          "evidenceRequirements": [
+            "dateRange.panel.state",
+            "interactionLog"
+          ]
+        },
+        {
+          "actionId": "setInvalidStaticRangeStart",
+          "action": "select",
+          "target": "dateRange.staticStartInput",
+          "role": "under_test",
+          "expectedOutcome": "value_matches",
+          "requiredForPass": true,
+          "evidenceRequirements": [
+            "dateRange.limitValidation.state",
+            "interactionLog"
+          ]
+        },
+        {
+          "actionId": "setInvalidStaticRangeEnd",
+          "action": "select",
+          "target": "dateRange.staticEndInput",
+          "role": "under_test",
+          "expectedOutcome": "value_matches",
+          "requiredForPass": true,
+          "evidenceRequirements": [
+            "dateRange.limitValidation.state",
+            "interactionLog"
+          ]
+        },
+        {
+          "actionId": "assertOver90Blocked",
+          "action": "assertDisabled",
+          "target": "dateRange.limitValidation",
+          "role": "verification",
+          "expectedOutcome": "disabled_or_no_change",
+          "requiredForPass": true,
+          "evidenceRequirements": [
+            "dateRange.limitValidation.state",
+            "screenshot"
+          ]
+        },
+        {
+          "actionId": "setValid90DayRange",
+          "action": "select",
+          "target": "dateRange.staticEndInput",
+          "role": "verification",
+          "expectedOutcome": "state_changed",
+          "requiredForPass": true,
+          "evidenceRequirements": [
+            "dateRange.limitValidation.state",
+            "interactionLog",
+            "screenshot"
+          ]
+        }
+      ],
+      "evidenceRequirements": {
+        "flow": [
+          "dateRange.limitValidation.state",
+          "interactionLog"
+        ],
+        "outcome": [
+          "dateRange.limitValidation.state"
+        ],
+        "observation": [
+          "screenshot"
+        ]
+      },
+      "judgmentPolicy": {
+        "failWhen": [
+          "91-day static range is accepted without visible blocking state or warning",
+          "90-day static range cannot be applied after the invalid range is corrected"
+        ],
+        "blockedWhen": [
+          "date panel or static date controls cannot be reached at all"
+        ]
+      }
+    },
+    {
       "caseNo": "BIUI_COLLAGE_R001-M-01",
       "routeIntent": "frontend_observation",
       "testTarget": "frontend_presentation",
@@ -1461,6 +1601,213 @@
         ],
         "blockedWhen": [
           "editor page or save report button cannot be reached"
+        ]
+      }
+    },
+    {
+      "caseNo": "BIUI_COLLAGE_R001-M-03",
+      "routeIntent": "report_mutation_flow",
+      "testTarget": "frontend_presentation",
+      "requiresEditor": true,
+      "observationType": "saveModalCancel",
+      "requiredActions": [
+        {
+          "actionId": "openSaveModalForLongName",
+          "action": "open",
+          "target": "editorToolbar.saveButton",
+          "role": "precondition",
+          "expectedOutcome": "visible",
+          "requiredForPass": true,
+          "evidenceRequirements": [
+            "saveModal.cancelFlow.state",
+            "interactionLog",
+            "screenshot"
+          ]
+        },
+        {
+          "actionId": "typeOverTwentyCharacterReportName",
+          "action": "type",
+          "target": "saveModal.reportNameInput",
+          "role": "under_test",
+          "expectedOutcome": "value_matches",
+          "requiredForPass": true,
+          "evidenceRequirements": [
+            "saveModal.cancelFlow.state",
+            "interactionLog"
+          ]
+        },
+        {
+          "actionId": "assertLongNameValidation",
+          "action": "assertDisabled",
+          "target": "saveModal.saveButton",
+          "role": "verification",
+          "expectedOutcome": "disabled_or_no_change",
+          "requiredForPass": true,
+          "evidenceRequirements": [
+            "saveModal.cancelFlow.state",
+            "screenshot"
+          ]
+        },
+        {
+          "actionId": "cancelLongNameSaveModal",
+          "action": "cancel",
+          "target": "saveModal.cancelButton",
+          "role": "cleanup",
+          "expectedOutcome": "hidden",
+          "requiredForPass": true,
+          "evidenceRequirements": [
+            "saveModal.cancelFlow.state",
+            "interactionLog"
+          ]
+        }
+      ],
+      "evidenceRequirements": {
+        "flow": [
+          "saveModal.cancelFlow.state",
+          "interactionLog",
+          "screenshot"
+        ]
+      },
+      "judgmentPolicy": {
+        "failWhen": [
+          "over-20-character report name is accepted without validation or disabled save action"
+        ],
+        "blockedWhen": [
+          "save modal cannot be reached because editor setup or preview precondition fails"
+        ]
+      }
+    },
+    {
+      "caseNo": "BIUI_COLLAGE_R001-M-04",
+      "routeIntent": "report_mutation_flow",
+      "testTarget": "frontend_presentation",
+      "requiresEditor": true,
+      "observationType": "saveModalCancel",
+      "requiredActions": [
+        {
+          "actionId": "openSaveModalForSpecialChars",
+          "action": "open",
+          "target": "editorToolbar.saveButton",
+          "role": "precondition",
+          "expectedOutcome": "visible",
+          "requiredForPass": true,
+          "evidenceRequirements": [
+            "saveModal.cancelFlow.state",
+            "interactionLog",
+            "screenshot"
+          ]
+        },
+        {
+          "actionId": "typeSpecialCharacterReportName",
+          "action": "type",
+          "target": "saveModal.reportNameInput",
+          "role": "under_test",
+          "expectedOutcome": "value_matches",
+          "requiredForPass": true,
+          "evidenceRequirements": [
+            "saveModal.cancelFlow.state",
+            "interactionLog"
+          ]
+        },
+        {
+          "actionId": "assertSpecialCharacterValidation",
+          "action": "assertDisabled",
+          "target": "saveModal.saveButton",
+          "role": "verification",
+          "expectedOutcome": "disabled_or_no_change",
+          "requiredForPass": true,
+          "evidenceRequirements": [
+            "saveModal.cancelFlow.state",
+            "screenshot"
+          ]
+        },
+        {
+          "actionId": "cancelSpecialCharacterSaveModal",
+          "action": "cancel",
+          "target": "saveModal.cancelButton",
+          "role": "cleanup",
+          "expectedOutcome": "hidden",
+          "requiredForPass": true,
+          "evidenceRequirements": [
+            "saveModal.cancelFlow.state",
+            "interactionLog"
+          ]
+        }
+      ],
+      "evidenceRequirements": {
+        "flow": [
+          "saveModal.cancelFlow.state",
+          "interactionLog",
+          "screenshot"
+        ]
+      },
+      "judgmentPolicy": {
+        "failWhen": [
+          "special-character report name is accepted without validation or disabled save action"
+        ],
+        "blockedWhen": [
+          "save modal cannot be reached because editor setup or preview precondition fails"
+        ]
+      }
+    },
+    {
+      "caseNo": "BIUI_COLLAGE_R001-M-05",
+      "routeIntent": "report_mutation_flow",
+      "testTarget": "frontend_presentation",
+      "requiresEditor": true,
+      "observationType": "saveModalCancel",
+      "requiredActions": [
+        {
+          "actionId": "openSaveModalForProjectSelector",
+          "action": "open",
+          "target": "editorToolbar.saveButton",
+          "role": "precondition",
+          "expectedOutcome": "visible",
+          "requiredForPass": true,
+          "evidenceRequirements": [
+            "saveModal.cancelFlow.state",
+            "interactionLog",
+            "screenshot"
+          ]
+        },
+        {
+          "actionId": "assertSaveProjectSelectorVisible",
+          "action": "assertText",
+          "target": "saveModal.projectSelect",
+          "role": "under_test",
+          "expectedOutcome": "text_matches",
+          "requiredForPass": true,
+          "evidenceRequirements": [
+            "saveModal.cancelFlow.state",
+            "screenshot"
+          ]
+        },
+        {
+          "actionId": "cancelProjectSelectorSaveModal",
+          "action": "cancel",
+          "target": "saveModal.cancelButton",
+          "role": "cleanup",
+          "expectedOutcome": "hidden",
+          "requiredForPass": true,
+          "evidenceRequirements": [
+            "saveModal.cancelFlow.state",
+            "interactionLog"
+          ]
+        }
+      ],
+      "evidenceRequirements": {
+        "flow": [
+          "saveModal.cancelFlow.state",
+          "interactionLog",
+          "screenshot"
+        ]
+      },
+      "judgmentPolicy": {
+        "failWhen": [
+          "save modal opens but does not expose a save-project selector or selected project text"
+        ],
+        "blockedWhen": [
+          "save modal cannot be reached because editor setup or preview precondition fails"
         ]
       }
     },

@@ -188,15 +188,13 @@ const loadContracts = (currentCase: CaseManifestCase | null): Map<string, Struct
       const parsed = JSON.parse(fs.readFileSync(filePath, "utf8")) as RuntimeContractFile;
       for (const raw of parsed.contracts ?? []) {
         const contract = sanitizeContract(raw as RuntimeContractRecord);
-        if (contract) contracts.set(normalizeCaseNo(contract.caseNo), contract);
-      }
-      if (contracts.size > 0) {
-        cachedContracts.set(cacheKey, contracts);
-        return contracts;
+        const key = normalizeCaseNo(contract?.caseNo);
+        if (contract && key && !contracts.has(key)) {
+          contracts.set(key, contract);
+        }
       }
     } catch {
-      cachedContracts.set(cacheKey, contracts);
-      return contracts;
+      continue;
     }
   }
   cachedContracts.set(cacheKey, contracts);

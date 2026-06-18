@@ -276,7 +276,9 @@ const main = (): void => {
     "projectToolbar.buttons.state",
     "projectToolbar.selectionFlow.state",
     "reportMode.radio.state",
+    "metricRows.state",
     "dateRange.panel.state",
+    "dateRange.limitValidation.state",
     "validation.message.state",
     "projectCreateModal.flow.state",
     "projectList.deleteCancelFlow.state",
@@ -301,8 +303,10 @@ const main = (): void => {
     "projectLimitToast",
     "sourceReportPicker",
     "fieldPicker",
+    "metricRowControls",
     "dateTimeTypeTab",
     "datePanelCancel",
+    "dateRangeLimit",
     "downloadToast"
   ]) {
     assert(observationTypes.includes(type), `observeFrontendState missing observationType ${type}`);

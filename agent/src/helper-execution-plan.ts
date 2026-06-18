@@ -283,6 +283,7 @@ type FrontendObservationType =
   | "metricRowDelete"
   | "dateTimeTypeTab"
   | "datePanelCancel"
+  | "dateRangeLimit"
   | "downloadToast"
   | "saveReportDisabled"
   | "saveModalCancel"
@@ -310,10 +311,12 @@ const inferFrontendObservationType = (currentCase: CaseManifestCase | null): Fro
     .join("\n");
   if (/使用者按鈕|登入者名稱|user\s*button|account\s*button/i.test(text)) return "userButton";
   if (/儲存報表.{0,16}disabled|disabled.{0,16}儲存報表|未輸入報表名稱.*儲存報表|save\s*report.{0,16}disabled/i.test(text)) return "saveReportDisabled";
+  if (/報表名稱.{0,40}(?:超過|20|特殊字元|符號|限制)|(?:超過|20|特殊字元|符號|限制).{0,40}報表名稱|儲存專案|save\s*modal/i.test(text)) return "saveModalCancel";
   if (/新增專案\s*modal|新增專案.*名稱輸入|專案名稱輸入|拼貼報表旁新增專案|project\s*create\s*modal|create\s*project/i.test(text)) return "projectCreateModal";
   if (/刪除確認|deleteConfirmModal|取消流程|取消刪除|刪除\s*modal|delete\s*cancel/i.test(text)) return "deleteCancelFlow";
   if (/側欄|公司共享|sidebar/i.test(text)) return "sidebarGroup";
   if (/(?:hover|tooltip).{0,40}(?:下載|download)|(?:下載|download).{0,40}(?:hover|tooltip)|列內.*下載|row.*download/i.test(text)) return "rowDownloadTooltip";
+  if (/(?:第一列|唯一一列).{0,80}(?:刪除列|deleteRow|metricRows\.deleteRowButton).{0,80}(?:複製列|duplicateRow|metricRows\.duplicateRowButton)|(?:複製列|duplicateRow|metricRows\.duplicateRowButton).{0,80}(?:第一列|唯一一列).{0,80}(?:刪除列|deleteRow|metricRows\.deleteRowButton)/i.test(coreText)) return "metricRowControls";
   if (/(?:hover|tooltip).{0,40}(?:刪除|delete)|(?:刪除|delete).{0,40}(?:hover|tooltip)|列內.*刪除|row.*delete/i.test(text)) return "rowDeleteTooltip";
   if (/5\s*個上限|最高\s*5\s*個專案|上限阻擋|project.*limit/i.test(text)) return "projectLimitToast";
   if (/複製列|duplicateRow|metricRows\.duplicateRowButton|複製當前列/i.test(coreText)) return "metricRowDuplicate";
@@ -374,6 +377,8 @@ const observationRequiredEvidence = (observationType: FrontendObservationType): 
       return ["dateRange.timeTypeTab.state", "interactionLog", "screenshot"];
     case "datePanelCancel":
       return ["dateRange.cancelFlow.state", "interactionLog", "screenshot"];
+    case "dateRangeLimit":
+      return ["dateRange.limitValidation.state", "interactionLog", "screenshot"];
     case "downloadToast":
       return ["editorToolbar.download.state", "download.toast.state", "interactionLog", "screenshot"];
     case "saveReportDisabled":
@@ -429,6 +434,8 @@ const fallbackObservationType = (value: string | null): FrontendObservationType 
       return "dateTimeTypeTab";
     case "datePanelCancel":
       return "datePanelCancel";
+    case "dateRangeLimit":
+      return "dateRangeLimit";
     case "downloadToast":
     case "editorDownload":
       return "downloadToast";
@@ -548,6 +555,18 @@ const paramsForStructuredContract = (
     if (typeof next.dateRange !== "string" || !next.dateRange.trim()) next.dateRange = "2026/03/01~2026/03/31";
     if (typeof next.display !== "string" || !next.display.trim()) next.display = "每天";
     next.skipSave = false;
+    if (/M-03$/i.test(contract.caseNo)) {
+      next.reportNameValidationMode = "maxLength";
+      next.cancelReportNamePattern = "aaaaaaaaaaaaaaaaaaaaa";
+    }
+    if (/M-04$/i.test(contract.caseNo)) {
+      next.reportNameValidationMode = "specialChars";
+      next.cancelReportNamePattern = "bad/name?";
+    }
+    if (/M-05$/i.test(contract.caseNo)) {
+      next.reportNameValidationMode = "projectSelector";
+      next.cancelReportNamePattern = "BIUIM05PREVIEW";
+    }
   }
   if (contract.routeIntent === "download_execution") {
     next.skipDownload = false;
@@ -1322,7 +1341,7 @@ const buildActions = (currentCase: CaseManifestCase | null, helperHints: HelperH
           expectedOutcomes: [...new Set(caseScopeContract.requiredActions.map((item) => item.expectedOutcome))]
         }
       : structuredParams;
-    if (/M-06$/i.test(caseScopeContract.caseNo)) {
+    if (/M-0[3456]$/i.test(caseScopeContract.caseNo)) {
       return [
         openProjectAction,
         action("H2", "collage.createReport", "進入新增報表頁", structuredParams, {
@@ -1341,7 +1360,7 @@ const buildActions = (currentCase: CaseManifestCase | null, helperHints: HelperH
           requiredEvidence: structuredEvidenceList(caseScopeContract),
           screenshotPolicy: "required_if_possible",
           notes: [
-            "本 action 只開啟儲存 modal、輸入本 case 臨時名稱、按取消並驗證未建立報表。",
+            "本 action 只開啟儲存 modal、輸入/讀取本 case 指定 modal 狀態、按取消並驗證未建立報表。",
             "不點 modal 儲存，不接受 native dialog；Codex 仍依 case scope 判斷。"
           ]
         })

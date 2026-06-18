@@ -251,6 +251,7 @@ const supportedObservationTypes = new Set([
   "sourceReportPicker",
   "dateTimeTypeTab",
   "datePanelCancel",
+  "dateRangeLimit",
   "downloadToast"
 ]);
 const previewTemplates = new Set(["collage.runPreviewAndCollectEvidence", "collage.runDateVariantsPreviewEvidence"]);

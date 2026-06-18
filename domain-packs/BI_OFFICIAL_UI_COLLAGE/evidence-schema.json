@@ -96,6 +96,13 @@
       ],
       "purpose": "Current-run screenshot artifact used as supporting evidence for frontend observation cases. It must not replace concrete DOM/action evidence."
     },
+    "dom.state": {
+      "type": "object",
+      "requiredFields": [
+        "bodyTextExcerpt"
+      ],
+      "purpose": "Current-page DOM text/control summary used as supporting evidence for frontend observation cases. It supports routing and visual fallback checks but must not replace case-specific action evidence."
+    },
     "browserMcp.preflight": {
       "type": "object",
       "requiredFields": [
@@ -155,6 +162,17 @@
         "asserted"
       ],
       "purpose": "Frontend observation evidence for clicking multiple dynamic date presets and reading the resulting date button labels."
+    },
+    "dateRange.limitValidation.state": {
+      "type": "object",
+      "requiredFields": [
+        "invalidRange",
+        "validRange",
+        "previewRequestDelta",
+        "interactionLog",
+        "asserted"
+      ],
+      "purpose": "Frontend observation evidence for the 90-day date range limit without triggering preview execution."
     },
     "validation.message.state": {
       "type": "object",

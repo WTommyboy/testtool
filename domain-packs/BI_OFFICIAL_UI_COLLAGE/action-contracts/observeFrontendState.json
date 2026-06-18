@@ -15,8 +15,10 @@
     "collage.observation.rowActionTooltip",
     "collage.observation.sourceReportPicker",
     "collage.observation.fieldPicker",
+    "collage.observation.metricRowControls",
     "collage.observation.dateTimeTypeTab",
     "collage.observation.datePanelCancel",
+    "collage.observation.dateRangeLimit",
     "collage.observation.editorDownload",
     "collage.observation.saveReportDisabled",
     "collage.observation.saveModalCancel",
@@ -43,8 +45,10 @@
           "rowActionTooltip",
           "sourceReportPicker",
           "fieldPicker",
+          "metricRowControls",
           "dateTimeTypeTab",
           "datePanelCancel",
+          "dateRangeLimit",
           "downloadToast",
           "editorDownload",
           "saveReportDisabled",
@@ -297,6 +301,23 @@
         "fieldControlUpdated": true
       }
     },
+    "metricRowControls": {
+      "component": "metricRows.controls",
+      "objectIds": [
+        "metricRows.addRowButton",
+        "metricRows.duplicateRowButton",
+        "metricRows.deleteRowButton"
+      ],
+      "requiredEvidence": [
+        "metricRows.state",
+        "dom.state",
+        "screenshot"
+      ],
+      "successState": {
+        "firstRowDeleteDisabled": true,
+        "duplicateControlEnabled": true
+      }
+    },
     "dateTimeTypeTab": {
       "component": "dateRange.panel",
       "objectIds": [
@@ -321,6 +342,26 @@
       ],
       "successState": {
         "cancelClosedPanelAndPreservedState": true
+      }
+    },
+    "dateRangeLimit": {
+      "component": "dateRange.panel",
+      "objectIds": [
+        "dateRange.panel",
+        "dateRange.staticStartInput",
+        "dateRange.staticEndInput",
+        "dateRange.action.confirm",
+        "dateRange.limitValidation"
+      ],
+      "requiredEvidence": [
+        "dateRange.limitValidation.state",
+        "interactionLog",
+        "screenshot"
+      ],
+      "successState": {
+        "invalid91DayRangeBlocked": true,
+        "valid90DayRangeAccepted": true,
+        "previewRequestDelta": 0
       }
     },
     "editorDownload": {
@@ -356,6 +397,8 @@
       "objectIds": [
         "editorToolbar.saveButton",
         "saveModal.reportNameInput",
+        "saveModal.projectSelect",
+        "saveModal.saveButton",
         "saveModal.cancelButton",
         "projectList.reportRow"
       ],

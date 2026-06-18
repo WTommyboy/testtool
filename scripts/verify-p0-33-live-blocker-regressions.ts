@@ -86,21 +86,6 @@ const writeBlockedEvidenceWorkbook = async (filePath: string): Promise<void> => 
   sheet.addRow(["編號", "結果", "失敗分類", "詳細紀錄JSON"]);
   sheet.addRow(["BIUI_COLLAGE_R001-B-05", "BLOCKED", "EVIDENCE_INSUFFICIENT", JSON.stringify({ 測試目的: "B-05 deterministic pass fixture", currentRunEvidence: { old: true } })]);
   sheet.addRow(["BIUI_COLLAGE_R001-J-03", "BLOCKED", "BLOCKED_NEEDS_VISUAL_REVIEW", JSON.stringify({ 測試目的: "J-03 deterministic pass fixture", currentRunEvidence: { old: true } })]);
-  sheet.addRow([
-    "BIUI_COLLAGE_R001-K-04",
-    "BLOCKED",
-    "EVIDENCE_INSUFFICIENT",
-    JSON.stringify({
-      測試目的: "K-04 visual fallback contract fixture",
-      設定條件: "Frontend observation helper ran but could not reach the row action target.",
-      預期行為: "Screenshot-only frontend observation blockers must carry an explicit visual fallback contract.",
-      實際行為: "Current-run screenshot exists, but structured DOM/ARIA evidence was insufficient.",
-      currentRunEvidence: {
-        source: "codex_generated",
-        screenshot: "output/helper-artifacts/BIUI_COLLAGE_R001-K-04/BIUI_COLLAGE_R001-K-04-observe-rowDeleteTooltip.png"
-      }
-    })
-  ]);
   sheet.addRow(["BIUI_COLLAGE_R001-L-05", "BLOCKED", "EVIDENCE_INSUFFICIENT", JSON.stringify({ 測試目的: "L-05 deterministic fail fixture", currentRunEvidence: { old: true } })]);
   sheet.addRow(["BIUI_COLLAGE_R001-M-11", "BLOCKED", "EVIDENCE_INSUFFICIENT", JSON.stringify({ 測試目的: "M-11 deterministic report mutation fail fixture", currentRunEvidence: { old: true } })]);
   sheet.addRow(["BIUI_COLLAGE_R001-I-04", "BLOCKED", "EVIDENCE_INSUFFICIENT", JSON.stringify({ 測試目的: "negative fixture", currentRunEvidence: { old: true } })]);
@@ -262,30 +247,6 @@ const writeDeterministicEvidenceFixture = (runDir: string): void => {
         createEnabledAfterSelection: true
       }
     }
-  }, null, 2));
-
-  const k04Dir = path.join(runDir, "output", "helper-artifacts", "BIUI_COLLAGE_R001-K-04");
-  fs.mkdirSync(k04Dir, { recursive: true });
-  fs.writeFileSync(path.join(k04Dir, "BIUI_COLLAGE_R001-K-04-observe-rowDeleteTooltip.png"), "");
-  fs.writeFileSync(path.join(k04Dir, "frontend-observation-evidence.json"), JSON.stringify({
-    schemaVersion: "frontend-observation-evidence-v1",
-    observationType: "rowDeleteTooltip",
-    observationState: {
-      evidenceObject: "projectList.rowActionTooltip.state",
-      hoveredTarget: null,
-      tooltipVisible: false,
-      visibleText: null,
-      interactionLog: [
-        {
-          action: "hover",
-          target: "projectList.rowDeleteAction",
-          hovered: false,
-          candidate: { selected: null, candidates: [], visibleDeleteButtons: [] }
-        }
-      ],
-      asserted: false
-    },
-    warnings: ["ROW_DELETE_ACTION_NOT_HOVERABLE"]
   }, null, 2));
 
   const l05Dir = path.join(runDir, "output", "helper-artifacts-archive", "2026-05-21T00-02-00-000Z", "BIUI_COLLAGE_R001-L-05");
@@ -677,6 +638,30 @@ const main = async (): Promise<void> => {
   const m01ObserveAction = m01Plan.actions.find((item) => item.template === "collage.observeFrontendState");
   assert.equal(m01ObserveAction?.params.observationType, "saveReportDisabled", "M-01 must observe editor save button disabled state, not row delete tooltip");
 
+  const k04 = byCase.get("BIUI_COLLAGE_R001-K-04");
+  assert(k04, "K-04 contract must exist");
+  const k04Plan = buildHelperExecutionPlan({ runDir: os.tmpdir(), currentCase: fixtureCase(k04), helperHints: null });
+  const k04ObserveAction = k04Plan.actions.find((item) => item.template === "collage.observeFrontendState");
+  assert.equal(k04ObserveAction?.params.observationType, "metricRowControls", "K-04 must observe metric-row controls, not project-list row delete tooltip");
+  assert.deepEqual(
+    k04ObserveAction?.caseScopeActions.map((item) => item.target),
+    ["metricRows.deleteRowButton", "metricRows.duplicateRowButton"],
+    "K-04 must preserve first-row delete and duplicate metric-row targets"
+  );
+
+  for (const caseNo of ["BIUI_COLLAGE_R001-M-03", "BIUI_COLLAGE_R001-M-04", "BIUI_COLLAGE_R001-M-05"]) {
+    const contract = byCase.get(caseNo);
+    assert(contract, `${caseNo} contract must exist`);
+    const plan = buildHelperExecutionPlan({ runDir: os.tmpdir(), currentCase: fixtureCase(contract), helperHints: null });
+    assert.deepEqual(
+      plan.actions.map((item) => item.template),
+      ["collage.openProject", "collage.createReport", "collage.configureMetric", "collage.runPreviewAndCollectEvidence", "collage.observeFrontendState"],
+      `${caseNo} must use report mutation save-modal preconditions before observing the save modal`
+    );
+    const observe = plan.actions.find((item) => item.template === "collage.observeFrontendState");
+    assert.equal(observe?.params.observationType, "saveModalCancel", `${caseNo} must route to saveModalCancel observation`);
+  }
+
   const g05VisibleReportCase: CaseManifestCase = {
     ...fixtureCase(m11),
     caseNo: "BIUI_COLLAGE_R001-G-05",
@@ -720,24 +705,16 @@ const main = async (): Promise<void> => {
   assert.equal(enrichment.status, "updated", "deterministic helper evidence should update blocked workbook");
   assert(enrichment.rows.some((item) => item.caseNo === "BIUI_COLLAGE_R001-B-05" && item.action === "deterministic_helper_pass"), "B-05 deterministic date evidence must promote BLOCKED to PASS");
   assert(enrichment.rows.some((item) => item.caseNo === "BIUI_COLLAGE_R001-J-03" && item.action === "deterministic_helper_pass"), "J-03 deterministic frontend observation must promote BLOCKED to PASS");
-  assert(enrichment.rows.some((item) => item.caseNo === "BIUI_COLLAGE_R001-K-04" && item.action === "completed_visual_fallback_contract"), "K-04 screenshot-only frontend observation blocker must get an explicit visual fallback contract");
   assert(enrichment.rows.some((item) => item.caseNo === "BIUI_COLLAGE_R001-L-05" && item.action === "deterministic_helper_fail"), "L-05 deterministic frontend interaction failure must promote BLOCKED to FAIL");
   assert(enrichment.rows.some((item) => item.caseNo === "BIUI_COLLAGE_R001-M-11" && item.action === "deterministic_helper_fail"), "M-11 deterministic report mutation failure must promote BLOCKED to FAIL");
   const statuses = await readWorkbookStatuses(fixtureResult);
   assert.equal(statuses["BIUI_COLLAGE_R001-B-05"]?.status, "PASS", "B-05 should become PASS");
   assert.equal(statuses["BIUI_COLLAGE_R001-J-03"]?.status, "PASS", "J-03 should become PASS");
-  assert.equal(statuses["BIUI_COLLAGE_R001-K-04"]?.status, "BLOCKED", "K-04 should remain BLOCKED");
-  assert.equal(statuses["BIUI_COLLAGE_R001-K-04"]?.verdict, "BLOCKED_NEEDS_VISUAL_REVIEW", "K-04 should carry explicit visual fallback classification");
   assert.equal(statuses["BIUI_COLLAGE_R001-L-05"]?.status, "FAIL", "L-05 should become FAIL");
   assert.equal(statuses["BIUI_COLLAGE_R001-L-05"]?.verdict, "FAIL_INTERACTION_FAILED", "L-05 should carry a deterministic failure classification");
   assert.equal(statuses["BIUI_COLLAGE_R001-M-11"]?.status, "FAIL", "M-11 should become FAIL");
   assert.equal(statuses["BIUI_COLLAGE_R001-M-11"]?.verdict, "FAIL_INTERACTION_FAILED", "M-11 should carry a deterministic failure classification");
   assert.equal(statuses["BIUI_COLLAGE_R001-I-04"]?.status, "BLOCKED", "negative non-deterministic observation should remain BLOCKED");
-  const enrichedDetails = await readWorkbookDetails(fixtureResult);
-  assert.equal(enrichedDetails["BIUI_COLLAGE_R001-K-04"]?.evidenceSource, "screenshotVisual", "K-04 visual fallback must declare screenshotVisual evidenceSource");
-  assert.equal(typeof enrichedDetails["BIUI_COLLAGE_R001-K-04"]?.visualObservation, "string", "K-04 visual fallback must include visualObservation");
-  assert.equal(typeof enrichedDetails["BIUI_COLLAGE_R001-K-04"]?.domEvidenceGap, "string", "K-04 visual fallback must include domEvidenceGap");
-  assert.equal(enrichedDetails["BIUI_COLLAGE_R001-K-04"]?.currentRunEvidence?.evidenceType, "frontendObservationVisualFallback", "K-04 visual fallback must preserve frontend observation evidence type");
 
   const falseFailRoot = fs.mkdtempSync(path.join(os.tmpdir(), "p0-33-l10-false-fail-"));
   const falseFailWorkbook = path.join(falseFailRoot, "false-fail-result.xlsx");
@@ -848,7 +825,8 @@ const main = async (): Promise<void> => {
       "M-10 copy flow recovers to project list before row verification",
       "M-11 uses current-run saved-report state instead of stale TOOL_A01 pattern",
       "B-05/J-03 deterministic helper evidence promotes BLOCKED to PASS",
-      "K-04 screenshot-only frontend observation blocker gets explicit visual fallback contract before upload",
+      "K-04 routes to metric-row controls instead of project-list row delete tooltip",
+      "M-03/M-04/M-05 route through save-modal report mutation preconditions",
       "L-05 deterministic helper failure promotes BLOCKED to FAIL",
       "M-11 deterministic report mutation failure promotes BLOCKED to FAIL",
       "L-10 functional-flow deterministic helper pass evidence overrides false FAIL",

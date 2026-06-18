@@ -2253,6 +2253,41 @@
       ]
     },
     {
+      "id": "dateRange.limitValidation",
+      "page": "collageEditor",
+      "component": "dateRange.panel",
+      "objectType": "validationState",
+      "purpose": "Date range upper-bound validation state for the editor date range panel.",
+      "aliases": [
+        "90 天上限",
+        "超過 90 天",
+        "日期範圍上限",
+        "date range limit"
+      ],
+      "supportedActions": [
+        "assertDisabled",
+        "assertToast",
+        "assertStateChanged",
+        "assertNoRequest"
+      ],
+      "stateAttributes": [
+        "invalidRangeBlocked",
+        "validRangeAccepted",
+        "visibleText",
+        "confirmDisabled",
+        "requestDelta"
+      ],
+      "evidenceObjects": [
+        "dateRange.limitValidation.state"
+      ],
+      "locatorHints": [
+        "date range panel state after setting a static range over 90 days and then a 90-day range"
+      ],
+      "hazards": [
+        "this is a frontend observation object; do not trigger preview or download for limit-only cases"
+      ]
+    },
+    {
       "id": "dateRange.dynamicStartOffsetInput",
       "page": "collageEditor",
       "component": "dateRange.dynamicOffsetInput",
@@ -2558,6 +2593,39 @@
       ]
     },
     {
+      "id": "saveModal.projectSelect",
+      "page": "collageEditor",
+      "component": "save.modal",
+      "objectType": "select",
+      "purpose": "Project selector inside the save report modal.",
+      "aliases": [
+        "儲存專案",
+        "請選擇專案",
+        "save modal project selector"
+      ],
+      "supportedActions": [
+        "open",
+        "select",
+        "assertVisible",
+        "assertText"
+      ],
+      "stateAttributes": [
+        "visibleText",
+        "selectedText",
+        "enabled"
+      ],
+      "evidenceObjects": [
+        "saveModal.cancelFlow.state",
+        "saveModal.saveFlow.state"
+      ],
+      "locatorHints": [
+        "project selector/dropdown near 儲存專案 label inside opened save modal"
+      ],
+      "hazards": [
+        "cancel-flow tests may observe this selector but must not submit a save unless explicitly authorized"
+      ]
+    },
+    {
       "id": "saveModal.saveButton",
       "page": "collageEditor",
       "component": "save.modal",
@@ -2580,6 +2648,7 @@
         "disabled"
       ],
       "evidenceObjects": [
+        "saveModal.cancelFlow.state",
         "saveModal.saveFlow.state",
         "save.toast.state"
       ],

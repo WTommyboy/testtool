@@ -347,6 +347,7 @@ const helperSupportsStructuredObservationType = (value: string | null | undefine
   value === "metricRowDelete" ||
   value === "dateTimeTypeTab" ||
   value === "datePanelCancel" ||
+  value === "dateRangeLimit" ||
   value === "downloadToast" ||
   value === "editorDownload" ||
   value === "saveReportDisabled" ||

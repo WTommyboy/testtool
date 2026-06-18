@@ -1568,6 +1568,30 @@
         "dynamic end-side date/day input inside opened date panel"
       ]
     },
+    "dateRange.limitValidation": {
+      "status": "notCaptured",
+      "sourceIds": [
+        "ui.vocabularyAlignment"
+      ],
+      "screenContext": "collageEditor / dateRange.panel",
+      "visualCues": [
+        "資料日期範圍不可超過 90 天",
+        "90-day limit validation",
+        "date range limit warning inside opened date panel"
+      ]
+    },
+    "saveModal.projectSelect": {
+      "status": "notCaptured",
+      "sourceIds": [
+        "ui.vocabularyAlignment"
+      ],
+      "screenContext": "collageEditor / save.modal",
+      "visualCues": [
+        "儲存專案",
+        "請選擇專案",
+        "project selector/dropdown near 儲存專案 label inside opened save modal"
+      ]
+    },
     "saveModal.saveButton": {
       "status": "notCaptured",
       "sourceIds": [
@@ -1904,6 +1928,14 @@
     {
       "objectId": "deleteConfirmModal.confirmButton",
       "reason": "Vocabulary coverage added from testcase terminology; requires future visual confirmation in live UI discovery pass."
+    },
+    {
+      "objectId": "dateRange.limitValidation",
+      "reason": "Vocabulary coverage added from R091 date-limit observation; requires future screenshot-backed visual confirmation."
+    },
+    {
+      "objectId": "saveModal.projectSelect",
+      "reason": "Vocabulary coverage added from R091 save-modal project selector observation; requires future screenshot-backed visual confirmation."
     }
   ]
 }

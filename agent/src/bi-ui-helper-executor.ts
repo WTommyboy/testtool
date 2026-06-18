@@ -5991,6 +5991,70 @@ const configureCalculatedMetricAndPreview = async (options: CliOptions, page: Pa
     if (!result.ok) {
       warnings.push(`CALCULATED_DATE_RANGE_UI_SETTING_NOT_COMPLETED:${result.warning ?? "unknown"}`);
       operations.push(`dateRange:blocked:${dateRange}`);
+      const blockedEvidence = {
+        generatedAt: new Date().toISOString(),
+        caseId: options.caseId,
+        workflowStatus: "blocked",
+        failedSubcondition: "date_range",
+        baseFields,
+        baseMetricRows,
+        metricRows: metricRowsEvidence,
+        calculatedFieldName,
+        formula,
+        formulaUi,
+        dateRange,
+        dateRangeEvidence,
+        display: stringParam(options.params, "display"),
+        executePrecondition: null,
+        network: { requests: [], responses: [] },
+        chart: null,
+        table: null,
+        stateBefore,
+        stateAfter: await readStateDelta(page, options.params).catch((error) => ({ readError: error instanceof Error ? error.message : String(error) })),
+        operations,
+        warnings
+      };
+      ensureDir(artifactRoot(options));
+      fs.writeFileSync(calculatedFieldEvidencePath(options), `${JSON.stringify(blockedEvidence, null, 2)}\n`);
+      fs.writeFileSync(
+        previewEvidencePath(options),
+        `${JSON.stringify({
+          generatedAt: new Date().toISOString(),
+          caseId: options.caseId,
+          source: "collage.configureCalculatedMetricAndPreview",
+          skipped: true,
+          skippedReason: `CALCULATED_DATE_RANGE_UI_SETTING_NOT_COMPLETED:${result.warning ?? "unknown"}`,
+          chart: null,
+          table: null,
+          network: { requests: [], responses: [] }
+        }, null, 2)}\n`
+      );
+      const shot = await screenshot(options, page, "calculated-metric-date-range-blocked");
+      const uiProfileAfter = await captureUiDomProfile(options, page, "calculatedMetric.dateRangeBlocked");
+      return createReport(
+        options,
+        "blocked",
+        startedAt,
+        {
+          domState: await readDomState(page),
+          uiProfiles: {
+            before: uiProfileBefore,
+            modalOpened: modalOpenedProfile,
+            modalAfterSubmit: modalAfterSubmitProfile,
+            dateRange: dateRangeUiProfiles,
+            after: uiProfileAfter
+          },
+          calculatedField: blockedEvidence
+        },
+        {
+          calculatedFieldEvidence: calculatedFieldEvidencePath(options),
+          previewEvidence: previewEvidencePath(options),
+          ...(metricRowsEvidence ? { metricRowsEvidence: metricRowsEvidencePath(options) } : {}),
+          ...(dateUiArtifact ? { dateUiEvidence: dateUiArtifact } : {}),
+          ...(shot ? { screenshot: shot } : {})
+        },
+        shot ? warnings : [...warnings, "SCREENSHOT_UNAVAILABLE"]
+      );
     } else {
       operations.push(`dateRange:verified:${dateRange}`);
     }
@@ -9294,6 +9358,7 @@ const readVisibleModalState = async (page: Page): Promise<Record<string, unknown
         height: Math.round(rect.height)
       };
     };
+    const bodyText = normalize(document.body.innerText || "");
     const dialogs = Array.from(document.querySelectorAll<HTMLElement>("[role='dialog'], .modal, .ant-modal, .MuiDialog-root, .swal2-popup"))
       .filter(isVisible)
       .map((dialog, dialogIndex) => ({
@@ -9320,10 +9385,34 @@ const readVisibleModalState = async (page: Page): Promise<Record<string, unknown
             disabled: button instanceof HTMLButtonElement ? button.disabled : button.getAttribute("aria-disabled") === "true"
           }))
       }));
+    const pageInputs = Array.from(document.querySelectorAll("input, textarea"))
+      .filter((input): input is HTMLInputElement | HTMLTextAreaElement => input instanceof HTMLInputElement || input instanceof HTMLTextAreaElement)
+      .filter(isVisible)
+      .map((input, inputIndex) => ({
+        inputIndex,
+        tagName: input.tagName.toLowerCase(),
+        type: input instanceof HTMLInputElement ? input.type : "textarea",
+        placeholder: input.getAttribute("placeholder"),
+        value: input.value,
+        disabled: input.disabled || input.getAttribute("aria-disabled") === "true",
+        rect: rectFor(input)
+      }));
+    const pageButtons = Array.from(document.querySelectorAll("button, [role='button']"))
+      .filter((button): button is HTMLElement => button instanceof HTMLElement && isVisible(button))
+      .map((button, buttonIndex) => ({
+        buttonIndex,
+        text: normalize(button.innerText || button.textContent),
+        ariaLabel: button.getAttribute("aria-label"),
+        disabled: button instanceof HTMLButtonElement ? button.disabled : button.getAttribute("aria-disabled") === "true",
+        rect: rectFor(button)
+      }));
     return {
       dialogCount: dialogs.length,
       dialogs,
-      bodyTextExcerpt: normalize(document.body.innerText || "").slice(0, 2400)
+      modalLikeBody: /儲存報表|複製副本|報表名稱|儲存專案|請選擇專案/.test(bodyText),
+      pageInputs,
+      pageButtons,
+      bodyTextExcerpt: bodyText.slice(0, 2400)
     };
   });
 };
@@ -9658,11 +9747,60 @@ const clickCopyReportButton = async (page: Page): Promise<boolean> => {
   return clicked;
 };
 
+const readSaveModalValidationState = async (page: Page, mode: string | null): Promise<Record<string, unknown>> => {
+  if (!mode) return { mode: null, asserted: true };
+  return page.evaluate((validationMode) => {
+    const normalize = (value: string | null | undefined) => (value ?? "").trim().replace(/\s+/g, " ");
+    const isVisible = (element: Element): boolean => {
+      const rect = element.getBoundingClientRect();
+      const style = window.getComputedStyle(element);
+      return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden" && style.opacity !== "0";
+    };
+    const bodyText = normalize(document.body.innerText || "");
+    const buttons = Array.from(document.querySelectorAll("button, [role='button']"))
+      .filter((button): button is HTMLElement => button instanceof HTMLElement && isVisible(button))
+      .map((button) => {
+        const style = window.getComputedStyle(button);
+        const text = normalize(button.innerText || button.textContent);
+        const ariaLabel = normalize(button.getAttribute("aria-label"));
+        return {
+          text,
+          ariaLabel,
+          disabled: button instanceof HTMLButtonElement ? button.disabled : button.getAttribute("aria-disabled") === "true",
+          ariaDisabled: button.getAttribute("aria-disabled"),
+          pointerEvents: style.pointerEvents,
+          opacity: style.opacity
+        };
+      });
+    const saveButton = buttons
+      .filter((button) => /^(儲存|保存|確認|確定)$/.test(button.text || button.ariaLabel))
+      .at(-1) ?? null;
+    const saveButtonDisabled = saveButton
+      ? saveButton.disabled === true || saveButton.ariaDisabled === "true" || saveButton.pointerEvents === "none" || saveButton.opacity === "0.5"
+      : null;
+    const validationVisible = /字數|20|二十|特殊字元|符號|僅可輸入|請勿使用|不可超過|請調整/.test(bodyText);
+    const projectSelectVisible = /儲存專案|請選擇專案|選擇專案|專案/.test(bodyText);
+    const asserted = validationMode === "projectSelector"
+      ? projectSelectVisible
+      : validationVisible || saveButtonDisabled === true;
+    return {
+      mode: validationMode,
+      validationVisible,
+      projectSelectVisible,
+      saveButton,
+      saveButtonDisabled,
+      bodyTextExcerpt: bodyText.slice(0, 1200),
+      asserted
+    };
+  }, mode);
+};
+
 const observeSaveModalCancelFlow = async (
   options: CliOptions,
   page: Page
 ): Promise<Record<string, unknown>> => {
   const reportName = firstStringParam(options.params, ["cancelReportName", "cancelReportNamePattern", "temporaryReportName"]) ?? resolveReportName(options);
+  const validationMode = firstStringParam(options.params, ["reportNameValidationMode", "saveModalValidationMode"]);
   const before = await readVisibleModalState(page);
   const saveClicked = await clickFirstVisible([
     page.getByText("儲存報表", { exact: false }),
@@ -9681,6 +9819,11 @@ const observeSaveModalCancelFlow = async (
     }
   }
   const afterFill = await readVisibleModalState(page);
+  const validationState = await readSaveModalValidationState(page, validationMode).catch((error) => ({
+    mode: validationMode,
+    asserted: false,
+    error: error instanceof Error ? error.message : String(error)
+  }));
   const cancelClicked = await clickModalCancelButton(page);
   const afterCancel = await readVisibleModalState(page);
   let backToList: Record<string, unknown> | null = null;
@@ -9697,9 +9840,11 @@ const observeSaveModalCancelFlow = async (
     before,
     saveClicked,
     modalOpened,
+    validationMode,
     nameInputEvidence,
     nameInputError,
     afterFill,
+    validationState,
     cancelClicked,
     afterCancel,
     modalClosed: Number(afterCancel.dialogCount ?? 0) === 0,
@@ -9720,7 +9865,9 @@ const observeCopyModalCancelFlow = async (
   const defaultInputs = Array.isArray(modalOpened.dialogs)
     ? (modalOpened.dialogs as Array<Record<string, unknown>>).flatMap((dialog) => Array.isArray(dialog.inputs) ? dialog.inputs as Array<Record<string, unknown>> : [])
     : [];
+  const pageInputs = Array.isArray(modalOpened.pageInputs) ? modalOpened.pageInputs as Array<Record<string, unknown>> : [];
   const defaultName = defaultInputs
+    .concat(pageInputs)
     .map((input) => typeof input.value === "string" ? input.value : "")
     .find((value) => /副本|copy/i.test(value)) ?? null;
   const cancelClicked = await clickModalCancelButton(page);
@@ -10415,15 +10562,30 @@ const isTemporaryDeleteReportName = (reportName: string): boolean =>
   !/tommytest|主報表|正式|production|prod/i.test(reportName);
 
 const clickDeleteConfirmIfVisible = async (page: Page): Promise<Record<string, unknown>> => {
+  const modalBefore = await readVisibleModalState(page).catch((error) => ({ error: error instanceof Error ? error.message : String(error) }));
+  const modalBeforeRecord = modalBefore as { dialogs?: unknown };
+  const dialogs = Array.isArray(modalBeforeRecord.dialogs) ? modalBeforeRecord.dialogs as Array<Record<string, unknown>> : [];
+  const deleteDialog = dialogs.find((dialog) => /刪除|删除|delete|remove/i.test(String(dialog.text ?? "")));
+  if (!deleteDialog) {
+    return {
+      clicked: false,
+      reason: "delete-confirm-modal-not-visible",
+      checkedAt: new Date().toISOString(),
+      modalBefore
+    };
+  }
   const clicked = await clickFirstVisible([
-    page.locator(".modal button").filter({ hasText: /刪除|删除|確認|確定|OK|Yes/i }),
-    page.locator("[role=dialog] button").filter({ hasText: /刪除|删除|確認|確定|OK|Yes/i }),
-    page.locator(".ant-modal button").filter({ hasText: /刪除|删除|確認|確定|OK|Yes/i }),
-    page.locator(".swal2-popup button").filter({ hasText: /刪除|删除|確認|確定|OK|Yes/i })
+    page.locator("[role=dialog] button").filter({ hasText: /^\s*(刪除|删除|確認|確定|確認刪除|確定刪除|OK|Delete|Remove|Yes)\s*$/i }),
+    page.locator(".modal button").filter({ hasText: /^\s*(刪除|删除|確認|確定|確認刪除|確定刪除|OK|Delete|Remove|Yes)\s*$/i }),
+    page.locator(".ant-modal button").filter({ hasText: /^\s*(刪除|删除|確認|確定|確認刪除|確定刪除|OK|Delete|Remove|Yes)\s*$/i }),
+    page.locator(".swal2-popup button").filter({ hasText: /^\s*(刪除|删除|確認|確定|確認刪除|確定刪除|OK|Delete|Remove|Yes)\s*$/i })
   ], 5000);
+  const modalAfter = await readVisibleModalState(page).catch((error) => ({ error: error instanceof Error ? error.message : String(error) }));
   return {
     clicked,
-    checkedAt: new Date().toISOString()
+    checkedAt: new Date().toISOString(),
+    modalBefore,
+    modalAfter
   };
 };
 
@@ -10630,8 +10792,9 @@ const createAndDeleteTemporaryReport = async (options: CliOptions, page: Page, s
   const rowGone = afterDeleteReload.found === false;
   const shot = await screenshot(effectiveOptions, page, rowGone ? "delete-temp-report" : "delete-temp-report-still-visible");
   const uiProfileAfter = await captureUiDomProfile(effectiveOptions, page, "createDeleteTemporary.after");
+  const deleteConfirmCompleted = deleteObserved?.result.modalConfirm?.clicked === true;
   const evidence = {
-    workflowStatus: rowGone && !unknownDialog && deleteObserved?.result.trigger.clicked ? "ok" : "blocked",
+    workflowStatus: rowGone && !unknownDialog && deleteObserved?.result.trigger.clicked && deleteConfirmCompleted ? "ok" : "blocked",
     approvedToolRequestId: effectiveOptions.approvedToolRequestId,
     reportName: savedReportName,
     temporaryNamePolicy: "reportName must contain temp/temporary/臨時 or OTTEST004_G03 and must not match protected main-resource keywords",
@@ -10656,12 +10819,15 @@ const createAndDeleteTemporaryReport = async (options: CliOptions, page: Page, s
   };
   fs.writeFileSync(deleteTemporaryReportEvidencePath(effectiveOptions), `${JSON.stringify(evidence, null, 2)}\n`);
   if (!deleteObserved?.result.trigger.clicked) warnings.push("DELETE_TEMP_TRIGGER_NOT_CLICKED");
+  if (deleteObserved?.result.trigger.clicked && !deleteConfirmCompleted) {
+    warnings.push("DELETE_TEMP_CONFIRM_NOT_COMPLETED");
+  }
   if (unknownDialog) warnings.push("DELETE_TEMP_UNKNOWN_OR_AUTH_DIALOG");
   if (!rowGone) warnings.push("DELETE_TEMP_ROW_STILL_VISIBLE_AFTER_DELETE");
   if (!shot) warnings.push("SCREENSHOT_UNAVAILABLE");
   return createReport(
     effectiveOptions,
-    rowGone && !unknownDialog && Boolean(deleteObserved?.result.trigger.clicked) ? "ok" : "blocked",
+    rowGone && !unknownDialog && Boolean(deleteObserved?.result.trigger.clicked) && deleteConfirmCompleted ? "ok" : "blocked",
     startedAt,
     evidence,
     {
@@ -10943,6 +11109,7 @@ type FrontendObservationType =
   | "metricRowDelete"
   | "dateTimeTypeTab"
   | "datePanelCancel"
+  | "dateRangeLimit"
   | "downloadToast"
   | "saveReportDisabled"
   | "saveModalCancel"
@@ -10972,6 +11139,7 @@ const frontendObservationType = (options: CliOptions): FrontendObservationType |
     value === "metricRowDelete" ||
     value === "dateTimeTypeTab" ||
     value === "datePanelCancel" ||
+    value === "dateRangeLimit" ||
     value === "downloadToast" ||
     value === "editorDownload" ||
     value === "saveReportDisabled" ||
@@ -11254,6 +11422,82 @@ const observeFrontendVisibleUiActions = async (
     if (clicked) await page.waitForTimeout(500);
     return clicked;
   };
+
+  if (observationType === "dateRangeLimit") {
+    const beforeDateText = await readDateRangeButtonText(page);
+    const invalidSpec: DatePreviewSpec = {
+      requestedLabel: "2026/01/01 ~ 2026/04/01",
+      mode: "structured",
+      start: { type: "static", date: "2026-01-01" },
+      end: { type: "static", date: "2026-04-01" },
+      expectedDateRange: "2026/01/01 ~ 2026/04/01",
+      expectUiBlock: true
+    };
+    const validSpec: DatePreviewSpec = {
+      requestedLabel: "2026/01/01 ~ 2026/03/31",
+      mode: "structured",
+      start: { type: "static", date: "2026-01-01" },
+      end: { type: "static", date: "2026-03-31" },
+      expectedDateRange: "2026/01/01 ~ 2026/03/31"
+    };
+    const invalidResult = await setStructuredDateRange(options, page, invalidSpec).catch((error) => ({
+      ok: false,
+      warning: error instanceof Error ? error.message : String(error),
+      uiProfiles: []
+    }));
+    const afterInvalidText = await page.locator("body").innerText({ timeout: 5000 }).catch(() => "");
+    const afterInvalidDateText = await readDateRangeButtonText(page);
+    const invalidWarningVisible = /90|九十|超過|不可超過|不得超過|上限|範圍|range/i.test(
+      `${afterInvalidText}\n${String((invalidResult as Record<string, unknown>).warning ?? "")}`
+    );
+    const invalidDateApplied =
+      /2026[/-]0?1[/-]0?1/.test(afterInvalidDateText ?? "") &&
+      /2026[/-]0?4[/-]0?1/.test(afterInvalidDateText ?? "");
+    const invalidRangeAccepted = invalidResult.ok === true && invalidDateApplied && !invalidWarningVisible;
+    actions.push(
+      { action: "select", target: "dateRange.staticStartInput", value: "2026-01-01", clicked: true },
+      { action: "select", target: "dateRange.staticEndInput", value: "2026-04-01", clicked: true },
+      { action: "assertDisabled", target: "dateRange.limitValidation", asserted: !invalidRangeAccepted }
+    );
+    if (invalidRangeAccepted) warnings.push("DATE_RANGE_LIMIT_INVALID_RANGE_ACCEPTED");
+
+    const validResult = await setStructuredDateRange(options, page, validSpec).catch((error) => ({
+      ok: false,
+      warning: error instanceof Error ? error.message : String(error),
+      uiProfiles: []
+    }));
+    const afterValidText = await page.locator("body").innerText({ timeout: 5000 }).catch(() => "");
+    const afterValidDateText = await readDateRangeButtonText(page);
+    actions.push(
+      { action: "select", target: "dateRange.staticStartInput", value: "2026-01-01", clicked: true },
+      { action: "select", target: "dateRange.staticEndInput", value: "2026-03-31", clicked: true },
+      { action: "assertStateChanged", target: "dateRange.limitValidation", asserted: validResult.ok === true }
+    );
+    if (validResult.ok !== true) warnings.push(`DATE_RANGE_LIMIT_VALID_RANGE_NOT_ACCEPTED:${validResult.warning ?? "unknown"}`);
+
+    return {
+      actions,
+      beforeDateText,
+      afterDateText: afterValidDateText,
+      dateRangeLimitFlow: {
+        invalid: {
+          requestedRange: invalidSpec.expectedDateRange,
+          result: invalidResult,
+          warningVisible: invalidWarningVisible,
+          dateApplied: invalidDateApplied,
+          accepted: invalidRangeAccepted,
+          afterTextSample: afterInvalidText.slice(0, 2400),
+          afterDateText: afterInvalidDateText
+        },
+        valid: {
+          requestedRange: validSpec.expectedDateRange,
+          result: validResult,
+          afterTextSample: afterValidText.slice(0, 2400),
+          afterDateText: afterValidDateText
+        }
+      }
+    };
+  }
 
   if (observationType === "datePanel" || observationType === "dateTimeTypeTab" || observationType === "datePanelCancel") {
     const beforeDateText = await readDateRangeButtonText(page);
@@ -11751,14 +11995,24 @@ const observeFrontendVisibleUiActions = async (
 
   if (observationType === "saveModalCancel") {
     const flow = await observeSaveModalCancelFlow(options, page);
+    const validationState = flow.validationState && typeof flow.validationState === "object" && !Array.isArray(flow.validationState)
+      ? flow.validationState as Record<string, unknown>
+      : null;
+    const validationMode = typeof flow.validationMode === "string" ? flow.validationMode : null;
     actions.push(
       { action: "open", target: "editorToolbar.saveButton", clicked: flow.saveClicked === true },
       { action: "type", target: "saveModal.reportNameInput", typed: Boolean(flow.nameInputEvidence), error: flow.nameInputError ?? null },
+      ...(validationMode === "projectSelector"
+        ? [{ action: "assertText", target: "saveModal.projectSelect", asserted: validationState?.asserted === true }]
+        : validationMode
+          ? [{ action: "assertDisabled", target: "saveModal.saveButton", asserted: validationState?.asserted === true }]
+          : []),
       { action: "cancel", target: "saveModal.cancelButton", clicked: flow.cancelClicked === true },
       { action: "assertHidden", target: "projectList.reportRow", asserted: flow.noReportCreated === true }
     );
     if (flow.saveClicked !== true) warnings.push("SAVE_MODAL_TRIGGER_NOT_CLICKABLE");
     if (!flow.nameInputEvidence) warnings.push("SAVE_MODAL_NAME_INPUT_NOT_VERIFIED");
+    if (validationMode && validationState?.asserted !== true) warnings.push(`SAVE_MODAL_VALIDATION_NOT_VERIFIED:${validationMode}`);
     if (flow.cancelClicked !== true) warnings.push("SAVE_MODAL_CANCEL_NOT_CLICKABLE");
     if (flow.noReportCreated !== true) warnings.push("SAVE_MODAL_CANCEL_NO_CREATE_NOT_VERIFIED");
     return { actions, saveModalCancelFlow: flow };
@@ -12411,10 +12665,22 @@ const readFrontendObservationState = async (
       const afterCancel = flow.afterCancel && typeof flow.afterCancel === "object" && !Array.isArray(flow.afterCancel)
         ? flow.afterCancel as Record<string, unknown>
         : null;
+      const validationState = flow.validationState && typeof flow.validationState === "object" && !Array.isArray(flow.validationState)
+        ? flow.validationState as Record<string, unknown>
+        : null;
+      const validationMode = typeof flow.validationMode === "string" ? flow.validationMode : null;
+      const modalText = String(modalOpened?.bodyTextExcerpt ?? "");
+      const modalOpenedByVisibleUi =
+        flow.saveClicked === true &&
+        (Number(modalOpened?.dialogCount ?? 0) > 0 || modalOpened?.modalLikeBody === true || /儲存報表|報表名稱|儲存專案|請選擇專案/.test(modalText));
+      const validationAsserted = validationMode ? validationState?.asserted === true : true;
       return {
         evidenceObject: "saveModal.cancelFlow.state",
         reportName: typeof flow.reportName === "string" ? flow.reportName : null,
-        modalOpenedByVisibleUi: flow.saveClicked === true && Number(modalOpened?.dialogCount ?? 0) > 0,
+        modalOpenedByVisibleUi,
+        validationMode,
+        validationState,
+        validationAsserted,
         nameInputVerified: Boolean(flow.nameInputEvidence),
         cancelClicked: flow.cancelClicked === true,
         modalClosed: flow.modalClosed === true || Number(afterCancel?.dialogCount ?? 1) === 0,
@@ -12422,7 +12688,7 @@ const readFrontendObservationState = async (
         rowStateAfterCancel: flow.rowState ?? null,
         noReportCreated: flow.noReportCreated === true,
         interactionLog: actionList,
-        asserted: flow.saveClicked === true && Boolean(flow.nameInputEvidence) && flow.cancelClicked === true && flow.modalClosed === true && flow.noReportCreated === true
+        asserted: flow.saveClicked === true && Boolean(flow.nameInputEvidence) && validationAsserted && flow.cancelClicked === true && flow.modalClosed === true && flow.noReportCreated === true
       };
     }
 
@@ -12437,10 +12703,14 @@ const readFrontendObservationState = async (
       const afterCancel = flow.afterCancel && typeof flow.afterCancel === "object" && !Array.isArray(flow.afterCancel)
         ? flow.afterCancel as Record<string, unknown>
         : null;
+      const modalText = String(modalOpened?.bodyTextExcerpt ?? "");
+      const modalOpenedByVisibleUi =
+        flow.copyClicked === true &&
+        (Number(modalOpened?.dialogCount ?? 0) > 0 || modalOpened?.modalLikeBody === true || /複製副本|報表名稱|儲存專案|請選擇專案|副本/.test(modalText));
       return {
         evidenceObject: "copyModal.cancelFlow.state",
         sourceReportName: typeof flow.sourceReportName === "string" ? flow.sourceReportName : null,
-        modalOpenedByVisibleUi: flow.copyClicked === true && Number(modalOpened?.dialogCount ?? 0) > 0,
+        modalOpenedByVisibleUi,
         defaultName: typeof flow.defaultName === "string" ? flow.defaultName : null,
         defaultNameContainsCopySuffix: flow.defaultNameContainsCopySuffix === true,
         projectRuleTextObserved: flow.modalTextContainsSaveProjectRule === true,
@@ -12565,6 +12835,53 @@ const readFrontendObservationState = async (
       };
     }
 
+    if (type === "dateRangeLimit") {
+      const actionList = Array.isArray(actionData?.actions) ? actionData.actions as Array<Record<string, unknown>> : [];
+      const flow = actionData?.dateRangeLimitFlow && typeof actionData.dateRangeLimitFlow === "object" && !Array.isArray(actionData.dateRangeLimitFlow)
+        ? actionData.dateRangeLimitFlow as Record<string, unknown>
+        : {};
+      const invalid = flow.invalid && typeof flow.invalid === "object" && !Array.isArray(flow.invalid)
+        ? flow.invalid as Record<string, unknown>
+        : {};
+      const valid = flow.valid && typeof flow.valid === "object" && !Array.isArray(flow.valid)
+        ? flow.valid as Record<string, unknown>
+        : {};
+      const invalidResult = invalid.result && typeof invalid.result === "object" && !Array.isArray(invalid.result)
+        ? invalid.result as Record<string, unknown>
+        : {};
+      const validResult = valid.result && typeof valid.result === "object" && !Array.isArray(valid.result)
+        ? valid.result as Record<string, unknown>
+        : {};
+      const invalidText = `${invalid.afterTextSample ?? ""}\n${invalidResult.warning ?? ""}`;
+      const invalidWarningVisible = /90|九十|超過|不可超過|不得超過|上限|範圍|range/i.test(invalidText);
+      const invalidRangeBlocked = invalid.accepted === false || invalidResult.ok === false || invalidWarningVisible;
+      const validDateText = String(valid.afterDateText ?? "");
+      const validRangeAccepted =
+        validResult.ok === true ||
+        /2026[/-]0?1[/-]0?1/.test(validDateText) && /2026[/-]0?3[/-]31/.test(validDateText);
+      return {
+        evidenceObject: "dateRange.limitValidation.state",
+        invalidRange: {
+          requestedRange: invalid.requestedRange ?? null,
+          blocked: invalidRangeBlocked,
+          warningVisible: invalidWarningVisible,
+          dateApplied: invalid.dateApplied ?? null,
+          accepted: invalid.accepted ?? null,
+          result: invalidResult,
+          afterDateText: invalid.afterDateText ?? null
+        },
+        validRange: {
+          requestedRange: valid.requestedRange ?? null,
+          accepted: validRangeAccepted,
+          result: validResult,
+          afterDateText: valid.afterDateText ?? null
+        },
+        previewRequestDelta: requestDelta,
+        interactionLog: actionList,
+        asserted: invalidRangeBlocked && validRangeAccepted && requestDelta === 0
+      };
+    }
+
     const knownMessage = "欄位未設置完成";
     return {
       evidenceObject: "validation.message.state",
@@ -12609,6 +12926,7 @@ const waitForFrontendObservationReadiness = async (
     metricRowDelete: /欄位選擇|刪除|請選擇報表|報表設定/i,
     dateTimeTypeTab: /時間|動態|靜態|報表設定/i,
     datePanelCancel: /時間|取消|報表設定/i,
+    dateRangeLimit: /時間|動態|靜態|報表設定/i,
     downloadToast: /下載|計算|執行|報表設定/i,
     saveReportDisabled: /儲存報表|報表設定|欄位選擇/i,
     saveModalCancel: /儲存報表|報表設定/i,

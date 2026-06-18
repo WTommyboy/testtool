@@ -162,11 +162,11 @@ const assertHelperPlans = (runDir: string, cases: JsonObject[], failures: Failur
 
   const b08 = plans.get("BIUI_COLLAGE_R001-B-08");
   if (b08) {
-    if (!includesTemplate(b08, "collage.configureMetric") || !includesTemplate(b08, "collage.runPreviewAndCollectEvidence")) {
+    if (!includesTemplate(b08, "collage.runDateVariantsPreviewEvidence")) {
       addFailure(failures, {
         check: "b08_structured_preview_route",
         caseNo: "BIUI_COLLAGE_R001-B-08",
-        message: "B-08 structured preview_execution scope must not stop at navigation prelude.",
+        message: "B-08 structured preview_execution scope must route through the date preview evidence helper, not stop at navigation prelude.",
         observed: planSummary(b08)
       });
     }
@@ -228,6 +228,144 @@ const assertHelperPlans = (runDir: string, cases: JsonObject[], failures: Failur
   }
 };
 
+const assertExternalRuntimeContractLoading = (runDir: string, failures: Failure[]): void => {
+  const inputDir = path.join(runDir, "external-contract", "input");
+  const casesDir = path.join(inputDir, "cases");
+  fs.mkdirSync(casesDir, { recursive: true });
+  const externalCaseNo = "BIUI_COLLAGE_R001-Z-99";
+  const currentCaseFile = path.join(casesDir, `001-${externalCaseNo}.json`);
+  const currentCase = {
+    order: 1,
+    rowNumber: 2,
+    groupId: "Z",
+    groupName: "External contract loading fixture",
+    caseNo: externalCaseNo,
+    caseTitle: "External runtime contract loading fixture",
+    testType: "前端呈現",
+    executionMethod: "agent",
+    riskLevel: "🟢 觀察",
+    testTarget: "前端呈現",
+    cleanupChecklist: "欄位=空;篩選=不影響;分組=不影響;時間=不影響;顯示=不影響",
+    preconditions: "起始頁面: 拼貼報表新增報表設定頁",
+    stepsSummary: "點擊時間區間 button 展開面板。",
+    expected: "時間面板可展開。",
+    resultStatus: null,
+    testDate: null,
+    detailJson: null,
+    validationMethod: "external runtime contract smoke",
+    currentCaseFile
+  };
+  fs.writeFileSync(currentCaseFile, `${JSON.stringify(currentCase, null, 2)}\n`);
+  fs.writeFileSync(path.join(inputDir, "domain_case_scope_contracts.json"), `${JSON.stringify({
+    schemaVersion: "case-scope-runtime-contracts-v1",
+    domain: "BI_OFFICIAL_UI_COLLAGE",
+    contracts: [
+      {
+        caseNo: externalCaseNo,
+        routeIntent: "frontend_observation",
+        testTarget: "frontend_presentation",
+        requiresEditor: true,
+        observationType: "datePanel",
+        requiredActions: [
+          {
+            actionId: "openDatePanel",
+            action: "open",
+            target: "dateRange.button",
+            role: "under_test",
+            expectedOutcome: "visible",
+            requiredForPass: true,
+            evidenceRequirements: ["dateRange.panel.state", "interactionLog"]
+          }
+        ],
+        evidenceRequirements: {
+          flow: ["dateRange.panel.state"],
+          observation: ["screenshot"]
+        },
+        judgmentPolicy: {
+          failWhen: ["panel is reachable but does not open"],
+          blockedWhen: ["date range button cannot be located"]
+        }
+      }
+    ]
+  }, null, 2)}\n`);
+
+  const plan = buildHelperExecutionPlan({ runDir, currentCase: currentCase as any, helperHints: null });
+  if (plan.caseScopeContract?.caseNo !== externalCaseNo || !includesTemplate(plan, "collage.observeFrontendState")) {
+    addFailure(failures, {
+      check: "external_runtime_contract_loading",
+      caseNo: externalCaseNo,
+      message: "Planner must load structured contracts from input/domain_case_scope_contracts.json beside currentCaseFile, even when the case JSON has no embedded caseScopeContract.",
+      observed: planSummary(plan)
+    });
+  }
+};
+
+const assertRepoContractFallbackWhenInputSnapshotIsPartial = (runDir: string, failures: Failure[]): void => {
+  const inputDir = path.join(runDir, "repo-fallback-contract", "input");
+  const casesDir = path.join(inputDir, "cases");
+  fs.mkdirSync(casesDir, { recursive: true });
+  const l11CaseNo = "BIUI_COLLAGE_R001-L-11";
+  const currentCaseFile = path.join(casesDir, `001-${l11CaseNo}.json`);
+  const currentCase = {
+    order: 1,
+    rowNumber: 2,
+    groupId: "L",
+    groupName: "Date range frontend observation fixture",
+    caseNo: l11CaseNo,
+    caseTitle: "日期區間 90 天上限驗證",
+    testType: "前端呈現",
+    executionMethod: "agent",
+    riskLevel: "🟢 觀察",
+    testTarget: "前端呈現",
+    cleanupChecklist: "欄位=新增帳號數;篩選=不影響;分組=不影響;時間=不影響;顯示=不影響",
+    preconditions: "起始頁面: 拼貼報表新增報表設定頁",
+    stepsSummary: "設定 91 天區間應被阻擋；改成 90 天區間應可接受。本題不測 preview。",
+    expected: "日期面板正確執行 90 天上限防呆。",
+    resultStatus: null,
+    testDate: null,
+    detailJson: null,
+    validationMethod: "caseScopeContract + current-run evidence",
+    currentCaseFile
+  };
+  fs.writeFileSync(currentCaseFile, `${JSON.stringify(currentCase, null, 2)}\n`);
+  fs.writeFileSync(path.join(inputDir, "domain_case_scope_contracts.json"), `${JSON.stringify({
+    schemaVersion: "case-scope-runtime-contracts-v1",
+    domain: "BI_OFFICIAL_UI_COLLAGE",
+    contracts: [
+      {
+        caseNo: "BIUI_COLLAGE_R001-Z-00",
+        routeIntent: "frontend_observation",
+        testTarget: "frontend_presentation",
+        requiresEditor: false,
+        observationType: "userButton",
+        requiredActions: [
+          {
+            actionId: "observeUserButton",
+            action: "assertVisible",
+            target: "topbar.userButton",
+            role: "under_test",
+            expectedOutcome: "visible",
+            requiredForPass: true,
+            evidenceRequirements: ["topbar.userButton.state"]
+          }
+        ],
+        evidenceRequirements: { observation: ["topbar.userButton.state"] },
+        judgmentPolicy: { failWhen: [], blockedWhen: [] }
+      }
+    ]
+  }, null, 2)}\n`);
+
+  const plan = buildHelperExecutionPlan({ runDir, currentCase: currentCase as any, helperHints: null });
+  if (plan.caseScopeContract?.caseNo !== l11CaseNo || plan.caseScopeContract?.observationType !== "dateRangeLimit") {
+    addFailure(failures, {
+      check: "repo_contract_fallback_when_input_snapshot_is_partial",
+      caseNo: l11CaseNo,
+      message: "Planner must let repo domain case-scope contracts fill cases missing from a non-empty input/domain_case_scope_contracts.json snapshot.",
+      observed: planSummary(plan)
+    });
+  }
+};
+
 const main = async (): Promise<void> => {
   if (!fs.existsSync(testcaseXlsx)) {
     throw new Error(`P0 live packet xlsx missing: ${testcaseXlsx}`);
@@ -238,6 +376,8 @@ const main = async (): Promise<void> => {
   try {
     const cases = await assertStructuredManifest(runDir, failures);
     assertHelperPlans(runDir, cases, failures);
+    assertExternalRuntimeContractLoading(runDir, failures);
+    assertRepoContractFallbackWhenInputSnapshotIsPartial(runDir, failures);
 
     const result = {
       ok: failures.length === 0,
