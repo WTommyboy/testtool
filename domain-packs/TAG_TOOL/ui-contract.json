@@ -1,0 +1,230 @@
+{
+  "schemaVersion": "domain-ui-contract-v0.1",
+  "domain": "TAG_TOOL",
+  "status": "draft_contract",
+  "purpose": "Reviewed page, component, action, evidence, and safety boundaries for Galaxy Next player tag tool UAT.",
+  "pages": [
+    {
+      "id": "tagPlayerList",
+      "routePatterns": [
+        "/bi-dev/:locale/tag/player?gameId=:gameId",
+        "/bi-rc/:locale/tag/player?gameId=:gameId"
+      ],
+      "components": [
+        "tagList.toolbar",
+        "tagList.table",
+        "tagList.rowActions",
+        "dangerousAction.confirmModal"
+      ]
+    },
+    {
+      "id": "tagCreate",
+      "routePatterns": [
+        "/bi-dev/:locale/tag/player/new?gameId=:gameId",
+        "/bi-rc/:locale/tag/player/new?gameId=:gameId"
+      ],
+      "components": [
+        "tagForm.basicFields",
+        "conditionTag.valueEditor",
+        "manualTag.uploadPanel",
+        "dateRange.panel",
+        "toast.message"
+      ]
+    },
+    {
+      "id": "conditionTagSettingsReadonly",
+      "routePatterns": [
+        "/bi-dev/:locale/tag/player/:tagId/setting?gameId=:gameId",
+        "/bi-rc/:locale/tag/player/:tagId/setting?gameId=:gameId"
+      ],
+      "components": [
+        "tagForm.basicFields",
+        "conditionTag.valueEditor",
+        "readonlyForm.state"
+      ]
+    },
+    {
+      "id": "manualTagEdit",
+      "routePatterns": [
+        "/bi-dev/:locale/tag/player/:tagId/edit?gameId=:gameId",
+        "/bi-rc/:locale/tag/player/:tagId/edit?gameId=:gameId"
+      ],
+      "components": [
+        "tagForm.basicFields",
+        "manualTag.uploadPanel",
+        "toast.message"
+      ]
+    },
+    {
+      "id": "tagInfo",
+      "routePatterns": [
+        "/bi-dev/:locale/tag/player/:tagId/info?gameId=:gameId",
+        "/bi-rc/:locale/tag/player/:tagId/info?gameId=:gameId"
+      ],
+      "components": [
+        "tagInfo.basicSettings",
+        "tagInfo.summary",
+        "tagInfo.dailyChart",
+        "tagInfo.memberTable"
+      ]
+    },
+    {
+      "id": "tagVariableSettings",
+      "routePatterns": [
+        "/bi-dev/:locale/tag/settings?gameId=:gameId",
+        "/bi-rc/:locale/tag/settings?gameId=:gameId"
+      ],
+      "components": [
+        "tagVariables.form",
+        "tagVariables.history",
+        "toast.message"
+      ]
+    }
+  ],
+  "components": [
+    {
+      "id": "tagList.toolbar",
+      "type": "toolbar",
+      "locatorStrategies": [
+        "page title 玩家標籤管理 with adjacent 刪除 and 新增 buttons",
+        "breadcrumb containing 標籤 > 玩家標籤管理"
+      ]
+    },
+    {
+      "id": "tagList.table",
+      "type": "table",
+      "locatorStrategies": [
+        "table with headers 標籤名稱, 標籤類型, 條件類型, 時間類型, 排程狀態, 資料最後更新時間, 備註",
+        "empty state text 無標籤資料 when no rows exist"
+      ]
+    },
+    {
+      "id": "tagList.rowActions",
+      "type": "menu",
+      "locatorStrategies": [
+        "row action trigger shown as ⋯ or more button in each tag row",
+        "menu items vary by tag type and schedule state"
+      ]
+    },
+    {
+      "id": "tagForm.basicFields",
+      "type": "form",
+      "locatorStrategies": [
+        "fields 標籤名稱, 標籤類型, 條件類別, 篩選類型, 分析時段",
+        "manual tag hides 條件類別, 篩選類型, 分析時段"
+      ]
+    },
+    {
+      "id": "conditionTag.valueEditor",
+      "type": "dualPaneEditor",
+      "locatorStrategies": [
+        "section title 子標籤級距",
+        "button 新增級距 and inline lower/upper bound editor"
+      ]
+    },
+    {
+      "id": "manualTag.uploadPanel",
+      "type": "fileUpload",
+      "locatorStrategies": [
+        "section title 上傳文件",
+        "text mentions csv and file limits",
+        "button or dropzone for 新增檔案"
+      ]
+    },
+    {
+      "id": "dateRange.panel",
+      "type": "popover",
+      "locatorStrategies": [
+        "panel title 日期範圍",
+        "quick options 昨日, 今日, 上週, 本週, 上月, 本月, 過去7天, 最近7天, 過去30天, 最近30天",
+        "limit text 日期範圍不可超過90天"
+      ]
+    },
+    {
+      "id": "dangerousAction.confirmModal",
+      "type": "modal",
+      "locatorStrategies": [
+        "modal title 刪除 標籤 or 終止 標籤",
+        "buttons 取消 plus 刪除 or 確定終止"
+      ]
+    },
+    {
+      "id": "tagVariables.form",
+      "type": "form",
+      "locatorStrategies": [
+        "page title 標籤變數設定",
+        "numeric controls N, Z, Y, X, A, B with stepper controls"
+      ]
+    },
+    {
+      "id": "tagVariables.history",
+      "type": "table",
+      "locatorStrategies": [
+        "table headers 設置時間, N, Z, Y, X, A, B, 備註",
+        "time format YYYY.MM.DD HH:MM"
+      ]
+    }
+  ],
+  "actions": [
+    {
+      "id": "tagList.observe",
+      "contractFile": "action-contracts/tagList.json",
+      "capabilities": [
+        "tag.list.columns",
+        "tag.list.rowActions",
+        "tag.list.emptyState"
+      ]
+    },
+    {
+      "id": "tag.createCondition",
+      "contractFile": "action-contracts/createConditionTag.json",
+      "capabilities": [
+        "tag.condition.formState",
+        "tag.condition.datePanel",
+        "tag.condition.valueEditor"
+      ]
+    },
+    {
+      "id": "tag.manualUpload",
+      "contractFile": "action-contracts/manualUpload.json",
+      "capabilities": [
+        "tag.manual.addCsv",
+        "tag.manual.editCsv",
+        "tag.manual.validation"
+      ]
+    },
+    {
+      "id": "tag.variables",
+      "contractFile": "action-contracts/tagVariableSettings.json",
+      "capabilities": [
+        "tag.variables.defaults",
+        "tag.variables.validation",
+        "tag.variables.history"
+      ]
+    },
+    {
+      "id": "tag.dangerousActions",
+      "contractFile": "action-contracts/dangerousActions.json",
+      "capabilities": [
+        "tag.delete.cancel",
+        "tag.terminate.cancel",
+        "tag.irreversible.approvalGate"
+      ]
+    }
+  ],
+  "evidenceContract": {
+    "file": "evidence-schema.json",
+    "policy": [
+      "Evidence must be current-run and case-scoped.",
+      "Screenshots support structured DOM/text evidence but do not replace it.",
+      "Tool Bridge response is required before confirming delete, terminate, save variables, or manual edit update/delete."
+    ]
+  },
+  "lintRules": {
+    "file": "lint-rules.json",
+    "policy": [
+      "Testcase helper hints should match declared domain actions and params.",
+      "Dangerous actions require authorization metadata and should be split from ordinary smoke unless explicitly scoped."
+    ]
+  }
+}

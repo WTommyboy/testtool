@@ -1,0 +1,84 @@
+{
+  "schemaVersion": "domain-lint-rules-v0.1",
+  "domain": "TAG_TOOL",
+  "status": "draft_contract",
+  "rules": [
+    {
+      "id": "tag-tool-domain-required",
+      "severity": "error",
+      "require": [
+        {
+          "field": "domain",
+          "equals": "TAG_TOOL"
+        }
+      ],
+      "message": "Player tag tool cases must route to TAG_TOOL, not BI_OFFICIAL_UI_COLLAGE."
+    },
+    {
+      "id": "dangerous-action-authorization-required",
+      "severity": "error",
+      "require": [
+        {
+          "whenAnyTextContains": [
+            "確定終止",
+            "刪除後將不可回覆",
+            "儲存標籤變數",
+            "操作 delete"
+          ],
+          "metadataField": "requiresTommyApproval",
+          "equals": true
+        }
+      ],
+      "message": "Delete, terminate, save variables, and manual edit destructive updates require explicit approval metadata."
+    },
+    {
+      "id": "manual-add-csv-format",
+      "severity": "warning",
+      "require": [
+        {
+          "whenAnyTextContains": [
+            "新增人工標籤",
+            "新增用途"
+          ],
+          "fixtureHeaderEquals": [
+            "標籤值名稱",
+            "帳號ID"
+          ]
+        }
+      ],
+      "message": "Manual tag add CSV fixtures should use exactly two columns."
+    },
+    {
+      "id": "manual-edit-csv-format",
+      "severity": "warning",
+      "require": [
+        {
+          "whenAnyTextContains": [
+            "編輯人工標籤",
+            "異動名單"
+          ],
+          "fixtureHeaderEquals": [
+            "標籤值名稱",
+            "帳號ID",
+            "操作"
+          ]
+        }
+      ],
+      "message": "Manual tag edit CSV fixtures should use exactly three columns including 操作."
+    },
+    {
+      "id": "condition-tag-readonly-after-create",
+      "severity": "error",
+      "forbid": [
+        {
+          "whenAnyTextContains": [
+            "條件標籤",
+            "查看設置"
+          ],
+          "textContains": "編輯條件標籤"
+        }
+      ],
+      "message": "Condition tags are view-only after creation; testcase should use 查看設置 instead of edit."
+    }
+  ]
+}

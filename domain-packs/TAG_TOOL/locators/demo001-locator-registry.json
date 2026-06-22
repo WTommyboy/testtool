@@ -1,0 +1,91 @@
+{
+  "schemaVersion": "tag-tool-v0.1-locator-registry",
+  "domain": "TAG_TOOL",
+  "scope": "Galaxy Next BI Web player tag management, manual tag upload, condition tag setup, tag information, and tag variable settings.",
+  "status": "live_verified_partial_2026-06-22",
+  "policy": [
+    "Locator guidance only; it does not prove PASS/FAIL/BLOCKED.",
+    "All candidates must operate visible UI through Playwright locators.",
+    "Do not use direct product APIs, internal JS setters, DOM mutation, or force:true clicks.",
+    "If candidates fail, fall back to visible UI exploration and record drift.",
+    "Read-only DOM or network extraction is allowed only after visible UI state has been set."
+  ],
+  "locators": [
+    {
+      "id": "tagList.newButton",
+      "page": "tagPlayerList",
+      "strategy": "role",
+      "selector": {
+        "role": "button",
+        "name": "新增",
+        "exact": true
+      },
+      "evidence": "Observed on /bi-dev/zh-TW/tag/player?gameId=541."
+    },
+    {
+      "id": "tagList.deleteButton",
+      "page": "tagPlayerList",
+      "strategy": "role",
+      "selector": {
+        "role": "button",
+        "name": "刪除",
+        "exact": true
+      },
+      "evidence": "Observed disabled on empty list."
+    },
+    {
+      "id": "tagForm.manualTypeRadio",
+      "page": "tagCreate",
+      "strategy": "role",
+      "selector": {
+        "role": "radio",
+        "name": "人工標籤",
+        "exact": true
+      },
+      "evidence": "Observed on /bi-dev/zh-TW/tag/player/new?gameId=541."
+    },
+    {
+      "id": "tagForm.conditionTypeRadio",
+      "page": "tagCreate",
+      "strategy": "role",
+      "selector": {
+        "role": "radio",
+        "name": "條件標籤",
+        "exact": true
+      },
+      "evidence": "Observed checked by default on create page."
+    },
+    {
+      "id": "tagForm.tagNameInput",
+      "page": "tagCreate",
+      "strategy": "placeholder",
+      "selector": {
+        "placeholder": "請輸入標籤名稱",
+        "exact": true
+      },
+      "evidence": "Observed on condition and manual create forms."
+    },
+    {
+      "id": "tagForm.saveButton",
+      "page": "tagCreate",
+      "strategy": "role",
+      "selector": {
+        "role": "button",
+        "name": "儲存",
+        "exact": true
+      },
+      "evidence": "Observed on create form. Live smoke found click did not submit condition tag."
+    },
+    {
+      "id": "tagVariables.xInput",
+      "page": "tagVariableSettings",
+      "strategy": "role",
+      "selector": {
+        "role": "textbox",
+        "name": "生命週期天數 X",
+        "exact": true
+      },
+      "evidence": "Observed on /bi-dev/zh-TW/tag/settings?gameId=541."
+    }
+  ]
+}

@@ -1,0 +1,65 @@
+{
+  "schemaVersion": "domain-ui-discovery-page-map-v0.1",
+  "domain": "TAG_TOOL",
+  "status": "live_verified_partial_2026-06-22",
+  "pages": [
+    {
+      "id": "tagPlayerList",
+      "routePattern": "/bi-dev/zh-TW/tag/player?gameId=:gameId",
+      "expectedSignals": [
+        "breadcrumb contains 標籤 > 玩家標籤管理",
+        "page title 玩家標籤管理",
+        "toolbar buttons 刪除 and 新增",
+        "empty state text 尚無標籤資料 when no user-created tags exist",
+        "table headers include 標籤名稱, 標籤類型, 條件類型, 時間類型, 排程狀態, 資料最後更新時間, 備註 when rows exist"
+      ]
+    },
+    {
+      "id": "tagCreate",
+      "routePattern": "/bi-dev/zh-TW/tag/player/new?gameId=:gameId",
+      "expectedSignals": [
+        "page title 新增標籤",
+        "condition tag is selected by default in current dev UI",
+        "fields 標籤名稱, 條件類別, 篩選類型, 分析時段",
+        "buttons 取消 and 儲存"
+      ]
+    },
+    {
+      "id": "conditionTagSettingsReadonly",
+      "routePattern": "/bi-dev/zh-TW/tag/player/:tagId/setting?gameId=:gameId",
+      "expectedSignals": [
+        "page title 查看設置",
+        "read-only condition fields",
+        "bottom button 返回"
+      ]
+    },
+    {
+      "id": "manualTagEdit",
+      "routePattern": "/bi-dev/zh-TW/tag/player/:tagId/edit?gameId=:gameId",
+      "expectedSignals": [
+        "page title 編輯標籤",
+        "upload guidance mentions add/update/delete",
+        "buttons 取消 and 儲存"
+      ]
+    },
+    {
+      "id": "tagInfo",
+      "routePattern": "/bi-dev/zh-TW/tag/player/:tagId/info?gameId=:gameId",
+      "expectedSignals": [
+        "page title contains 標籤資訊",
+        "section 標籤基本設置",
+        "section 最新標籤值資訊"
+      ]
+    },
+    {
+      "id": "tagVariableSettings",
+      "routePattern": "/bi-dev/zh-TW/tag/settings?gameId=:gameId",
+      "expectedSignals": [
+        "breadcrumb contains 標籤 > 標籤變數設定",
+        "page title 標籤變數設定",
+        "settings for N, Z, Y, X, A, B",
+        "table 設置紀錄 with 操作人 column in current dev UI"
+      ]
+    }
+  ]
+}

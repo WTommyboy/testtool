@@ -1,0 +1,43 @@
+{
+  "schemaVersion": "tag-tool-v0.1",
+  "displayName": "Player Tag Tool",
+  "requiredSheets": [
+    "測試案例"
+  ],
+  "resultSheets": [
+    "測試案例",
+    "Bug清單"
+  ],
+  "caseNoColumnCandidates": [
+    "編號",
+    "Case ID",
+    "case_id"
+  ],
+  "resultColumnCandidates": [
+    "結果",
+    "result"
+  ],
+  "detailJsonColumnCandidates": [
+    "詳細紀錄JSON",
+    "detail_json"
+  ],
+  "requiredCaseColumns": [
+    "輪次ID",
+    "群組ID",
+    "群組",
+    "編號",
+    "測試類型",
+    "測試項目",
+    "風險等級",
+    "測試標的",
+    "狀態清理",
+    "前置條件",
+    "步驟",
+    "預期結果",
+    "結果",
+    "執行方式",
+    "測試日",
+    "詳細紀錄JSON",
+    "驗證方法"
+  ]
+}

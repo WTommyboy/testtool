@@ -1,0 +1,145 @@
+{
+  "schemaVersion": "domain-action-contract-v0.1",
+  "domain": "TAG_TOOL",
+  "action": "createConditionTag",
+  "status": "draft_contract",
+  "purpose": "Shared condition-tag creation form, date-panel, and tag-value editor flows.",
+  "capabilities": [
+    "tag.condition.typeSwitch",
+    "tag.condition.datePanel",
+    "tag.condition.valueEditor",
+    "tag.condition.validationToast"
+  ],
+  "paramsSchema": {
+    "type": "object",
+    "required": [
+      "flow"
+    ],
+    "properties": {
+      "flow": {
+        "type": "string",
+        "enum": [
+          "observeInitialCreateState",
+          "selectConditionType",
+          "openDatePanel",
+          "addTagValue",
+          "submitIncompleteAndObserveToast"
+        ]
+      },
+      "tagName": {
+        "type": "string"
+      },
+      "conditionType": {
+        "type": "string",
+        "enum": [
+          "消費級距 R",
+          "累積登入天數",
+          "累積未登入天數",
+          "累積遊戲時間"
+        ]
+      },
+      "timeType": {
+        "type": "string",
+        "enum": [
+          "動態時間區間",
+          "靜態時間區間",
+          "依報表區間設置",
+          "首次後持續累計"
+        ]
+      },
+      "analysisPeriodLabel": {
+        "type": "string"
+      }
+    },
+    "additionalProperties": true
+  },
+  "sharedFlows": {
+    "observeInitialCreateState": {
+      "declarativePlan": [
+        {
+          "op": "click",
+          "target": "tagList.newButton"
+        },
+        {
+          "op": "read",
+          "target": "tagForm.tagType",
+          "saveAs": "tagForm.typeVisibility.state"
+        }
+      ],
+      "requiredEvidence": [
+        "navigation.state",
+        "tagForm.typeVisibility.state",
+        "interactionLog"
+      ]
+    },
+    "openDatePanel": {
+      "declarativePlan": [
+        {
+          "op": "select",
+          "target": "tagForm.tagType",
+          "value": "條件標籤"
+        },
+        {
+          "op": "select",
+          "target": "tagForm.timeType",
+          "valueFrom": "params.timeType"
+        },
+        {
+          "op": "click",
+          "target": "dateRange.panel"
+        },
+        {
+          "op": "read",
+          "target": "dateRange.panel",
+          "saveAs": "dateRange.panel.state"
+        }
+      ],
+      "requiredEvidence": [
+        "tagForm.typeVisibility.state",
+        "dateRange.panel.state",
+        "interactionLog"
+      ]
+    },
+    "addTagValue": {
+      "declarativePlan": [
+        {
+          "op": "click",
+          "target": "conditionTag.valueEditor.addButton"
+        },
+        {
+          "op": "read",
+          "target": "conditionTag.valueEditor",
+          "saveAs": "conditionTag.valueEditor.state"
+        }
+      ],
+      "requiredEvidence": [
+        "conditionTag.valueEditor.state",
+        "interactionLog"
+      ]
+    },
+    "submitIncompleteAndObserveToast": {
+      "declarativePlan": [
+        {
+          "op": "click",
+          "target": "tagForm.submitButton"
+        },
+        {
+          "op": "read",
+          "target": "toast.message",
+          "saveAs": "toast.message.state"
+        }
+      ],
+      "requiredEvidence": [
+        "toast.message.state",
+        "conditionTag.valueEditor.state",
+        "interactionLog"
+      ]
+    }
+  },
+  "blockerCodes": [
+    "TAG_CREATE_UNREACHABLE",
+    "TAG_TYPE_DROPDOWN_MISSING",
+    "DATE_PANEL_UNREACHABLE",
+    "CONDITION_VALUE_EDITOR_MISSING"
+  ]
+}

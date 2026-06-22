@@ -1,0 +1,113 @@
+{
+  "schemaVersion": "domain-ui-discovery-component-inventory-v0.1",
+  "domain": "TAG_TOOL",
+  "status": "live_verified_partial_2026-06-22",
+  "components": [
+    {
+      "id": "tagList.toolbar",
+      "page": "tagPlayerList",
+      "type": "toolbar",
+      "candidateSignals": [
+        "title 玩家標籤管理",
+        "button 刪除",
+        "button 新增"
+      ]
+    },
+    {
+      "id": "tagList.table",
+      "page": "tagPlayerList",
+      "type": "table",
+      "candidateSignals": [
+        "header 標籤名稱",
+        "header 標籤類型",
+        "header 排程狀態",
+        "row action trigger ⋯"
+      ]
+    },
+    {
+      "id": "tagList.rowActions",
+      "page": "tagPlayerList",
+      "type": "menu",
+      "candidateSignals": [
+        "items 查看設置, 詳細資料 or 標籤資訊",
+        "condition active item 終止",
+        "manual item 編輯",
+        "items 刪除 and 複製"
+      ]
+    },
+    {
+      "id": "tagForm.basicFields",
+      "page": "tagCreate",
+      "type": "form",
+      "candidateSignals": [
+        "field 標籤名稱",
+        "dropdown 標籤類型",
+        "dependent fields 條件類別, 篩選類型, 分析時段"
+      ]
+    },
+    {
+      "id": "conditionTag.valueEditor",
+      "page": "tagCreate",
+      "type": "dualPaneEditor",
+      "candidateSignals": [
+        "label 子標籤級距",
+        "button 新增級距",
+        "inline fields 子標籤名稱, 下限, 上限"
+      ]
+    },
+    {
+      "id": "manualTag.uploadPanel",
+      "page": "tagCreate",
+      "type": "fileUpload",
+      "candidateSignals": [
+        "label 上傳文件",
+        "csv guidance",
+        "live dev add page currently mentions 操作 column and add/update/delete guidance",
+        "每個檔案限 10,000 筆",
+        "每次設置至多 5 個檔案"
+      ]
+    },
+    {
+      "id": "dateRange.panel",
+      "page": "tagCreate",
+      "type": "popover",
+      "candidateSignals": [
+        "title 日期範圍",
+        "quick preset labels",
+        "cancel and confirm buttons",
+        "90 day limit text"
+      ]
+    },
+    {
+      "id": "dangerousAction.confirmModal",
+      "page": "tagPlayerList",
+      "type": "modal",
+      "candidateSignals": [
+        "title 刪除 標籤",
+        "title 終止 標籤",
+        "cancel button",
+        "danger confirm button"
+      ]
+    },
+    {
+      "id": "tagVariables.form",
+      "page": "tagVariableSettings",
+      "type": "form",
+      "candidateSignals": [
+        "ID狀態",
+        "玩家生命週期",
+        "inputs N, Z, Y, X, A, B",
+        "stepper controls"
+      ]
+    },
+    {
+      "id": "tagVariables.history",
+      "page": "tagVariableSettings",
+      "type": "table",
+      "candidateSignals": [
+        "section 設置紀錄",
+        "headers 設置時間, N, Z, Y, X, A, B, 備註"
+      ]
+    }
+  ]
+}

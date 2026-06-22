@@ -1,0 +1,42 @@
+{
+  "schemaVersion": "tag-tool-v0.1-result-adapter",
+  "displayName": "Player Tag Tool",
+  "caseSheetNameCandidates": [
+    "測試案例"
+  ],
+  "bugSheetNameCandidates": [
+    "Bug清單",
+    "BUG清單",
+    "Bugs"
+  ],
+  "resultValues": [
+    "PASS",
+    "FAIL",
+    "BLOCKED",
+    "PARTIAL"
+  ],
+  "caseKeyColumns": [
+    "編號",
+    "Case ID",
+    "case_id"
+  ],
+  "resultColumns": {
+    "status": [
+      "結果",
+      "result"
+    ],
+    "testDate": [
+      "測試日",
+      "test_date"
+    ],
+    "detailJson": [
+      "詳細紀錄JSON",
+      "detail_json"
+    ],
+    "verification": [
+      "驗證方法",
+      "verification"
+    ]
+  },
+  "detailJsonRequiredForTerminalCases": true
+}

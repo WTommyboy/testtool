@@ -38,6 +38,24 @@ uploaded testcase md files
 
 Layer 1 必須把它當 BI-specific，不可當 platform-general。
 
+## 目前追加：玩家標籤工具
+
+`domain=TAG_TOOL` 時，使用 UAT Tool repo 內的 domain pack：
+
+```text
+domain-packs/TAG_TOOL/
+```
+
+建議 routing metadata：
+
+- `domain=TAG_TOOL`
+- `featureMain=BI工具衍伸` 或 `BI工具`
+- `featureSub=標籤工具` / `玩家標籤管理` / `標籤變數設定`
+
+`TAG_TOOL` 是 BI Web 的標籤工具 domain，但不是 `BI_OFFICIAL_UI_COLLAGE` 的子功能。除非 run 明確要求用 BI collage 作 comparison reference，否則不可套用 collage project/report/editor/field-picker/source-report 規則。
+
+若 run 只寫「BI」但 testcase 內容明確為 `工具設置 > 標籤 > 玩家標籤管理` 或 `標籤變數設定`，應 emit `ambiguity_decision`，請 Tommy 確認要路由到 `TAG_TOOL`，不要自行猜成 `BI_OFFICIAL_UI_COLLAGE`。
+
 ## 未來 Layout
 
 未來 domains 應逐步走向：

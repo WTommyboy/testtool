@@ -1,0 +1,114 @@
+{
+  "schemaVersion": "domain-action-contract-v0.1",
+  "domain": "TAG_TOOL",
+  "action": "manualUpload",
+  "status": "draft_contract",
+  "purpose": "Manual tag add/edit CSV upload setup and validation evidence.",
+  "capabilities": [
+    "tag.manual.addCsvFormat",
+    "tag.manual.editCsvFormat",
+    "tag.manual.fileLimit",
+    "tag.manual.validationToast"
+  ],
+  "paramsSchema": {
+    "type": "object",
+    "required": [
+      "flow"
+    ],
+    "properties": {
+      "flow": {
+        "type": "string",
+        "enum": [
+          "observeAddGuidance",
+          "uploadAddCsv",
+          "uploadInvalidCsv",
+          "observeEditGuidance",
+          "uploadEditCsv"
+        ]
+      },
+      "fixturePath": {
+        "type": "string"
+      },
+      "mode": {
+        "type": "string",
+        "enum": [
+          "add",
+          "edit"
+        ]
+      }
+    },
+    "additionalProperties": true
+  },
+  "sharedFlows": {
+    "observeAddGuidance": {
+      "declarativePlan": [
+        {
+          "op": "select",
+          "target": "tagForm.tagType",
+          "value": "人工標籤"
+        },
+        {
+          "op": "read",
+          "target": "tagForm.tagType",
+          "saveAs": "tagForm.typeVisibility.state"
+        },
+        {
+          "op": "read",
+          "target": "manualTag.uploadPanel",
+          "saveAs": "manualUpload.file.state"
+        }
+      ],
+      "requiredEvidence": [
+        "tagForm.typeVisibility.state",
+        "manualUpload.file.state"
+      ]
+    },
+    "uploadAddCsv": {
+      "declarativePlan": [
+        {
+          "op": "uploadFile",
+          "target": "manualTag.uploadPanel",
+          "valueFrom": "params.fixturePath"
+        },
+        {
+          "op": "read",
+          "target": "manualTag.uploadPanel",
+          "saveAs": "manualUpload.file.state"
+        }
+      ],
+      "requiredEvidence": [
+        "manualUpload.file.state",
+        "interactionLog"
+      ]
+    },
+    "uploadInvalidCsv": {
+      "declarativePlan": [
+        {
+          "op": "uploadFile",
+          "target": "manualTag.uploadPanel",
+          "valueFrom": "params.fixturePath"
+        },
+        {
+          "op": "read",
+          "target": "toast.message",
+          "saveAs": "manualUpload.validation.state"
+        }
+      ],
+      "requiredEvidence": [
+        "manualUpload.file.state",
+        "manualUpload.validation.state",
+        "interactionLog"
+      ]
+    }
+  },
+  "fixtures": {
+    "validAddCsv": "fixtures/smoke/manual-tag-add-valid.csv",
+    "invalidAddCsv": "fixtures/smoke/manual-tag-add-invalid-header.csv",
+    "validEditCsv": "fixtures/smoke/manual-tag-edit-valid.csv"
+  },
+  "blockerCodes": [
+    "MANUAL_UPLOAD_PANEL_MISSING",
+    "FILE_CHOOSER_UNAVAILABLE",
+    "CSV_VALIDATION_TOAST_MISSING"
+  ]
+}

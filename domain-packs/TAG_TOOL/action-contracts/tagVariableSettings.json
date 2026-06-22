@@ -1,0 +1,99 @@
+{
+  "schemaVersion": "domain-action-contract-v0.1",
+  "domain": "TAG_TOOL",
+  "action": "tagVariableSettings",
+  "status": "draft_contract",
+  "purpose": "Tag variable settings observation, validation, and history evidence.",
+  "capabilities": [
+    "tag.variables.observeValues",
+    "tag.variables.stepper",
+    "tag.variables.validationToast",
+    "tag.variables.historyFormat"
+  ],
+  "paramsSchema": {
+    "type": "object",
+    "required": [
+      "flow"
+    ],
+    "properties": {
+      "flow": {
+        "type": "string",
+        "enum": [
+          "observeDefaults",
+          "stepValue",
+          "typeInvalidValuesAndObserveToast",
+          "openSaveButDoNotConfirm"
+        ]
+      },
+      "field": {
+        "type": "string",
+        "enum": [
+          "N",
+          "Z",
+          "Y",
+          "X",
+          "A",
+          "B"
+        ]
+      },
+      "value": {
+        "type": "integer"
+      }
+    },
+    "additionalProperties": true
+  },
+  "sharedFlows": {
+    "observeDefaults": {
+      "declarativePlan": [
+        {
+          "op": "ensurePage",
+          "target": "tagVariableSettings"
+        },
+        {
+          "op": "read",
+          "target": "tagVariables.form",
+          "saveAs": "tagVariables.form.state"
+        },
+        {
+          "op": "read",
+          "target": "tagVariables.history",
+          "saveAs": "tagVariables.history.state"
+        }
+      ],
+      "requiredEvidence": [
+        "navigation.state",
+        "tagVariables.form.state",
+        "tagVariables.history.state"
+      ]
+    },
+    "typeInvalidValuesAndObserveToast": {
+      "declarativePlan": [
+        {
+          "op": "type",
+          "target": "tagVariables.form",
+          "fieldFrom": "params.field",
+          "valueFrom": "params.value"
+        },
+        {
+          "op": "click",
+          "target": "tagVariables.saveButton"
+        },
+        {
+          "op": "read",
+          "target": "toast.message",
+          "saveAs": "toast.message.state"
+        }
+      ],
+      "requiredEvidence": [
+        "tagVariables.form.state",
+        "toast.message.state",
+        "interactionLog"
+      ]
+    }
+  },
+  "blockerCodes": [
+    "TAG_VARIABLE_PAGE_UNREACHABLE",
+    "TAG_VARIABLE_CONTROL_MISSING",
+    "TAG_VARIABLE_TOAST_MISSING"
+  ]
+}

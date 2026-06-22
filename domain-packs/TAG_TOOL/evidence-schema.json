@@ -1,0 +1,240 @@
+{
+  "schemaVersion": "domain-evidence-schema-v0.1",
+  "domain": "TAG_TOOL",
+  "status": "draft_contract",
+  "policy": [
+    "Evidence must be current-run and case-scoped.",
+    "Helper status is never PASS or FAIL by itself.",
+    "Screenshots support structured evidence but must not replace visible text, DOM state, file artifact, or request evidence.",
+    "Tool Bridge response is conditional evidence and is required before irreversible confirmations."
+  ],
+  "evidenceObjects": {
+    "toolBridge.response": {
+      "type": "object",
+      "requiredFields": [
+        "approved",
+        "approver",
+        "action",
+        "timestamp"
+      ],
+      "purpose": "Explicit authorization before confirming irreversible tag operations."
+    },
+    "browserMcp.preflight": {
+      "type": "object",
+      "requiredFields": [
+        "attempted",
+        "tool",
+        "status",
+        "timestamp"
+      ],
+      "purpose": "Prove browser automation availability before recording TOOL_EXECUTION_UNAVAILABLE."
+    },
+    "navigation.state": {
+      "type": "object",
+      "requiredFields": [
+        "url",
+        "breadcrumb",
+        "pageTitle",
+        "asserted"
+      ],
+      "purpose": "Page routing and breadcrumb evidence."
+    },
+    "tagList.table.state": {
+      "type": "object",
+      "requiredFields": [
+        "headers",
+        "rowCount",
+        "emptyStateText",
+        "asserted"
+      ],
+      "purpose": "Player tag list table composition and empty/list state."
+    },
+    "tagList.rowActionMenu.state": {
+      "type": "object",
+      "requiredFields": [
+        "tagName",
+        "tagType",
+        "scheduleStatus",
+        "visibleMenuItems",
+        "asserted"
+      ],
+      "purpose": "Row action menu options by tag type and schedule status."
+    },
+    "tagForm.typeVisibility.state": {
+      "type": "object",
+      "requiredFields": [
+        "selectedTagType",
+        "conditionTypeVisible",
+        "timeTypeVisible",
+        "analysisPeriodVisible",
+        "asserted"
+      ],
+      "purpose": "Manual tag hides condition/time/analysis fields; condition tag shows them."
+    },
+    "conditionTag.valueEditor.state": {
+      "type": "object",
+      "requiredFields": [
+        "initialValueCount",
+        "currentValueCount",
+        "addButtonVisible",
+        "conditionRowsPerValue",
+        "asserted"
+      ],
+      "purpose": "Condition tag value setup, add limit, and max two conditions per tag value."
+    },
+    "dateRange.panel.state": {
+      "type": "object",
+      "requiredFields": [
+        "openedByVisibleUi",
+        "mode",
+        "visibleQuickOptions",
+        "limitText",
+        "selectedLabel",
+        "asserted"
+      ],
+      "purpose": "Shared date panel evidence for analysis period and detail pages."
+    },
+    "manualUpload.file.state": {
+      "type": "object",
+      "requiredFields": [
+        "mode",
+        "uploadedFiles",
+        "formatGuidanceText",
+        "limitGuidanceText",
+        "asserted"
+      ],
+      "purpose": "Manual tag CSV upload guidance and file-chip state."
+    },
+    "manualUpload.validation.state": {
+      "type": "object",
+      "requiredFields": [
+        "triggeredByVisibleUi",
+        "visibleText",
+        "fileName",
+        "lineNumber",
+        "asserted"
+      ],
+      "purpose": "CSV validation toast for single-file or overall submit checks."
+    },
+    "readonlyForm.state": {
+      "type": "object",
+      "requiredFields": [
+        "pageTitle",
+        "disabledFields",
+        "missingMutationControls",
+        "asserted"
+      ],
+      "purpose": "Condition tag settings are view-only after creation."
+    },
+    "dangerousModal.state": {
+      "type": "object",
+      "requiredFields": [
+        "modalTitle",
+        "bodyText",
+        "resourceNames",
+        "buttons",
+        "asserted"
+      ],
+      "purpose": "Delete or terminate confirmation dialog evidence before cancel or authorized confirm."
+    },
+    "toast.message.state": {
+      "type": "object",
+      "requiredFields": [
+        "triggeredByVisibleUi",
+        "visibleText",
+        "asserted"
+      ],
+      "purpose": "Validation or success toast evidence."
+    },
+    "tagVariables.form.state": {
+      "type": "object",
+      "requiredFields": [
+        "values",
+        "stepperControls",
+        "saveButtonVisible",
+        "asserted"
+      ],
+      "purpose": "N/Z/Y/X/A/B form values and stepper support."
+    },
+    "tagVariables.history.state": {
+      "type": "object",
+      "requiredFields": [
+        "headers",
+        "rows",
+        "timeFormat",
+        "asserted"
+      ],
+      "purpose": "Setting history table and timestamp format."
+    },
+    "tagInfo.memberTable.state": {
+      "type": "object",
+      "requiredFields": [
+        "tagType",
+        "headers",
+        "rows",
+        "sortRuleChecked",
+        "asserted"
+      ],
+      "purpose": "Manual/condition tag information list and sorting rules."
+    },
+    "interactionLog": {
+      "type": "array",
+      "requiredFields": [
+        "action",
+        "target",
+        "actualOutcome",
+        "timestamp"
+      ],
+      "purpose": "Case-scoped visible-UI interaction log."
+    },
+    "screenshot": {
+      "type": "object",
+      "requiredFields": [
+        "path",
+        "timestamp"
+      ],
+      "purpose": "Supporting visual artifact for current-run state."
+    }
+  },
+  "conditionalEvidenceRules": [
+    {
+      "id": "irreversible-confirmation-requires-approval",
+      "when": {
+        "actionIn": [
+          "confirmDeleteTag",
+          "confirmTerminateTag",
+          "saveTagVariables",
+          "submitManualTagEdit"
+        ]
+      },
+      "requires": [
+        "toolBridge.response",
+        "dangerousModal.state",
+        "interactionLog"
+      ]
+    },
+    {
+      "id": "csv-validation-requires-file-state",
+      "when": {
+        "actionIn": [
+          "uploadManualTagCsv",
+          "submitManualTagCsv"
+        ]
+      },
+      "requires": [
+        "manualUpload.file.state",
+        "manualUpload.validation.state"
+      ]
+    },
+    {
+      "id": "date-panel-requires-structured-panel-state",
+      "when": {
+        "component": "dateRange.panel"
+      },
+      "requires": [
+        "dateRange.panel.state",
+        "interactionLog"
+      ]
+    }
+  ]
+}

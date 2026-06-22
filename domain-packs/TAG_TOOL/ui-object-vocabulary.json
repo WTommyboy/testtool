@@ -1,0 +1,393 @@
+{
+  "schemaVersion": "domain-ui-object-vocabulary-v0.1",
+  "domain": "TAG_TOOL",
+  "status": "draft_contract",
+  "purpose": "Domain-owned UI object ids for Galaxy Next player tag tool. These ids are targets for platform actions such as click, type, select, uploadFile, assertVisible, assertDisabled, assertNoRequest, download, and cancelModal.",
+  "references": {
+    "platformActionVocabulary": "contracts/platform-action-vocabulary.v1.json",
+    "uiContract": "ui-contract.json",
+    "componentInventory": "discovery/component-inventory.json",
+    "evidenceSchema": "evidence-schema.json"
+  },
+  "policy": [
+    "This file names tag tool UI objects and domain semantics; platform action definitions live in the platform vocabulary.",
+    "Locator hints are domain pack data, not executable helper code.",
+    "Testcase-specific input values and expected outcomes belong in testcase packages."
+  ],
+  "objects": [
+    {
+      "id": "tagList.newButton",
+      "page": "tagPlayerList",
+      "component": "tagList.toolbar",
+      "objectType": "button",
+      "aliases": [
+        "新增",
+        "新增標籤",
+        "create tag"
+      ],
+      "supportedActions": [
+        "click",
+        "assertVisible"
+      ],
+      "stateAttributes": [
+        "visible",
+        "disabled",
+        "innerText"
+      ],
+      "evidenceObjects": [
+        "navigation.state",
+        "interactionLog"
+      ],
+      "locatorHints": [
+        "toolbar button named 新增 on 玩家標籤管理 page"
+      ],
+      "hazards": [
+        "Clicking navigates to create form; verify breadcrumb after click."
+      ]
+    },
+    {
+      "id": "tagList.deleteButton",
+      "page": "tagPlayerList",
+      "component": "tagList.toolbar",
+      "objectType": "button",
+      "aliases": [
+        "刪除",
+        "批次刪除",
+        "delete selected tags"
+      ],
+      "supportedActions": [
+        "click",
+        "assertDisabled",
+        "assertEnabled"
+      ],
+      "stateAttributes": [
+        "visible",
+        "disabled",
+        "innerText"
+      ],
+      "evidenceObjects": [
+        "dangerousModal.state",
+        "interactionLog"
+      ],
+      "locatorHints": [
+        "toolbar button named 刪除 on 玩家標籤管理 page"
+      ],
+      "hazards": [
+        "Confirming delete is irreversible and requires explicit approval."
+      ]
+    },
+    {
+      "id": "tagList.table",
+      "page": "tagPlayerList",
+      "component": "tagList.table",
+      "objectType": "table",
+      "aliases": [
+        "標籤列表",
+        "玩家標籤管理列表",
+        "tag list table"
+      ],
+      "supportedActions": [
+        "read",
+        "assertVisible",
+        "assertText",
+        "compare"
+      ],
+      "stateAttributes": [
+        "headers",
+        "rowCount",
+        "emptyStateText",
+        "visibleRows"
+      ],
+      "evidenceObjects": [
+        "tagList.table.state"
+      ],
+      "locatorHints": [
+        "table under 玩家標籤管理 with tag metadata headers"
+      ],
+      "hazards": [
+        "System built-in tags should not appear in this user-created tag list."
+      ]
+    },
+    {
+      "id": "tagList.rowActions",
+      "page": "tagPlayerList",
+      "component": "tagList.rowActions",
+      "objectType": "menu",
+      "aliases": [
+        "更多操作",
+        "row more menu",
+        "⋯"
+      ],
+      "supportedActions": [
+        "click",
+        "open",
+        "assertVisible",
+        "assertText"
+      ],
+      "stateAttributes": [
+        "visibleMenuItems",
+        "tagType",
+        "scheduleStatus"
+      ],
+      "evidenceObjects": [
+        "tagList.rowActionMenu.state"
+      ],
+      "locatorHints": [
+        "row-level ⋯ menu in the target tag row"
+      ],
+      "hazards": [
+        "Menu item set changes by tag type and schedule status."
+      ]
+    },
+    {
+      "id": "tagForm.tagName",
+      "page": "tagCreate",
+      "component": "tagForm.basicFields",
+      "objectType": "input",
+      "aliases": [
+        "標籤名稱",
+        "tag name"
+      ],
+      "supportedActions": [
+        "type",
+        "assertVisible",
+        "assertValue"
+      ],
+      "stateAttributes": [
+        "value",
+        "placeholder",
+        "disabled"
+      ],
+      "evidenceObjects": [
+        "tagForm.typeVisibility.state",
+        "interactionLog"
+      ],
+      "locatorHints": [
+        "input associated with label 標籤名稱"
+      ],
+      "hazards": [
+        "PRD limit is 20 characters; testcase should supply boundary values when testing length."
+      ]
+    },
+    {
+      "id": "tagForm.tagType",
+      "page": "tagCreate",
+      "component": "tagForm.basicFields",
+      "objectType": "select",
+      "aliases": [
+        "標籤類型",
+        "條件標籤",
+        "人工標籤",
+        "tag type"
+      ],
+      "supportedActions": [
+        "select",
+        "click",
+        "assertVisible",
+        "assertStateChanged"
+      ],
+      "stateAttributes": [
+        "selectedLabel",
+        "dependentFieldsVisible"
+      ],
+      "evidenceObjects": [
+        "tagForm.typeVisibility.state"
+      ],
+      "locatorHints": [
+        "dropdown associated with label 標籤類型"
+      ],
+      "hazards": [
+        "Selecting 人工標籤 must hide condition/time/analysis fields instead of showing disabled placeholders."
+      ]
+    },
+    {
+      "id": "conditionTag.valueEditor",
+      "page": "tagCreate",
+      "component": "conditionTag.valueEditor",
+      "objectType": "dualPaneEditor",
+      "aliases": [
+        "標籤值設置",
+        "子標籤級距",
+        "+ 添加",
+        "新增級距",
+        "子標籤",
+        "tag value editor"
+      ],
+      "supportedActions": [
+        "click",
+        "type",
+        "addRow",
+        "deleteRow",
+        "assertVisible",
+        "assertValue"
+      ],
+      "stateAttributes": [
+        "tagValueCount",
+        "conditionRowCount",
+        "addButtonEnabled",
+        "editorPlaceholder"
+      ],
+      "evidenceObjects": [
+        "conditionTag.valueEditor.state"
+      ],
+      "locatorHints": [
+        "PRD section named 標籤值設置 with + 添加 button and right-side editor",
+        "current dev section named 子標籤級距 with 新增級距 button and inline lower/upper inputs"
+      ],
+      "hazards": [
+        "PRD requires initial state to be empty; current dev UI pre-populates one grade row.",
+        "Each tag value can have at most two condition rows."
+      ]
+    },
+    {
+      "id": "manualTag.uploadPanel",
+      "page": "tagCreate",
+      "component": "manualTag.uploadPanel",
+      "objectType": "fileUpload",
+      "aliases": [
+        "上傳文件",
+        "新增檔案",
+        "CSV upload",
+        "manual tag file upload"
+      ],
+      "supportedActions": [
+        "uploadFile",
+        "download",
+        "assertVisible",
+        "assertText",
+        "removeFile"
+      ],
+      "stateAttributes": [
+        "uploadedFiles",
+        "formatGuidanceText",
+        "limitGuidanceText",
+        "fileChips"
+      ],
+      "evidenceObjects": [
+        "manualUpload.file.state",
+        "manualUpload.validation.state"
+      ],
+      "locatorHints": [
+        "manual tag form section named 上傳文件"
+      ],
+      "hazards": [
+        "PRD add flow accepts 2 columns only; current dev add page still describes an 操作 column.",
+        "PRD edit flow accepts 3 columns with 操作.",
+        "Submit-time overall validation may differ from upload-time single-file validation."
+      ]
+    },
+    {
+      "id": "dateRange.panel",
+      "page": "tagCreate",
+      "component": "dateRange.panel",
+      "objectType": "popover",
+      "aliases": [
+        "分析時段",
+        "日期範圍",
+        "日期設置工具",
+        "date panel"
+      ],
+      "supportedActions": [
+        "click",
+        "type",
+        "select",
+        "cancel",
+        "confirm",
+        "assertVisible",
+        "assertText"
+      ],
+      "stateAttributes": [
+        "openedByVisibleUi",
+        "mode",
+        "selectedLabel",
+        "quickOptions",
+        "limitText"
+      ],
+      "evidenceObjects": [
+        "dateRange.panel.state"
+      ],
+      "locatorHints": [
+        "analysis period field opens date panel with 日期範圍 title"
+      ],
+      "hazards": [
+        "Dynamic and static modes share similar UI but different input semantics.",
+        "Date range cannot exceed 90 days."
+      ]
+    },
+    {
+      "id": "tagVariables.form",
+      "page": "tagVariableSettings",
+      "component": "tagVariables.form",
+      "objectType": "form",
+      "aliases": [
+        "標籤變數設定",
+        "N",
+        "Z",
+        "Y",
+        "X",
+        "A",
+        "B"
+      ],
+      "supportedActions": [
+        "read",
+        "type",
+        "click",
+        "assertVisible",
+        "assertValue"
+      ],
+      "stateAttributes": [
+        "values",
+        "stepperControls",
+        "saveButtonVisible"
+      ],
+      "evidenceObjects": [
+        "tagVariables.form.state",
+        "tagVariables.history.state",
+        "toast.message.state"
+      ],
+      "locatorHints": [
+        "page 標籤變數設定 with numeric controls N/Z/Y/X/A/B"
+      ],
+      "hazards": [
+        "Saving changes affects future calculations and requires approval outside ordinary smoke."
+      ]
+    },
+    {
+      "id": "dangerousAction.confirmModal",
+      "page": "tagPlayerList",
+      "component": "dangerousAction.confirmModal",
+      "objectType": "modal",
+      "aliases": [
+        "刪除 標籤",
+        "終止 標籤",
+        "確定終止",
+        "刪除"
+      ],
+      "supportedActions": [
+        "openModal",
+        "cancelModal",
+        "confirmModal",
+        "assertVisible",
+        "assertText"
+      ],
+      "stateAttributes": [
+        "modalTitle",
+        "bodyText",
+        "resourceNames",
+        "buttons"
+      ],
+      "evidenceObjects": [
+        "dangerousModal.state",
+        "toolBridge.response",
+        "interactionLog"
+      ],
+      "locatorHints": [
+        "centered confirmation dialog after delete or terminate action"
+      ],
+      "hazards": [
+        "Confirming delete permanently removes tag data.",
+        "Confirming terminate stops schedule from D+1 but keeps generated lists."
+      ]
+    }
+  ]
+}

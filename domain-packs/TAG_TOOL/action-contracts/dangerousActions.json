@@ -1,0 +1,95 @@
+{
+  "schemaVersion": "domain-action-contract-v0.1",
+  "domain": "TAG_TOOL",
+  "action": "dangerousActions",
+  "status": "draft_contract",
+  "purpose": "Approval-gated delete, terminate, variable save, and manual edit mutation handling.",
+  "capabilities": [
+    "tag.delete.cancel",
+    "tag.delete.confirmApproved",
+    "tag.terminate.cancel",
+    "tag.terminate.confirmApproved",
+    "tag.variables.saveApproved",
+    "tag.manual.editSubmitApproved"
+  ],
+  "paramsSchema": {
+    "type": "object",
+    "required": [
+      "flow"
+    ],
+    "properties": {
+      "flow": {
+        "type": "string",
+        "enum": [
+          "openDeleteAndCancel",
+          "openTerminateAndCancel",
+          "confirmDeleteWithApproval",
+          "confirmTerminateWithApproval",
+          "saveVariablesWithApproval",
+          "submitManualEditWithApproval"
+        ]
+      },
+      "resourceName": {
+        "type": "string"
+      }
+    },
+    "additionalProperties": true
+  },
+  "approvalPolicy": [
+    "Testcase prose is not approval.",
+    "Confirming delete, terminate, variable save, or manual edit submit requires toolBridge.response with approved=true.",
+    "Ordinary smoke packages should stop after opening the modal and pressing cancel."
+  ],
+  "sharedFlows": {
+    "openTerminateAndCancel": {
+      "declarativePlan": [
+        {
+          "op": "openModal",
+          "target": "dangerousAction.confirmModal",
+          "source": "terminate action"
+        },
+        {
+          "op": "read",
+          "target": "dangerousAction.confirmModal",
+          "saveAs": "dangerousModal.state"
+        },
+        {
+          "op": "cancelModal",
+          "target": "dangerousAction.confirmModal"
+        }
+      ],
+      "requiredEvidence": [
+        "dangerousModal.state",
+        "interactionLog"
+      ]
+    },
+    "confirmTerminateWithApproval": {
+      "declarativePlan": [
+        {
+          "op": "requireApproval",
+          "saveAs": "toolBridge.response"
+        },
+        {
+          "op": "confirmModal",
+          "target": "dangerousAction.confirmModal"
+        },
+        {
+          "op": "read",
+          "target": "tagList.table",
+          "saveAs": "tagList.table.state"
+        }
+      ],
+      "requiredEvidence": [
+        "toolBridge.response",
+        "dangerousModal.state",
+        "tagList.table.state",
+        "interactionLog"
+      ]
+    }
+  },
+  "blockerCodes": [
+    "DANGEROUS_MODAL_MISSING",
+    "TOMMY_APPROVAL_MISSING",
+    "POST_CONFIRM_STATE_UNVERIFIED"
+  ]
+}

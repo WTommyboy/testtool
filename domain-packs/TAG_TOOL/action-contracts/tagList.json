@@ -1,0 +1,123 @@
+{
+  "schemaVersion": "domain-action-contract-v0.1",
+  "domain": "TAG_TOOL",
+  "action": "tagList",
+  "status": "draft_contract",
+  "purpose": "Shared player tag list observations and row action menu checks.",
+  "capabilities": [
+    "tag.list.columns",
+    "tag.list.emptyState",
+    "tag.list.rowActionsByTypeAndSchedule",
+    "tag.list.deleteCancel"
+  ],
+  "paramsSchema": {
+    "type": "object",
+    "required": [
+      "flow"
+    ],
+    "properties": {
+      "flow": {
+        "type": "string",
+        "enum": [
+          "observeColumns",
+          "observeEmptyState",
+          "openRowActions",
+          "openDeleteAndCancel"
+        ]
+      },
+      "tagName": {
+        "type": "string"
+      },
+      "tagType": {
+        "type": "string",
+        "enum": [
+          "條件標籤",
+          "人工標籤"
+        ]
+      },
+      "scheduleStatus": {
+        "type": "string",
+        "enum": [
+          "進行中",
+          "已結束",
+          "-"
+        ]
+      }
+    },
+    "additionalProperties": true
+  },
+  "sharedFlows": {
+    "observeColumns": {
+      "declarativePlan": [
+        {
+          "op": "ensurePage",
+          "target": "tagPlayerList"
+        },
+        {
+          "op": "read",
+          "target": "tagList.table",
+          "saveAs": "tagList.table.state"
+        }
+      ],
+      "requiredEvidence": [
+        "navigation.state",
+        "tagList.table.state"
+      ]
+    },
+    "openRowActions": {
+      "declarativePlan": [
+        {
+          "op": "findRow",
+          "target": "tagList.table",
+          "labelFrom": "params.tagName"
+        },
+        {
+          "op": "click",
+          "target": "tagList.rowActions"
+        },
+        {
+          "op": "read",
+          "target": "tagList.rowActions",
+          "saveAs": "tagList.rowActionMenu.state"
+        }
+      ],
+      "requiredEvidence": [
+        "tagList.rowActionMenu.state",
+        "interactionLog"
+      ]
+    },
+    "openDeleteAndCancel": {
+      "declarativePlan": [
+        {
+          "op": "openModal",
+          "target": "dangerousAction.confirmModal",
+          "source": "delete action"
+        },
+        {
+          "op": "read",
+          "target": "dangerousAction.confirmModal",
+          "saveAs": "dangerousModal.state"
+        },
+        {
+          "op": "cancelModal",
+          "target": "dangerousAction.confirmModal"
+        },
+        {
+          "op": "assertVisible",
+          "target": "tagList.table"
+        }
+      ],
+      "requiredEvidence": [
+        "dangerousModal.state",
+        "tagList.table.state",
+        "interactionLog"
+      ]
+    }
+  },
+  "blockerCodes": [
+    "TAG_LIST_UNREACHABLE",
+    "TAG_ROW_NOT_FOUND",
+    "TAG_ROW_ACTION_MENU_MISSING",
+    "TAG_CONFIRM_MODAL_MISSING"
+  ]
+}
