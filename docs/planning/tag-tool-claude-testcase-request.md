@@ -11,6 +11,17 @@ This is a new UAT Tool domain package, not an update to BI official UI collage.
 - Prototype prompt: `/Users/tommy/Downloads/galaxy_prototype/player_tag_tool/codex_prompt_player_tag_tool_prototype.md`
 - Dev URL: `https://galaxy.games.gamania.com/bi-dev/zh-TW/tag/player?gameId=541`
 
+## Known Dev Test Data Windows
+
+Use these `gameId=541` dev data windows when writing condition-tag date/time cases. Treat the year as 2026 unless the final run package explicitly overrides it.
+
+- `累積遊戲時間` / 遊玩: `2026-03-04` to `2026-03-31`.
+- `累積登入天數`: data exists from `2026-06-01`; use June 2026 onward.
+- `消費級距 R` / 累積金額: January 2026 and March 2026 have order data.
+- `累積未登入天數`: use June 2026 onward.
+
+Every testcase that depends on these windows must put the exact static/dynamic date range in preconditions or steps, stay within the PRD 90-day limit, and record the chosen range in `detail_json`.
+
 ## Required Reading Order
 
 1. Common authoring rules:

@@ -10,6 +10,38 @@
     "tag.condition.valueEditor",
     "tag.condition.validationToast"
   ],
+  "testDataWindows": {
+    "source": "Tommy-provided dev data availability for gameId=541",
+    "yearAssumption": "2026 unless the run package explicitly overrides it",
+    "conditionTypeWindows": {
+      "累積遊戲時間": {
+        "alias": "遊玩",
+        "recommendedRange": {
+          "start": "2026-03-04",
+          "end": "2026-03-31"
+        }
+      },
+      "累積登入天數": {
+        "recommendedFrom": "2026-06-01",
+        "note": "Use June 2026 onward."
+      },
+      "消費級距 R": {
+        "alias": "累積金額",
+        "knownOrderMonths": [
+          "2026-01",
+          "2026-03"
+        ]
+      },
+      "累積未登入天數": {
+        "recommendedFrom": "2026-06-01",
+        "note": "Use June 2026 onward."
+      }
+    },
+    "constraints": [
+      "Keep static/dynamic analysis periods within the PRD 90-day limit.",
+      "Record the exact selected range in detail_json for date-dependent cases."
+    ]
+  },
   "paramsSchema": {
     "type": "object",
     "required": [

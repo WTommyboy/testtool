@@ -47,6 +47,17 @@ If PRD and live UI conflict, expected behavior follows the PRD unless the run-sp
 - Temporary resources must use a clear UAT prefix such as `UAT_TAG_YYYYMMDD_HHMM_<purpose>`.
 - Avoid relying on schedule status changes that require D+1 unless the case is in a dedicated cross-day package.
 
+## Dev Test Data Windows
+
+Use these known `gameId=541` dev data windows for condition-tag testcase authoring and execution unless the uploaded run package explicitly overrides them. Treat the year as 2026.
+
+- `累積遊戲時間` / gameplay: use `2026-03-04` through `2026-03-31`.
+- `累積登入天數`: data exists from `2026-06-01`; use June 2026 onward.
+- `消費級距 R` / accumulated spend: order data exists in January 2026 and March 2026.
+- `累積未登入天數`: use June 2026 onward.
+
+For static or dynamic analysis-period tests, keep the selected range within the PRD 90-day limit and record the exact date range in `detail_json`.
+
 ## UI Text Judgment
 
 UI text is judged by semantic equivalence for normal labels and helper text. Exact or near-exact text is required for PRD-defined destructive dialogs, validation toasts, CSV format guidance, and variable-setting validation messages.
