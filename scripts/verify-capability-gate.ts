@@ -1017,6 +1017,25 @@ const main = (): void => {
     );
     assert.equal(deleteReportPlan.actions[1]?.requiresToolBridge, true, "G-03 delete helper action must require Tool Bridge");
 
+    const officialDeleteReportCase = {
+      ...deleteReportCase,
+      caseNo: "BIUI_COLLAGE_R001-J-09",
+      caseTitle: "列內刪除 modal 確認流程(實際刪除測試來源報表)",
+      stepsSummary: "建立本輪臨時報表後刪除報表，並驗證 row 消失"
+    };
+    const officialDeleteReportGate = evaluateCapabilityGate(officialDeleteReportCase, null);
+    const officialDeleteReportPlan = buildHelperExecutionPlan({ runDir, currentCase: officialDeleteReportCase, helperHints: null });
+    assert.deepEqual(
+      officialDeleteReportGate.supportedHelperTemplates,
+      ["collage.openProject", "collage.createAndDeleteTemporaryReport"],
+      `J-09 official collage delete report gate must advertise the safe temporary delete helper; report=${JSON.stringify(officialDeleteReportGate)}`
+    );
+    assert.deepEqual(
+      officialDeleteReportPlan.actions.map((item) => item.template),
+      ["collage.openProject", "collage.createAndDeleteTemporaryReport"],
+      "J-09 official collage delete report plan must use the safe temporary delete helper"
+    );
+
     const manualProjectNavigationCase = {
       ...collageSaveReopenCase,
       caseNo: "OTTEST004-A-02",
@@ -1354,6 +1373,7 @@ const main = (): void => {
           "manual hybrid D0 CSV baseline cases chain date preview, save, and report-list download",
           "relative D0 CSV baseline cases create unique reports and defer D+1 comparison",
           "delete temporary report cases create a pending Tool Bridge helper action",
+          "official J-09 delete report cases use the safe temporary delete helper",
           "no-hints frontend project/list observations route to structured observation after a safe openProject prelude",
           "J-06 download tooltip routes to rowDownloadTooltip instead of rowDeleteTooltip",
           "K-05/K-06/K-07 metric row controls route to observeFrontendState without generic preview",

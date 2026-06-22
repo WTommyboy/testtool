@@ -353,6 +353,18 @@
       ],
       "purpose": "Structured evidence that project-list toolbar buttons changed enabled/disabled state after row selection."
     },
+    "projectToolbar.selectionToggle.state": {
+      "type": "object",
+      "requiredFields": [
+        "rowSelection",
+        "rowUnselection",
+        "buttons",
+        "assertions",
+        "interactionLog",
+        "asserted"
+      ],
+      "purpose": "Structured evidence that a selected project-list row can be unselected and toolbar download/delete buttons return to disabled state."
+    },
     "deleteConfirmModal.state": {
       "type": "object",
       "requiredFields": [
@@ -375,6 +387,19 @@
         "asserted"
       ],
       "purpose": "Row-local delete cancel evidence proving the modal opened, cancel was clicked, and the report row remained."
+    },
+    "projectList.pagination.state": {
+      "type": "object",
+      "requiredFields": [
+        "before",
+        "afterPageSize",
+        "afterNextPage",
+        "actions",
+        "assertions",
+        "interactionLog",
+        "asserted"
+      ],
+      "purpose": "Project-list pagination evidence proving page-size and next-page controls are visible and can be exercised through visible UI."
     },
     "reportListEvidence": {
       "type": "object",

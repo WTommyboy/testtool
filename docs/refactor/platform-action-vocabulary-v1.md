@@ -1,6 +1,6 @@
 # Platform Action Vocabulary v1
 
-Date: 2026-05-18 Asia/Taipei
+Date: 2026-06-22 Asia/Taipei
 Status: draft implemented as `contracts/platform-action-vocabulary.v1.json`
 
 ## 1. Purpose
@@ -41,7 +41,7 @@ Testcase/run owns:
 
 `primitive` actions are atomic user or read actions:
 
-- `navigate`, `open`, `close`, `click`, `hover`, `type`, `clear`, `select`, `confirm`, `cancel`, `search`, `execute`, `create`, `delete`, `download`
+- `navigate`, `open`, `close`, `click`, `hover`, `type`, `clear`, `select`, `unselect`, `confirm`, `cancel`, `search`, `execute`, `create`, `delete`, `download`
 - planned generic primitives: `pressKey`, `scroll`, `upload`, `drag`
 
 `assertion` actions check evidence:
@@ -70,6 +70,7 @@ The initial v1 outcome names are:
 - `text_matches`
 - `value_matches`
 - `selected`
+- `unselected`
 - `checked`
 - `unchecked`
 - `state_changed`

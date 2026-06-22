@@ -13,6 +13,8 @@
     "collage.observation.sidebarCompanySharedGroup",
     "collage.observation.projectLimitToast",
     "collage.observation.rowActionTooltip",
+    "collage.observation.deleteCancelFlow",
+    "collage.observation.projectListPagination",
     "collage.observation.sourceReportPicker",
     "collage.observation.fieldPicker",
     "collage.observation.metricRowControls",
@@ -41,8 +43,11 @@
           "sidebarGroup",
           "sidebarCompanySharedGroup",
           "projectLimitToast",
+          "rowDownloadTooltip",
           "rowDeleteTooltip",
           "rowActionTooltip",
+          "deleteCancelFlow",
+          "projectListPagination",
           "sourceReportPicker",
           "fieldPicker",
           "metricRowControls",
@@ -231,6 +236,19 @@
         "tooltipLifecycleCaptured": true
       }
     },
+    "rowDownloadTooltip": {
+      "component": "projectList.rowDownloadAction",
+      "objectIds": [
+        "projectList.rowDownloadAction",
+        "projectList.rowDownloadTooltip"
+      ],
+      "requiredEvidence": [
+        "projectList.rowActionTooltip.state"
+      ],
+      "successState": {
+        "tooltipLifecycleCaptured": true
+      }
+    },
     "rowDeleteTooltip": {
       "component": "projectList.rowDeleteAction",
       "objectIds": [
@@ -265,6 +283,24 @@
         "cancelClicked": true,
         "modalClosed": true,
         "rowStillVisible": true
+      }
+    },
+    "projectListPagination": {
+      "component": "projectList.pagination",
+      "objectIds": [
+        "projectList.pagination.pageSize",
+        "projectList.pagination.nextPage",
+        "projectList.pagination.totalRecordText"
+      ],
+      "requiredEvidence": [
+        "projectList.pagination.state",
+        "interactionLog",
+        "screenshot"
+      ],
+      "successState": {
+        "totalRecordTextVisible": true,
+        "pageSizeChanged": true,
+        "nextPageClicked": true
       }
     },
     "sourceReportPicker": {

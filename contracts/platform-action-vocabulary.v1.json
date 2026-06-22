@@ -1,7 +1,7 @@
 {
   "schemaVersion": "platform-action-vocabulary-v1",
   "status": "draft",
-  "updatedAt": "2026-05-18",
+  "updatedAt": "2026-06-22",
   "purpose": "Stable platform-level action names for testcase authoring, planner routing, helper execution plans, interaction logs, and result-gate evidence checks.",
   "boundaries": {
     "platformOwns": [
@@ -42,6 +42,7 @@
     "text_matches",
     "value_matches",
     "selected",
+    "unselected",
     "checked",
     "unchecked",
     "state_changed",
@@ -131,6 +132,16 @@
       "aliases": ["選取", "選擇", "勾選", "切換", "設為"],
       "requiresUserInteraction": true,
       "allowedRoles": ["precondition", "under_test", "cleanup"],
+      "defaultEvidence": ["interactionLog", "domSnapshot"]
+    },
+    {
+      "id": "unselect",
+      "kind": "primitive",
+      "stability": "v1_supported",
+      "summary": "Clear an existing selected option, checkbox, list item, row, field, or menu item through UI.",
+      "aliases": ["取消選取", "取消勾選", "取消選擇", "取消"],
+      "requiresUserInteraction": true,
+      "allowedRoles": ["under_test", "verification", "cleanup"],
       "defaultEvidence": ["interactionLog", "domSnapshot"]
     },
     {

@@ -93,7 +93,15 @@ const templatesForManualAiHints = (contract: StructuredCaseScopeContract): strin
 
 const main = (): void => {
   const byCase = new Map(contracts().map((item) => [item.caseNo, item]));
-  const cases = ["BIUI_COLLAGE_R001-M-06", "BIUI_COLLAGE_R001-M-09", "BIUI_COLLAGE_R001-M-10", "BIUI_COLLAGE_R001-M-11"];
+  const cases = [
+    "BIUI_COLLAGE_R001-M-03",
+    "BIUI_COLLAGE_R001-M-04",
+    "BIUI_COLLAGE_R001-M-05",
+    "BIUI_COLLAGE_R001-M-06",
+    "BIUI_COLLAGE_R001-M-09",
+    "BIUI_COLLAGE_R001-M-10",
+    "BIUI_COLLAGE_R001-M-11"
+  ];
   const required = cases.map((caseNo) => {
     const contract = byCase.get(caseNo);
     assert(contract, `${caseNo} contract must exist`);
@@ -108,6 +116,27 @@ const main = (): void => {
   }
 
   const expectedTemplates: Record<string, string[]> = {
+    "BIUI_COLLAGE_R001-M-03": [
+      "collage.openProject",
+      "collage.createReport",
+      "collage.configureMetric",
+      "collage.runPreviewAndCollectEvidence",
+      "collage.observeFrontendState"
+    ],
+    "BIUI_COLLAGE_R001-M-04": [
+      "collage.openProject",
+      "collage.createReport",
+      "collage.configureMetric",
+      "collage.runPreviewAndCollectEvidence",
+      "collage.observeFrontendState"
+    ],
+    "BIUI_COLLAGE_R001-M-05": [
+      "collage.openProject",
+      "collage.createReport",
+      "collage.configureMetric",
+      "collage.runPreviewAndCollectEvidence",
+      "collage.observeFrontendState"
+    ],
     "BIUI_COLLAGE_R001-M-06": [
       "collage.openProject",
       "collage.createReport",
@@ -141,7 +170,7 @@ const main = (): void => {
       assert.equal(terminalAction.requiresToolBridge, true, `${contract.caseNo} mutation helper must require Tool Bridge`);
       assert.ok(terminalAction.requiredEvidence.includes("toolBridge.response"), `${contract.caseNo} must require Tool Bridge evidence`);
     }
-    if (contract.caseNo === "BIUI_COLLAGE_R001-M-06") {
+    if (/BIUI_COLLAGE_R001-M-0[3456]$/i.test(contract.caseNo)) {
       assert.equal(terminalAction.params.observationType, "saveModalCancel");
     }
     if (contract.caseNo === "BIUI_COLLAGE_R001-M-09") {

@@ -83,6 +83,14 @@ const helperPlanSmoke = (): SmokeResult[] => {
       case: fixtureCase("BIUI_COLLAGE_R001-J-02", "未勾選時下載/刪除 icon disabled", "觀察專案頁 toolbar 下載/刪除 icon disabled state", "下載與刪除 disabled，新增 enabled")
     },
     {
+      caseId: "BIUI_COLLAGE_R001-J-04",
+      case: fixtureCase("BIUI_COLLAGE_R001-J-04", "取消勾選後,右上下載/刪除 icon 回到 disabled", "先勾選一筆報表列，再取消勾選同一列，觀察 toolbar 下載/刪除 icon disabled state", "取消勾選後下載與刪除 disabled，新增 enabled")
+    },
+    {
+      caseId: "BIUI_COLLAGE_R001-J-15",
+      case: fixtureCase("BIUI_COLLAGE_R001-J-15", "分頁與每頁筆數切換", "在拼貼報表專案頁觀察總筆數、每頁筆數下拉與下一頁，切換每頁筆數並點下一頁", "每頁筆數與下一頁控制可透過 visible UI 操作並留下狀態變化")
+    },
+    {
       caseId: "BIUI_COLLAGE_R001-K-01",
       case: fixtureCase("BIUI_COLLAGE_R001-K-01", "新增報表預設為拼貼模式", "進入新增報表頁，讀取建構方式 radio", "拼貼模式 radio checked")
     },
@@ -263,7 +271,8 @@ const main = (): void => {
     "reportMode.radioGroup",
     "dateRange.panel",
     "validation.messageArea",
-    "sidebar.companySharedGroup"
+    "sidebar.companySharedGroup",
+    "projectList.pagination.pageSize"
   ];
   const discoveredComponents = componentIds(inventory);
   for (const component of requiredComponents) {
@@ -275,6 +284,8 @@ const main = (): void => {
     "topbar.userButton.state",
     "projectToolbar.buttons.state",
     "projectToolbar.selectionFlow.state",
+    "projectToolbar.selectionToggle.state",
+    "projectList.pagination.state",
     "reportMode.radio.state",
     "metricRows.state",
     "dateRange.panel.state",
@@ -298,8 +309,10 @@ const main = (): void => {
     "validationMessage",
     "sidebarGroup",
     "projectCreateModal",
+    "rowDownloadTooltip",
     "rowDeleteTooltip",
     "deleteCancelFlow",
+    "projectListPagination",
     "projectLimitToast",
     "sourceReportPicker",
     "fieldPicker",

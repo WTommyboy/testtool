@@ -265,6 +265,42 @@
       ]
     },
     {
+      "id": "projectToolbar.downloadDeleteButtons",
+      "page": "collageProjectList",
+      "component": "projectToolbar.actionButtons",
+      "objectType": "buttonGroup",
+      "purpose": "Combined project/report list toolbar download and delete controls used when a case verifies their shared disabled state.",
+      "aliases": [
+        "下載刪除按鈕",
+        "下載與刪除",
+        "toolbar download and delete"
+      ],
+      "supportedActions": [
+        "read",
+        "assertDisabled",
+        "assertEnabled"
+      ],
+      "stateAttributes": [
+        "download.disabled",
+        "download.aria-disabled",
+        "delete.disabled",
+        "delete.aria-disabled",
+        "computedStyle.pointerEvents",
+        "computedStyle.opacity"
+      ],
+      "evidenceObjects": [
+        "projectToolbar.buttons.state",
+        "projectToolbar.selectionToggle.state"
+      ],
+      "locatorHints": [
+        "toolbar ordered button indexes 0 and 1",
+        "use projectToolbar.downloadButton and projectToolbar.deleteButton for individual click targets"
+      ],
+      "hazards": [
+        "group target is assertion-only; do not use it to click delete"
+      ]
+    },
+    {
       "id": "projectToolbar.createButton",
       "page": "collageProjectList",
       "component": "projectToolbar.actionButtons",
@@ -2886,6 +2922,7 @@
         "read",
         "open",
         "select",
+        "unselect",
         "assertVisible",
         "assertHidden"
       ],
@@ -2898,13 +2935,46 @@
       "evidenceObjects": [
         "projectList.reportRow.state",
         "reportListEvidence",
-        "projectToolbar.selectionFlow.state"
+        "projectToolbar.selectionFlow.state",
+        "projectToolbar.selectionToggle.state"
       ],
       "locatorHints": [
         "row text containing the report name in the project list"
       ],
       "hazards": [
         "report names are case-specific; list may need refresh/reselect after save"
+      ]
+    },
+    {
+      "id": "projectList.reportRow.unselect",
+      "page": "collageProjectList",
+      "component": "projectList.reportRow",
+      "objectType": "checkbox",
+      "purpose": "The selected report row control used to clear a row selection in the selected collage project list.",
+      "aliases": [
+        "取消選取報表列",
+        "取消勾選報表列",
+        "unselect report row"
+      ],
+      "supportedActions": [
+        "read",
+        "unselect",
+        "assertHidden"
+      ],
+      "stateAttributes": [
+        "checkedAfterCount",
+        "selected",
+        "unselected",
+        "toolbarControls"
+      ],
+      "evidenceObjects": [
+        "projectToolbar.selectionToggle.state"
+      ],
+      "locatorHints": [
+        "the checked non-header row checkbox inside the project report list"
+      ],
+      "hazards": [
+        "report list rows can be re-rendered after selection; re-query the checked checkbox before unselecting"
       ]
     },
     {
@@ -3033,6 +3103,36 @@
       ]
     },
     {
+      "id": "projectList.pagination.totalRecordText",
+      "page": "collageProjectList",
+      "component": "projectList.pagination",
+      "objectType": "text",
+      "purpose": "Total-record text shown by the project/report list pagination area.",
+      "aliases": [
+        "共 N 筆資料",
+        "共幾筆資料",
+        "total records"
+      ],
+      "supportedActions": [
+        "read",
+        "assertVisible",
+        "assertText"
+      ],
+      "stateAttributes": [
+        "visibleText",
+        "totalRecords"
+      ],
+      "evidenceObjects": [
+        "projectList.pagination.state"
+      ],
+      "locatorHints": [
+        "visible text matching 共\\s*\\d+\\s*筆資料 near the project list pagination"
+      ],
+      "hazards": [
+        "this is project-list pagination evidence; do not confuse it with editor preview pagination"
+      ]
+    },
+    {
       "id": "projectList.pagination.pageSize",
       "page": "collageProjectList",
       "component": "projectList.pagination.pageSize",
@@ -3055,7 +3155,7 @@
         "optionCount"
       ],
       "evidenceObjects": [
-        "projectList.table.state"
+        "projectList.pagination.state"
       ],
       "locatorHints": [
         "pagination area near report list table",
@@ -3063,6 +3163,39 @@
       ],
       "hazards": [
         "page-size text is presentation evidence; do not use it as row-count evidence"
+      ]
+    },
+    {
+      "id": "projectList.pagination.nextPage",
+      "page": "collageProjectList",
+      "component": "projectList.pagination",
+      "objectType": "paginationButton",
+      "purpose": "Next-page control for the project/report list pagination area.",
+      "aliases": [
+        "下一頁",
+        "next page",
+        "pagination next"
+      ],
+      "supportedActions": [
+        "read",
+        "click",
+        "assertVisible",
+        "assertDisabled"
+      ],
+      "stateAttributes": [
+        "visible",
+        "disabled",
+        "currentPage",
+        "pageNumbers"
+      ],
+      "evidenceObjects": [
+        "projectList.pagination.state"
+      ],
+      "locatorHints": [
+        "pagination next button near page numbers under the project report list"
+      ],
+      "hazards": [
+        "next-page may be disabled when the project has only one page of reports; record that as a testcase/data precondition gap, not a product bug"
       ]
     },
     {

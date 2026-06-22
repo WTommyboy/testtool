@@ -614,6 +614,70 @@
       }
     },
     {
+      "caseNo": "BIUI_COLLAGE_R001-J-04",
+      "routeIntent": "frontend_observation",
+      "testTarget": "frontend_presentation",
+      "requiresEditor": false,
+      "observationType": "projectToolbar",
+      "requiredActions": [
+        {
+          "actionId": "selectSingleReportRowBeforeUnselect",
+          "action": "select",
+          "target": "projectList.reportRow",
+          "role": "precondition",
+          "expectedOutcome": "selected",
+          "requiredForPass": true,
+          "evidenceRequirements": [
+            "projectToolbar.selectionToggle.state",
+            "interactionLog"
+          ]
+        },
+        {
+          "actionId": "unselectSameReportRow",
+          "action": "unselect",
+          "target": "projectList.reportRow.unselect",
+          "role": "under_test",
+          "expectedOutcome": "unselected",
+          "requiredForPass": true,
+          "evidenceRequirements": [
+            "projectToolbar.selectionToggle.state",
+            "interactionLog"
+          ]
+        },
+        {
+          "actionId": "assertToolbarDisabledAfterUnselect",
+          "action": "assertDisabled",
+          "target": "projectToolbar.downloadDeleteButtons",
+          "role": "verification",
+          "expectedOutcome": "disabled_or_no_change",
+          "requiredForPass": true,
+          "evidenceRequirements": [
+            "projectToolbar.selectionToggle.state",
+            "projectToolbar.buttons.state",
+            "screenshot"
+          ]
+        }
+      ],
+      "evidenceRequirements": {
+        "flow": [
+          "interactionLog"
+        ],
+        "observation": [
+          "projectToolbar.selectionToggle.state",
+          "projectToolbar.buttons.state",
+          "screenshot"
+        ]
+      },
+      "judgmentPolicy": {
+        "failWhen": [
+          "row can be selected and unselected but toolbar download/delete controls remain enabled"
+        ],
+        "blockedWhen": [
+          "no report row is available to select/unselect or toolbar cannot be located"
+        ]
+      }
+    },
+    {
       "caseNo": "BIUI_COLLAGE_R001-J-07",
       "routeIntent": "frontend_observation",
       "testTarget": "frontend_presentation",
@@ -844,6 +908,70 @@
         ],
         "blockedWhen": [
           "project limit precondition is not established or toolbar cannot be observed"
+        ]
+      }
+    },
+    {
+      "caseNo": "BIUI_COLLAGE_R001-J-15",
+      "routeIntent": "frontend_observation",
+      "testTarget": "frontend_presentation",
+      "requiresEditor": false,
+      "observationType": "projectListPagination",
+      "requiredActions": [
+        {
+          "actionId": "assertProjectListPaginationVisible",
+          "action": "assertVisible",
+          "target": "projectList.pagination.totalRecordText",
+          "role": "precondition",
+          "expectedOutcome": "visible",
+          "requiredForPass": true,
+          "evidenceRequirements": [
+            "projectList.pagination.state",
+            "screenshot"
+          ]
+        },
+        {
+          "actionId": "switchProjectListPageSize",
+          "action": "select",
+          "target": "projectList.pagination.pageSize",
+          "role": "under_test",
+          "expectedOutcome": "state_changed",
+          "requiredForPass": true,
+          "evidenceRequirements": [
+            "projectList.pagination.state",
+            "interactionLog",
+            "screenshot"
+          ]
+        },
+        {
+          "actionId": "clickProjectListNextPage",
+          "action": "click",
+          "target": "projectList.pagination.nextPage",
+          "role": "under_test",
+          "expectedOutcome": "state_changed",
+          "requiredForPass": true,
+          "evidenceRequirements": [
+            "projectList.pagination.state",
+            "interactionLog",
+            "screenshot"
+          ]
+        }
+      ],
+      "evidenceRequirements": {
+        "flow": [
+          "interactionLog"
+        ],
+        "observation": [
+          "projectList.pagination.state",
+          "screenshot"
+        ]
+      },
+      "judgmentPolicy": {
+        "failWhen": [
+          "page-size control and pagination are visible but switching page size or next page does not change state"
+        ],
+        "blockedWhen": [
+          "project list has too few rows/pages to exercise pagination or pagination controls cannot be reached"
         ]
       }
     },

@@ -8876,10 +8876,40 @@ const clickReportListDeleteControl = async (
   const rowState = state ?? await readReportListRowState(page, reportName);
   if (!rowState.found) return { clicked: false, trigger: "report-list-row-not-found", rowState };
   const selectedControl = rowState.deleteControls[0];
+  const clickAttempts: Array<Record<string, unknown>> = [];
+  const modalVisibleAfterAttempt = async (): Promise<boolean> => {
+    await page.waitForTimeout(450);
+    const modal = await readVisibleModalState(page).catch(() => null);
+    if (!modal || typeof modal !== "object" || Array.isArray(modal)) return false;
+    const record = modal as Record<string, unknown>;
+    const dialogCount = typeof record.dialogCount === "number" ? record.dialogCount : 0;
+    return dialogCount > 0;
+  };
+  const clickControlCoordinates = async (control: Record<string, unknown>): Promise<boolean> => {
+    const rect = control.rect && typeof control.rect === "object" && !Array.isArray(control.rect)
+      ? control.rect as Record<string, unknown>
+      : null;
+    const x = typeof rect?.x === "number" ? rect.x : null;
+    const y = typeof rect?.y === "number" ? rect.y : null;
+    const width = typeof rect?.width === "number" ? rect.width : null;
+    const height = typeof rect?.height === "number" ? rect.height : null;
+    if (x === null || y === null || width === null || height === null) return false;
+    await page.mouse.click(x + width / 2, y + height / 2);
+    return true;
+  };
   if (typeof selectedControl?.bodyIndex === "number" && selectedControl.bodyIndex >= 0) {
     try {
       await clickVisibleBodyElementByIndex(page, selectedControl.bodyIndex, 8000);
-      return { clicked: true, trigger: "report-list-row-delete-control", rowState, selectedControl };
+      const modalVisible = await modalVisibleAfterAttempt();
+      clickAttempts.push({ method: "bodyIndex", clicked: true, modalVisible });
+      if (modalVisible) return { clicked: true, trigger: "report-list-row-delete-control", rowState, selectedControl, candidates: clickAttempts };
+      const coordinateClicked = await clickControlCoordinates(selectedControl).catch(() => false);
+      if (coordinateClicked) {
+        const coordinateModalVisible = await modalVisibleAfterAttempt();
+        clickAttempts.push({ method: "coordinate-center", clicked: true, modalVisible: coordinateModalVisible });
+        if (coordinateModalVisible) return { clicked: true, trigger: "report-list-row-delete-control-coordinate", rowState, selectedControl, candidates: clickAttempts };
+      }
+      return { clicked: true, trigger: "report-list-row-delete-control-no-modal-after-click", rowState, selectedControl, candidates: clickAttempts };
     } catch (error) {
       const fallbackClicked = await clickFirstVisible([
         page.locator("tr").filter({ hasText: reportName }).locator("button, a, [role=button]").filter({ hasText: /刪除|删除|delete|trash|remove|🗑/i }),
@@ -9494,6 +9524,65 @@ const readProjectListRowsForObservation = async (page: Page): Promise<Record<str
       fallbackUsed: candidates.length === 0 && rows.length > 0
         ? (deleteButtonRows.length > 0 ? "rowDeleteButtonContext" : "bodyTextReportList")
         : null
+    };
+  });
+};
+
+const readProjectListPaginationState = async (page: Page): Promise<Record<string, unknown>> => {
+  return page.evaluate(() => {
+    const normalize = (value: string | null | undefined) => (value ?? "").trim().replace(/\s+/g, " ");
+    const isVisible = (element: Element): boolean => {
+      const rect = element.getBoundingClientRect();
+      const style = window.getComputedStyle(element);
+      return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden" && style.opacity !== "0";
+    };
+    const rectFor = (element: Element) => {
+      const rect = element.getBoundingClientRect();
+      return { x: Math.round(rect.x), y: Math.round(rect.y), width: Math.round(rect.width), height: Math.round(rect.height) };
+    };
+    const bodyText = normalize(document.body.innerText || "");
+    const pageSizeTexts = Array.from(new Set((bodyText.match(/\d+\s*筆\s*\/\s*頁/g) ?? []).map(normalize)));
+    const totalRecordText = normalize((bodyText.match(/共\s*\d+\s*筆資料/) ?? [null])[0]);
+    const paginationText = normalize((bodyText.match(/上一頁\s*(?:\d+\s*)+下一頁/) ?? [null])[0]);
+    const controls = Array.from(document.querySelectorAll<HTMLElement>("button, [role='button'], [role='combobox'], select, .ant-select-selector, [class*='select']"))
+      .filter((element) => isVisible(element))
+      .map((element, index) => {
+        const text = normalize(element.innerText || element.textContent);
+        const value = element instanceof HTMLSelectElement
+          ? normalize(element.selectedOptions[0]?.text || element.value)
+          : "";
+        return {
+          index,
+          tagName: element.tagName.toLowerCase(),
+          role: element.getAttribute("role"),
+          ariaLabel: element.getAttribute("aria-label"),
+          disabled: element instanceof HTMLButtonElement || element instanceof HTMLSelectElement
+            ? element.disabled
+            : element.getAttribute("aria-disabled") === "true",
+          text,
+          value,
+          rect: rectFor(element)
+        };
+      });
+    const pageSizeControls = controls.filter((item) => /\d+\s*筆\s*\/\s*頁/.test(`${item.text} ${item.value}`));
+    const pageButtons = controls.filter((item) => /^\d+$/.test(item.text) || /上一頁|下一頁|prev|next/i.test(`${item.text} ${item.ariaLabel ?? ""}`));
+    const selectedPage = controls.find((item) =>
+      /^\d+$/.test(item.text) &&
+      /active|selected|current/i.test(`${item.role ?? ""} ${item.ariaLabel ?? ""}`)
+    )?.text ?? null;
+    const numericPages = pageButtons.map((item) => Number(item.text)).filter((item) => Number.isFinite(item));
+    return {
+      pageSizeTexts,
+      selectedPageSizeText: pageSizeTexts[0] ?? pageSizeControls[0]?.text ?? pageSizeControls[0]?.value ?? null,
+      totalRecordText: totalRecordText || null,
+      totalRecords: Number((totalRecordText.match(/\d+/) ?? [NaN])[0]),
+      paginationText: paginationText || null,
+      visiblePageNumbers: numericPages,
+      selectedPage,
+      hasNextPage: /下一頁/.test(bodyText) || pageButtons.some((item) => /下一頁|next/i.test(`${item.text} ${item.ariaLabel ?? ""}`) && item.disabled !== true),
+      pageSizeControls: pageSizeControls.slice(0, 8),
+      pageButtons: pageButtons.slice(0, 12),
+      bodyTextExcerpt: bodyText.slice(0, 1600)
     };
   });
 };
@@ -11100,6 +11189,7 @@ type FrontendObservationType =
   | "rowDownloadTooltip"
   | "rowDeleteTooltip"
   | "deleteCancelFlow"
+  | "projectListPagination"
   | "projectLimitToast"
   | "sourceReportPicker"
   | "fieldPicker"
@@ -11130,6 +11220,7 @@ const frontendObservationType = (options: CliOptions): FrontendObservationType |
     value === "rowDeleteTooltip" ||
     value === "rowActionTooltip" ||
     value === "deleteCancelFlow" ||
+    value === "projectListPagination" ||
     value === "projectLimitToast" ||
     value === "sourceReportPicker" ||
     value === "fieldPicker" ||
@@ -11616,7 +11707,14 @@ const observeFrontendVisibleUiActions = async (
   }
 
   if (observationType === "projectToolbar") {
-    const shouldSelectRow = targets.has("projectList.reportRow");
+    const actionsFromContract = frontendObservationActions(params);
+    const shouldUnselectRow =
+      targets.has("projectList.reportRow.unselect") ||
+      actionsFromContract.some((item) =>
+        item.action === "unselect" ||
+        /unselect|取消勾選|取消選取/i.test(`${item.actionId ?? ""} ${item.target ?? ""} ${item.expectedOutcome ?? ""}`)
+      );
+    const shouldSelectRow = targets.has("projectList.reportRow") || shouldUnselectRow;
     if (shouldSelectRow) {
       let selected = false;
       let method: string | null = null;
@@ -11637,6 +11735,32 @@ const observeFrontendVisibleUiActions = async (
       actions.push({ action: "select", target: "projectList.reportRow", clicked: selected, method });
       if (!selected) warnings.push("PROJECT_LIST_REPORT_ROW_NOT_SELECTABLE");
       await page.waitForTimeout(700);
+      if (shouldUnselectRow) {
+        const candidates = await projectListCheckboxCandidates(page);
+        const selectedCandidate = candidates.find((item) => item.checked === true && item.isHeader !== true) ?? null;
+        let unselected = false;
+        let unselectError: string | null = null;
+        if (typeof selectedCandidate?.bodyIndex === "number") {
+          try {
+            await clickVisibleBodyElementByIndex(page, selectedCandidate.bodyIndex, 6000);
+            unselected = true;
+          } catch (error) {
+            unselectError = error instanceof Error ? error.message : String(error);
+          }
+        }
+        await page.waitForTimeout(700);
+        const afterUnselect = await projectListCheckboxCandidates(page);
+        const checkedAfter = afterUnselect.filter((item) => item.checked === true && item.isHeader !== true);
+        actions.push({
+          action: "unselect",
+          target: "projectList.reportRow.unselect",
+          clicked: unselected,
+          selectedCandidate,
+          checkedAfterCount: checkedAfter.length,
+          ...(unselectError ? { error: unselectError.slice(0, 800) } : {})
+        });
+        if (!unselected || checkedAfter.length > 0) warnings.push("PROJECT_LIST_REPORT_ROW_NOT_UNSELECTED");
+      }
     }
     return { actions };
   }
@@ -11888,6 +12012,57 @@ const observeFrontendVisibleUiActions = async (
     flow.afterCancel = await readVisibleModalState(page).catch((error) => ({ error: error instanceof Error ? error.message : String(error) }));
     flow.rowAfterCancel = await readProjectListRowsForObservation(page).catch((error) => ({ error: error instanceof Error ? error.message : String(error) }));
     return { actions, deleteCancelFlow: flow };
+  }
+
+  if (observationType === "projectListPagination") {
+    const flow: Record<string, unknown> = {
+      before: await readProjectListPaginationState(page).catch((error) => ({ error: error instanceof Error ? error.message : String(error) }))
+    };
+    const beforeState = flow.before && typeof flow.before === "object" && !Array.isArray(flow.before)
+      ? flow.before as Record<string, unknown>
+      : {};
+    const beforePageSize = String(beforeState.selectedPageSizeText ?? "");
+    const pageSizeOpened = await clickFirstVisible([
+      page.getByText(/\d+\s*筆\s*\/\s*頁/).last(),
+      page.locator("button, [role=button], [role=combobox], select, .ant-select-selector").filter({ hasText: /\d+\s*筆\s*\/\s*頁/ }).last()
+    ], 5000);
+    actions.push({ action: "open", target: "projectList.pagination.pageSize", clicked: pageSizeOpened, beforePageSize });
+    if (!pageSizeOpened) warnings.push("PROJECT_LIST_PAGE_SIZE_CONTROL_NOT_CLICKABLE");
+    await page.waitForTimeout(500);
+    flow.afterOpenPageSize = await readProjectListPaginationState(page).catch((error) => ({ error: error instanceof Error ? error.message : String(error) }));
+    const optionOrder = beforePageSize.includes("20")
+      ? ["50筆/頁", "100筆/頁"]
+      : beforePageSize.includes("50")
+        ? ["20筆/頁", "100筆/頁"]
+        : ["20筆/頁", "50筆/頁"];
+    let selectedOption: string | null = null;
+    let pageSizeSelected = false;
+    if (pageSizeOpened) {
+      for (const label of optionOrder) {
+        pageSizeSelected = await clickFirstVisible([
+          page.getByText(label, { exact: true }).last(),
+          page.locator("button, [role=option], [role=menuitem], li, div, span").filter({ hasText: new RegExp(`^\\s*${label.replace("/", "\\/")}\\s*$`) }).last()
+        ], 2500);
+        if (pageSizeSelected) {
+          selectedOption = label;
+          break;
+        }
+      }
+    }
+    actions.push({ action: "select", target: "projectList.pagination.pageSizeOption", clicked: pageSizeSelected, value: selectedOption });
+    if (pageSizeOpened && !pageSizeSelected) warnings.push("PROJECT_LIST_PAGE_SIZE_OPTION_NOT_CLICKABLE");
+    await page.waitForTimeout(900);
+    flow.afterPageSize = await readProjectListPaginationState(page).catch((error) => ({ error: error instanceof Error ? error.message : String(error) }));
+    const nextClicked = await clickFirstVisible([
+      page.getByText("下一頁", { exact: true }),
+      page.locator("button, [role=button], a").filter({ hasText: /^\s*下一頁\s*$/ }),
+      page.locator("button[aria-label*='next' i], [role=button][aria-label*='next' i], button[aria-label*='下一頁']")
+    ], 5000);
+    actions.push({ action: "click", target: "projectList.pagination.nextPage", clicked: nextClicked });
+    if (!nextClicked) warnings.push("PROJECT_LIST_NEXT_PAGE_NOT_CLICKABLE");
+    await page.waitForTimeout(900);
+    flow.afterNextPage = await readProjectListPaginationState(page).catch((error) => ({ error: error instanceof Error ? error.message : String(error) }));
+    return { actions, projectListPaginationFlow: flow };
   }
 
   if (observationType === "projectLimitToast") {
@@ -12188,6 +12363,39 @@ const readFrontendObservationState = async (
       const deleteDisabled = toolbarButtons[1]?.disabled === true;
       const createEnabled = toolbarButtons[2] ? toolbarButtons[2].disabled === false : false;
       const rowSelectionAction = actionList.find((item) => item.target === "projectList.reportRow") ?? null;
+      const rowUnselectionAction = actionList.find((item) => item.action === "unselect" || item.target === "projectList.reportRow.unselect") ?? null;
+      const unselectionExpected =
+        targetList.includes("projectList.reportRow.unselect") ||
+        actionList.some((item) => item.action === "unselect" || item.target === "projectList.reportRow.unselect");
+      if (unselectionExpected) {
+        const checkedAfterCount = typeof rowUnselectionAction?.checkedAfterCount === "number"
+          ? rowUnselectionAction.checkedAfterCount
+          : null;
+        return {
+          evidenceObject: "projectToolbar.selectionToggle.state",
+          semanticMap: "projectToolbar.buttonOrder",
+          toolbarCandidateFound,
+          rowSelection: rowSelectionAction,
+          rowUnselection: rowUnselectionAction,
+          buttons: toolbarButtons,
+          assertions: {
+            rowSelectedByVisibleUi: rowSelectionAction?.clicked === true,
+            rowUnselectedByVisibleUi: rowUnselectionAction?.clicked === true,
+            checkedAfterCount,
+            downloadDisabledAfterUnselect: downloadDisabled,
+            deleteDisabledAfterUnselect: deleteDisabled,
+            createEnabledAfterUnselect: createEnabled
+          },
+          interactionLog: actionList,
+          asserted:
+            rowSelectionAction?.clicked === true &&
+            rowUnselectionAction?.clicked === true &&
+            checkedAfterCount === 0 &&
+            downloadDisabled &&
+            deleteDisabled &&
+            createEnabled
+        };
+      }
       if (selectionExpected) {
         const downloadEnabled = toolbarButtons[0]?.disabled === false;
         const deleteEnabled = toolbarButtons[1]?.disabled === false;
@@ -12514,6 +12722,57 @@ const readFrontendObservationState = async (
         rowAfterCancel,
         interactionLog: actionList,
         asserted: deleteAction?.clicked === true && modalVisible && cancelAction?.clicked === true && modalClosed && rowStillVisible
+      };
+    }
+
+    if (type === "projectListPagination") {
+      const actionList = Array.isArray(actionData?.actions) ? actionData.actions as Array<Record<string, unknown>> : [];
+      const flow = actionData?.projectListPaginationFlow && typeof actionData.projectListPaginationFlow === "object" && !Array.isArray(actionData.projectListPaginationFlow)
+        ? actionData.projectListPaginationFlow as Record<string, unknown>
+        : {};
+      const stateRecord = (value: unknown): Record<string, unknown> =>
+        value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+      const before = stateRecord(flow.before);
+      const afterOpenPageSize = stateRecord(flow.afterOpenPageSize);
+      const afterPageSize = stateRecord(flow.afterPageSize);
+      const afterNextPage = stateRecord(flow.afterNextPage);
+      const openAction = actionList.find((item) => item.target === "projectList.pagination.pageSize") ?? null;
+      const selectAction = actionList.find((item) => item.target === "projectList.pagination.pageSizeOption") ?? null;
+      const nextAction = actionList.find((item) => item.target === "projectList.pagination.nextPage") ?? null;
+      const beforePageSize = String(before.selectedPageSizeText ?? "");
+      const afterPageSizeText = String(afterPageSize.selectedPageSizeText ?? "");
+      const pageSizeChanged = Boolean(beforePageSize && afterPageSizeText && beforePageSize !== afterPageSizeText);
+      const hasTotalRecordText = typeof before.totalRecordText === "string" && /共\s*\d+\s*筆資料/.test(before.totalRecordText);
+      const visiblePageNumbers = Array.isArray(before.visiblePageNumbers) ? before.visiblePageNumbers : [];
+      const paginationVisible = visiblePageNumbers.length > 1 || typeof before.paginationText === "string";
+      return {
+        evidenceObject: "projectList.pagination.state",
+        before,
+        afterOpenPageSize,
+        afterPageSize,
+        afterNextPage,
+        actions: {
+          openPageSizeClicked: openAction?.clicked === true,
+          selectedPageSizeOption: selectAction?.value ?? null,
+          pageSizeOptionClicked: selectAction?.clicked === true,
+          nextPageClicked: nextAction?.clicked === true
+        },
+        assertions: {
+          totalRecordTextVisible: hasTotalRecordText,
+          pageSizeControlVisible: Boolean(beforePageSize),
+          pageSizeChanged,
+          paginationVisible,
+          nextPageClickable: nextAction?.clicked === true
+        },
+        interactionLog: actionList,
+        asserted:
+          hasTotalRecordText &&
+          Boolean(beforePageSize) &&
+          openAction?.clicked === true &&
+          selectAction?.clicked === true &&
+          pageSizeChanged &&
+          paginationVisible &&
+          nextAction?.clicked === true
       };
     }
 
@@ -12917,6 +13176,7 @@ const waitForFrontendObservationReadiness = async (
     rowDownloadTooltip: /下載|刪除|拼貼報表|專案/i,
     rowDeleteTooltip: /下載|刪除|拼貼報表|專案/i,
     deleteCancelFlow: /下載|刪除|拼貼報表|專案/i,
+    projectListPagination: /上一頁|下一頁|筆\/頁|共\s*\d+\s*筆資料|拼貼報表|專案/i,
     projectLimitToast: /新增|拼貼報表|專案/i,
     sourceReportPicker: /來源報表|每日報表|欄位|報表設定/i,
     fieldPicker: /欄位|來源報表|每日報表|報表設定/i,

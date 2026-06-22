@@ -318,6 +318,7 @@ const inferFrontendObservationTemplate = (currentCase: CaseManifestCase | null):
     return "collage.observeFrontendState";
   }
   if (/建構方式\s*radio|拼貼模式|報表模式|report[-_\s]*mode|radio/i.test(text)) return "collage.observeFrontendState";
+  if (/分頁|每頁筆數|筆\/頁|下一頁|pagination|page\s*size/i.test(text)) return "collage.observeFrontendState";
   if (/時間面板|時間區間\s*button|時間設置|動態|靜態|date\s*panel|date\s*range/i.test(text)) return "collage.observeFrontendState";
   if (/空設定|未完成設定|防呆|欄位未設置完成|點.{0,8}計算|計算.{0,8}按鈕|validation/i.test(text)) {
     return "collage.observeFrontendState";
@@ -338,6 +339,7 @@ const helperSupportsStructuredObservationType = (value: string | null | undefine
   value === "rowDeleteTooltip" ||
   value === "rowActionTooltip" ||
   value === "deleteCancelFlow" ||
+  value === "projectListPagination" ||
   value === "projectLimitToast" ||
   value === "sourceReportPicker" ||
   value === "fieldPicker" ||
@@ -358,7 +360,7 @@ const isDeleteReportFlow = (currentCase: CaseManifestCase | null, helperHints: H
   const operationTemplate = helperHints?.operationTemplate ?? "";
   const text = detectCaseFeatures(currentCase, helperHints).text;
   return operationTemplate === "collage_delete_temporary_report" ||
-    /刪除報表|刪除.*臨時報表|delete\s+(?:temporary\s+)?report|delete-temp-report/i.test(text);
+    /刪除.*報表|delete\s+(?:temporary\s+)?report|delete-temp-report/i.test(text);
 };
 
 export const evaluateCapabilityGate = (
@@ -378,7 +380,8 @@ export const evaluateCapabilityGate = (
   const isAllZeroFieldInspection =
     operationTemplate === "collage_all_zero_field_inspection" ||
     (isA06LikeCase && /全為\s*0\s*欄位|全\s*0\s*欄位|值全為\s*0|all[-_ ]?zero/i.test(text));
-  const isDeleteReport = isDeleteReportFlow(currentCase, helperHints);
+  const caseScope = inferCaseScope(currentCase, helperHints);
+  const isDeleteReport = isDeleteReportFlow(currentCase, helperHints) && caseScope.caseScopeContract?.routeIntent !== "frontend_observation";
   const unsupportedFeatures: string[] = [];
   const supportedHelperTemplates: string[] = [];
   const params = paramsObject(helperHints);
@@ -396,7 +399,6 @@ export const evaluateCapabilityGate = (
   const dateNeedsCodexVisibleUi = dateRequiresCodexVisibleUi(currentCase, helperHints);
   const navigationPreludeAllowed = needsCollageNavigationPrelude(currentCase, helperHints);
   const frontendObservationPrelude = isFrontendObservationPreludeCase(currentCase, helperHints);
-  const caseScope = inferCaseScope(currentCase, helperHints);
   const helperContractBlocker = missingActionTemplateBlocker(caseScope);
   const reportMutationFlow = caseScope.caseScopeContract?.routeIntent === "report_mutation_flow";
   const previewExecutionFlow = caseScope.caseScopeContract?.routeIntent === "preview_execution";
@@ -444,6 +446,7 @@ export const evaluateCapabilityGate = (
   const createProjectAllowed = mode === "collage" && !hasFilter && !hasGroup && isCreateProjectOnlyFlow(currentCase, helperHints);
   const simpleProjectFlowAllowed = mode === "collage" && !hasFilter && !hasGroup && (isOpenReportFromProjectListFlow(currentCase, helperHints) || isBackToProjectListFlow(currentCase, helperHints));
   const projectRowDownloadOnly = mode === "collage" && !hasFilter && !hasGroup && isProjectRowDownloadOnlyCase(currentCase, params);
+  const officialCollageContext = mode === "collage" || /^BIUI_COLLAGE/i.test(currentCase?.caseNo ?? "");
 
   if (mode === "record") unsupportedFeatures.push("record_mode_helper_not_supported");
   if (mode === "metric") unsupportedFeatures.push("metric_mode_helper_not_supported");
@@ -479,7 +482,7 @@ export const evaluateCapabilityGate = (
       "collage.createReport",
       "collage.inspectAllZeroFields"
     );
-  } else if (mode === "collage" && !hasFilter && !hasGroup && isDeleteReport) {
+  } else if (officialCollageContext && !hasFilter && !hasGroup && isDeleteReport) {
     supportedHelperTemplates.push(
       "collage.openProject",
       "collage.createAndDeleteTemporaryReport"
@@ -506,7 +509,7 @@ export const evaluateCapabilityGate = (
     if (downloadExecutionFlow) supportedHelperTemplates.push("collage.downloadCsvAndComparePreview");
   } else if (reportMutationFlow && !helperContractBlocker) {
     supportedHelperTemplates.push("collage.openProject");
-    if (/M-06$/i.test(caseScope.caseScopeContract?.caseNo ?? "")) {
+    if (/M-0[3456]$/i.test(caseScope.caseScopeContract?.caseNo ?? "")) {
       supportedHelperTemplates.push(
         "collage.createReport",
         "collage.configureMetric",

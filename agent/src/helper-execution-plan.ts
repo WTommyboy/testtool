@@ -203,7 +203,7 @@ const isDeleteReportFlow = (currentCase: CaseManifestCase | null, helperHints: H
   const operationTemplate = helperHints?.operationTemplate ?? "";
   const text = textBlob(currentCase);
   return operationTemplate === "collage_delete_temporary_report" ||
-    /刪除報表|刪除.*臨時報表|delete\s+(?:temporary\s+)?report|delete-temp-report/i.test(text);
+    /刪除.*報表|delete\s+(?:temporary\s+)?report|delete-temp-report/i.test(text);
 };
 
 const needsCollageNavigationPrelude = (currentCase: CaseManifestCase | null, helperHints: HelperHints | null): boolean => {
@@ -274,6 +274,7 @@ type FrontendObservationType =
   | "rowDownloadTooltip"
   | "rowDeleteTooltip"
   | "deleteCancelFlow"
+  | "projectListPagination"
   | "projectLimitToast"
   | "sourceReportPicker"
   | "fieldPicker"
@@ -329,6 +330,7 @@ const inferFrontendObservationType = (currentCase: CaseManifestCase | null): Fro
     return "projectToolbar";
   }
   if (/建構方式\s*radio|拼貼模式|報表模式|report[-_\s]*mode|radio/i.test(text)) return "reportModeRadio";
+  if (/分頁|每頁筆數|筆\/頁|下一頁|pagination|page\s*size/i.test(text)) return "projectListPagination";
   if (/時間面板|時間區間\s*button|時間設置|動態|靜態|date\s*panel|date\s*range/i.test(text)) return "datePanel";
   if (/空設定|未完成設定|防呆|欄位未設置完成|點.{0,8}計算|計算.{0,8}按鈕|validation/i.test(text)) return "validationMessage";
   if (/下載.*toast|數據已開始下載|editor.*下載|右上下載/i.test(text)) return "downloadToast";
@@ -359,6 +361,8 @@ const observationRequiredEvidence = (observationType: FrontendObservationType): 
       return ["projectList.rowActionTooltip.state", "interactionLog", "screenshot"];
     case "deleteCancelFlow":
       return ["projectList.deleteCancelFlow.state", "deleteConfirmModal.state", "projectList.reportRow.state", "interactionLog", "screenshot"];
+    case "projectListPagination":
+      return ["projectList.pagination.state", "interactionLog", "screenshot"];
     case "projectLimitToast":
       return ["projectLimit.toast.state", "interactionLog", "screenshot"];
     case "sourceReportPicker":
@@ -416,6 +420,8 @@ const fallbackObservationType = (value: string | null): FrontendObservationType 
       return "rowDeleteTooltip";
     case "deleteCancelFlow":
       return "deleteCancelFlow";
+    case "projectListPagination":
+      return "projectListPagination";
     case "projectLimitToast":
       return "projectLimitToast";
     case "sourceReportPicker":
@@ -1082,7 +1088,7 @@ const buildActions = (currentCase: CaseManifestCase | null, helperHints: HelperH
       })
     ];
   }
-  const deleteReportFlow = isDeleteReportFlow(currentCase, helperHints);
+  const deleteReportFlow = isDeleteReportFlow(currentCase, helperHints) && caseScopeContract?.routeIntent !== "frontend_observation";
   if (deleteReportFlow) {
     const requestedFields = firstStringArrayParam(params, ["fields", "metrics"]);
     const deleteParams = {

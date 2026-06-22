@@ -86,7 +86,7 @@ const assertVocabularyCoverage = (contracts: StructuredCaseScopeContract[]): voi
   const actionIds = new Set((platform.actions ?? []).map((item: JsonObject) => item.id));
   const expectedOutcomes = new Set(platform.expectedOutcomes ?? []);
   const objectIds = new Set((objects.objects ?? []).map((item: JsonObject) => item.id));
-  assert.equal(contracts.length, 38, "P0 runtime wiring should cover reduced-smoke cases plus P0.26/P0.27/P0.30/P0.33 structured action-template slices, K-04 metric-row controls, M-03/M-04/M-05 save-modal coverage, and L-11 date-limit observation");
+  assert.equal(contracts.length, 40, "P0 runtime wiring should cover reduced-smoke cases plus P0.26/P0.27/P0.30/P0.33 structured action-template slices, K-04 metric-row controls, J-04 toolbar unselect, J-15 project-list pagination, M-03/M-04/M-05 save-modal coverage, and L-11 date-limit observation");
   for (const contract of contracts) {
     for (const action of contract.requiredActions) {
       assert.ok(actionIds.has(action.action), `${contract.caseNo} action ${action.action} is not in platform vocabulary`);
@@ -106,7 +106,9 @@ const supportedObservationTypes = new Set([
   "sidebarGroup",
   "projectCreateModal",
   "rowDeleteTooltip",
+  "rowDownloadTooltip",
   "deleteCancelFlow",
+  "projectListPagination",
   "projectLimitToast",
   "sourceReportPicker",
   "fieldPicker",
