@@ -63,6 +63,14 @@ assertTagCase(baseCase, "tagTool.observeList");
 
 assertTagCase({
   ...baseCase,
+  caseNo: "TT-VERIFY-A-02",
+  caseTitle: "玩家標籤管理主頁可達並顯示 breadcrumb、頁名與空狀態",
+  stepsSummary: "1. 開啟玩家標籤管理主頁\n2. 讀取 URL、breadcrumb、頁名與空狀態\n3. 若無資料，讀取空狀態文字；不得點擊新增、刪除或更多操作",
+  validationMethod: "Evidence: navigation.state, tagList.table.state"
+}, "tagTool.observeList");
+
+assertTagCase({
+  ...baseCase,
   caseNo: "TT-VERIFY-B-01",
   groupName: "B: 新增條件標籤",
   caseTitle: "新增標籤頁初始狀態符合 PRD 未選標籤類型要求",

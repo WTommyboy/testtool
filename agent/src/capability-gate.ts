@@ -363,6 +363,7 @@ const inferTagToolTemplate = (currentCase: CaseManifestCase | null, helperHints:
   const explicit = helperHints?.operationTemplate?.trim();
   if (explicit && /^tagTool\./i.test(explicit)) return explicit;
   const text = detectCaseFeatures(currentCase, helperHints).text;
+  const negativeDangerInstruction = /(?:不得|不可|不點擊|不要|不需|without\s+clicking)[\s\S]{0,50}(?:刪除|終止|更多操作|確認窗|防呆窗)/i.test(text);
   if (/標籤變數設定|N\/Z\/Y\/X\/A\/B|核心天數門檻|生命週期天數|設置紀錄|變數/.test(text)) {
     return "tagTool.observeVariableSettings";
   }
@@ -373,7 +374,7 @@ const inferTagToolTemplate = (currentCase: CaseManifestCase | null, helperHints:
     if (/上傳|upload|fixture|檔案|CSV\s*格式|欄位/.test(text)) return "tagTool.uploadManualCsv";
     return "tagTool.selectManualTypeAndObserve";
   }
-  if (/刪除|終止|confirm|確認窗|防呆窗|modal/.test(text)) return "tagTool.openDangerousModalAndCancel";
+  if (!negativeDangerInstruction && /刪除|終止|confirm|確認窗|防呆窗|modal/.test(text)) return "tagTool.openDangerousModalAndCancel";
   if (/玩家標籤管理主頁|標籤管理主頁|列表|清單|空狀態|table|列表欄位|玩家標籤管理[\s\S]{0,120}欄位/.test(text) && !/新增標籤頁|新增條件|新增人工|上傳|CSV/.test(text)) {
     return "tagTool.observeList";
   }
