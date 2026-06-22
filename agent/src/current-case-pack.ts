@@ -137,6 +137,16 @@ const inferRuleKeys = (
     keys.add("evidence-template-index");
     keys.add("bi-ui-helper-guidance");
   }
+  if (/TAG_TOOL|玩家標籤管理|標籤變數設定|人工標籤|條件標籤|子標籤|CSV|tagTool\./i.test(`${operationTemplate}\n${JSON.stringify(item ?? {})}`)) {
+    keys.add("domain-ui-contract");
+    keys.add("domain-ui-object-vocabulary");
+    keys.add("domain-evidence-schema");
+    keys.add("domain-action-tag-list");
+    keys.add("domain-action-create-condition-tag");
+    keys.add("domain-action-manual-upload");
+    keys.add("domain-action-tag-variable-settings");
+    keys.add("domain-action-dangerous-actions");
+  }
   if (/前端呈現|前後端整合|功能流程/.test(testTarget)) keys.add("bi-project-agents-full");
   return [...keys];
 };
@@ -179,6 +189,17 @@ const inferMustReadRuleKeys = (
     keys.add("domain-case-scope-contracts");
     keys.add("domain-ui-object-vocabulary");
     keys.add("domain-action-observe-frontend-state");
+  }
+  if (/TAG_TOOL|玩家標籤管理|標籤變數設定|人工標籤|條件標籤|子標籤|CSV|tagTool\./i.test(`${operationTemplate}\n${caseText}`)) {
+    keys.add("domain-ui-contract");
+    keys.add("domain-ui-object-vocabulary");
+    keys.add("domain-evidence-schema");
+    keys.add("domain-action-tag-list");
+    keys.add("domain-action-create-condition-tag");
+    keys.add("domain-action-manual-upload");
+    keys.add("domain-action-tag-variable-settings");
+    keys.add("domain-action-dangerous-actions");
+    keys.add("tool-bridge");
   }
   if (/儲存|覆寫|重開|重新檢視|刪除|confirm|alert/i.test(caseText) || requiredEvidence.includes("toolBridge.response")) {
     keys.add("tool-bridge");

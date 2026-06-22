@@ -388,6 +388,11 @@ const writeRunBrief = (
   const domainUiContract = inputs.domain_ui_contract ?? null;
   const domainActionSetMetricRows = inputs.domain_action_set_metric_rows ?? null;
   const domainActionObserveFrontendState = inputs.domain_action_observe_frontend_state ?? null;
+  const domainActionTagList = inputs.domain_action_tag_list ?? null;
+  const domainActionCreateConditionTag = inputs.domain_action_create_condition_tag ?? null;
+  const domainActionManualUpload = inputs.domain_action_manual_upload ?? null;
+  const domainActionTagVariableSettings = inputs.domain_action_tag_variable_settings ?? null;
+  const domainActionDangerousActions = inputs.domain_action_dangerous_actions ?? null;
   const domainCaseScopeContracts = inputs.domain_case_scope_contracts ?? null;
   const domainUiObjectVocabulary = inputs.domain_ui_object_vocabulary ?? null;
   const domainEvidenceSchema = inputs.domain_evidence_schema ?? null;
@@ -444,6 +449,11 @@ const writeRunBrief = (
     `- domain_ui_contract: ${domainUiContract ?? "(not downloaded; use visible UI exploration)"}`,
     `- domain_action_set_metric_rows: ${domainActionSetMetricRows ?? "(not downloaded; no domain action contract)"}`,
     `- domain_action_observe_frontend_state: ${domainActionObserveFrontendState ?? "(not downloaded; no observation action contract)"}`,
+    `- domain_action_tag_list: ${domainActionTagList ?? "(not downloaded; no TAG_TOOL tag list action contract)"}`,
+    `- domain_action_create_condition_tag: ${domainActionCreateConditionTag ?? "(not downloaded; no TAG_TOOL condition tag action contract)"}`,
+    `- domain_action_manual_upload: ${domainActionManualUpload ?? "(not downloaded; no TAG_TOOL manual upload action contract)"}`,
+    `- domain_action_tag_variable_settings: ${domainActionTagVariableSettings ?? "(not downloaded; no TAG_TOOL variable settings action contract)"}`,
+    `- domain_action_dangerous_actions: ${domainActionDangerousActions ?? "(not downloaded; no TAG_TOOL dangerous action contract)"}`,
     `- domain_case_scope_contracts: ${domainCaseScopeContracts ?? "(not downloaded; no structured action/object case scope contracts)"}`,
     `- domain_ui_object_vocabulary: ${domainUiObjectVocabulary ?? "(not downloaded; use domain UI contract and visible UI exploration)"}`,
     `- domain_evidence_schema: ${domainEvidenceSchema ?? "(not downloaded; use generic evidence policy)"}`,
@@ -602,6 +612,11 @@ const inputFileNameByKey: Record<string, string> = {
   domain_ui_contract: "domain_ui_contract.json",
   domain_action_set_metric_rows: "domain_action_set_metric_rows.json",
   domain_action_observe_frontend_state: "domain_action_observe_frontend_state.json",
+  domain_action_tag_list: "domain_action_tag_list.json",
+  domain_action_create_condition_tag: "domain_action_create_condition_tag.json",
+  domain_action_manual_upload: "domain_action_manual_upload.json",
+  domain_action_tag_variable_settings: "domain_action_tag_variable_settings.json",
+  domain_action_dangerous_actions: "domain_action_dangerous_actions.json",
   domain_case_scope_contracts: "domain_case_scope_contracts.json",
   domain_ui_object_vocabulary: "domain_ui_object_vocabulary.json",
   domain_evidence_schema: "domain_evidence_schema.json",
@@ -1903,6 +1918,11 @@ const buildPrompt = (
   const domainUiContract = inputs.domain_ui_contract ?? null;
   const domainActionSetMetricRows = inputs.domain_action_set_metric_rows ?? null;
   const domainActionObserveFrontendState = inputs.domain_action_observe_frontend_state ?? null;
+  const domainActionTagList = inputs.domain_action_tag_list ?? null;
+  const domainActionCreateConditionTag = inputs.domain_action_create_condition_tag ?? null;
+  const domainActionManualUpload = inputs.domain_action_manual_upload ?? null;
+  const domainActionTagVariableSettings = inputs.domain_action_tag_variable_settings ?? null;
+  const domainActionDangerousActions = inputs.domain_action_dangerous_actions ?? null;
   const domainCaseScopeContracts = inputs.domain_case_scope_contracts ?? null;
   const domainUiObjectVocabulary = inputs.domain_ui_object_vocabulary ?? null;
   const domainEvidenceSchema = inputs.domain_evidence_schema ?? null;
@@ -1950,6 +1970,21 @@ const buildPrompt = (
     domainActionObserveFrontendState
       ? `- For official collage frontend observation contract, use: ${domainActionObserveFrontendState}`
       : "- Domain observeFrontendState action contract was not downloaded.",
+    domainActionTagList
+      ? `- For TAG_TOOL list action contract, use: ${domainActionTagList}`
+      : "- Domain TAG_TOOL tagList action contract was not downloaded.",
+    domainActionCreateConditionTag
+      ? `- For TAG_TOOL condition-tag action contract, use: ${domainActionCreateConditionTag}`
+      : "- Domain TAG_TOOL createConditionTag action contract was not downloaded.",
+    domainActionManualUpload
+      ? `- For TAG_TOOL manual upload action contract, use: ${domainActionManualUpload}`
+      : "- Domain TAG_TOOL manualUpload action contract was not downloaded.",
+    domainActionTagVariableSettings
+      ? `- For TAG_TOOL variable settings action contract, use: ${domainActionTagVariableSettings}`
+      : "- Domain TAG_TOOL tagVariableSettings action contract was not downloaded.",
+    domainActionDangerousActions
+      ? `- For TAG_TOOL dangerous action contract, use: ${domainActionDangerousActions}`
+      : "- Domain TAG_TOOL dangerousActions action contract was not downloaded.",
     domainCaseScopeContracts
       ? `- For structured case action/object scope contracts, use: ${domainCaseScopeContracts}`
       : "- Domain case-scope runtime contracts were not downloaded; rely on current-case-pack and helper plan if present.",
@@ -2065,6 +2100,11 @@ const buildPrompt = (
     `Domain UI contract: ${domainUiContract ?? "(not downloaded)"}`,
     `Domain setMetricRows action contract: ${domainActionSetMetricRows ?? "(not downloaded)"}`,
     `Domain observeFrontendState action contract: ${domainActionObserveFrontendState ?? "(not downloaded)"}`,
+    `Domain TAG_TOOL tagList action contract: ${domainActionTagList ?? "(not downloaded)"}`,
+    `Domain TAG_TOOL createConditionTag action contract: ${domainActionCreateConditionTag ?? "(not downloaded)"}`,
+    `Domain TAG_TOOL manualUpload action contract: ${domainActionManualUpload ?? "(not downloaded)"}`,
+    `Domain TAG_TOOL tagVariableSettings action contract: ${domainActionTagVariableSettings ?? "(not downloaded)"}`,
+    `Domain TAG_TOOL dangerousActions action contract: ${domainActionDangerousActions ?? "(not downloaded)"}`,
     `Domain case-scope runtime contracts: ${domainCaseScopeContracts ?? "(not downloaded)"}`,
     `Domain UI object vocabulary: ${domainUiObjectVocabulary ?? "(not downloaded)"}`,
     `Domain evidence schema: ${domainEvidenceSchema ?? "(not downloaded)"}`,
@@ -2085,6 +2125,11 @@ const buildPrompt = (
     `- domain UI contract: ${domainUiContract ?? "(none)"}`,
     `- domain setMetricRows action contract: ${domainActionSetMetricRows ?? "(none)"}`,
     `- domain observeFrontendState action contract: ${domainActionObserveFrontendState ?? "(none)"}`,
+    `- domain TAG_TOOL tagList action contract: ${domainActionTagList ?? "(none)"}`,
+    `- domain TAG_TOOL createConditionTag action contract: ${domainActionCreateConditionTag ?? "(none)"}`,
+    `- domain TAG_TOOL manualUpload action contract: ${domainActionManualUpload ?? "(none)"}`,
+    `- domain TAG_TOOL tagVariableSettings action contract: ${domainActionTagVariableSettings ?? "(none)"}`,
+    `- domain TAG_TOOL dangerousActions action contract: ${domainActionDangerousActions ?? "(none)"}`,
     `- domain case-scope runtime contracts: ${domainCaseScopeContracts ?? "(none)"}`,
     `- domain UI object vocabulary: ${domainUiObjectVocabulary ?? "(none)"}`,
     `- domain evidence schema: ${domainEvidenceSchema ?? "(none)"}`,

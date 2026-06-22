@@ -77,6 +77,26 @@ router.get("/:name/action-contracts/observeFrontendState", (req, res) => {
   return sendOptionalJsonFile(req.params.name, "action-contracts/observeFrontendState.json", "DOMAIN_ACTION_OBSERVE_FRONTEND_STATE_MISSING", res);
 });
 
+router.get("/:name/action-contracts/tagList", (req, res) => {
+  return sendOptionalJsonFile(req.params.name, "action-contracts/tagList.json", "DOMAIN_ACTION_TAG_LIST_MISSING", res);
+});
+
+router.get("/:name/action-contracts/createConditionTag", (req, res) => {
+  return sendOptionalJsonFile(req.params.name, "action-contracts/createConditionTag.json", "DOMAIN_ACTION_CREATE_CONDITION_TAG_MISSING", res);
+});
+
+router.get("/:name/action-contracts/manualUpload", (req, res) => {
+  return sendOptionalJsonFile(req.params.name, "action-contracts/manualUpload.json", "DOMAIN_ACTION_MANUAL_UPLOAD_MISSING", res);
+});
+
+router.get("/:name/action-contracts/tagVariableSettings", (req, res) => {
+  return sendOptionalJsonFile(req.params.name, "action-contracts/tagVariableSettings.json", "DOMAIN_ACTION_TAG_VARIABLE_SETTINGS_MISSING", res);
+});
+
+router.get("/:name/action-contracts/dangerousActions", (req, res) => {
+  return sendOptionalJsonFile(req.params.name, "action-contracts/dangerousActions.json", "DOMAIN_ACTION_DANGEROUS_ACTIONS_MISSING", res);
+});
+
 router.get("/:name/case-scope-runtime-contracts", (req, res) => {
   return sendOptionalJsonFile(req.params.name, "case-scope-runtime-contracts.json", "DOMAIN_CASE_SCOPE_CONTRACTS_MISSING", res);
 });

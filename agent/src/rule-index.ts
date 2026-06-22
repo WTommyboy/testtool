@@ -286,6 +286,41 @@ export const writeRuleIndex = (runDir: string, domain: string): string => {
     summary: "Official collage frontend observation contract. Defines user button, toolbar, radio, date panel, and validation evidence objects."
   });
   addIfExists(entries, runDir, {
+    id: "domain-action-tag-list",
+    scope: "domain",
+    filePath: path.join(runDir, "input", "domain_action_tag_list.json"),
+    loadWhen: ["TAG_TOOL list page", "player tag table", "row actions", "empty state"],
+    summary: "TAG_TOOL player tag list observation and row-action contract."
+  });
+  addIfExists(entries, runDir, {
+    id: "domain-action-create-condition-tag",
+    scope: "domain",
+    filePath: path.join(runDir, "input", "domain_action_create_condition_tag.json"),
+    loadWhen: ["TAG_TOOL create page", "condition tag", "date panel", "tag value editor"],
+    summary: "TAG_TOOL condition-tag create form and validation contract."
+  });
+  addIfExists(entries, runDir, {
+    id: "domain-action-manual-upload",
+    scope: "domain",
+    filePath: path.join(runDir, "input", "domain_action_manual_upload.json"),
+    loadWhen: ["TAG_TOOL manual tag", "CSV upload", "upload validation", "manual edit file"],
+    summary: "TAG_TOOL manual-tag CSV upload and validation contract."
+  });
+  addIfExists(entries, runDir, {
+    id: "domain-action-tag-variable-settings",
+    scope: "domain",
+    filePath: path.join(runDir, "input", "domain_action_tag_variable_settings.json"),
+    loadWhen: ["TAG_TOOL variable settings", "N/Z/Y/X/A/B", "setting history", "variable save validation"],
+    summary: "TAG_TOOL variable settings observation and approval-gated save contract."
+  });
+  addIfExists(entries, runDir, {
+    id: "domain-action-dangerous-actions",
+    scope: "domain",
+    filePath: path.join(runDir, "input", "domain_action_dangerous_actions.json"),
+    loadWhen: ["TAG_TOOL delete", "TAG_TOOL terminate", "danger confirmation", "approval gate"],
+    summary: "TAG_TOOL destructive or high-risk action contract requiring Tool Bridge approval for confirm flows."
+  });
+  addIfExists(entries, runDir, {
     id: "domain-case-scope-contracts",
     scope: "domain",
     filePath: path.join(runDir, "input", "domain_case_scope_contracts.json"),

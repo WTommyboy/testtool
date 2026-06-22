@@ -5,7 +5,7 @@ export type CaseFeatureDetection = {
   text: string;
   behaviorText: string;
   cleanupTargets: Record<string, string>;
-  mode: "collage" | "record" | "metric" | "unknown";
+  mode: "collage" | "record" | "metric" | "tagTool" | "unknown";
   hasFilter: boolean;
   hasGroup: boolean;
   isMetadataDropdown: boolean;
@@ -69,6 +69,12 @@ const behaviorTextBlob = (item: CaseManifestCase | null, helperHints: HelperHint
 
 const detectMode = (text: string, operationTemplate: string | null): CaseFeatureDetection["mode"] => {
   const source = `${operationTemplate ?? ""}\n${text}`;
+  if (
+    /^tagTool\./i.test(operationTemplate ?? "") ||
+    /TAG_TOOL|玩家標籤管理|標籤變數設定|人工標籤|條件標籤|子標籤級距|標籤值設置|tag\/player|tag\/settings/i.test(source)
+  ) {
+    return "tagTool";
+  }
   const constructionMode = source.match(/建構模式\s*[:：]\s*(拼貼|明細(?:檢視)?|指標(?:趨勢)?)/);
   if (constructionMode?.[1]?.includes("拼貼")) return "collage";
   if (constructionMode?.[1]?.includes("明細")) return "record";

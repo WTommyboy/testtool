@@ -17,7 +17,7 @@ export type CapabilityGateReport = {
   supportedHelperTemplates: string[];
   caseScope: InferredCaseScope;
   detected: {
-    mode: "collage" | "record" | "metric" | "unknown";
+    mode: "collage" | "record" | "metric" | "tagTool" | "unknown";
     hasFilter: boolean;
     hasGroup: boolean;
     isMetadataDropdown: boolean;
@@ -356,6 +356,45 @@ const helperSupportsStructuredObservationType = (value: string | null | undefine
   value === "saveModalCancel" ||
   value === "copyModalCancel";
 
+const isTagToolCase = (currentCase: CaseManifestCase | null, helperHints: HelperHints | null): boolean =>
+  detectCaseFeatures(currentCase, helperHints).mode === "tagTool";
+
+const inferTagToolTemplate = (currentCase: CaseManifestCase | null, helperHints: HelperHints | null): string => {
+  const explicit = helperHints?.operationTemplate?.trim();
+  if (explicit && /^tagTool\./i.test(explicit)) return explicit;
+  const text = detectCaseFeatures(currentCase, helperHints).text;
+  if (/標籤變數設定|N\/Z\/Y\/X\/A\/B|核心天數門檻|生命週期天數|設置紀錄|變數/.test(text)) {
+    return "tagTool.observeVariableSettings";
+  }
+  if (/新增條件標籤|新增條件|條件標籤|新增標籤頁初始|未選標籤類型/.test(text)) {
+    return "tagTool.observeCreateForm";
+  }
+  if (/CSV|上傳|upload|人工標籤|手動標籤/.test(text)) {
+    if (/上傳|upload|fixture|檔案|CSV\s*格式|欄位/.test(text)) return "tagTool.uploadManualCsv";
+    return "tagTool.selectManualTypeAndObserve";
+  }
+  if (/刪除|終止|confirm|確認窗|防呆窗|modal/.test(text)) return "tagTool.openDangerousModalAndCancel";
+  if (/玩家標籤管理主頁|標籤管理主頁|列表|清單|空狀態|table|列表欄位|玩家標籤管理[\s\S]{0,120}欄位/.test(text) && !/新增標籤頁|新增條件|新增人工|上傳|CSV/.test(text)) {
+    return "tagTool.observeList";
+  }
+  if (/新增標籤|新增條件|條件類型|時間類型|分析時段|子標籤|級距|標籤值/.test(text)) {
+    return "tagTool.observeCreateForm";
+  }
+  return "tagTool.observeList";
+};
+
+const tagToolSupportedTemplates = (currentCase: CaseManifestCase | null, helperHints: HelperHints | null): string[] => {
+  const template = inferTagToolTemplate(currentCase, helperHints);
+  const templates = new Set<string>([template]);
+  if (template === "tagTool.createConditionTag" || template === "tagTool.createManualTag") {
+    templates.add(template);
+  }
+  if (template === "tagTool.saveVariableSettings") {
+    templates.add(template);
+  }
+  return [...templates];
+};
+
 const isDeleteReportFlow = (currentCase: CaseManifestCase | null, helperHints: HelperHints | null): boolean => {
   const operationTemplate = helperHints?.operationTemplate ?? "";
   const text = detectCaseFeatures(currentCase, helperHints).text;
@@ -447,13 +486,18 @@ export const evaluateCapabilityGate = (
   const simpleProjectFlowAllowed = mode === "collage" && !hasFilter && !hasGroup && (isOpenReportFromProjectListFlow(currentCase, helperHints) || isBackToProjectListFlow(currentCase, helperHints));
   const projectRowDownloadOnly = mode === "collage" && !hasFilter && !hasGroup && isProjectRowDownloadOnlyCase(currentCase, params);
   const officialCollageContext = mode === "collage" || /^BIUI_COLLAGE/i.test(currentCase?.caseNo ?? "");
+  const tagToolCase = isTagToolCase(currentCase, helperHints);
 
-  if (mode === "record") unsupportedFeatures.push("record_mode_helper_not_supported");
-  if (mode === "metric") unsupportedFeatures.push("metric_mode_helper_not_supported");
-  if (hasFilter) unsupportedFeatures.push("filter_helper_not_implemented");
-  if (hasGroup) unsupportedFeatures.push("group_helper_not_implemented");
+  if (!tagToolCase) {
+    if (mode === "record") unsupportedFeatures.push("record_mode_helper_not_supported");
+    if (mode === "metric") unsupportedFeatures.push("metric_mode_helper_not_supported");
+    if (hasFilter) unsupportedFeatures.push("filter_helper_not_implemented");
+    if (hasGroup) unsupportedFeatures.push("group_helper_not_implemented");
+  }
 
-  if (createProjectAllowed) {
+  if (tagToolCase) {
+    supportedHelperTemplates.push(...tagToolSupportedTemplates(currentCase, helperHints));
+  } else if (createProjectAllowed) {
     supportedHelperTemplates.push(
       "collage.openProject",
       "collage.createProject"
@@ -583,6 +627,10 @@ export const evaluateCapabilityGate = (
     executionMode = "blocked_unsupported";
     helperPreRunAllowed = false;
     blockingReason = helperContractBlocker;
+  } else if (tagToolCase && supportedHelperTemplates.length > 0) {
+    supportStatus = "supported";
+    executionMode = "helper_assisted";
+    helperPreRunAllowed = true;
   } else if (scopeFrontendObservationPrelude.matched) {
     supportStatus = "degraded";
     executionMode = "codex_visible_ui";
@@ -620,7 +668,9 @@ export const evaluateCapabilityGate = (
     : supportStatus === "unsupported"
       ? "Do not execute trusted browser testcase steps for this case. Write a single-case BLOCKED result with fail_category=UNSUPPORTED_ONLINE_CAPABILITY and detail_json.blocked_reason from this capability gate."
     : supportStatus === "supported"
-      ? "Use helper pre-run evidence when status=ok and matching this case; continue with visible UI only for incomplete evidence. Codex still judges PASS/FAIL/BLOCKED."
+      ? tagToolCase
+        ? "Use TAG_TOOL helper pre-run evidence when status=ok and matching this case. PRD is the expected behavior source; live dev UI is the tested product. Codex still judges PASS/FAIL/BLOCKED from helper evidence and testcase expected behavior."
+        : "Use helper pre-run evidence when status=ok and matching this case; continue with visible UI only for incomplete evidence. Codex still judges PASS/FAIL/BLOCKED."
       : navigationPreludeAllowed
         ? datePreviewEvidenceAllowed
           ? "Helper pre-run may perform safe collage navigation/setup plus implemented date preview evidence collection for preset/static date cases. Codex must judge PASS/FAIL/BLOCKED from per-variant UI, request body, and preview evidence; do not treat helper output alone as final testcase proof."

@@ -1023,6 +1023,112 @@ const isBackToProjectListFlow = (currentCase: CaseManifestCase | null, helperHin
   return /返回按鈕|點.*返回|click\s+back|return\s+to\s+project/i.test(text);
 };
 
+const isTagToolCase = (currentCase: CaseManifestCase | null, helperHints: HelperHints | null): boolean =>
+  detectCaseFeatures(currentCase, helperHints).mode === "tagTool";
+
+const inferTagToolTemplate = (currentCase: CaseManifestCase | null, helperHints: HelperHints | null): string => {
+  const explicit = helperHints?.operationTemplate?.trim();
+  if (explicit && /^tagTool\./i.test(explicit)) return explicit;
+  const text = textBlob(currentCase);
+  if (/標籤變數設定|N\/Z\/Y\/X\/A\/B|核心天數門檻|生命週期天數|設置紀錄|變數/.test(text)) {
+    return "tagTool.observeVariableSettings";
+  }
+  if (/新增條件標籤|新增條件|條件標籤|新增標籤頁初始|未選標籤類型/.test(text)) {
+    return "tagTool.observeCreateForm";
+  }
+  if (/CSV|上傳|upload|人工標籤|手動標籤/.test(text)) {
+    if (/上傳|upload|fixture|檔案|CSV\s*格式|欄位/.test(text)) return "tagTool.uploadManualCsv";
+    return "tagTool.selectManualTypeAndObserve";
+  }
+  if (/刪除|終止|confirm|確認窗|防呆窗|modal/.test(text)) return "tagTool.openDangerousModalAndCancel";
+  if (/玩家標籤管理主頁|標籤管理主頁|列表|清單|空狀態|table|列表欄位|玩家標籤管理[\s\S]{0,120}欄位/.test(text) && !/新增標籤頁|新增條件|新增人工|上傳|CSV/.test(text)) {
+    return "tagTool.observeList";
+  }
+  if (/新增標籤|新增條件|條件類型|時間類型|分析時段|子標籤|級距|標籤值/.test(text)) {
+    return "tagTool.observeCreateForm";
+  }
+  return "tagTool.observeList";
+};
+
+const inferTagToolParams = (currentCase: CaseManifestCase | null, helperHints: HelperHints | null): Record<string, unknown> => {
+  const text = textBlob(currentCase);
+  const params = paramsObject(helperHints);
+  const flow = stringParam(params, ["flow"]) ??
+    (/標籤變數設定|N\/Z\/Y\/X\/A\/B|核心天數門檻|生命週期天數|設置紀錄|變數/.test(text)
+      ? "observeDefaults"
+      : /人工標籤|手動標籤|CSV|上傳|upload/.test(text)
+        ? "observeAddGuidance"
+        : /刪除/.test(text)
+          ? "openDeleteAndCancel"
+          : /終止/.test(text)
+            ? "openTerminateAndCancel"
+            : /新增標籤|新增條件|條件類型|時間類型|分析時段|子標籤|級距|標籤值/.test(text)
+              ? "observeInitialCreateState"
+              : "observeColumns");
+  const fixtureKind = stringParam(params, ["fixtureKind", "fixture"]) ??
+    (/invalid|錯誤|格式錯|缺少欄位|欄位錯|userobjectid/i.test(text) ? "invalidAddCsv" :
+      /edit|編輯|操作\s*add|操作\s*update|操作\s*delete/i.test(text) ? "validEditCsv" : "validAddCsv");
+  return {
+    ...params,
+    flow,
+    fixtureKind,
+    expectedSource: "PRD",
+    pageExpectation: /標籤變數設定/.test(text)
+      ? "tagVariableSettings"
+      : /新增|人工標籤|條件標籤|CSV|上傳|子標籤|級距|標籤值/.test(text)
+        ? "tagCreate"
+        : "tagList"
+  };
+};
+
+const tagToolRequiredEvidence = (template: string): string[] => {
+  switch (template) {
+    case "tagTool.observeList":
+      return ["navigation.state", "tagList.table.state", "dom.state", "screenshot"];
+    case "tagTool.observeCreateForm":
+      return ["navigation.state", "tagForm.typeVisibility.state", "conditionTag.valueEditor.state", "dom.state", "screenshot"];
+    case "tagTool.selectManualTypeAndObserve":
+      return ["navigation.state", "tagForm.typeVisibility.state", "manualUpload.file.state", "dom.state", "screenshot"];
+    case "tagTool.observeVariableSettings":
+      return ["navigation.state", "tagVariables.form.state", "tagVariables.history.state", "dom.state", "screenshot"];
+    case "tagTool.uploadManualCsv":
+      return ["navigation.state", "tagForm.typeVisibility.state", "manualUpload.file.state", "manualUpload.validation.state", "interactionLog", "screenshot"];
+    case "tagTool.openDangerousModalAndCancel":
+      return ["dangerousModal.state", "tagList.table.state", "interactionLog", "screenshot"];
+    case "tagTool.createConditionTag":
+    case "tagTool.createManualTag":
+    case "tagTool.saveVariableSettings":
+      return ["toolBridge.response", "dom.state", "network.requestBody", "screenshot"];
+    default:
+      return ["dom.state", "screenshot"];
+  }
+};
+
+const tagToolActionTitle = (template: string): string => {
+  switch (template) {
+    case "tagTool.observeList":
+      return "觀察玩家標籤管理列表";
+    case "tagTool.observeCreateForm":
+      return "觀察新增標籤表單與條件標籤狀態";
+    case "tagTool.selectManualTypeAndObserve":
+      return "切換人工標籤並觀察欄位隱藏與上傳區";
+    case "tagTool.observeVariableSettings":
+      return "觀察標籤變數設定值與設置紀錄";
+    case "tagTool.uploadManualCsv":
+      return "上傳人工標籤 CSV fixture 並收集 validation evidence";
+    case "tagTool.openDangerousModalAndCancel":
+      return "開啟高風險操作確認窗並取消";
+    case "tagTool.createConditionTag":
+      return "建立暫存條件標籤";
+    case "tagTool.createManualTag":
+      return "建立暫存人工標籤";
+    case "tagTool.saveVariableSettings":
+      return "儲存標籤變數設定";
+    default:
+      return "執行標籤工具 helper action";
+  }
+};
+
 const action = (
   id: string,
   template: string,
@@ -1049,6 +1155,26 @@ const buildActions = (currentCase: CaseManifestCase | null, helperHints: HelperH
   if (!currentCase) return [];
   const text = textBlob(currentCase);
   const operationTemplate = helperHints?.operationTemplate ?? "";
+  if (isTagToolCase(currentCase, helperHints)) {
+    const template = inferTagToolTemplate(currentCase, helperHints);
+    const tagParams = inferTagToolParams(currentCase, helperHints);
+    const highRisk = /createConditionTag|createManualTag|saveVariableSettings/.test(template);
+    return [
+      action("H1", template, tagToolActionTitle(template), tagParams, {
+        mutatesUi: !/observeList|observeCreateForm|observeVariableSettings/.test(template),
+        requiresToolBridge: highRisk,
+        requiredEvidence: tagToolRequiredEvidence(template),
+        screenshotPolicy: highRisk ? "required_if_possible" : "major_step",
+        notes: [
+          "TAG_TOOL helper evidence follows PRD expected behavior; live dev UI is the tested product.",
+          "Helper may collect current-run evidence only and cannot judge PASS/FAIL.",
+          highRisk
+            ? "This action mutates product data and requires Tool Bridge approval before execution."
+            : "This action must avoid save/delete/terminate confirmation and direct product API mutation."
+        ]
+      })
+    ];
+  }
   const params = inferCollageParams(currentCase, helperHints);
   const helperParams = paramsObject(helperHints);
   const actions: HelperPlanAction[] = [];
@@ -1758,6 +1884,20 @@ const buildActions = (currentCase: CaseManifestCase | null, helperHints: HelperH
 };
 
 const buildAvailableTemplates = (currentCase: CaseManifestCase | null, helperHints: HelperHints | null): HelperPlanAction[] => {
+  if (isTagToolCase(currentCase, helperHints)) {
+    const params = inferTagToolParams(currentCase, helperHints);
+    return [
+      action("T1", "tagTool.observeList", "觀察玩家標籤管理列表", params, { mutatesUi: false, requiredEvidence: tagToolRequiredEvidence("tagTool.observeList") }),
+      action("T2", "tagTool.observeCreateForm", "觀察新增標籤表單與條件標籤狀態", params, { mutatesUi: false, requiredEvidence: tagToolRequiredEvidence("tagTool.observeCreateForm") }),
+      action("T3", "tagTool.selectManualTypeAndObserve", "切換人工標籤並觀察欄位隱藏與上傳區", params, { requiredEvidence: tagToolRequiredEvidence("tagTool.selectManualTypeAndObserve") }),
+      action("T4", "tagTool.observeVariableSettings", "觀察標籤變數設定值與設置紀錄", params, { mutatesUi: false, requiredEvidence: tagToolRequiredEvidence("tagTool.observeVariableSettings") }),
+      action("T5", "tagTool.uploadManualCsv", "上傳人工標籤 CSV fixture 並收集 validation evidence", params, { requiredEvidence: tagToolRequiredEvidence("tagTool.uploadManualCsv") }),
+      action("T6", "tagTool.openDangerousModalAndCancel", "開啟高風險操作確認窗並取消", params, { requiredEvidence: tagToolRequiredEvidence("tagTool.openDangerousModalAndCancel") }),
+      action("T7", "tagTool.createConditionTag", "建立暫存條件標籤", params, { requiresToolBridge: true, requiredEvidence: tagToolRequiredEvidence("tagTool.createConditionTag"), screenshotPolicy: "required_if_possible" }),
+      action("T8", "tagTool.createManualTag", "建立暫存人工標籤", params, { requiresToolBridge: true, requiredEvidence: tagToolRequiredEvidence("tagTool.createManualTag"), screenshotPolicy: "required_if_possible" }),
+      action("T9", "tagTool.saveVariableSettings", "儲存標籤變數設定", params, { requiresToolBridge: true, requiredEvidence: tagToolRequiredEvidence("tagTool.saveVariableSettings"), screenshotPolicy: "required_if_possible" })
+    ];
+  }
   const params = inferCollageParams(currentCase, helperHints);
   const features = detectCaseFeatures(currentCase, helperHints);
   const available: HelperPlanAction[] = [
