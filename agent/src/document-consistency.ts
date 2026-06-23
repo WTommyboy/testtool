@@ -16,6 +16,38 @@ const hasResultEvidence = (item: CaseManifestCase): boolean => {
   return Boolean(status && !/^pending$/i.test(status)) || Boolean(detailJson);
 };
 
+const normalizeCaseNo = (value: string): string => value.trim().replace(/\s+/g, "").toUpperCase();
+
+const issueScopedCaseNo = (issue: DocumentConsistencyIssue): string | null => {
+  const context = issue.context;
+  if (!context) return null;
+  for (const key of ["caseNo", "caseId", "selectedCaseNo"]) {
+    const value = context[key];
+    if (typeof value === "string" && value.trim()) return normalizeCaseNo(value);
+  }
+  return null;
+};
+
+const scopeExternalIssueForCurrentCase = (
+  issue: DocumentConsistencyIssue,
+  selectedCaseNo: string | null
+): DocumentConsistencyIssue => {
+  if (!selectedCaseNo || issue.severity !== "error") return issue;
+  const scopedCaseNo = issueScopedCaseNo(issue);
+  if (!scopedCaseNo || scopedCaseNo === normalizeCaseNo(selectedCaseNo)) return issue;
+  return {
+    ...issue,
+    severity: "warning",
+    message: `${issue.message} (non-current-case package issue; does not block current case execution)`,
+    context: {
+      ...(issue.context ?? {}),
+      originalSeverity: issue.severity,
+      executionScope: "non_current_case",
+      currentCaseNo: selectedCaseNo
+    }
+  };
+};
+
 const writeJson = (filePath: string, value: unknown): void => {
   fs.writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`);
 };
@@ -26,8 +58,8 @@ export const writeDocumentConsistency = (
   startCaseHint: StartCaseHint | null,
   externalIssues: DocumentConsistencyIssue[] = []
 ): string => {
-  const issues: DocumentConsistencyIssue[] = [...externalIssues];
   const selectedCaseNo = caseManifest.currentCaseNo;
+  const issues: DocumentConsistencyIssue[] = externalIssues.map((item) => scopeExternalIssueForCurrentCase(item, selectedCaseNo));
   const requestedCaseNo = startCaseHint?.caseNo ?? caseManifest.currentCaseSelection?.requestedCaseNo ?? null;
   const selectedCase = caseManifest.cases.find((item) => item.caseNo === selectedCaseNo) ?? null;
   const precedingCases = selectedCase
@@ -83,8 +115,9 @@ export const writeDocumentConsistency = (
     startCaseHint,
     currentCaseSelection: caseManifest.currentCaseSelection,
     checks: [
-      "If status=error, Codex must not touch the browser.",
-      "test-package-consistency errors are included here and must block browser execution.",
+      "If this document status=error, Codex must not touch the browser.",
+      "test-package-consistency is a whole-package audit; non-current-case errors are downgraded here and must not block the current case.",
+      "A future-case package issue becomes blocking only when that case is selected as currentCase.",
       "If startup instruction skips earlier workbook cases that are not marked completed in the workbook, emit Tool Bridge ambiguity_decision.",
       "Workbook rows from previous runs are stale evidence unless this run packet explicitly allows same-run carryover."
     ],

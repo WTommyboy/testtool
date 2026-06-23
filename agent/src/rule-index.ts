@@ -397,7 +397,7 @@ export const writeRuleIndex = (runDir: string, domain: string): string => {
     scope: "input",
     filePath: path.join(runDir, "input", "test-package-consistency.json"),
     loadWhen: ["before browser execution", "testcase package warning/error", "Helper hints conflict"],
-    summary: "Three-file and Helper hints consistency report. If status=error, stop before browser and emit Tool Bridge ambiguity_decision."
+    summary: "Whole-package testcase and Helper hints audit. Use document-consistency as the current-case browser gate; package warnings/errors may include future cases."
   });
   addIfExists(entries, runDir, {
     id: "document-consistency",
@@ -519,7 +519,7 @@ export const writeRuleIndex = (runDir: string, domain: string): string => {
     currentCaseRecommendations: buildCurrentCaseRecommendations(runDir, entries),
     loadingPolicy: [
       "Read input/run-brief.md first.",
-      "Read input/test-package-consistency.json before browser execution; if status=error, emit Tool Bridge ambiguity_decision.",
+      "Read input/test-package-consistency.json before browser execution for whole-package context; it is not the current-case browser gate by itself.",
       "Read input/document-consistency.json before browser execution; if status=error, emit Tool Bridge ambiguity_decision.",
       "Read input/capability-gate.md before testcase UI execution; if supportStatus=unsupported, do not run trusted browser testcase steps.",
       "Perform input/preflight-auth-check.md before deep domain rule loading or testcase actions unless successful current-run helper evidence already covers this same case's browser evidence.",

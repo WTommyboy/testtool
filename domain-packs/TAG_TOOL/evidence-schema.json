@@ -49,6 +49,16 @@
       ],
       "purpose": "Player tag list table composition and empty/list state."
     },
+    "tagList.row.state": {
+      "type": "object",
+      "requiredFields": [
+        "tagName",
+        "tagType",
+        "cells",
+        "asserted"
+      ],
+      "purpose": "Player tag list row content, badges, schedule status, and visible cell values."
+    },
     "tagList.rowActionMenu.state": {
       "type": "object",
       "requiredFields": [

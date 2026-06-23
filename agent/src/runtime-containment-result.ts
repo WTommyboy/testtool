@@ -56,19 +56,15 @@ const readJsonIfExists = <T>(filePath: string): T | null => {
 };
 
 const consistencyGateHasErrors = (runDir: string): boolean => {
-  const paths = [
-    path.join(runDir, "input", "test-package-consistency.json"),
+  const parsed = readJsonIfExists<{ status?: unknown; issues?: unknown }>(
     path.join(runDir, "input", "document-consistency.json")
-  ];
-  return paths.some((filePath) => {
-    const parsed = readJsonIfExists<{ status?: unknown; issues?: unknown }>(filePath);
-    if (!parsed) return false;
-    if (String(parsed.status ?? "").toLowerCase() === "error") return true;
-    const issues = Array.isArray(parsed.issues) ? parsed.issues : [];
-    return issues.some((issue) => {
-      if (!issue || typeof issue !== "object" || Array.isArray(issue)) return false;
-      return String((issue as { severity?: unknown }).severity ?? "").toLowerCase() === "error";
-    });
+  );
+  if (!parsed) return false;
+  if (String(parsed.status ?? "").toLowerCase() === "error") return true;
+  const issues = Array.isArray(parsed.issues) ? parsed.issues : [];
+  return issues.some((issue) => {
+    if (!issue || typeof issue !== "object" || Array.isArray(issue)) return false;
+    return String((issue as { severity?: unknown }).severity ?? "").toLowerCase() === "error";
   });
 };
 

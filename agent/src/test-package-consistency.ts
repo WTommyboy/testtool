@@ -43,6 +43,7 @@ const CASE_ID_PATTERN = /\b(?:DEMO-)?[A-Z]+(?:-[A-Z]+)?-\d{1,3}\b/g;
 const ALLOWED_RISK_LEVELS = new Set(["🟢 觀察", "🟡 建立", "🟠 修改", "🔴 刪除"]);
 const ALLOWED_TEST_TARGETS = new Set(["後端功能", "前端呈現", "前後端整合", "功能流程"]);
 const CLEANUP_KEYS = ["欄位", "篩選", "分組", "時間", "顯示"];
+const BI_CLEANUP_DOMAINS = new Set(["BI", "BI_OFFICIAL_UI_COLLAGE"]);
 
 const readText = (filePath: string | null | undefined): string | null => {
   if (!filePath || !fs.existsSync(filePath) || !fs.statSync(filePath).isFile()) return null;
@@ -407,8 +408,10 @@ export const buildTestPackageConsistencyReport = (input: TestPackageConsistencyI
     }
     const cleanupKeys = parseCleanupKeys(item.cleanupChecklist);
     if (CLEANUP_KEYS.some((key, index) => cleanupKeys[index] !== key)) {
-      issue(issues, "error", "XLSX_CLEANUP_CHECKLIST_INVALID", `Case ${item.caseNo} cleanupChecklist must use 欄位/篩選/分組/時間/顯示 order.`, {
+      const cleanupSeverity: DocumentConsistencyIssue["severity"] = BI_CLEANUP_DOMAINS.has(input.domain ?? "BI") ? "error" : "warning";
+      issue(issues, cleanupSeverity, "XLSX_CLEANUP_CHECKLIST_INVALID", `Case ${item.caseNo} cleanupChecklist should use 欄位/篩選/分組/時間/顯示 order for BI-style state cleanup.`, {
         caseNo: item.caseNo,
+        domain: input.domain ?? null,
         cleanupChecklist: item.cleanupChecklist,
         parsedKeys: cleanupKeys
       });

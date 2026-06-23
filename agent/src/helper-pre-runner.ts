@@ -71,19 +71,11 @@ const readJsonIfExists = <T>(filePath: string): T | null => {
 };
 
 const consistencyStatus = (runDir: string): "ok" | "warning" | "error" | "missing" => {
-  const paths = [
-    path.join(runDir, "input", "test-package-consistency.json"),
-    path.join(runDir, "input", "document-consistency.json")
-  ];
-  let worst: "ok" | "warning" | "error" | "missing" = "ok";
-  for (const filePath of paths) {
-    const parsed = readJsonIfExists<{ status?: unknown }>(filePath);
-    const status = parsed?.status;
-    if (status === "error") return "error";
-    if (status === "warning" && worst === "ok") worst = "warning";
-    if (!parsed && worst === "ok") worst = "missing";
-  }
-  return worst;
+  const parsed = readJsonIfExists<{ status?: unknown }>(path.join(runDir, "input", "document-consistency.json"));
+  if (!parsed) return "missing";
+  const status = parsed.status;
+  if (status === "error" || status === "warning" || status === "ok") return status;
+  return "missing";
 };
 
 const capabilityGateAllowsHelperPreRun = (runDir: string): { allowed: boolean; reason: string | null } => {
