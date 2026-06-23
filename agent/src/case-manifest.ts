@@ -59,7 +59,13 @@ export type CaseManifestCurrentCaseSelection = {
   selectedCaseNo: string | null;
   requestedCaseNo: string | null;
   source: string | null;
-  reason: "first_case" | "first_runnable_case" | "startup_instruction" | "requested_case_not_found" | "requested_case_has_result";
+  reason:
+    | "first_case"
+    | "first_runnable_case"
+    | "startup_instruction"
+    | "agent_case_progress"
+    | "requested_case_not_found"
+    | "requested_case_has_result";
 };
 
 export type CaseManifestResult = {
@@ -547,7 +553,9 @@ const writeManifestFiles = (
     selectionReason = "requested_case_has_result";
   } else if (requestedCase) {
     selectedCase = requestedCase;
-    selectionReason = "startup_instruction";
+    selectionReason = options.preferredStartCaseSource === "agent_case_progress" || options.preferredStartCaseSource === "tool_response_state"
+      ? "agent_case_progress"
+      : "startup_instruction";
   } else {
     selectedCase = firstRunnableCase(cases);
     selectionReason = requestedCaseNo

@@ -61,6 +61,8 @@ export const writeDocumentConsistency = (
   const selectedCaseNo = caseManifest.currentCaseNo;
   const issues: DocumentConsistencyIssue[] = externalIssues.map((item) => scopeExternalIssueForCurrentCase(item, selectedCaseNo));
   const requestedCaseNo = startCaseHint?.caseNo ?? caseManifest.currentCaseSelection?.requestedCaseNo ?? null;
+  const startCaseGateEnabled = Boolean(startCaseHint);
+  const selectionSource = caseManifest.currentCaseSelection?.source ?? null;
   const selectedCase = caseManifest.cases.find((item) => item.caseNo === selectedCaseNo) ?? null;
   const precedingCases = selectedCase
     ? caseManifest.cases.filter((item) => item.order < selectedCase.order)
@@ -114,11 +116,19 @@ export const writeDocumentConsistency = (
     requestedCaseNo,
     startCaseHint,
     currentCaseSelection: caseManifest.currentCaseSelection,
+    startCaseDocumentGate: {
+      enabled: startCaseGateEnabled,
+      selectionSource,
+      policy: startCaseGateEnabled
+        ? "Startup-selected later cases must not skip unfinished preceding workbook rows."
+        : "Startup skip gate is disabled for agent-controlled current-case progression; preceding input workbook rows are stale dispatch context, not a blocker by themselves."
+    },
     checks: [
       "If this document status=error, Codex must not touch the browser.",
       "test-package-consistency is a whole-package audit; non-current-case errors are downgraded here and must not block the current case.",
       "A future-case package issue becomes blocking only when that case is selected as currentCase.",
-      "If startup instruction skips earlier workbook cases that are not marked completed in the workbook, emit Tool Bridge ambiguity_decision.",
+      "If startCaseDocumentGate.enabled=false and currentCaseSelection.source is agent_case_progress or tool_response_state, do not emit Tool Bridge solely because preceding workbook rows are empty.",
+      "If startup instruction skips earlier workbook cases that are not marked completed in the workbook, emit Tool Bridge ambiguity_decision only when startCaseDocumentGate.enabled=true.",
       "Workbook rows from previous runs are stale evidence unless this run packet explicitly allows same-run carryover."
     ],
     precedingCases: precedingCases.map((item) => ({

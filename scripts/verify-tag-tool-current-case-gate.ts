@@ -6,6 +6,7 @@ import ExcelJS from "exceljs";
 import { writeCaseManifest, type CaseManifestResult } from "../agent/src/case-manifest";
 import { writeDocumentConsistency } from "../agent/src/document-consistency";
 import { parseHelperHintsFromMarkdown } from "../agent/src/helper-hints";
+import { writeRunStateGuide } from "../agent/src/run-state-guide";
 import { buildTestPackageConsistencyReport } from "../agent/src/test-package-consistency";
 
 const headers = [
@@ -50,6 +51,25 @@ const writeWorkbook = async (xlsxPath: string): Promise<void> => {
     "",
     "",
     "Evidence: dom.state, tagList.table.state"
+  ]);
+  sheet.addRow([
+    "BIUI_TAG_R001",
+    "A",
+    "A: 入口與列表",
+    "BIUI_TAG_R001-A-02",
+    "功能流程",
+    "玩家標籤管理入口點擊後正確路由",
+    "🟢 觀察",
+    "功能流程",
+    "欄位=不影響;篩選=不影響;分組=不影響;時間=不影響;顯示=不影響",
+    "工具設定 > 標籤已展開",
+    "1. 點擊玩家標籤管理\n2. 讀取 URL、breadcrumb 與 active state",
+    "路由與 active state 符合 PRD。",
+    "",
+    "Codex + Playwright",
+    "",
+    "",
+    "Evidence: dom.state, navigation.state"
   ]);
   sheet.addRow([
     "BIUI_TAG_R001",
@@ -105,9 +125,10 @@ const writeInstruction = (filePath: string): void => {
       "## 2. Case 分布與執行順序",
       "",
       "**起始 case**: BIUI_TAG_R001-A-01",
-      "**執行順序**: BIUI_TAG_R001-A-01 → BIUI_TAG_R001-D-01",
+      "**執行順序**: BIUI_TAG_R001-A-01 → BIUI_TAG_R001-A-02 → BIUI_TAG_R001-D-01",
       "",
       helperBlock("BIUI_TAG_R001-A-01", "manual_ai", ["dom.state", "tagList.table.state"]),
+      helperBlock("BIUI_TAG_R001-A-02", "manual_ai", ["dom.state", "navigation.state"]),
       helperBlock("BIUI_TAG_R001-D-01", "playerTag.createConditionalTag", ["dom.state", "tagList.row.state"])
     ].join("\n")
   );
@@ -121,9 +142,9 @@ const writeAssignment = (filePath: string): void => {
       "",
       "## 3. 執行範圍與起始 case",
       "",
-      "- 總 case 數: 2",
+      "- 總 case 數: 3",
       "- 本輪 Codex 起始 case: **BIUI_TAG_R001-A-01**",
-      "- 本輪 Codex 執行順序: BIUI_TAG_R001-A-01 → BIUI_TAG_R001-D-01",
+      "- 本輪 Codex 執行順序: BIUI_TAG_R001-A-01 → BIUI_TAG_R001-A-02 → BIUI_TAG_R001-D-01",
       ""
     ].join("\n")
   );
@@ -147,6 +168,53 @@ const assertCurrentCaseScoping = (runDir: string, manifest: CaseManifestResult):
   assert.equal(doc.status, "warning");
   assert.equal(doc.issues[0]?.severity, "warning");
   assert.equal(doc.issues[0]?.context?.executionScope, "non_current_case");
+};
+
+const assertAgentCaseProgressDoesNotLookLikeStartupSkip = async (tempRoot: string, xlsxPath: string): Promise<void> => {
+  const runDir = path.join(tempRoot, "agent-progress-run");
+  fs.mkdirSync(path.join(runDir, "input"), { recursive: true });
+  fs.mkdirSync(path.join(runDir, "output"), { recursive: true });
+  fs.writeFileSync(
+    path.join(runDir, "output", "agent-case-progress.json"),
+    `${JSON.stringify(
+      {
+        schemaVersion: "agent-case-progress-v1",
+        runId: "fixture-run",
+        startedAt: "2026-06-23T00:00:00.000Z",
+        updatedAt: "2026-06-23T00:01:00.000Z",
+        startCaseNo: "BIUI_TAG_R001-A-01",
+        startOrder: 1,
+        completedCaseNos: ["BIUI_TAG_R001-A-01"],
+        history: []
+      },
+      null,
+      2
+    )}\n`
+  );
+
+  const manifest = await writeCaseManifest(xlsxPath, path.join(runDir, "input"), {
+    preferredStartCaseNo: "BIUI_TAG_R001-A-02",
+    preferredStartCaseSource: "agent_case_progress"
+  });
+  assert.equal(manifest.currentCaseNo, "BIUI_TAG_R001-A-02");
+  assert.equal(manifest.currentCaseSelection?.reason, "agent_case_progress");
+
+  writeDocumentConsistency(runDir, manifest, null, []);
+  const doc = readDocumentStatus(runDir) as {
+    status: string;
+    startCaseDocumentGate?: { enabled?: boolean; selectionSource?: string | null };
+    issues: Array<{ code: string; severity: string }>;
+  };
+  assert.equal(doc.status, "ok");
+  assert.equal(doc.startCaseDocumentGate?.enabled, false);
+  assert.equal(doc.startCaseDocumentGate?.selectionSource, "agent_case_progress");
+  assert.ok(!doc.issues.some((issue) => issue.code === "START_CASE_SKIPS_UNFINISHED_PRECEDING_CASES"));
+
+  const runStatePath = writeRunStateGuide(runDir, "fixture-run", manifest);
+  const runState = JSON.parse(fs.readFileSync(runStatePath, "utf8")) as {
+    agentCaseProgress?: { completedCaseNos?: string[] } | null;
+  };
+  assert.deepEqual(runState.agentCaseProgress?.completedCaseNos, ["BIUI_TAG_R001-A-01"]);
 };
 
 const assertPlayerTagHints = (): void => {
@@ -191,7 +259,7 @@ const main = async (): Promise<void> => {
       baseDir: tempRoot,
       domain: "TAG_TOOL"
     });
-    assert.equal(report.status, "warning");
+    assert.equal(report.status, "warning", JSON.stringify(report.issues.filter((issue) => issue.severity === "error"), null, 2));
     assert.ok(!report.issues.some((issue) => issue.severity === "error"), "TAG_TOOL package fixture should not emit errors");
     assert.ok(report.issues.some((issue) => issue.code === "XLSX_CLEANUP_CHECKLIST_INVALID" && issue.severity === "warning"));
     assert.ok(!report.issues.some((issue) => issue.code.startsWith("HELPER_HINTS_WARNING") && /UNKNOWN_/.test(issue.message)));
@@ -199,6 +267,7 @@ const main = async (): Promise<void> => {
     writeDocumentConsistency(tempRoot, manifest, { caseNo: "BIUI_TAG_R001-A-01", source: "fixture", excerpt: "start A-01" }, report.issues);
     assert.notEqual(readDocumentStatus(tempRoot).status, "error");
     assertCurrentCaseScoping(tempRoot, manifest);
+    await assertAgentCaseProgressDoesNotLookLikeStartupSkip(tempRoot, xlsxPath);
     assertPlayerTagHints();
 
     console.log(JSON.stringify({ ok: true, checked: "TAG_TOOL current-case gate and playerTag helper hints" }, null, 2));

@@ -11,8 +11,23 @@ const readCurrentCase = (caseManifest: CaseManifestResult): CaseManifestCase | n
   }
 };
 
+const readAgentCaseProgress = (runDir: string, runId: string): Record<string, unknown> | null => {
+  const filePath = path.join(runDir, "output", "agent-case-progress.json");
+  if (!fs.existsSync(filePath)) return null;
+  try {
+    const parsed = JSON.parse(fs.readFileSync(filePath, "utf8")) as Record<string, unknown>;
+    return parsed.schemaVersion === "agent-case-progress-v1" && parsed.runId === runId ? parsed : null;
+  } catch {
+    return null;
+  }
+};
+
+const stringList = (value: unknown): string[] =>
+  Array.isArray(value) ? value.filter((item): item is string => typeof item === "string" && item.trim().length > 0) : [];
+
 export const writeRunStateGuide = (runDir: string, runId: string, caseManifest: CaseManifestResult): string => {
   const currentCase = readCurrentCase(caseManifest);
+  const agentCaseProgress = readAgentCaseProgress(runDir, runId);
   const filePath = path.join(runDir, "input", "run-state.json");
   const state = {
     schemaVersion: "run-state-v1",
@@ -28,6 +43,15 @@ export const writeRunStateGuide = (runDir: string, runId: string, caseManifest: 
         }
       : null,
     currentCaseSelection: caseManifest.currentCaseSelection,
+    agentCaseProgress: agentCaseProgress
+      ? {
+          completedCaseNos: stringList(agentCaseProgress.completedCaseNos),
+          startCaseNo: typeof agentCaseProgress.startCaseNo === "string" ? agentCaseProgress.startCaseNo : null,
+          startOrder: typeof agentCaseProgress.startOrder === "number" ? agentCaseProgress.startOrder : null,
+          updatedAt: typeof agentCaseProgress.updatedAt === "string" ? agentCaseProgress.updatedAt : null,
+          policy: "Dispatch history only. It proves same-run case progression for selecting the next case, but previous case evidence still cannot prove the current case."
+        }
+      : null,
     carryover: {
       baseline: {
         value: null,
@@ -63,6 +87,7 @@ export const writeRunStateGuide = (runDir: string, runId: string, caseManifest: 
       "After completing a case, update output/run-state.json if new carryover is created.",
       "Only write carryover that is explicitly allowed above.",
       "Never store per-case evidence as reusable proof for a later case.",
+      "If agentCaseProgress.completedCaseNos contains earlier cases, do not treat empty rows in input/testcase.xlsx as startup-skip ambiguity for the current agent_case_progress case.",
       "Before starting the next case, read only that next case JSON and the allowed carryover needed for it."
     ],
     batchGuard: {

@@ -59,6 +59,7 @@ const ALLOWED_OPERATION_TEMPLATES = new Set([
 const ALLOWED_EVIDENCE = new Set([
   "dom.state",
   "dom.list",
+  "navigation.state",
   "date.uiState",
   "date.representedRange",
   "formula.uiState",
