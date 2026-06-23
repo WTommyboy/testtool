@@ -130,14 +130,28 @@ const safeFilePart = (value: string): string => {
 
 const normalizeCaseNo = (value: string): string => value.trim().replace(/\s+/g, "").toUpperCase();
 
-const PENDING_WORKBOOK_RESULT_STATUSES = new Set(["PENDING", "MANUAL_PENDING"]);
+const TERMINAL_WORKBOOK_RESULT_STATUSES = new Set([
+  "PASS",
+  "FAIL",
+  "BLOCKED",
+  "PARTIAL",
+  "SKIPPED",
+  "MANUAL_PASS",
+  "MANUAL_FAIL",
+  "MANUAL_BLOCKED"
+]);
 
 const normalizeWorkbookResultStatus = (value: string | null | undefined): string =>
   value?.trim().toUpperCase().replace(/\s+/g, "_") ?? "";
 
 const hasWorkbookTerminalResult = (item: Pick<CaseManifestCase, "resultStatus">): boolean => {
   const status = normalizeWorkbookResultStatus(item.resultStatus);
-  return Boolean(status && !PENDING_WORKBOOK_RESULT_STATUSES.has(status));
+  return TERMINAL_WORKBOOK_RESULT_STATUSES.has(status);
+};
+
+const isUnrecognizedWorkbookResultStatus = (value: string | null | undefined): boolean => {
+  const status = normalizeWorkbookResultStatus(value);
+  return Boolean(status && status !== "PENDING" && status !== "MANUAL_PENDING" && !TERMINAL_WORKBOOK_RESULT_STATUSES.has(status));
 };
 
 const firstRunnableCase = (cases: CaseManifestCase[], minOrder = 1): CaseManifestCase | null =>
@@ -507,6 +521,9 @@ const writeManifestFiles = (
 ): CaseManifestResult => {
   const grouped = new Map<string, { id: string | null; name: string; caseNos: string[] }>();
   for (const item of cases) {
+    if (isUnrecognizedWorkbookResultStatus(item.resultStatus)) {
+      warnings.push(`UNRECOGNIZED_RESULT_STATUS_IGNORED:${item.caseNo}:${item.resultStatus}`);
+    }
     const key = caseGroupKey(item.groupId, item.groupName);
     const existing = grouped.get(key);
     if (existing) {

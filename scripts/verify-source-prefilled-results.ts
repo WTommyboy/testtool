@@ -102,6 +102,63 @@ const writeFixtureWorkbook = async (filePath: string): Promise<void> => {
   await workbook.xlsx.writeFile(filePath);
 };
 
+const writeMalformedStatusWorkbook = async (filePath: string): Promise<void> => {
+  const workbook = new ExcelJS.Workbook();
+  const sheet = workbook.addWorksheet("測試案例");
+  sheet.addRow([
+    "群組ID",
+    "群組",
+    "編號",
+    "測試類型",
+    "測試項目",
+    "前置條件",
+    "步驟",
+    "預期結果",
+    "執行方式",
+    "結果",
+    "測試日",
+    "詳細紀錄JSON",
+    "驗證方法"
+  ]);
+  sheet.addRow([
+    "T",
+    "T:Tag",
+    "TAG-01",
+    "前端呈現",
+    "Malformed source result status should still be runnable",
+    "前置",
+    "照 UI 執行",
+    "應由 Agent 執行",
+    "auto",
+    "Codex + Playwright",
+    "tagList.table.state + screenshot",
+    "",
+    ""
+  ]);
+  sheet.addRow([
+    "T",
+    "T:Tag",
+    "TAG-02",
+    "功能流程",
+    "Second malformed status row should also be runnable",
+    "前置",
+    "照 UI 執行",
+    "應由 Agent 執行",
+    "auto",
+    "tagList.table.state",
+    "",
+    "",
+    ""
+  ]);
+
+  const steps = workbook.addWorksheet("步驟");
+  steps.addRow(["案例編號", "步驟序號", "動作類型", "預期值"]);
+  steps.addRow(["TAG-01", 1, "open/prepare", "agent should run this"]);
+  steps.addRow(["TAG-02", 1, "open/prepare", "agent should run this too"]);
+
+  await workbook.xlsx.writeFile(filePath);
+};
+
 const main = async (): Promise<void> => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "uat-source-prefilled-results-"));
   const previousDbPath = process.env.DB_PATH;
@@ -133,6 +190,28 @@ const main = async (): Promise<void> => {
     assert.equal(requestedManifest.currentCaseNo, "A-02");
     assert.equal(requestedManifest.currentCaseSelection?.reason, "requested_case_has_result");
     assert.ok(requestedManifest.warnings.includes("START_CASE_ALREADY_HAS_RESULT:A-01"));
+
+    const malformedXlsxPath = path.join(tempRoot, "malformed-status-fixture.xlsx");
+    await writeMalformedStatusWorkbook(malformedXlsxPath);
+    const malformedManifest = await writeCaseManifest(malformedXlsxPath, path.join(tempRoot, "manifest-malformed-status"));
+    assert.equal(malformedManifest.currentCaseNo, "TAG-01");
+    assert.equal(malformedManifest.currentCaseSelection?.reason, "first_case");
+    assert.ok(
+      malformedManifest.warnings.some((item) => item.startsWith("UNRECOGNIZED_RESULT_STATUS_IGNORED:TAG-01:Codex + Playwright")),
+      "non-terminal source result text should be warned but not treated as completed"
+    );
+
+    const requestedMalformedManifest = await writeCaseManifest(
+      malformedXlsxPath,
+      path.join(tempRoot, "manifest-malformed-requested"),
+      {
+        preferredStartCaseNo: "TAG-02",
+        preferredStartCaseSource: "fixture"
+      }
+    );
+    assert.equal(requestedMalformedManifest.currentCaseNo, "TAG-02");
+    assert.equal(requestedMalformedManifest.currentCaseSelection?.reason, "startup_instruction");
+    assert.ok(!requestedMalformedManifest.warnings.includes("START_CASE_ALREADY_HAS_RESULT:TAG-02"));
 
     const dbModule = await import("../src/db");
     const runsModule = await import("../src/runs");
@@ -209,7 +288,8 @@ const main = async (): Promise<void> => {
         "source xlsx result=BLOCKED imports as terminal run case",
         "steps for source-prefilled cases are marked SKIPPED",
         "detail_json alone no longer makes Agent skip a runnable case",
-        "case manifest advances past source-prefilled rows"
+        "case manifest advances past source-prefilled rows",
+        "unrecognized source result text stays runnable with a warning"
       ]
     }, null, 2));
   } finally {
