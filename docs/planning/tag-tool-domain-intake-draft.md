@@ -108,3 +108,83 @@ Conflict handling:
 - Manual tag upload add-mode guidance and invalid CSV validation.
 - Read-only condition settings when a fixture tag exists.
 - Tag variable settings default/current values and validation toasts without saving.
+
+## 10. R0007 Layer Classification Baseline
+
+Source run:
+
+- Run ID: `680cb849-29d2-422d-916d-c4e27910aecb`
+- Round: `NU_TAG_p0_R0007`
+- Result: 14 PASS, 26 BLOCKED, 1 PARTIAL, 47 PENDING; execution stopped at `BIUI_TAG_R001-E-08`.
+
+Baseline judgment:
+
+- Do not interpret high BLOCKED count as product failure by itself.
+- TAG_TOOL is a separate domain pack from BI official UI collage. The correct first read is whether the platform, TAG domain pack, testcase, and fixture layer supplied enough contracts/data for Codex to execute and judge.
+- Product bug classification requires concrete same-case live evidence after layer gates are satisfied.
+
+Layer classification observed:
+
+- Platform lifecycle / result pipeline:
+  - `BIUI_TAG_R001-E-08` generated Tool Bridge request/auto response evidence, then Codex resume failed with `thread/resume failed: no rollout found...`.
+  - C-02 produced a contained case row but still surfaced an auto-generated P2 Bug row; this is report/result cleanup, not trusted product evidence.
+- Domain pack / action contract:
+  - Broad `CAPABILITY_GATE_degraded` / helper skipped means TAG-specific helpers and contracts are still incomplete.
+  - Many `TOOL_EXECUTION_UNAVAILABLE` rows lack proper browser preflight evidence. The result gate is right to contain them for rejudgment.
+- Testcase / fixture:
+  - A-05 requires a known empty-list environment.
+  - B-04 requires a known tag with note longer than 20 chars.
+  - B/C/F/G/H/J/L/M groups require stable condition/manual/report-period/ended/editable tag fixtures.
+  - E/G upload validation cases require controlled CSV fixtures and expected toast strings.
+- Product:
+  - No R0007 row should be promoted to product bug unless it has current-run UI evidence that survives the above layer checks.
+
+## 11. Required TAG_TOOL Domain Pack Additions
+
+Priority action contracts:
+
+- `tagList.openRowMenu`: locate row by tag type, condition category, filter/time type, schedule status, and optional fixture name; open overflow menu; return visible menu items and URL state.
+- `tagList.navigateByName`: click only link-enabled tag names; distinguish non-clickable report-period condition tags.
+- `createConditionTag`: complete condition tag flow through visible UI, including condition category, filter type, analysis period, child ranges, validation toasts, and save result.
+- `manualUpload`: cover add-mode upload, selected-file chip state, remove-file chip, add-file button, file count limit, CSV validation toast, and save confirmation.
+- `manualEditUpload`: cover edit-mode CSV actions `add`, `update`, `delete`, duplicate conflict, nonexistent ID, and empty child-tag cleanup.
+- `tagInfoReadOnly`: read condition/manual tag info pages, table rows, chart/list evidence, filters, pagination, and download controls.
+- `tagVariableSettings`: read current values/history, validate stepper/manual input, and isolate save flows behind explicit safe sandbox rules.
+- `destructiveTagAction`: model delete/terminate modal observation, cancel, and confirmation with Tool Bridge authorization and temporary fixture ownership.
+
+Evidence schema additions:
+
+- Stable `tagRow` object with fields: tag name, tag type, condition category, filter type, schedule status, last update time, note, link enabled, row action availability.
+- Stable `menuState` object with visible item list, disabled state, active URL before/after click, and screenshot path only as supplemental evidence.
+- Stable `uploadState` object with selected files, accepted/rejected rows, unique account count, child-tag values, validation toast, and save request observation.
+- Stable `fixtureRef` object to record which precreated tag/resource the case used and why it is safe to mutate or delete.
+
+## 12. Required Test Data / Fixture Inventory
+
+The next TAG_TOOL package should not rely on whatever rows happen to exist in dev. Prepare or document fixture resources before full UAT:
+
+- Empty-list environment or isolated game/project where tag list is intentionally empty.
+- Ongoing condition tag fixture with known menu items and link-enabled info page.
+- Ended condition tag fixture with expected no-terminate menu behavior.
+- Report-period condition tag fixture where tag name is intentionally not clickable.
+- Long-note tag fixture with note length greater than 20 characters.
+- Manual tag fixture with known members and child-tag values.
+- Editable manual tag fixture safe for edit-mode upload tests.
+- Tag info fixture with enough daily/list rows for sorting, pagination, filter, chart, and download checks.
+- Variable settings sandbox where save can be tested without affecting shared business data.
+- CSV fixture files:
+  - valid add-mode 2-column CSV,
+  - valid edit-mode 3-column CSV,
+  - wrong header / malformed row CSV,
+  - greater-than-10000-row CSV or generated fixture reference,
+  - duplicate ID with conflicting tag value,
+  - nonexistent account ID,
+  - multi-file set for selected-file chip and limit tests,
+  - `.txt` file for type rejection.
+
+## 13. Package Hygiene To Fix Before Next Full TAG Run
+
+- Remove BI/collage wording from TAG report metadata. `功能` should be `標籤工具 / 玩家標籤管理` or the precise TAG subfeature, not `標籤工具 / 拼貼模式`.
+- Mark fixture-dependent cases explicitly. If fixture is absent, expected result should be `BLOCKED_FIXTURE_MISSING`, not a generic product fail.
+- For frontend observation cases, require either structured DOM evidence or a complete visual fallback contract; screenshot alone is not a PASS/FAIL proof.
+- For irreversible actions, prefer temporary fixtures created by the same run and record fixture ownership in `detail_json`.

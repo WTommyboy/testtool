@@ -78,7 +78,7 @@ const writeAutoToolBridgeOnlyEvidence = (runDir: string): void => {
     durationMs: 0,
     actions: []
   }, null, 2));
-  fs.writeFileSync(path.join(runDir, "output", "tool-responses-auto-1.json"), JSON.stringify({
+  fs.writeFileSync(path.join(runDir, "output", "tool-responses-auto.json"), JSON.stringify({
     policy: "mac_agent_non_sso_login_auto_approval_v1",
     generatedAt: new Date().toISOString(),
     responses: [
@@ -157,6 +157,15 @@ const main = async (): Promise<void> => {
     const autoParsed = await parseResultXlsx(path.join(autoResumeRoot, "output", "result.xlsx"));
     assert.equal(autoParsed.cases[0]?.status, "BLOCKED");
     assert.equal(autoParsed.cases[0]?.verdictReason, "CODEX_RUNTIME_RESULT_WRITE_FAILED");
+    const autoEvidenceFiles = autoParsed.cases[0]?.detailJson?.currentRunEvidence &&
+      typeof autoParsed.cases[0]?.detailJson?.currentRunEvidence === "object" &&
+      !Array.isArray(autoParsed.cases[0]?.detailJson?.currentRunEvidence)
+      ? (autoParsed.cases[0]?.detailJson?.currentRunEvidence as { toolBridgeEvidenceFiles?: unknown }).toolBridgeEvidenceFiles
+      : null;
+    assert.ok(
+      Array.isArray(autoEvidenceFiles) && autoEvidenceFiles.some((item) => String(item).endsWith("tool-responses-auto.json")),
+      `runtime containment should cite unsuffixed auto Tool Bridge response evidence; evidence=${JSON.stringify(autoEvidenceFiles)}`
+    );
     const autoGate = evaluateResultEvidenceGate({
       parsed: autoParsed,
       resultSource: "codex_generated",

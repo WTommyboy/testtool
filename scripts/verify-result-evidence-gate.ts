@@ -349,6 +349,20 @@ const main = async (): Promise<void> => {
       }
     ]);
     const outOfScopeParsed = await parseResultXlsx(outOfScopePreviewBlocker);
+    outOfScopeParsed.bugs.push({
+      severity: "P2",
+      bugId: "AUTO-BIUI_COLLAGE_R001-K-10",
+      relatedCaseNo: "BIUI_COLLAGE_R001-K-10",
+      title: "[AUTO] BIUI_COLLAGE_R001-K-10 pre-containment fail",
+      description: [
+        "[AUTO] BIUI_COLLAGE_R001-K-10 pre-containment fail",
+        "auto_generated_from_fail=true",
+        "source=agent_result_writer",
+        "case_no=BIUI_COLLAGE_R001-K-10"
+      ].join("\n"),
+      suggestion: "Agent generated this Bug row because a FAIL result must be linked from the Bug sheet.",
+      status: "OPEN"
+    });
     const outOfScopeReport = evaluateResultEvidenceGate({
       parsed: outOfScopeParsed,
       currentCaseNo: "BIUI_COLLAGE_R001-K-10",
@@ -361,6 +375,7 @@ const main = async (): Promise<void> => {
     const containmentReport = containCaseLevelResultEvidenceGateIssues(outOfScopeParsed, outOfScopeReport);
     assert.equal(containmentReport.status, "updated");
     assert.deepEqual(containmentReport.updatedCaseNos, ["BIUI_COLLAGE_R001-K-10"]);
+    assert.equal(outOfScopeParsed.bugs.length, 0, "server containment must remove stale auto-generated FAIL bug rows");
     const containedOutOfScopeReport = evaluateResultEvidenceGate({
       parsed: outOfScopeParsed,
       currentCaseNo: "BIUI_COLLAGE_R001-K-10",

@@ -39,7 +39,22 @@ const writeWorkbook = async (filePath: string): Promise<void> => {
     }, null, 2)
   ]);
 
-  workbook.addWorksheet("Bug").addRow(["嚴重度", "Bug ID", "關聯編號", "標題", "描述", "建議", "狀態"]);
+  const bugs = workbook.addWorksheet("Bug");
+  bugs.addRow(["嚴重度", "Bug ID", "關聯編號", "標題", "描述", "建議", "狀態"]);
+  bugs.addRow([
+    "P2",
+    "AUTO-BIUI_COLLAGE_R001-N-02",
+    "BIUI_COLLAGE_R001-N-02",
+    "[AUTO] BIUI_COLLAGE_R001-N-02 screenshot-only blocker",
+    [
+      "[AUTO] BIUI_COLLAGE_R001-N-02 screenshot-only blocker",
+      "auto_generated_from_fail=true",
+      "source=agent_result_writer",
+      "case_no=BIUI_COLLAGE_R001-N-02"
+    ].join("\n"),
+    "Agent generated this Bug row because a FAIL result must be linked from the Bug sheet.",
+    "OPEN"
+  ]);
   await workbook.xlsx.writeFile(filePath);
 };
 
@@ -75,11 +90,13 @@ const main = async (): Promise<void> => {
   });
   assert.equal(containmentReport.status, "updated");
   assert.deepEqual(containmentReport.updatedCaseNos, ["BIUI_COLLAGE_R001-N-02"]);
+  assert.equal(containmentReport.removedAutoBugRows, 1);
   assert.ok(fs.existsSync(containmentReport.backupPath ?? ""), "containment must keep a pre-containment backup");
 
   const afterParsed = await parseResultXlsx(fixture);
   assert.equal(afterParsed.cases[0]?.status, "BLOCKED");
   assert.equal(afterParsed.cases[0]?.verdictReason, "BLOCKED_NEEDS_VISUAL_REVIEW");
+  assert.equal(afterParsed.bugs.length, 0, "auto-generated FAIL bug rows must be removed when containment downgrades the case");
   assert.equal(afterParsed.cases[0]?.detailJson?.["evidenceSource"], "screenshotVisual");
   assert.equal(afterParsed.cases[0]?.detailJson?.["blocked_reason"], "BLOCKED_NEEDS_VISUAL_REVIEW:RESULT_FRONTEND_OBSERVATION_VISUAL_FALLBACK_REQUIRED,TOOL_BRIDGE_RESPONSE_MISSING");
   const afterReport = evaluateResultEvidenceGate({
