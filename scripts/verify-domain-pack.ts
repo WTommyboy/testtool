@@ -9,6 +9,7 @@ const contractFiles = [
   "action-contracts/setMetricRows.json",
   "action-contracts/observeFrontendState.json",
   "evidence-schema.json",
+  "fixtures/requirements.json",
   "lint-rules.json",
   "discovery/page-map.json",
   "discovery/component-inventory.json",
@@ -184,6 +185,27 @@ const validateEvidenceSchema = (relPath: string, json: Record<string, unknown>, 
   }
 };
 
+const validateFixtureRequirements = (relPath: string, json: Record<string, unknown>, findings: Finding[]): void => {
+  requireString(findings, relPath, json, "schemaVersion");
+  requireString(findings, relPath, json, "domain");
+  const resources = requireRecordArray(findings, relPath, json, "resourceFixtures");
+  const files = requireRecordArray(findings, relPath, json, "fileFixtures");
+  for (const [index, item] of resources.entries()) {
+    const scopedPath = `${relPath} resourceFixtures[${index}]`;
+    requireString(findings, scopedPath, item, "id");
+    requireString(findings, scopedPath, item, "layer");
+    requireString(findings, scopedPath, item, "status");
+    requireString(findings, scopedPath, item, "blockedCodeWhenMissing");
+  }
+  for (const [index, item] of files.entries()) {
+    const scopedPath = `${relPath} fileFixtures[${index}]`;
+    requireString(findings, scopedPath, item, "id");
+    requireString(findings, scopedPath, item, "path");
+    requireString(findings, scopedPath, item, "mode");
+    requireString(findings, scopedPath, item, "status");
+  }
+};
+
 const validateLintRules = (relPath: string, json: Record<string, unknown>, findings: Finding[]): void => {
   requireString(findings, relPath, json, "schemaVersion");
   requireString(findings, relPath, json, "domain");
@@ -258,6 +280,7 @@ const validateContractFile = (relPath: string, json: Record<string, unknown>, fi
   if (relPath.endsWith("action-contracts/setMetricRows.json")) validateSetMetricRowsContract(relPath, json, findings);
   if (relPath.endsWith("action-contracts/observeFrontendState.json")) validateObserveFrontendStateContract(relPath, json, findings);
   if (relPath.endsWith("evidence-schema.json")) validateEvidenceSchema(relPath, json, findings);
+  if (relPath.endsWith("fixtures/requirements.json")) validateFixtureRequirements(relPath, json, findings);
   if (relPath.endsWith("lint-rules.json")) validateLintRules(relPath, json, findings);
   if (relPath.endsWith("discovery/page-map.json")) validateDiscoveryPageMap(relPath, json, findings);
   if (relPath.endsWith("discovery/component-inventory.json")) validateDiscoveryComponentInventory(relPath, json, findings);

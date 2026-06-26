@@ -42,6 +42,14 @@ TAG_TOOL domain / fixture gaps identified from R0007:
 - Required fixtures include an empty-list project/environment, long-note tag, ended condition tag, report-period condition tag, manual tag CSV assets for valid/invalid/>10000/duplicate/nonexistent-ID cases, editable manual tag fixture, tag-info rows/history, and a variable-settings sandbox.
 - The report metadata `標籤工具 / 拼貼模式` is package hygiene drift from BI wording and should be corrected in testcase/package generation; it is not a product bug.
 
+Domain-pack data added:
+
+- Added `domain-packs/TAG_TOOL/fixtures/requirements.json` as the fixture inventory and judgment policy for TAG_TOOL.
+- Added smoke fixtures for duplicate-conflict CSV, nonexistent-account CSV, and invalid text-file upload.
+- Expanded `manualUpload` action contract and helper fixture resolver with `duplicateConflictCsv`, `nonexistentAccountCsv`, `textFile`, and runtime-generated `overLimitCsv`.
+- Added `fixtureRef.state` to TAG evidence schema so fixture-dependent judgments can be distinguished from product behavior.
+- `verify:domain-pack` now validates `fixtures/requirements.json` structure.
+
 Regression checks:
 
 - `npm run verify:result-evidence-upload-containment`
@@ -49,6 +57,7 @@ Regression checks:
 - `npm run verify:runtime-containment-result`
 - `npm run verify:tag-tool-runtime`
 - `npm run verify:tag-tool-current-case-gate`
+- `npm run verify:domain-pack -- --name TAG_TOOL`
 - `npm run verify:tool-bridge`
 - `npm run verify:post-result-exit-policy`
 - `npm run verify:agent-process-lock`

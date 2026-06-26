@@ -13650,7 +13650,11 @@ const resolveTagToolFixturePath = (options: CliOptions): string => {
   const fixtureMap: Record<string, string> = {
     validAddCsv: "manual-tag-add-valid.csv",
     invalidAddCsv: "manual-tag-add-invalid-header.csv",
-    validEditCsv: "manual-tag-edit-valid.csv"
+    validEditCsv: "manual-tag-edit-valid.csv",
+    duplicateConflictCsv: "manual-tag-add-duplicate-conflict.csv",
+    nonexistentAccountCsv: "manual-tag-add-nonexistent-account.csv",
+    textFile: "manual-tag-add-invalid-type.txt",
+    overLimitCsv: "manual-tag-add-over-limit.csv"
   };
   const fixtureName = fixtureMap[fixtureKind] ?? fixtureMap.validAddCsv;
   for (const root of [path.resolve(__dirname, "../.."), path.resolve(__dirname, "../../.."), process.cwd()]) {
@@ -13661,11 +13665,19 @@ const resolveTagToolFixturePath = (options: CliOptions): string => {
 
   const generatedPath = path.join(artifactRoot(options), "fixtures", fixtureName);
   ensureDir(path.dirname(generatedPath));
-  const content = fixtureKind === "invalidAddCsv"
-    ? "標籤值名稱,userobjectid\n高價值,100001\n"
-    : fixtureKind === "validEditCsv"
-      ? "標籤值名稱,帳號ID,操作\n高價值,100001,add\n"
-      : "標籤值名稱,帳號ID\n高價值,100001\n";
+  const content = fixtureKind === "overLimitCsv"
+    ? ["標籤值名稱,帳號ID", ...Array.from({ length: 10001 }, (_, index) => `UAT_OVER_${index + 1},${100000 + index + 1}`)].join("\n")
+    : fixtureKind === "duplicateConflictCsv"
+      ? "標籤值名稱,帳號ID\nUAT_A,100001\nUAT_B,100001\n"
+      : fixtureKind === "nonexistentAccountCsv"
+        ? "標籤值名稱,帳號ID\nUAT_MISSING,999999999999\n"
+        : fixtureKind === "textFile"
+          ? "標籤值名稱,帳號ID\nUAT_TXT,100001\n"
+          : fixtureKind === "invalidAddCsv"
+            ? "標籤值名稱,userobjectid\n高價值,100001\n"
+            : fixtureKind === "validEditCsv"
+              ? "標籤值名稱,帳號ID,操作\n高價值,100001,add\n"
+              : "標籤值名稱,帳號ID\n高價值,100001\n";
   fs.writeFileSync(generatedPath, content);
   return generatedPath;
 };
@@ -13698,9 +13710,18 @@ const uploadManualCsv = async (options: CliOptions, page: Page, startedAt: strin
     navigation,
     interactionLog,
     fixture: {
+      fixtureKind: firstStringParam(options.params, ["fixtureKind", "fixture"]) ?? "validAddCsv",
       path: fixturePath,
       fileName: path.basename(fixturePath),
       contentPreview: fs.readFileSync(fixturePath, "utf8").slice(0, 500)
+    },
+    "fixtureRef.state": {
+      fixtureId: firstStringParam(options.params, ["fixtureKind", "fixture"]) ?? "validAddCsv",
+      layer: "domain_file_fixture",
+      status: "used",
+      usedForCase: options.caseId,
+      path: fixturePath,
+      asserted: true
     },
     commonState,
     "tagForm.typeVisibility.state": formState,

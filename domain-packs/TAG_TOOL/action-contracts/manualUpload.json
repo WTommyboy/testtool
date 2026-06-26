@@ -36,6 +36,10 @@
           "observeAddGuidance",
           "uploadAddCsv",
           "uploadInvalidCsv",
+          "uploadDuplicateConflictCsv",
+          "uploadNonexistentAccountCsv",
+          "uploadOverLimitCsv",
+          "uploadInvalidTypeFile",
           "observeEditGuidance",
           "uploadEditCsv"
         ]
@@ -145,7 +149,11 @@
   "fixtures": {
     "validAddCsv": "fixtures/smoke/manual-tag-add-valid.csv",
     "invalidAddCsv": "fixtures/smoke/manual-tag-add-invalid-header.csv",
-    "validEditCsv": "fixtures/smoke/manual-tag-edit-valid.csv"
+    "validEditCsv": "fixtures/smoke/manual-tag-edit-valid.csv",
+    "duplicateConflictCsv": "fixtures/smoke/manual-tag-add-duplicate-conflict.csv",
+    "nonexistentAccountCsv": "fixtures/smoke/manual-tag-add-nonexistent-account.csv",
+    "textFile": "fixtures/smoke/manual-tag-add-invalid-type.txt",
+    "overLimitCsv": "generated at runtime with 10001 data rows"
   },
   "blockerCodes": [
     "MANUAL_UPLOAD_PANEL_MISSING",

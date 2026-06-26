@@ -115,6 +115,17 @@
       ],
       "purpose": "Manual tag CSV upload guidance and file-chip state."
     },
+    "fixtureRef.state": {
+      "type": "object",
+      "requiredFields": [
+        "fixtureId",
+        "layer",
+        "status",
+        "usedForCase",
+        "asserted"
+      ],
+      "purpose": "Declared TAG_TOOL resource or file fixture used by a case, including whether missing fixture data should block judgment instead of becoming a product bug."
+    },
     "manualUpload.validation.state": {
       "type": "object",
       "requiredFields": [
@@ -299,10 +310,15 @@
       "when": {
         "actionIn": [
           "uploadManualTagCsv",
-          "submitManualTagCsv"
+          "submitManualTagCsv",
+          "uploadDuplicateConflictCsv",
+          "uploadNonexistentAccountCsv",
+          "uploadOverLimitCsv",
+          "uploadInvalidTypeFile"
         ]
       },
       "requires": [
+        "fixtureRef.state",
         "manualUpload.file.state",
         "manualUpload.validation.state"
       ]

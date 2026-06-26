@@ -1,0 +1,222 @@
+{
+  "schemaVersion": "tag-tool-fixture-requirements-v0.1",
+  "domain": "TAG_TOOL",
+  "status": "draft_from_R0007_2026-06-27",
+  "sourceRun": {
+    "runId": "680cb849-29d2-422d-916d-c4e27910aecb",
+    "roundId": "NU_TAG_p0_R0007",
+    "reason": "R0007 showed that many TAG_TOOL cases cannot be judged from opportunistic dev rows. Fixture-dependent cases must declare the exact resource or CSV fixture they require."
+  },
+  "resourceFixtures": [
+    {
+      "id": "emptyTagListEnvironment",
+      "layer": "testcase_fixture",
+      "requiredFor": [
+        "BIUI_TAG_R001-A-05"
+      ],
+      "status": "missing",
+      "expectedEvidence": [
+        "tagList.table.state.rowCount=0",
+        "tagList.table.state.emptyStateText contains 尚無標籤資料"
+      ],
+      "blockedCodeWhenMissing": "BLOCKED_FIXTURE_MISSING_EMPTY_TAG_LIST"
+    },
+    {
+      "id": "longNoteTag",
+      "layer": "testcase_fixture",
+      "requiredFor": [
+        "BIUI_TAG_R001-B-04"
+      ],
+      "status": "missing",
+      "expectedProperties": {
+        "noteMinLength": 21,
+        "safeToDelete": false
+      },
+      "blockedCodeWhenMissing": "BLOCKED_FIXTURE_MISSING_LONG_NOTE_TAG"
+    },
+    {
+      "id": "ongoingConditionTag",
+      "layer": "domain_fixture",
+      "requiredForGroups": [
+        "B",
+        "C",
+        "F",
+        "H",
+        "I",
+        "L",
+        "M"
+      ],
+      "status": "missing",
+      "expectedProperties": {
+        "tagType": "條件標籤",
+        "scheduleStatus": "進行中",
+        "tagInfoLinkEnabled": true,
+        "rowMenuItems": [
+          "查看設置",
+          "標籤資訊",
+          "終止",
+          "刪除",
+          "複製"
+        ]
+      },
+      "blockedCodeWhenMissing": "BLOCKED_FIXTURE_MISSING_ONGOING_CONDITION_TAG"
+    },
+    {
+      "id": "endedConditionTag",
+      "layer": "domain_fixture",
+      "requiredFor": [
+        "BIUI_TAG_R001-C-02"
+      ],
+      "status": "missing",
+      "expectedProperties": {
+        "tagType": "條件標籤",
+        "scheduleStatus": "已結束",
+        "rowMenuItems": [
+          "查看設置",
+          "標籤資訊",
+          "刪除",
+          "複製"
+        ],
+        "forbiddenMenuItems": [
+          "終止"
+        ]
+      },
+      "blockedCodeWhenMissing": "BLOCKED_FIXTURE_MISSING_ENDED_CONDITION_TAG"
+    },
+    {
+      "id": "reportPeriodConditionTag",
+      "layer": "domain_fixture",
+      "requiredFor": [
+        "BIUI_TAG_R001-B-06",
+        "BIUI_TAG_R001-C-04"
+      ],
+      "status": "missing",
+      "expectedProperties": {
+        "tagType": "條件標籤",
+        "filterType": "依報表區間設置",
+        "tagNameClickable": false,
+        "rowMenuItems": [
+          "查看設置",
+          "刪除",
+          "複製"
+        ]
+      },
+      "blockedCodeWhenMissing": "BLOCKED_FIXTURE_MISSING_REPORT_PERIOD_CONDITION_TAG"
+    },
+    {
+      "id": "manualTag",
+      "layer": "domain_fixture",
+      "requiredForGroups": [
+        "B",
+        "C",
+        "E",
+        "G",
+        "J",
+        "M"
+      ],
+      "status": "missing",
+      "expectedProperties": {
+        "tagType": "人工標籤",
+        "memberRowsMin": 3,
+        "safeForEditUpload": false
+      },
+      "blockedCodeWhenMissing": "BLOCKED_FIXTURE_MISSING_MANUAL_TAG"
+    },
+    {
+      "id": "editableManualTag",
+      "layer": "domain_fixture",
+      "requiredFor": [
+        "BIUI_TAG_R001-G-03",
+        "BIUI_TAG_R001-G-04",
+        "BIUI_TAG_R001-G-05",
+        "BIUI_TAG_R001-G-06",
+        "BIUI_TAG_R001-G-07",
+        "BIUI_TAG_R001-G-08"
+      ],
+      "status": "missing",
+      "expectedProperties": {
+        "tagType": "人工標籤",
+        "safeForEditUpload": true,
+        "ownedByUat": true
+      },
+      "blockedCodeWhenMissing": "BLOCKED_FIXTURE_MISSING_EDITABLE_MANUAL_TAG"
+    },
+    {
+      "id": "tagVariableSettingsSandbox",
+      "layer": "domain_fixture",
+      "requiredFor": [
+        "BIUI_TAG_R001-K-04"
+      ],
+      "status": "missing",
+      "expectedProperties": {
+        "safeForSave": true,
+        "ownedByUat": true
+      },
+      "blockedCodeWhenMissing": "BLOCKED_FIXTURE_MISSING_VARIABLE_SETTINGS_SANDBOX"
+    }
+  ],
+  "fileFixtures": [
+    {
+      "id": "validAddCsv",
+      "path": "fixtures/smoke/manual-tag-add-valid.csv",
+      "mode": "manualAdd",
+      "status": "available",
+      "headers": [
+        "標籤值名稱",
+        "帳號ID"
+      ]
+    },
+    {
+      "id": "invalidAddCsv",
+      "path": "fixtures/smoke/manual-tag-add-invalid-header.csv",
+      "mode": "manualAdd",
+      "status": "available",
+      "expectedFailure": "wrong header"
+    },
+    {
+      "id": "validEditCsv",
+      "path": "fixtures/smoke/manual-tag-edit-valid.csv",
+      "mode": "manualEdit",
+      "status": "available",
+      "headers": [
+        "標籤值名稱",
+        "帳號ID",
+        "操作"
+      ]
+    },
+    {
+      "id": "duplicateConflictCsv",
+      "path": "fixtures/smoke/manual-tag-add-duplicate-conflict.csv",
+      "mode": "manualAdd",
+      "status": "available",
+      "expectedFailure": "same account id maps to multiple tag values"
+    },
+    {
+      "id": "nonexistentAccountCsv",
+      "path": "fixtures/smoke/manual-tag-add-nonexistent-account.csv",
+      "mode": "manualAdd",
+      "status": "available",
+      "expectedFailure": "account id does not exist in project"
+    },
+    {
+      "id": "textFile",
+      "path": "fixtures/smoke/manual-tag-add-invalid-type.txt",
+      "mode": "manualAdd",
+      "status": "available",
+      "expectedFailure": "file type is not csv"
+    },
+    {
+      "id": "overLimitCsv",
+      "path": "generated at runtime",
+      "mode": "manualAdd",
+      "status": "generated_by_helper",
+      "rowCount": 10001,
+      "expectedFailure": "CSV has more than 10000 data rows"
+    }
+  ],
+  "judgmentPolicy": [
+    "If a fixture-dependent case does not declare an available fixtureRef, classify as BLOCKED_FIXTURE_MISSING rather than product FAIL.",
+    "Fixture evidence must be written into detail_json as fixtureRef.state.",
+    "Existing dev rows may be used for observation only when the row's required properties are read and recorded in current-run evidence."
+  ]
+}
