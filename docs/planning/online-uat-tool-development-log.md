@@ -2108,3 +2108,11 @@ P0a v1 範圍釐清：containment 只處理唯一 self-check error 為 `RESULT_P
 - 判讀：R006 的 13 個 BLOCKED 大多是 evidence gate / browser safety / helper degraded 類工具層問題。`A-05` 是 `ENV_NOT_EMPTY` 測試前置不成立。`B-06` 目前不應直接作為產品 regression 結論，因最新 TAG_TOOL live inventory/domain contract 已描述 tag info route/menu 行為，需先判定 testcase/spec 與 dev live contract 是否一致。
 - Smoke / 驗證：新增 auto-resume/thread-resume failure fixture，覆蓋 helper skipped + current-run Tool Bridge evidence 時可寫單題 containment。已通過 `npm run verify:runtime-containment-result`、`npm run verify:codex-no-result-containment`、`npm run typecheck`、`npm run build --prefix agent`、`npm run verify:tag-tool-runtime`、`npm run verify:tool-bridge`。
 - 邊界：本批是平台 runtime/Tool Bridge guardrail，不改 BI 產品、不推 prod。TAG_TOOL domain pack 本地仍有未提交/未部署更新；若要讓 Railway dev 下一輪使用新版 TAG_TOOL contracts，需要另行 commit/push/deploy。
+
+### 2026-06-27 - TAG_TOOL live UI dictionary refresh
+
+- 背景：Tommy 要求重新進入 `https://galaxy.games.gamania.com/bi-dev/zh-TW/tag/player?gameId=541` 抓更細的玩家標籤功能 UI，並建立功能字典。由於桌面 Chrome selected profile 缺 Codex Chrome Extension，本輪改用已登入的 in-app browser 做 visible UI/read-only DOM inventory；沒有使用產品 API 取代 UI，也沒有執行儲存、刪除、終止、複製確認、上傳提交或變數儲存。
+- Live inventory：新增 `domain-packs/TAG_TOOL/discovery/live-inventory-2026-06-27-dev-ui.md`。最新 dev list 為 `共 32 筆資料`，抓到 page 1/page 2 代表 row、ongoing/ended condition row menu variants、條件標籤新增頁預設值、日期 panel、人工標籤新增/編輯 upload guidance、條件標籤資訊/查看設置、人工標籤資訊/編輯、標籤變數設定。
+- Domain dictionary：新增 `domain-packs/TAG_TOOL/feature-dictionary.json`，把功能拆成 `playerTagManagement`、`conditionTagCreate`、`tagDatePanel`、`manualTagCreate`、`conditionTagInfo`、`manualTagInfoAndEdit`、`tagVariableSettings`，並列出 primary UI objects、live labels、fixture candidates、classification guidance。
+- Contract / vocabulary：刷新 `discovery/page-map.json`、`discovery/component-inventory.json`、`ui-object-vocabulary.json`，並補 action-contract live guidance。新增/補強的 UI object 包含 condition bound stepper、remove sub-tag button、grade help text、dynamic date day input、manual example file link、manual upload tooltip、tag info show-value switch、empty trend/daily state、tag variable save button/validation help/note。
+- 判讀邊界：這批是 domain pack / discovery / dictionary 補強，不是 runtime 修復、不推 prod、不創建/修改/刪除任何 tag。32 筆 dev row 只能當 opportunistic fixture candidate；正式 testcase 仍需 `fixtures/requirements.json` 宣告 stable fixture，否則缺 fixture 應判 `BLOCKED_FIXTURE_MISSING_*`。

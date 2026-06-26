@@ -2,7 +2,7 @@
   "schemaVersion": "domain-action-contract-v0.1",
   "domain": "TAG_TOOL",
   "action": "tagVariableSettings",
-  "status": "draft_contract",
+  "status": "draft_contract_live_augmented_2026-06-27",
   "purpose": "Tag variable settings observation, validation, and history evidence.",
   "capabilities": [
     "tag.variables.observeValues",
@@ -10,6 +10,38 @@
     "tag.variables.validationToast",
     "tag.variables.historyFormat"
   ],
+  "observedLiveSignals": {
+    "source": "discovery/live-inventory-2026-06-27-dev-ui.md",
+    "sections": [
+      "ID 狀態",
+      "玩家生命週期",
+      "備註",
+      "設置紀錄"
+    ],
+    "controls": [
+      "N",
+      "Z",
+      "Y",
+      "X",
+      "A",
+      "B",
+      "增加",
+      "減少",
+      "儲存"
+    ],
+    "validationHelp": "防呆（按「儲存」時）：X > Y、A ≥ B、Z ≥ 0 其餘 ≥ 1 且皆為整數；通過後寫入並於設置紀錄新增一筆，變更向前生效（不回溯重算歷史名單）。",
+    "historyHeaders": [
+      "設置時間",
+      "N",
+      "Z",
+      "Y",
+      "X",
+      "A",
+      "B",
+      "備註",
+      "操作人"
+    ]
+  },
   "paramsSchema": {
     "type": "object",
     "required": [

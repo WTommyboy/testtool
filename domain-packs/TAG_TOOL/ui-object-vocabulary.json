@@ -1,13 +1,15 @@
 {
   "schemaVersion": "domain-ui-object-vocabulary-v0.1",
   "domain": "TAG_TOOL",
-  "status": "draft_contract_live_augmented_2026-06-23",
+  "status": "draft_contract_live_augmented_2026-06-27",
   "purpose": "Domain-owned UI object ids for Galaxy Next player tag tool. These ids are targets for platform actions such as click, type, select, uploadFile, assertVisible, assertDisabled, assertNoRequest, download, and cancelModal.",
   "references": {
     "platformActionVocabulary": "contracts/platform-action-vocabulary.v1.json",
     "uiContract": "ui-contract.json",
+    "featureDictionary": "feature-dictionary.json",
     "componentInventory": "discovery/component-inventory.json",
     "liveInventory20260623": "discovery/live-inventory-2026-06-23-dev-ui.md",
+    "liveInventory20260627": "discovery/live-inventory-2026-06-27-dev-ui.md",
     "evidenceSchema": "evidence-schema.json"
   },
   "policy": [
@@ -107,7 +109,7 @@
       "locatorHints": [
         "table under 玩家標籤管理 with tag metadata headers",
         "current dev headers include 標籤名稱, 標籤類型, 條件類別, 篩選類型, 排程狀態, 資料最後更新時間, 備註, 操作",
-        "current dev may be populated; 2026-06-23 capture showed 共 28 筆資料"
+        "current dev may be populated; 2026-06-27 capture showed 共 32 筆資料"
       ],
       "hazards": [
         "System built-in tags should not appear in this user-created tag list."
@@ -680,7 +682,8 @@
       "locatorHints": [
         "PRD section named 標籤值設置 with + 添加 button and right-side editor",
         "current dev section named 子標籤級距 with inline lower/upper inputs",
-        "2026-06-23 dev capture observed add button text 新增標籤",
+        "2026-06-27 dev capture observed add button text 新增標籤",
+        "2026-06-27 dev capture observed lower and upper numeric inputs default to 0",
         "empty first row validation text 第 1 個子標籤請輸入子標籤名稱"
       ],
       "hazards": [
@@ -751,6 +754,105 @@
       ],
       "hazards": [
         "Numeric validation should verify no save request was sent when client blocks invalid value."
+      ]
+    },
+    {
+      "id": "conditionTag.boundStepper",
+      "page": "tagCreate",
+      "component": "conditionTag.valueEditor",
+      "objectType": "buttonGroup",
+      "aliases": [
+        "增加",
+        "減少",
+        "數值 stepper",
+        "bound stepper"
+      ],
+      "supportedActions": [
+        "click",
+        "read",
+        "assertVisible",
+        "assertDisabled",
+        "assertEnabled"
+      ],
+      "stateAttributes": [
+        "targetBound",
+        "increaseEnabled",
+        "decreaseEnabled",
+        "currentValue"
+      ],
+      "evidenceObjects": [
+        "conditionTag.valueEditor.state",
+        "interactionLog"
+      ],
+      "locatorHints": [
+        "increase/decrease controls adjacent to 第 N 個子標籤下限數值 or 上限數值 input",
+        "2026-06-27 capture observed 減少 disabled when current value is 0"
+      ],
+      "hazards": [
+        "Stepper state is tied to its adjacent numeric input; record which bound row and lower/upper side was touched."
+      ]
+    },
+    {
+      "id": "conditionTag.removeSubTagButton",
+      "page": "tagCreate",
+      "component": "conditionTag.valueEditor",
+      "objectType": "button",
+      "aliases": [
+        "移除子標籤",
+        "刪除級距列",
+        "remove sub tag"
+      ],
+      "supportedActions": [
+        "click",
+        "read",
+        "assertVisible",
+        "assertDisabled",
+        "assertEnabled"
+      ],
+      "stateAttributes": [
+        "rowIndex",
+        "disabled",
+        "currentValueCount"
+      ],
+      "evidenceObjects": [
+        "conditionTag.valueEditor.state",
+        "interactionLog"
+      ],
+      "locatorHints": [
+        "button with accessible label 移除子標籤 in 子標籤級距 row",
+        "2026-06-27 capture observed the first row remove button disabled"
+      ],
+      "hazards": [
+        "Removing an unsaved grade row is form-state mutation only; deleting an existing saved tag value is not covered by this object."
+      ]
+    },
+    {
+      "id": "conditionTag.gradeHelpText",
+      "page": "tagCreate",
+      "component": "conditionTag.valueEditor",
+      "objectType": "staticText",
+      "aliases": [
+        "標籤值至多 10 個",
+        "級距請由大到小排列",
+        "相鄰級距",
+        "每個子標籤至少需設定下限或上限"
+      ],
+      "supportedActions": [
+        "read",
+        "assertVisible",
+        "assertText"
+      ],
+      "stateAttributes": [
+        "visibleText"
+      ],
+      "evidenceObjects": [
+        "conditionTag.valueEditor.state"
+      ],
+      "locatorHints": [
+        "static guidance text under 子標籤級距"
+      ],
+      "hazards": [
+        "Use exact visible guidance text for frontend-copy cases; use semantic match only for non-copy cases."
       ]
     },
     {
@@ -910,6 +1012,70 @@
       ]
     },
     {
+      "id": "dateRange.dynamicDayInput",
+      "page": "tagCreate",
+      "component": "dateRange.panel",
+      "objectType": "input",
+      "aliases": [
+        "天前",
+        "動態天數",
+        "dynamic day input"
+      ],
+      "supportedActions": [
+        "type",
+        "read",
+        "assertVisible",
+        "assertValue"
+      ],
+      "stateAttributes": [
+        "startDayOffset",
+        "endDayOffset",
+        "suffixText",
+        "validationText"
+      ],
+      "evidenceObjects": [
+        "dateRange.panel.state",
+        "interactionLog"
+      ],
+      "locatorHints": [
+        "number-like inputs inside dateRange.panel with visible 天前 suffix"
+      ],
+      "hazards": [
+        "Dynamic day inputs are not calendar date fields; record mode and rendered range after confirmation."
+      ]
+    },
+    {
+      "id": "dateRange.clearDynamicDaysButton",
+      "page": "tagCreate",
+      "component": "dateRange.panel",
+      "objectType": "button",
+      "aliases": [
+        "清除動態天數",
+        "清除",
+        "clear dynamic day"
+      ],
+      "supportedActions": [
+        "click",
+        "read",
+        "assertVisible"
+      ],
+      "stateAttributes": [
+        "targetInput",
+        "visible",
+        "disabled"
+      ],
+      "evidenceObjects": [
+        "dateRange.panel.state",
+        "interactionLog"
+      ],
+      "locatorHints": [
+        "small clear controls inside dynamic date panel input sections"
+      ],
+      "hazards": [
+        "Clearing dynamic days changes panel draft state; confirm/cancel outcome must be recorded."
+      ]
+    },
+    {
       "id": "manualTag.addFileButton",
       "page": "tagCreate",
       "component": "manualTag.uploadPanel",
@@ -971,6 +1137,75 @@
       ],
       "hazards": [
         "Native file chooser accept state should be read from DOM attributes; do not open OS dialog for observation-only cases."
+      ]
+    },
+    {
+      "id": "manualTag.exampleFileLink",
+      "page": "tagCreate",
+      "component": "manualTag.uploadPanel",
+      "objectType": "link",
+      "aliases": [
+        "檔案範例檔.csv",
+        "範例檔",
+        "example csv"
+      ],
+      "supportedActions": [
+        "read",
+        "download",
+        "assertVisible",
+        "assertText"
+      ],
+      "stateAttributes": [
+        "href",
+        "visibleText",
+        "mode"
+      ],
+      "evidenceObjects": [
+        "manualUpload.file.state",
+        "interactionLog"
+      ],
+      "locatorHints": [
+        "link text 檔案範例檔.csv in manualTag.uploadPanel",
+        "create mode href ends with create_user_tag.csv",
+        "edit mode href ends with update_user_tag.csv"
+      ],
+      "hazards": [
+        "Downloading the example file is safe, but testcase should state whether download validation is required."
+      ]
+    },
+    {
+      "id": "manualTag.uploadTooltip",
+      "page": "tagCreate",
+      "component": "manualTag.uploadPanel",
+      "objectType": "tooltip",
+      "aliases": [
+        "上傳文件說明",
+        "欄位為",
+        "add/update/delete",
+        "upload tooltip"
+      ],
+      "supportedActions": [
+        "hover",
+        "read",
+        "assertVisible",
+        "assertText"
+      ],
+      "stateAttributes": [
+        "visibleText",
+        "mode",
+        "columns",
+        "operationRule"
+      ],
+      "evidenceObjects": [
+        "manualUpload.file.state",
+        "screenshot"
+      ],
+      "locatorHints": [
+        "tooltip near 上傳文件 guidance",
+        "2026-06-27 create/edit tooltip text names 標籤值名稱, 銀河帳號ID ( userobjectid ), 操作"
+      ],
+      "hazards": [
+        "Tooltip copy differs from older PRD drafts; classify as spec/domain drift before product bug unless PM confirms the oracle."
       ]
     },
     {
@@ -1190,6 +1425,38 @@
       ]
     },
     {
+      "id": "tagInfo.showValueSwitch",
+      "page": "tagInfo",
+      "component": "tagInfo.conditionTrendAndDaily",
+      "objectType": "toggle",
+      "aliases": [
+        "顯示數值",
+        "show values"
+      ],
+      "supportedActions": [
+        "click",
+        "read",
+        "assertVisible",
+        "assertStateChanged"
+      ],
+      "stateAttributes": [
+        "checked",
+        "visible",
+        "disabled"
+      ],
+      "evidenceObjects": [
+        "tagInfo.latestValueSummary.state",
+        "interactionLog",
+        "screenshot"
+      ],
+      "locatorHints": [
+        "condition tag info page control labelled 顯示數值"
+      ],
+      "hazards": [
+        "This control is condition-tag specific; manual tag pages use a member table."
+      ]
+    },
+    {
       "id": "manualTag.memberTable",
       "page": "tagInfo",
       "component": "manualTag.memberTable",
@@ -1297,6 +1564,64 @@
       ],
       "hazards": [
         "Chart canvas evidence should be paired with DOM/legend text where possible."
+      ]
+    },
+    {
+      "id": "tagInfo.emptyTrendState",
+      "page": "tagInfo",
+      "component": "tagInfo.conditionTrendAndDaily",
+      "objectType": "emptyState",
+      "aliases": [
+        "尚無趨勢資料",
+        "empty trend"
+      ],
+      "supportedActions": [
+        "read",
+        "assertVisible",
+        "assertText"
+      ],
+      "stateAttributes": [
+        "visibleText",
+        "isEmpty"
+      ],
+      "evidenceObjects": [
+        "tagInfo.latestValueSummary.state",
+        "screenshot"
+      ],
+      "locatorHints": [
+        "empty-state text in condition tag trend/chart area"
+      ],
+      "hazards": [
+        "Empty trend state can be valid when the selected tag has zero tagged users."
+      ]
+    },
+    {
+      "id": "tagInfo.emptyDailyState",
+      "page": "tagInfo",
+      "component": "tagInfo.conditionTrendAndDaily",
+      "objectType": "emptyState",
+      "aliases": [
+        "尚無每日資料",
+        "empty daily"
+      ],
+      "supportedActions": [
+        "read",
+        "assertVisible",
+        "assertText"
+      ],
+      "stateAttributes": [
+        "visibleText",
+        "isEmpty"
+      ],
+      "evidenceObjects": [
+        "tagInfo.latestValueSummary.state",
+        "screenshot"
+      ],
+      "locatorHints": [
+        "empty-state text in condition tag daily table area"
+      ],
+      "hazards": [
+        "Empty daily state is not a product bug by itself; pair it with summary counts and fixture expectations."
       ]
     },
     {
@@ -1408,6 +1733,102 @@
       ],
       "hazards": [
         "Saving changes affects future calculations and requires approval outside ordinary smoke."
+      ]
+    },
+    {
+      "id": "tagVariables.saveButton",
+      "page": "tagVariableSettings",
+      "component": "tagVariables.form",
+      "objectType": "button",
+      "aliases": [
+        "儲存",
+        "save variables"
+      ],
+      "supportedActions": [
+        "click",
+        "read",
+        "assertVisible",
+        "assertDisabled",
+        "assertEnabled"
+      ],
+      "stateAttributes": [
+        "visible",
+        "disabled",
+        "innerText"
+      ],
+      "evidenceObjects": [
+        "tagVariables.form.state",
+        "toast.message.state",
+        "toolBridge.response",
+        "interactionLog"
+      ],
+      "locatorHints": [
+        "primary button labelled 儲存 on 標籤變數設定 page"
+      ],
+      "hazards": [
+        "Saving variables affects future calculations; confirmation or sandbox policy is required before actual save."
+      ]
+    },
+    {
+      "id": "tagVariables.validationHelpText",
+      "page": "tagVariableSettings",
+      "component": "tagVariables.form",
+      "objectType": "staticText",
+      "aliases": [
+        "防呆",
+        "X > Y",
+        "A ≥ B",
+        "Z ≥ 0",
+        "皆為整數"
+      ],
+      "supportedActions": [
+        "read",
+        "assertVisible",
+        "assertText"
+      ],
+      "stateAttributes": [
+        "visibleText"
+      ],
+      "evidenceObjects": [
+        "tagVariables.form.state"
+      ],
+      "locatorHints": [
+        "static validation help text above or near tag variable save controls"
+      ],
+      "hazards": [
+        "Use current visible help text as frontend evidence; backend validation still needs submit-time evidence in a safe flow."
+      ]
+    },
+    {
+      "id": "tagVariables.note",
+      "page": "tagVariableSettings",
+      "component": "tagVariables.form",
+      "objectType": "textarea",
+      "aliases": [
+        "備註",
+        "輸入本次調整的說明",
+        "variables note"
+      ],
+      "supportedActions": [
+        "type",
+        "read",
+        "assertVisible",
+        "assertValue"
+      ],
+      "stateAttributes": [
+        "value",
+        "placeholder",
+        "maxLength"
+      ],
+      "evidenceObjects": [
+        "tagVariables.form.state",
+        "interactionLog"
+      ],
+      "locatorHints": [
+        "textarea with placeholder 輸入本次調整的說明（選填，上限 200 字）"
+      ],
+      "hazards": [
+        "Typing a note is draft state; saving it mutates variable history."
       ]
     },
     {

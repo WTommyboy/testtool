@@ -35,6 +35,9 @@
 - 2026-06-23 domain pack updates: refreshed `discovery/page-map.json`, `discovery/component-inventory.json`, `ui-object-vocabulary.json`, `action-contracts/tagList.json`, `action-contracts/manualUpload.json`, and added `action-contracts/tagInfoReadOnly.json`.
 - 2026-06-23 live dev state note: player tag list was populated with 28 rows; tests must not assume the previous empty-list state.
 - 2026-06-23 live dev route note: tag info uses `/bi-dev/zh-TW/tag/player/:tagId?gameId=:gameId`; condition settings uses `/bi-dev/zh-TW/tag/player/:tagId/settings?gameId=:gameId`.
+- Live UI inventory refresh: completed on 2026-06-27 in the logged-in in-app browser against the dev URL. See `domain-packs/TAG_TOOL/discovery/live-inventory-2026-06-27-dev-ui.md`.
+- 2026-06-27 domain pack updates: added `feature-dictionary.json`, refreshed `discovery/page-map.json`, `discovery/component-inventory.json`, `ui-object-vocabulary.json`, and updated action-contract live guidance for condition create, manual upload, tag info read-only, and tag variable settings.
+- 2026-06-27 live dev state note: player tag list was populated with 32 rows; condition grade numeric lower/upper inputs currently default to `0`; manual upload file inputs are hidden native inputs with `accept=".csv"` and `multiple=true`; tag variable settings exposes visible validation help text for `X > Y`, `A ≥ B`, `Z ≥ 0`, and integer constraints.
 
 ### Existing Test Assets
 
@@ -194,6 +197,9 @@ Implemented in domain pack on 2026-06-27:
 - `ui-object-vocabulary.json` now names the TAG list row/menu/pagination objects, condition form controls, date range controls, manual upload file/chip controls, tag info read-only objects, and variable history objects needed by those contracts.
 - `evidence-schema.json` now includes pagination, row-link, condition form, manual upload file-input, and form-validation state objects so missing evidence can be classified as contract/fixture gap instead of product bug.
 - Runtime planning smoke now routes manual upload wording to deterministic flows/fixtures such as `uploadDuplicateConflictCsv`, `uploadNonexistentAccountCsv`, `uploadOverLimitCsv`, `uploadInvalidTypeFile`, `submitWithoutFile`, and `uploadMultipleFiles`.
+- `domain-packs/TAG_TOOL/feature-dictionary.json` now provides a machine-readable function dictionary for player tag list, condition-tag creation, date panel, manual-tag upload, condition/manual tag info, manual edit, and tag variable settings.
+- `discovery/live-inventory-2026-06-27-dev-ui.md` records the latest visible UI inventory, including the 32-row dev list state, row menu variants, condition grade editor defaults, manual upload example-file links, condition/manual info routes, and variable settings current controls.
+- `ui-object-vocabulary.json` now names additional TAG objects needed by future tests: condition bound stepper, remove sub-tag button, grade help text, dynamic date day input, clear-dynamic-days button, manual example file link, manual upload tooltip, condition info show-value switch, empty trend/daily states, variable save button, variable validation help text, and variable note textarea.
 
 Still missing real environment resources:
 

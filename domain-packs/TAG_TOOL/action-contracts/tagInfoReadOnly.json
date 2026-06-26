@@ -2,7 +2,7 @@
   "schemaVersion": "domain-action-contract-v0.1",
   "domain": "TAG_TOOL",
   "action": "tagInfoReadOnly",
-  "status": "draft_contract_live_augmented_2026-06-23",
+  "status": "draft_contract_live_augmented_2026-06-27",
   "purpose": "Read-only tag information, condition settings, and manual edit form observation flows. These contracts separate condition-tag and manual-tag UI assumptions without mutating tag data.",
   "capabilities": [
     "tag.info.basicSettings",
@@ -46,6 +46,23 @@
     "conditionSettingsReadonly": "/bi-dev/zh-TW/tag/player/:tagId/settings?gameId=:gameId",
     "tagInfo": "/bi-dev/zh-TW/tag/player/:tagId?gameId=:gameId",
     "manualEdit": "/bi-dev/zh-TW/tag/player/:tagId/edit?gameId=:gameId"
+  },
+  "observedLiveSignals": {
+    "source": "discovery/live-inventory-2026-06-27-dev-ui.md",
+    "conditionInfo": [
+      "title group 標籤資訊與每日資訊",
+      "sections 標籤基本設置 and 最新標籤值資訊",
+      "button 查看設置",
+      "metric 總被標籤人數",
+      "controls 顯示數值 and 標籤值 (N/N)",
+      "empty states 尚無趨勢資料 and 尚無每日資料 may appear when tag counts are zero"
+    ],
+    "manualInfo": [
+      "title group 標籤資訊與名單列表",
+      "button 編輯設置",
+      "metric 總授權帳號人數",
+      "member headers #, 標籤值, 銀河帳號ID, 被貼標/異動時間(GMT+08:00)"
+    ]
   },
   "sharedFlows": {
     "openConditionSettingsReadonly": {

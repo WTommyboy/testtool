@@ -2,7 +2,7 @@
   "schemaVersion": "domain-action-contract-v0.1",
   "domain": "TAG_TOOL",
   "action": "manualUpload",
-  "status": "draft_contract_live_augmented_2026-06-23",
+  "status": "draft_contract_live_augmented_2026-06-27",
   "purpose": "Manual tag add/edit CSV upload setup and validation evidence.",
   "capabilities": [
     "tag.manual.addCsvFormat",
@@ -14,17 +14,21 @@
     "tag.manual.submitValidation"
   ],
   "observedLiveGuidance": {
-    "source": "discovery/live-inventory-2026-06-23-dev-ui.md",
+    "source": "discovery/live-inventory-2026-06-27-dev-ui.md",
     "createMode": [
       "請上傳欲設置的標籤值與名單檔案，請參閱 檔案範例檔.csv。僅可上傳 csv 檔",
       "每個檔案限 10,000 筆資料，每次設置至多 5 個檔案。",
+      "example href: https://galaxy-media.s3.ap-northeast-1.amazonaws.com/media/bi/userTag/create_user_tag.csv",
       "tooltip columns: 標籤值名稱, 銀河帳號ID ( userobjectid ), 操作",
-      "tooltip says create flow operation can only be add"
+      "tooltip says create flow operation can only be add",
+      "hidden native file input accept=.csv, multiple=true"
     ],
     "editMode": [
       "edit page includes the create guidance",
       "edit-only text: 於編輯標籤時，僅需上傳異動(新增/更新/刪除)的名單",
-      "tooltip says edit flow can use add, update, delete"
+      "example href: https://galaxy-media.s3.ap-northeast-1.amazonaws.com/media/bi/userTag/update_user_tag.csv",
+      "tooltip says edit flow can use add, update, delete",
+      "hidden native file input accept=.csv, multiple=true"
     ]
   },
   "paramsSchema": {

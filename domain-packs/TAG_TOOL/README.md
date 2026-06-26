@@ -7,8 +7,9 @@ Scope: Galaxy Next BI Web player tag management, manual tag upload, condition ta
 Current live UI baseline:
 
 - Dev URL: `https://galaxy.games.gamania.com/bi-dev/zh-TW/tag/player?gameId=541`
-- Latest Playwright inventory: `discovery/live-inventory-2026-06-23-dev-ui.md`
-- 2026-06-23 dev list state: populated, `共 28 筆資料`; do not assume an empty tag list unless a run package explicitly proves one.
+- Latest live UI inventory: `discovery/live-inventory-2026-06-27-dev-ui.md`
+- Feature dictionary: `feature-dictionary.json`
+- 2026-06-27 dev list state: populated, `共 32 筆資料`; do not assume an empty tag list unless a run package explicitly proves one.
 - Current tag info route pattern: `/bi-dev/zh-TW/tag/player/:tagId?gameId=:gameId`
 - Current condition settings route pattern: `/bi-dev/zh-TW/tag/player/:tagId/settings?gameId=:gameId`
 
@@ -25,6 +26,7 @@ Optional locator guidance:
 
 Optional UI / action / evidence contract files:
 
+- `feature-dictionary.json`
 - `ui-contract.json`
 - `action-contracts/<action>.json`
 - `action-contracts/tagInfoReadOnly.json`

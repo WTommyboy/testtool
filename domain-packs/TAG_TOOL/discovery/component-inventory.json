@@ -1,7 +1,7 @@
 {
   "schemaVersion": "domain-ui-discovery-component-inventory-v0.1",
   "domain": "TAG_TOOL",
-  "status": "live_verified_partial_2026-06-23",
+  "status": "live_verified_partial_2026-06-27",
   "components": [
     {
       "id": "tagList.toolbar",
@@ -10,7 +10,8 @@
       "candidateSignals": [
         "title 玩家標籤管理",
         "button 刪除",
-        "button 新增"
+        "button 新增",
+        "刪除 is disabled when no rows are selected"
       ]
     },
     {
@@ -25,8 +26,8 @@
         "header 排程狀態",
         "header 資料最後更新時間",
         "header 備註",
-        "row action trigger 更多操作 / •••",
-        "pagination 共 28 筆資料 in 2026-06-23 dev capture"
+        "row action trigger 更多操作",
+        "pagination 共 32 筆資料 in 2026-06-27 dev capture"
       ]
     },
     {
@@ -34,7 +35,8 @@
       "page": "tagPlayerList",
       "type": "menu",
       "candidateSignals": [
-        "condition menu items 查看設置, 標籤資訊, 終止, 刪除, 複製",
+        "ongoing condition menu items 查看設置, 標籤資訊, 終止, 刪除, 複製",
+        "ended condition menu items 查看設置, 標籤資訊, 刪除, 複製",
         "manual menu items 編輯, 標籤資訊, 刪除, 複製",
         "row action trigger accessible label 更多操作"
       ]
@@ -46,7 +48,8 @@
       "candidateSignals": [
         "field 標籤名稱",
         "radio options 條件標籤 and 人工標籤",
-        "dependent fields 條件類別, 篩選類型, 分析時段"
+        "condition dependent fields 條件類別, 篩選類型, 分析時段, 子標籤級距",
+        "manual dependent field 上傳文件"
       ]
     },
     {
@@ -73,10 +76,14 @@
       "type": "dualPaneEditor",
       "candidateSignals": [
         "label 子標籤級距",
-        "button 新增標籤 in 2026-06-23 dev capture",
+        "button 新增標籤",
+        "help text 標籤值至多 10 個",
+        "help text 級距請由大到小排列（第一列為最高區間）",
         "inline fields 子標籤名稱, 下限, 上限",
+        "lower and upper numeric inputs currently default to 0",
         "lower bound operators 無, ≥, >, =",
-        "upper bound operators 無, ≤, <"
+        "upper bound operators 無, ≤, <",
+        "first row 移除子標籤 button is disabled"
       ]
     },
     {
@@ -86,9 +93,12 @@
       "candidateSignals": [
         "label 上傳文件",
         "csv guidance",
-        "live dev add page currently mentions 操作 column and add/update/delete guidance",
+        "example file link 檔案範例檔.csv",
+        "tooltip guidance includes 標籤值名稱, 銀河帳號ID ( userobjectid ), 操作",
         "每個檔案限 10,000 筆",
-        "每次設置至多 5 個檔案"
+        "每次設置至多 5 個檔案",
+        "button 選擇檔案",
+        "native file input accept .csv and multiple true"
       ]
     },
     {
@@ -98,8 +108,10 @@
       "candidateSignals": [
         "title 日期範圍",
         "quick preset labels",
+        "dynamic day inputs with 天前 suffix",
+        "clear dynamic day controls",
         "cancel and confirm buttons",
-        "dynamic day inputs",
+        "calendar month label such as 六月 2026",
         "Escape may not close panel; panel 取消 closes it"
       ]
     },
@@ -123,7 +135,8 @@
         "section 最新標籤值資訊",
         "condition metric 總被標籤人數",
         "manual metric 總授權帳號人數",
-        "field 數據更新時間"
+        "field 數據更新時間",
+        "tag value counts shown beside value names"
       ]
     },
     {
@@ -134,6 +147,17 @@
         "button label pattern 標籤值 (N/N)",
         "checkbox 全選",
         "one checkbox per tag value"
+      ]
+    },
+    {
+      "id": "tagInfo.conditionTrendAndDaily",
+      "page": "tagInfo",
+      "type": "chartAndTableArea",
+      "candidateSignals": [
+        "condition info page control 顯示數值",
+        "empty trend text 尚無趨勢資料",
+        "empty daily text 尚無每日資料",
+        "download icon may be disabled when no data exists"
       ]
     },
     {
@@ -156,6 +180,8 @@
         "fields 標籤名稱, 備註, 上傳文件",
         "清除輸入 buttons for prefilled text inputs",
         "edit-only upload guidance 於編輯標籤時，僅需上傳異動(新增/更新/刪除)的名單",
+        "example file link uses update_user_tag.csv",
+        "native file input accept .csv and multiple true",
         "buttons 取消 and 儲存"
       ]
     },
@@ -175,10 +201,12 @@
       "page": "tagVariableSettings",
       "type": "form",
       "candidateSignals": [
-        "ID狀態",
+        "ID 狀態",
         "玩家生命週期",
         "inputs N, Z, Y, X, A, B",
-        "stepper controls"
+        "stepper controls 增加 and 減少",
+        "note textarea placeholder 輸入本次調整的說明（選填，上限 200 字）",
+        "validation help text X > Y, A ≥ B, Z ≥ 0 其餘 ≥ 1 且皆為整數"
       ]
     },
     {
@@ -187,7 +215,8 @@
       "type": "table",
       "candidateSignals": [
         "section 設置紀錄",
-        "headers 設置時間, N, Z, Y, X, A, B, 備註"
+        "headers 設置時間, N, Z, Y, X, A, B, 備註, 操作人",
+        "page-size options 10筆/頁, 20筆/頁, 50筆/頁"
       ]
     }
   ]

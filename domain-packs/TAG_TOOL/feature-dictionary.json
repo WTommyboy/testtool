@@ -1,0 +1,454 @@
+{
+  "schemaVersion": "domain-feature-dictionary-v0.1",
+  "domain": "TAG_TOOL",
+  "status": "live_verified_partial_2026-06-27",
+  "source": {
+    "environment": "Galaxy dev",
+    "url": "https://galaxy.games.gamania.com/bi-dev/zh-TW/tag/player?gameId=541",
+    "capturedAt": "2026-06-27",
+    "captureMethod": "logged-in in-app browser, visible UI navigation plus read-only DOM inspection",
+    "safetyBoundary": [
+      "No product API was used as a primary data source.",
+      "No save, delete, terminate, copy confirmation, variable save, or upload submit was executed.",
+      "File input attributes, row text, hrefs, table text, and form values were read only."
+    ],
+    "inventoryFile": "discovery/live-inventory-2026-06-27-dev-ui.md"
+  },
+  "dictionaryPolicy": [
+    "This file describes product concepts, visible UI objects, live labels, and fixture implications for TAG_TOOL.",
+    "Platform action primitives remain in contracts/platform-action-vocabulary.v1.json.",
+    "Executable action flows remain in action-contracts/*.json.",
+    "Current dev rows are opportunistic fixtures unless promoted in fixtures/requirements.json."
+  ],
+  "features": [
+    {
+      "id": "playerTagManagement",
+      "displayName": "玩家標籤管理",
+      "route": "/bi-dev/zh-TW/tag/player?gameId=:gameId",
+      "pageObjectId": "tagPlayerList",
+      "purpose": "List, inspect, paginate, and start row-level operations for player tags.",
+      "visibleSignals": [
+        "breadcrumb 數據中心 > 主頁 > 標籤 > 玩家標籤管理",
+        "page title 玩家標籤管理",
+        "toolbar buttons 刪除 and 新增",
+        "table headers 標籤名稱, 標籤類型, 條件類別, 篩選類型, 排程狀態, 資料最後更新時間, 備註, 操作",
+        "pagination text 共 32 筆資料 in the 2026-06-27 dev capture",
+        "row overflow trigger with accessible label 更多操作"
+      ],
+      "primaryObjects": [
+        "tagList.newButton",
+        "tagList.deleteButton",
+        "tagList.table",
+        "tagList.rowActions",
+        "tagList.rowNameLink",
+        "tagList.pagination"
+      ],
+      "rowActionVariants": [
+        {
+          "variant": "ongoingConditionTag",
+          "selectorSignals": [
+            "標籤類型 = 條件標籤",
+            "排程狀態 = 進行中"
+          ],
+          "visibleMenuItems": [
+            "查看設置",
+            "標籤資訊",
+            "終止",
+            "刪除",
+            "複製"
+          ]
+        },
+        {
+          "variant": "endedConditionTag",
+          "selectorSignals": [
+            "標籤類型 = 條件標籤",
+            "排程狀態 = 已結束"
+          ],
+          "visibleMenuItems": [
+            "查看設置",
+            "標籤資訊",
+            "刪除",
+            "複製"
+          ]
+        },
+        {
+          "variant": "manualTag",
+          "selectorSignals": [
+            "標籤類型 = 人工標籤"
+          ],
+          "visibleMenuItems": [
+            "編輯",
+            "標籤資訊",
+            "刪除",
+            "複製"
+          ],
+          "captureNote": "Manual menu variant was confirmed in the 2026-06-23 inventory and remains expected; 2026-06-27 capture read manual info/edit routes directly."
+        }
+      ],
+      "testImplications": [
+        "Do not assume the list is empty in dev.",
+        "Empty-list cases require an isolated game/environment fixture.",
+        "Deleting or terminating any visible row is irreversible and requires explicit approval plus fixture ownership."
+      ]
+    },
+    {
+      "id": "conditionTagCreate",
+      "displayName": "新增條件標籤",
+      "route": "/bi-dev/zh-TW/tag/player/new?gameId=:gameId",
+      "pageObjectId": "tagCreate",
+      "purpose": "Create a calculated player tag from condition category, filter type, analysis period, and sub-tag grade ranges.",
+      "visibleSignals": [
+        "page title 新增標籤",
+        "條件標籤 radio selected by default",
+        "fields 標籤名稱, 條件類別, 篩選類型, 分析時段, 備註, 子標籤級距",
+        "footer buttons 取消 and 儲存"
+      ],
+      "defaults": {
+        "tagType": "條件標籤",
+        "conditionCategory": "消費級距 R",
+        "filterType": "動態時間區間",
+        "analysisPeriod": "過去 7 天",
+        "subTagRows": 1,
+        "lowerOperator": "≥",
+        "upperOperator": "≤",
+        "lowerInputValue": "0",
+        "upperInputValue": "0"
+      },
+      "optionSets": {
+        "conditionCategory": [
+          "消費級距 R",
+          "累積登入天數",
+          "累積未登入天數",
+          "累積遊戲時間"
+        ],
+        "filterType": [
+          "動態時間區間",
+          "靜態時間區間",
+          "依報表區間設置",
+          "首次後持續累計"
+        ],
+        "lowerBoundOperator": [
+          "無",
+          "≥",
+          ">",
+          "="
+        ],
+        "upperBoundOperator": [
+          "無",
+          "≤",
+          "<"
+        ]
+      },
+      "primaryObjects": [
+        "tagForm.tagName",
+        "tagForm.tagType",
+        "tagForm.note",
+        "tagForm.submitButton",
+        "conditionTag.categorySelect",
+        "conditionTag.filterTypeSelect",
+        "conditionTag.valueEditor",
+        "conditionTag.subTagName",
+        "conditionTag.boundOperator",
+        "conditionTag.boundInput",
+        "conditionTag.boundStepper",
+        "conditionTag.removeSubTagButton",
+        "conditionTag.gradeHelpText",
+        "dateRange.panel"
+      ],
+      "validationText": [
+        "標籤值至多 10 個",
+        "級距請由大到小排列（第一列為最高區間）",
+        "相鄰級距的數值須連貫，不可有空隙或重疊",
+        "每個子標籤至少需設定下限或上限其中之一",
+        "第 1 個子標籤請輸入子標籤名稱"
+      ],
+      "testImplications": [
+        "Numeric bound inputs currently default to 0; tests that expect blank initial bounds should be treated as PRD/live-UI drift until PM confirms expected behavior.",
+        "The first sub-tag remove button is disabled in the initial state.",
+        "Successful save creates data and is not a pure smoke action unless a temporary fixture policy is declared."
+      ]
+    },
+    {
+      "id": "tagDatePanel",
+      "displayName": "分析時段日期面板",
+      "route": "embedded in tag create and tag info pages",
+      "pageObjectId": "tagCreate",
+      "purpose": "Select dynamic/static date ranges for condition tag analysis or tag info reading.",
+      "visibleSignals": [
+        "opened from 分析時段 value such as 過去 7 天",
+        "section label 日期範圍",
+        "dynamic day inputs display 天前 suffix",
+        "footer buttons 取消 and 確定"
+      ],
+      "quickOptions": [
+        "昨日",
+        "今日",
+        "上週",
+        "本週",
+        "上月",
+        "本月",
+        "過去 7 天",
+        "最近 7 天",
+        "過去 30 天",
+        "最近 30 天"
+      ],
+      "primaryObjects": [
+        "dateRange.panel",
+        "dateRange.quickPreset",
+        "dateRange.customRange",
+        "dateRange.dynamicDayInput",
+        "dateRange.clearDynamicDaysButton"
+      ],
+      "testImplications": [
+        "Rendered date text is date-dependent; assert labels and structural state instead of hardcoding the captured 2026/06/20 to 2026/06/26 range.",
+        "90-day range validation belongs to date-panel evidence and should not be inferred from backend data."
+      ]
+    },
+    {
+      "id": "manualTagCreate",
+      "displayName": "新增人工標籤",
+      "route": "/bi-dev/zh-TW/tag/player/new?gameId=:gameId with 人工標籤 selected",
+      "pageObjectId": "tagCreate",
+      "purpose": "Create manual tags by uploading CSV files.",
+      "visibleSignals": [
+        "fields 標籤名稱, 備註, 上傳文件",
+        "condition fields are hidden after selecting 人工標籤",
+        "file guidance mentions 檔案範例檔.csv and only csv files",
+        "limit text 每個檔案限 10,000 筆資料，每次設置至多 5 個檔案",
+        "選擇檔案 button",
+        "hidden native file input accept .csv and multiple true"
+      ],
+      "primaryObjects": [
+        "tagForm.tagName",
+        "tagForm.tagType",
+        "tagForm.note",
+        "manualTag.uploadPanel",
+        "manualTag.addFileButton",
+        "manualTag.fileInput",
+        "manualTag.exampleFileLink",
+        "manualTag.uploadTooltip"
+      ],
+      "exampleFile": {
+        "createModeHref": "https://galaxy-media.s3.ap-northeast-1.amazonaws.com/media/bi/userTag/create_user_tag.csv",
+        "tooltipColumns": [
+          "標籤值名稱",
+          "銀河帳號ID ( userobjectid )",
+          "操作"
+        ],
+        "createOperationRule": "新增標籤時操作僅可輸入 add"
+      },
+      "testImplications": [
+        "Upload validation cases need controlled CSV fixtures; screenshots or filename text alone are insufficient.",
+        "The current live create tooltip still names 操作 even though older PRD drafts may describe add-mode as two-column CSV."
+      ]
+    },
+    {
+      "id": "conditionTagInfo",
+      "displayName": "條件標籤資訊與每日資訊",
+      "route": "/bi-dev/zh-TW/tag/player/:tagId?gameId=:gameId",
+      "pageObjectId": "tagInfo",
+      "purpose": "Read condition tag basic settings, latest tag value counts, trend/daily areas, value filter, and condition settings link.",
+      "visibleSignals": [
+        "title group 標籤資訊與每日資訊",
+        "sections 標籤基本設置 and 最新標籤值資訊",
+        "button 查看設置",
+        "metric 總被標籤人數",
+        "controls 顯示數值 and 標籤值 (N/N)",
+        "empty states 尚無趨勢資料 and 尚無每日資料 when no daily data exists"
+      ],
+      "primaryObjects": [
+        "tagInfo.basicSettings",
+        "tagInfo.latestValueSummary",
+        "tagInfo.valueFilter",
+        "tagInfo.showValueSwitch",
+        "tagInfo.trendChart",
+        "tagInfo.dailyTable",
+        "tagInfo.emptyTrendState",
+        "tagInfo.emptyDailyState",
+        "tagInfo.downloadButton"
+      ],
+      "settingsRoute": "/bi-dev/zh-TW/tag/player/:tagId/settings?gameId=:gameId",
+      "readonlySettingsSignals": [
+        "page title 查看設置",
+        "fields 標籤名稱, 條件類別, 遊戲時間單位 when applicable, 篩選類型, 分析時段, 排程狀態, 資料最後更新時間, 備註",
+        "section 子標籤級距"
+      ],
+      "testImplications": [
+        "No-data trend/daily states are valid UI states and should not become product bugs by themselves.",
+        "Read-only settings must not be used to infer mutable create/edit locators."
+      ]
+    },
+    {
+      "id": "manualTagInfoAndEdit",
+      "displayName": "人工標籤資訊與編輯",
+      "route": "/bi-dev/zh-TW/tag/player/:tagId?gameId=:gameId and /edit",
+      "pageObjectId": "tagInfo",
+      "purpose": "Read manual tag basic settings, member list, tag value filter, and edit-form upload guidance without mutating data.",
+      "visibleSignals": [
+        "title group 標籤資訊與名單列表",
+        "button 編輯設置",
+        "metric 總授權帳號人數",
+        "member table headers #, 標籤值, 銀河帳號ID, 被貼標/異動時間(GMT+08:00)",
+        "page-size options 20筆/頁, 50筆/頁, 100筆/頁"
+      ],
+      "primaryObjects": [
+        "tagInfo.basicSettings",
+        "tagInfo.latestValueSummary",
+        "tagInfo.valueFilter",
+        "manualTag.memberTable",
+        "manualTag.editForm",
+        "manualTag.exampleFileLink",
+        "manualTag.uploadTooltip"
+      ],
+      "editMode": {
+        "route": "/bi-dev/zh-TW/tag/player/:tagId/edit?gameId=:gameId",
+        "visibleSignals": [
+          "page title 編輯標籤",
+          "prefilled 標籤名稱 and 備註 inputs",
+          "clear input buttons 清除輸入",
+          "edit-only text 於編輯標籤時，僅需上傳異動(新增/更新/刪除)的名單",
+          "hidden native file input accept .csv and multiple true"
+        ],
+        "exampleFileHref": "https://galaxy-media.s3.ap-northeast-1.amazonaws.com/media/bi/userTag/update_user_tag.csv"
+      },
+      "testImplications": [
+        "Manual edit read-only observation is safe; clicking 儲存 mutates data and requires a declared editable fixture.",
+        "Table page-size DOM value can differ from visible default text; record both when judging pagination."
+      ]
+    },
+    {
+      "id": "tagVariableSettings",
+      "displayName": "標籤變數設定",
+      "route": "/bi-dev/zh-TW/tag/settings?gameId=:gameId",
+      "pageObjectId": "tagVariableSettings",
+      "purpose": "Read and validate tag variable controls and setting history.",
+      "visibleSignals": [
+        "page title 標籤變數設定",
+        "sections ID 狀態, 玩家生命週期, 備註, 設置紀錄",
+        "numeric controls N, Z, Y, X, A, B with increase/decrease steppers",
+        "validation help text X > Y, A ≥ B, Z ≥ 0, others ≥ 1 and integer",
+        "history headers 設置時間, N, Z, Y, X, A, B, 備註, 操作人",
+        "page-size options 10筆/頁, 20筆/頁, 50筆/頁"
+      ],
+      "currentCapturedValues": {
+        "N": "5",
+        "Z": "5",
+        "Y": "4",
+        "X": "6",
+        "A": "9",
+        "B": "4",
+        "note": "Codex revert X after invalid validation smoke"
+      },
+      "primaryObjects": [
+        "tagVariables.form",
+        "tagVariables.history",
+        "tagVariables.saveButton",
+        "tagVariables.validationHelpText",
+        "tagVariables.note"
+      ],
+      "testImplications": [
+        "Saving variables affects future tag calculations and must be behind explicit approval or a sandbox policy.",
+        "Current values are environment state, not product requirements."
+      ]
+    }
+  ],
+  "fixtureCandidates": [
+    {
+      "id": "candidate.ongoingCondition.dynamicGameDays",
+      "stability": "opportunistic_dev_row",
+      "name": "累積遊戲01_天",
+      "tagType": "條件標籤",
+      "conditionCategory": "累積遊戲時間",
+      "filterType": "動態時間區間",
+      "scheduleStatus": "進行中",
+      "safeUses": [
+        "read list row",
+        "open row action menu",
+        "read tag info/settings"
+      ],
+      "unsafeUsesWithoutApproval": [
+        "終止",
+        "刪除",
+        "複製 then save"
+      ]
+    },
+    {
+      "id": "candidate.endedCondition.dynamicGameDays",
+      "stability": "opportunistic_dev_row",
+      "name": "累積遊戲時間01_天_max",
+      "tagType": "條件標籤",
+      "conditionCategory": "累積遊戲時間",
+      "filterType": "動態時間區間",
+      "scheduleStatus": "已結束",
+      "safeUses": [
+        "verify ended menu excludes 終止",
+        "read condition tag info",
+        "read readonly settings"
+      ],
+      "unsafeUsesWithoutApproval": [
+        "刪除",
+        "複製 then save"
+      ]
+    },
+    {
+      "id": "candidate.manualTag.233",
+      "stability": "opportunistic_dev_row",
+      "name": "233",
+      "tagType": "人工標籤",
+      "knownValues": [
+        "一般",
+        "VIP"
+      ],
+      "knownMemberCount": 3,
+      "safeUses": [
+        "read manual tag info",
+        "read member table",
+        "observe edit form without saving"
+      ],
+      "unsafeUsesWithoutApproval": [
+        "submit edit form",
+        "delete",
+        "copy then save"
+      ]
+    },
+    {
+      "id": "candidate.manualTag.page2",
+      "stability": "opportunistic_dev_row",
+      "names": [
+        "人工01",
+        "人工02",
+        "ㄔㄔ"
+      ],
+      "safeUses": [
+        "pagination fixture candidate",
+        "manual row discovery"
+      ],
+      "unsafeUsesWithoutApproval": [
+        "edit save",
+        "delete"
+      ]
+    }
+  ],
+  "classificationGuidance": [
+    {
+      "situation": "Current dev list row count or row names differ from this dictionary.",
+      "classification": "environment/data issue unless testcase declared a stable fixture and that fixture is missing."
+    },
+    {
+      "situation": "A case depends on empty list but current dev has rows.",
+      "classification": "BLOCKED_FIXTURE_MISSING_EMPTY_LIST_ENVIRONMENT"
+    },
+    {
+      "situation": "A case expects condition bound inputs to be blank but live UI defaults to 0.",
+      "classification": "domain pack/spec drift or testcase expectation gap until PM confirms product requirement."
+    },
+    {
+      "situation": "Manual upload CSV guidance differs between PRD draft and live tooltip.",
+      "classification": "domain pack/contract gap first; product bug only after current PRD oracle is confirmed."
+    },
+    {
+      "situation": "No chart or no daily table data appears on condition tag info with zero tagged users.",
+      "classification": "not a product bug by itself; record empty-state evidence."
+    }
+  ]
+}

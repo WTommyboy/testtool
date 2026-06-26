@@ -2,7 +2,7 @@
   "schemaVersion": "domain-action-contract-v0.1",
   "domain": "TAG_TOOL",
   "action": "createConditionTag",
-  "status": "draft_contract",
+  "status": "draft_contract_live_augmented_2026-06-27",
   "purpose": "Shared condition-tag creation form, date-panel, and tag-value editor flows.",
   "capabilities": [
     "tag.condition.typeSwitch",
@@ -20,6 +20,25 @@
       "Keep static/dynamic analysis periods within the PRD 90-day limit.",
       "Record the exact selected range in detail_json for date-dependent cases.",
       "Use run-package/testcase instructions for environment-specific data availability."
+    ]
+  },
+  "observedLiveDefaults": {
+    "source": "discovery/live-inventory-2026-06-27-dev-ui.md",
+    "tagType": "條件標籤",
+    "conditionCategory": "消費級距 R",
+    "filterType": "動態時間區間",
+    "analysisPeriod": "過去 7 天",
+    "subTagRows": 1,
+    "lowerOperator": "≥",
+    "upperOperator": "≤",
+    "lowerInputValue": "0",
+    "upperInputValue": "0",
+    "firstRowRemoveButton": "disabled",
+    "guidanceText": [
+      "標籤值至多 10 個",
+      "級距請由大到小排列（第一列為最高區間）",
+      "相鄰級距的數值須連貫，不可有空隙或重疊",
+      "每個子標籤至少需設定下限或上限其中之一"
     ]
   },
   "paramsSchema": {
