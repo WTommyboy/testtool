@@ -237,6 +237,170 @@
       ]
     },
     {
+      "id": "tagList.rowActionItem.delete",
+      "page": "tagPlayerList",
+      "component": "tagList.rowActions",
+      "objectType": "menuItem",
+      "aliases": [
+        "刪除",
+        "delete tag"
+      ],
+      "supportedActions": [
+        "click",
+        "assertVisible"
+      ],
+      "stateAttributes": [
+        "visible",
+        "innerText",
+        "enabled"
+      ],
+      "evidenceObjects": [
+        "tagList.rowActionMenu.state",
+        "dangerousModal.state",
+        "interactionLog"
+      ],
+      "locatorHints": [
+        "menu item 刪除 inside condition or manual tag row 更多操作 menu"
+      ],
+      "hazards": [
+        "Confirming delete is irreversible; ordinary smoke should open the modal and cancel unless explicit approval exists."
+      ]
+    },
+    {
+      "id": "tagList.rowActionItem.terminate",
+      "page": "tagPlayerList",
+      "component": "tagList.rowActions",
+      "objectType": "menuItem",
+      "aliases": [
+        "終止",
+        "terminate schedule"
+      ],
+      "supportedActions": [
+        "click",
+        "assertVisible"
+      ],
+      "stateAttributes": [
+        "visible",
+        "innerText",
+        "enabled"
+      ],
+      "evidenceObjects": [
+        "tagList.rowActionMenu.state",
+        "dangerousModal.state",
+        "interactionLog"
+      ],
+      "locatorHints": [
+        "menu item 終止 inside ongoing condition tag row 更多操作 menu"
+      ],
+      "hazards": [
+        "Ended condition tags should not expose 終止.",
+        "Confirming terminate changes schedule state and requires approval."
+      ]
+    },
+    {
+      "id": "tagList.rowActionItem.copy",
+      "page": "tagPlayerList",
+      "component": "tagList.rowActions",
+      "objectType": "menuItem",
+      "aliases": [
+        "複製",
+        "copy tag"
+      ],
+      "supportedActions": [
+        "click",
+        "assertVisible"
+      ],
+      "stateAttributes": [
+        "visible",
+        "innerText",
+        "enabled"
+      ],
+      "evidenceObjects": [
+        "tagList.rowActionMenu.state",
+        "navigation.state",
+        "interactionLog"
+      ],
+      "locatorHints": [
+        "menu item 複製 inside condition or manual tag row 更多操作 menu"
+      ],
+      "hazards": [
+        "Copy should navigate to create flow and must not create a tag until save is explicitly clicked."
+      ]
+    },
+    {
+      "id": "tagList.rowNameLink",
+      "page": "tagPlayerList",
+      "component": "tagList.table",
+      "objectType": "link",
+      "aliases": [
+        "標籤名稱",
+        "tag name link",
+        "不可點擊標籤名稱"
+      ],
+      "supportedActions": [
+        "click",
+        "read",
+        "assertVisible",
+        "assertDisabled"
+      ],
+      "stateAttributes": [
+        "tagName",
+        "linkEnabled",
+        "href",
+        "cursor",
+        "role"
+      ],
+      "evidenceObjects": [
+        "tagList.rowLink.state",
+        "navigation.state"
+      ],
+      "locatorHints": [
+        "tag name cell in player tag list row",
+        "report-period condition tags may render as non-link text"
+      ],
+      "hazards": [
+        "Do not force-click non-link tag names with evaluate; read link state instead."
+      ]
+    },
+    {
+      "id": "tagList.pagination",
+      "page": "tagPlayerList",
+      "component": "tagList.table",
+      "objectType": "pagination",
+      "aliases": [
+        "共 N 筆資料",
+        "20筆/頁",
+        "50筆/頁",
+        "100筆/頁",
+        "下一頁",
+        "上一頁"
+      ],
+      "supportedActions": [
+        "read",
+        "click",
+        "select",
+        "assertVisible"
+      ],
+      "stateAttributes": [
+        "totalRowsText",
+        "currentPage",
+        "pageSize",
+        "pageSizeOptions",
+        "nextEnabled",
+        "previousEnabled"
+      ],
+      "evidenceObjects": [
+        "tagList.pagination.state",
+        "interactionLog"
+      ],
+      "locatorHints": [
+        "pagination controls below 玩家標籤管理 table"
+      ],
+      "hazards": [
+        "Pagination state depends on current fixture population."
+      ]
+    },
+    {
       "id": "tagForm.tagName",
       "page": "tagCreate",
       "component": "tagForm.basicFields",
@@ -296,6 +460,71 @@
       ],
       "hazards": [
         "Selecting 人工標籤 must hide condition/time/analysis fields instead of showing disabled placeholders."
+      ]
+    },
+    {
+      "id": "tagForm.note",
+      "page": "tagCreate",
+      "component": "tagForm.basicFields",
+      "objectType": "textarea",
+      "aliases": [
+        "備註",
+        "note"
+      ],
+      "supportedActions": [
+        "type",
+        "read",
+        "assertVisible",
+        "assertValue"
+      ],
+      "stateAttributes": [
+        "value",
+        "placeholder",
+        "maxLength",
+        "validationText"
+      ],
+      "evidenceObjects": [
+        "tagForm.validation.state",
+        "interactionLog"
+      ],
+      "locatorHints": [
+        "textarea or input associated with label 備註 on create/edit tag form"
+      ],
+      "hazards": [
+        "PRD limit is 200 characters; testcase should supply boundary values."
+      ]
+    },
+    {
+      "id": "tagForm.submitButton",
+      "page": "tagCreate",
+      "component": "tagForm.footer",
+      "objectType": "button",
+      "aliases": [
+        "儲存",
+        "確定新增",
+        "save tag"
+      ],
+      "supportedActions": [
+        "click",
+        "assertVisible",
+        "assertDisabled",
+        "assertEnabled"
+      ],
+      "stateAttributes": [
+        "visible",
+        "disabled",
+        "innerText"
+      ],
+      "evidenceObjects": [
+        "toast.message.state",
+        "tagForm.validation.state",
+        "interactionLog"
+      ],
+      "locatorHints": [
+        "primary footer button on 新增標籤 / 編輯標籤 form"
+      ],
+      "hazards": [
+        "Successful save creates or mutates data; only validation/no-request cases can click without approval/resource ownership."
       ]
     },
     {
@@ -401,6 +630,7 @@
         "upperOperatorOptions"
       ],
       "evidenceObjects": [
+        "conditionTag.boundOperator.state",
         "conditionTag.valueEditor.state",
         "interactionLog"
       ],
@@ -456,6 +686,71 @@
       "hazards": [
         "PRD requires initial state to be empty; current dev UI pre-populates one grade row.",
         "Each tag value can have at most two condition rows."
+      ]
+    },
+    {
+      "id": "conditionTag.subTagName",
+      "page": "tagCreate",
+      "component": "conditionTag.valueEditor",
+      "objectType": "input",
+      "aliases": [
+        "子標籤名稱",
+        "標籤值名稱",
+        "sub tag name"
+      ],
+      "supportedActions": [
+        "type",
+        "read",
+        "assertVisible",
+        "assertValue"
+      ],
+      "stateAttributes": [
+        "value",
+        "placeholder",
+        "validationText"
+      ],
+      "evidenceObjects": [
+        "conditionTag.valueEditor.state",
+        "tagForm.validation.state"
+      ],
+      "locatorHints": [
+        "input in 子標籤級距 row near label 子標籤名稱"
+      ],
+      "hazards": [
+        "Name validation belongs to form validation, not backend data correctness."
+      ]
+    },
+    {
+      "id": "conditionTag.boundInput",
+      "page": "tagCreate",
+      "component": "conditionTag.valueEditor",
+      "objectType": "input",
+      "aliases": [
+        "下限",
+        "上限",
+        "級距數值",
+        "bound input"
+      ],
+      "supportedActions": [
+        "type",
+        "read",
+        "assertVisible",
+        "assertValue"
+      ],
+      "stateAttributes": [
+        "lowerValue",
+        "upperValue",
+        "validationText"
+      ],
+      "evidenceObjects": [
+        "conditionTag.valueEditor.state",
+        "tagForm.validation.state"
+      ],
+      "locatorHints": [
+        "numeric inputs in 子標籤級距 row under 下限 and 上限 columns"
+      ],
+      "hazards": [
+        "Numeric validation should verify no save request was sent when client blocks invalid value."
       ]
     },
     {
@@ -536,6 +831,211 @@
         "Dynamic and static modes share similar UI but different input semantics.",
         "Date range cannot exceed 90 days.",
         "2026-06-23 capture observed Escape did not close this panel; click panel 取消 to close safely."
+      ]
+    },
+    {
+      "id": "dateRange.quickPreset",
+      "page": "tagCreate",
+      "component": "dateRange.panel",
+      "objectType": "button",
+      "aliases": [
+        "昨日",
+        "今日",
+        "上週",
+        "本週",
+        "上月",
+        "本月",
+        "過去 7 天",
+        "最近 7 天",
+        "過去 30 天",
+        "最近 30 天"
+      ],
+      "supportedActions": [
+        "click",
+        "assertVisible",
+        "assertText"
+      ],
+      "stateAttributes": [
+        "presetLabel",
+        "selected",
+        "dateRangeText"
+      ],
+      "evidenceObjects": [
+        "dateRange.panel.state",
+        "interactionLog"
+      ],
+      "locatorHints": [
+        "quick preset buttons inside dateRange.panel"
+      ],
+      "hazards": [
+        "Dynamic and static mode labels may share text; record active mode before judging preset behavior."
+      ]
+    },
+    {
+      "id": "dateRange.customRange",
+      "page": "tagCreate",
+      "component": "dateRange.panel",
+      "objectType": "dateRangeInput",
+      "aliases": [
+        "自訂日期",
+        "日期範圍",
+        "開始日期",
+        "結束日期",
+        "custom range"
+      ],
+      "supportedActions": [
+        "type",
+        "click",
+        "read",
+        "assertVisible",
+        "assertValue"
+      ],
+      "stateAttributes": [
+        "startDate",
+        "endDate",
+        "activeMode",
+        "validationText"
+      ],
+      "evidenceObjects": [
+        "dateRange.panel.state",
+        "toast.message.state",
+        "interactionLog"
+      ],
+      "locatorHints": [
+        "start/end date inputs inside dateRange.panel",
+        "static mode calendar range selection inside dateRange.panel"
+      ],
+      "hazards": [
+        "Date range over 90 days should be blocked before save/preview and recorded as validation evidence."
+      ]
+    },
+    {
+      "id": "manualTag.addFileButton",
+      "page": "tagCreate",
+      "component": "manualTag.uploadPanel",
+      "objectType": "button",
+      "aliases": [
+        "新增檔案",
+        "選擇檔案",
+        "add file"
+      ],
+      "supportedActions": [
+        "click",
+        "assertVisible",
+        "assertDisabled",
+        "assertEnabled"
+      ],
+      "stateAttributes": [
+        "visible",
+        "disabled",
+        "innerText"
+      ],
+      "evidenceObjects": [
+        "manualUpload.fileInput.state",
+        "interactionLog"
+      ],
+      "locatorHints": [
+        "button in manualTag.uploadPanel used to trigger CSV file selection"
+      ],
+      "hazards": [
+        "Do not use OS dialog for observation-only cases; read native file input state instead."
+      ]
+    },
+    {
+      "id": "manualTag.fileInput",
+      "page": "tagCreate",
+      "component": "manualTag.uploadPanel",
+      "objectType": "fileInput",
+      "aliases": [
+        "input[type=file]",
+        "選擇檔案",
+        "file chooser"
+      ],
+      "supportedActions": [
+        "read",
+        "uploadFile",
+        "assertVisible"
+      ],
+      "stateAttributes": [
+        "accept",
+        "multiple",
+        "disabled"
+      ],
+      "evidenceObjects": [
+        "manualUpload.fileInput.state",
+        "fixtureRef.state",
+        "interactionLog"
+      ],
+      "locatorHints": [
+        "native file input inside manualTag.uploadPanel"
+      ],
+      "hazards": [
+        "Native file chooser accept state should be read from DOM attributes; do not open OS dialog for observation-only cases."
+      ]
+    },
+    {
+      "id": "manualTag.fileChip",
+      "page": "tagCreate",
+      "component": "manualTag.uploadPanel",
+      "objectType": "chipList",
+      "aliases": [
+        "已選檔案",
+        "檔案 chip",
+        "移除檔案"
+      ],
+      "supportedActions": [
+        "read",
+        "click",
+        "removeFile",
+        "assertVisible"
+      ],
+      "stateAttributes": [
+        "fileNames",
+        "removeButtons",
+        "fileCount"
+      ],
+      "evidenceObjects": [
+        "manualUpload.file.state",
+        "interactionLog"
+      ],
+      "locatorHints": [
+        "selected uploaded file chips under manual upload panel"
+      ],
+      "hazards": [
+        "Removing a file chip is not a product delete, but Tool Bridge may still ask for confirmation; record the response when it happens."
+      ]
+    },
+    {
+      "id": "manualTag.fileChip.removeButton",
+      "page": "tagCreate",
+      "component": "manualTag.uploadPanel",
+      "objectType": "button",
+      "aliases": [
+        "移除檔案",
+        "取消檔案",
+        "remove selected file"
+      ],
+      "supportedActions": [
+        "click",
+        "assertVisible",
+        "assertDisabled",
+        "assertEnabled"
+      ],
+      "stateAttributes": [
+        "visible",
+        "disabled",
+        "fileName",
+        "innerText"
+      ],
+      "evidenceObjects": [
+        "manualUpload.file.state",
+        "interactionLog"
+      ],
+      "locatorHints": [
+        "remove icon/button inside selected file chip under manualTag.uploadPanel"
+      ],
+      "hazards": [
+        "This only removes a selected local file from the form; it is not deleting an existing tag."
       ]
     },
     {
@@ -727,6 +1227,110 @@
       ]
     },
     {
+      "id": "tagInfo.dailyTable",
+      "page": "tagInfo",
+      "component": "tagInfo.dailyTable",
+      "objectType": "table",
+      "aliases": [
+        "每日資訊",
+        "每日數據",
+        "標籤值每日資料",
+        "condition tag daily table"
+      ],
+      "supportedActions": [
+        "read",
+        "click",
+        "assertVisible",
+        "assertText",
+        "paginate",
+        "selectPageSize"
+      ],
+      "stateAttributes": [
+        "headers",
+        "rows",
+        "tagValueColumns",
+        "pagination",
+        "showValueToggleState"
+      ],
+      "evidenceObjects": [
+        "tagInfo.memberTable.state",
+        "tagInfo.valueFilter.state"
+      ],
+      "locatorHints": [
+        "condition tag information page table below latest value and chart area",
+        "cells may be clickable to drill into member list"
+      ],
+      "hazards": [
+        "Daily table is condition-tag specific; manual tags use manualTag.memberTable."
+      ]
+    },
+    {
+      "id": "tagInfo.trendChart",
+      "page": "tagInfo",
+      "component": "tagInfo.trendChart",
+      "objectType": "chart",
+      "aliases": [
+        "折線圖",
+        "圖例",
+        "顯示數值",
+        "trend chart"
+      ],
+      "supportedActions": [
+        "read",
+        "click",
+        "assertVisible",
+        "assertText"
+      ],
+      "stateAttributes": [
+        "series",
+        "legendLabels",
+        "showValueToggleState",
+        "pointLabels"
+      ],
+      "evidenceObjects": [
+        "tagInfo.latestValueSummary.state",
+        "tagInfo.valueFilter.state",
+        "screenshot"
+      ],
+      "locatorHints": [
+        "condition tag information chart area with one line per tag value"
+      ],
+      "hazards": [
+        "Chart canvas evidence should be paired with DOM/legend text where possible."
+      ]
+    },
+    {
+      "id": "tagInfo.downloadButton",
+      "page": "tagInfo",
+      "component": "tagInfo.toolbar",
+      "objectType": "button",
+      "aliases": [
+        "下載",
+        "Excel 下載",
+        "download"
+      ],
+      "supportedActions": [
+        "click",
+        "download",
+        "assertVisible"
+      ],
+      "stateAttributes": [
+        "visible",
+        "disabled",
+        "downloadStarted"
+      ],
+      "evidenceObjects": [
+        "interactionLog",
+        "toast.message.state"
+      ],
+      "locatorHints": [
+        "download icon/button in tag information page toolbar"
+      ],
+      "hazards": [
+        "Download validation should inspect downloaded file only after visible UI triggered it."
+      ]
+    },
+    {
       "id": "manualTag.editForm",
       "page": "manualTagEdit",
       "component": "manualTag.editForm",
@@ -804,6 +1408,39 @@
       ],
       "hazards": [
         "Saving changes affects future calculations and requires approval outside ordinary smoke."
+      ]
+    },
+    {
+      "id": "tagVariables.history",
+      "page": "tagVariableSettings",
+      "component": "tagVariables.history",
+      "objectType": "table",
+      "aliases": [
+        "設置紀錄",
+        "最新在最上",
+        "history table"
+      ],
+      "supportedActions": [
+        "read",
+        "assertVisible",
+        "assertText",
+        "paginate"
+      ],
+      "stateAttributes": [
+        "headers",
+        "rows",
+        "latestRow",
+        "timeFormat",
+        "pagination"
+      ],
+      "evidenceObjects": [
+        "tagVariables.history.state"
+      ],
+      "locatorHints": [
+        "設置紀錄 table below tag variable settings form"
+      ],
+      "hazards": [
+        "Save-flow cases must compare latest row before/after only in a safe sandbox."
       ]
     },
     {

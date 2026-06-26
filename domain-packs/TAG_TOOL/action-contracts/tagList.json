@@ -7,7 +7,10 @@
   "capabilities": [
     "tag.list.columns",
     "tag.list.emptyState",
+    "tag.list.pagination",
+    "tag.list.rowNavigation",
     "tag.list.rowActionsByTypeAndSchedule",
+    "tag.list.rowActionNavigation",
     "tag.list.deleteCancel"
   ],
   "observedLiveState": {
@@ -52,6 +55,8 @@
           "observeEmptyState",
           "observePagination",
           "openRowActions",
+          "clickTagName",
+          "clickRowActionAndVerifyRoute",
           "openDeleteAndCancel"
         ]
       },
@@ -73,24 +78,25 @@
           "-",
           "—"
         ]
-      }
-    },
-    "observePagination": {
-      "declarativePlan": [
-        {
-          "op": "ensurePage",
-          "target": "tagPlayerList"
-        },
-        {
-          "op": "read",
-          "target": "tagList.table",
-          "saveAs": "tagList.table.state"
+      },
+      "filterType": {
+        "type": "string"
+      },
+      "expectedRoutePattern": {
+        "type": "string"
+      },
+      "expectedMenuItems": {
+        "type": "array",
+        "items": {
+          "type": "string"
         }
-      ],
-      "requiredEvidence": [
-        "navigation.state",
-        "tagList.table.state"
-      ]
+      },
+      "forbiddenMenuItems": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      }
     },
     "additionalProperties": true
   },
@@ -112,12 +118,53 @@
         "tagList.table.state"
       ]
     },
+    "observeEmptyState": {
+      "declarativePlan": [
+        {
+          "op": "ensurePage",
+          "target": "tagPlayerList"
+        },
+        {
+          "op": "read",
+          "target": "tagList.table",
+          "saveAs": "tagList.table.state"
+        }
+      ],
+      "requiredEvidence": [
+        "navigation.state",
+        "tagList.table.state",
+        "fixtureRef.state"
+      ]
+    },
+    "observePagination": {
+      "declarativePlan": [
+        {
+          "op": "ensurePage",
+          "target": "tagPlayerList"
+        },
+        {
+          "op": "read",
+          "target": "tagList.pagination",
+          "saveAs": "tagList.pagination.state"
+        }
+      ],
+      "requiredEvidence": [
+        "navigation.state",
+        "tagList.table.state",
+        "tagList.pagination.state"
+      ]
+    },
     "openRowActions": {
       "declarativePlan": [
         {
           "op": "findRow",
           "target": "tagList.table",
-          "labelFrom": "params.tagName"
+          "labelFrom": "params.tagName",
+          "criteriaFrom": [
+            "params.tagType",
+            "params.scheduleStatus",
+            "params.filterType"
+          ]
         },
         {
           "op": "click",
@@ -130,7 +177,59 @@
         }
       ],
       "requiredEvidence": [
+        "tagList.row.state",
         "tagList.rowActionMenu.state",
+        "interactionLog"
+      ]
+    },
+    "clickTagName": {
+      "declarativePlan": [
+        {
+          "op": "findRow",
+          "target": "tagList.table",
+          "labelFrom": "params.tagName",
+          "criteriaFrom": [
+            "params.tagType",
+            "params.filterType"
+          ]
+        },
+        {
+          "op": "click",
+          "target": "tagList.rowNameLink"
+        },
+        {
+          "op": "read",
+          "target": "navigation",
+          "saveAs": "navigation.state"
+        }
+      ],
+      "requiredEvidence": [
+        "tagList.row.state",
+        "tagList.rowLink.state",
+        "navigation.state",
+        "interactionLog"
+      ]
+    },
+    "clickRowActionAndVerifyRoute": {
+      "declarativePlan": [
+        {
+          "op": "runFlow",
+          "flow": "openRowActions"
+        },
+        {
+          "op": "click",
+          "targetFrom": "params.rowActionItem"
+        },
+        {
+          "op": "read",
+          "target": "navigation",
+          "saveAs": "navigation.state"
+        }
+      ],
+      "requiredEvidence": [
+        "tagList.row.state",
+        "tagList.rowActionMenu.state",
+        "navigation.state",
         "interactionLog"
       ]
     },
@@ -166,6 +265,8 @@
     "TAG_LIST_UNREACHABLE",
     "TAG_ROW_NOT_FOUND",
     "TAG_ROW_ACTION_MENU_MISSING",
+    "TAG_ROW_LINK_STATE_UNVERIFIED",
+    "TAG_ROW_ACTION_ROUTE_UNVERIFIED",
     "TAG_CONFIRM_MODAL_MISSING"
   ]
 }

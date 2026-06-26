@@ -206,6 +206,45 @@ const validateFixtureRequirements = (relPath: string, json: Record<string, unkno
   }
 };
 
+const validateGenericActionContract = (relPath: string, json: Record<string, unknown>, findings: Finding[]): void => {
+  if (!relPath.includes("action-contracts/") || !relPath.endsWith(".json")) return;
+  requireString(findings, relPath, json, "schemaVersion");
+  requireString(findings, relPath, json, "domain");
+  requireString(findings, relPath, json, "action");
+  const paramsSchema = requireRecord(findings, relPath, json, "paramsSchema");
+  const sharedFlows = requireRecord(findings, relPath, json, "sharedFlows");
+  if (paramsSchema) {
+    const required = stringArray(paramsSchema.required);
+    if (!required.includes("flow")) {
+      findings.push({ level: "error", message: `${relPath} paramsSchema.required must include flow` });
+    }
+    const properties = asRecord(paramsSchema.properties);
+    const flow = properties ? asRecord(properties.flow) : null;
+    const enumValues = stringArray(flow?.enum);
+    if (enumValues.length === 0) {
+      findings.push({ level: "error", message: `${relPath} paramsSchema.properties.flow.enum must be non-empty` });
+    }
+    if (sharedFlows) {
+      for (const flowId of Object.keys(sharedFlows)) {
+        if (!enumValues.includes(flowId)) {
+          findings.push({ level: "error", message: `${relPath} sharedFlows.${flowId} missing from flow enum` });
+        }
+      }
+    }
+  }
+  if (sharedFlows) {
+    for (const [flowId, value] of Object.entries(sharedFlows)) {
+      const flow = asRecord(value);
+      if (!flow) {
+        findings.push({ level: "error", message: `${relPath} sharedFlows.${flowId} must be an object` });
+        continue;
+      }
+      requireRecordArray(findings, `${relPath} sharedFlows.${flowId}`, flow, "declarativePlan");
+      requireStringArray(findings, `${relPath} sharedFlows.${flowId}`, flow, "requiredEvidence");
+    }
+  }
+};
+
 const validateLintRules = (relPath: string, json: Record<string, unknown>, findings: Finding[]): void => {
   requireString(findings, relPath, json, "schemaVersion");
   requireString(findings, relPath, json, "domain");
@@ -275,6 +314,7 @@ const validateDiscoveryVisualAlignment = (relPath: string, json: Record<string, 
 };
 
 const validateContractFile = (relPath: string, json: Record<string, unknown>, findings: Finding[]): void => {
+  validateGenericActionContract(relPath, json, findings);
   if (relPath.endsWith("ui-contract.json")) validateUiContract(relPath, json, findings);
   if (relPath.endsWith("ui-object-vocabulary.json")) validateUiObjectVocabulary(relPath, json, findings);
   if (relPath.endsWith("action-contracts/setMetricRows.json")) validateSetMetricRowsContract(relPath, json, findings);

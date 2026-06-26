@@ -8,7 +8,10 @@
     "tag.manual.addCsvFormat",
     "tag.manual.editCsvFormat",
     "tag.manual.fileLimit",
-    "tag.manual.validationToast"
+    "tag.manual.fileAccept",
+    "tag.manual.selectedFileChips",
+    "tag.manual.validationToast",
+    "tag.manual.submitValidation"
   ],
   "observedLiveGuidance": {
     "source": "discovery/live-inventory-2026-06-23-dev-ui.md",
@@ -40,6 +43,10 @@
           "uploadNonexistentAccountCsv",
           "uploadOverLimitCsv",
           "uploadInvalidTypeFile",
+          "observeFileAccept",
+          "uploadMultipleFiles",
+          "removeSelectedFile",
+          "submitWithoutFile",
           "observeEditGuidance",
           "uploadEditCsv"
         ]
@@ -52,6 +59,18 @@
         "enum": [
           "add",
           "edit"
+        ]
+      },
+      "fixtureKind": {
+        "type": "string",
+        "enum": [
+          "validAddCsv",
+          "invalidAddCsv",
+          "validEditCsv",
+          "duplicateConflictCsv",
+          "nonexistentAccountCsv",
+          "textFile",
+          "overLimitCsv"
         ]
       }
     },
@@ -78,7 +97,26 @@
       ],
       "requiredEvidence": [
         "tagForm.typeVisibility.state",
-        "manualUpload.file.state"
+        "manualUpload.file.state",
+        "manualUpload.fileInput.state"
+      ]
+    },
+    "observeFileAccept": {
+      "declarativePlan": [
+        {
+          "op": "select",
+          "target": "tagForm.tagType",
+          "value": "人工標籤"
+        },
+        {
+          "op": "read",
+          "target": "manualTag.fileInput",
+          "saveAs": "manualUpload.fileInput.state"
+        }
+      ],
+      "requiredEvidence": [
+        "manualUpload.fileInput.state",
+        "interactionLog"
       ]
     },
     "observeEditGuidance": {
@@ -122,6 +160,7 @@
         }
       ],
       "requiredEvidence": [
+        "fixtureRef.state",
         "manualUpload.file.state",
         "interactionLog"
       ]
@@ -132,6 +171,141 @@
           "op": "uploadFile",
           "target": "manualTag.uploadPanel",
           "valueFrom": "params.fixturePath"
+        },
+        {
+          "op": "read",
+          "target": "toast.message",
+          "saveAs": "manualUpload.validation.state"
+        }
+      ],
+      "requiredEvidence": [
+        "fixtureRef.state",
+        "manualUpload.file.state",
+        "manualUpload.validation.state",
+        "interactionLog"
+      ]
+    },
+    "uploadDuplicateConflictCsv": {
+      "declarativePlan": [
+        {
+          "op": "uploadFile",
+          "target": "manualTag.uploadPanel",
+          "fixtureKind": "duplicateConflictCsv"
+        },
+        {
+          "op": "read",
+          "target": "toast.message",
+          "saveAs": "manualUpload.validation.state"
+        }
+      ],
+      "requiredEvidence": [
+        "fixtureRef.state",
+        "manualUpload.file.state",
+        "manualUpload.validation.state",
+        "interactionLog"
+      ]
+    },
+    "uploadNonexistentAccountCsv": {
+      "declarativePlan": [
+        {
+          "op": "uploadFile",
+          "target": "manualTag.uploadPanel",
+          "fixtureKind": "nonexistentAccountCsv"
+        },
+        {
+          "op": "read",
+          "target": "toast.message",
+          "saveAs": "manualUpload.validation.state"
+        }
+      ],
+      "requiredEvidence": [
+        "fixtureRef.state",
+        "manualUpload.file.state",
+        "manualUpload.validation.state",
+        "interactionLog"
+      ]
+    },
+    "uploadOverLimitCsv": {
+      "declarativePlan": [
+        {
+          "op": "uploadFile",
+          "target": "manualTag.uploadPanel",
+          "fixtureKind": "overLimitCsv"
+        },
+        {
+          "op": "read",
+          "target": "toast.message",
+          "saveAs": "manualUpload.validation.state"
+        }
+      ],
+      "requiredEvidence": [
+        "fixtureRef.state",
+        "manualUpload.file.state",
+        "manualUpload.validation.state",
+        "interactionLog"
+      ]
+    },
+    "uploadInvalidTypeFile": {
+      "declarativePlan": [
+        {
+          "op": "uploadFile",
+          "target": "manualTag.uploadPanel",
+          "fixtureKind": "textFile"
+        },
+        {
+          "op": "read",
+          "target": "toast.message",
+          "saveAs": "manualUpload.validation.state"
+        }
+      ],
+      "requiredEvidence": [
+        "fixtureRef.state",
+        "manualUpload.fileInput.state",
+        "manualUpload.validation.state",
+        "interactionLog"
+      ]
+    },
+    "uploadMultipleFiles": {
+      "declarativePlan": [
+        {
+          "op": "uploadFile",
+          "target": "manualTag.uploadPanel",
+          "valueFrom": "params.fixturePaths"
+        },
+        {
+          "op": "read",
+          "target": "manualTag.fileChip",
+          "saveAs": "manualUpload.file.state"
+        }
+      ],
+      "requiredEvidence": [
+        "fixtureRef.state",
+        "manualUpload.file.state",
+        "interactionLog"
+      ]
+    },
+    "removeSelectedFile": {
+      "declarativePlan": [
+        {
+          "op": "click",
+          "target": "manualTag.fileChip.removeButton"
+        },
+        {
+          "op": "read",
+          "target": "manualTag.fileChip",
+          "saveAs": "manualUpload.file.state"
+        }
+      ],
+      "requiredEvidence": [
+        "manualUpload.file.state",
+        "interactionLog"
+      ]
+    },
+    "submitWithoutFile": {
+      "declarativePlan": [
+        {
+          "op": "click",
+          "target": "tagForm.submitButton"
         },
         {
           "op": "read",
@@ -158,6 +332,8 @@
   "blockerCodes": [
     "MANUAL_UPLOAD_PANEL_MISSING",
     "FILE_CHOOSER_UNAVAILABLE",
-    "CSV_VALIDATION_TOAST_MISSING"
+    "CSV_VALIDATION_TOAST_MISSING",
+    "MANUAL_UPLOAD_FILE_ACCEPT_UNVERIFIED",
+    "MANUAL_UPLOAD_FILE_CHIP_STATE_UNVERIFIED"
   ]
 }

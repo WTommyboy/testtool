@@ -6,40 +6,20 @@
   "purpose": "Shared condition-tag creation form, date-panel, and tag-value editor flows.",
   "capabilities": [
     "tag.condition.typeSwitch",
+    "tag.condition.categoryOptions",
+    "tag.condition.filterTypeOptions",
     "tag.condition.datePanel",
     "tag.condition.valueEditor",
-    "tag.condition.validationToast"
+    "tag.condition.boundOperatorOptions",
+    "tag.condition.validationToast",
+    "tag.condition.saveValidation"
   ],
-  "testDataWindows": {
-    "source": "Tommy-provided dev data availability for gameId=541",
-    "yearAssumption": "2026 unless the run package explicitly overrides it",
-    "conditionTypeWindows": {
-      "累積遊戲時間": {
-        "alias": "遊玩",
-        "recommendedRange": {
-          "start": "2026-03-04",
-          "end": "2026-03-31"
-        }
-      },
-      "累積登入天數": {
-        "recommendedFrom": "2026-06-01",
-        "note": "Use June 2026 onward."
-      },
-      "消費級距 R": {
-        "alias": "累積金額",
-        "knownOrderMonths": [
-          "2026-01",
-          "2026-03"
-        ]
-      },
-      "累積未登入天數": {
-        "recommendedFrom": "2026-06-01",
-        "note": "Use June 2026 onward."
-      }
-    },
+  "analysisPeriodRules": {
+    "source": "PRD v1.3.4",
     "constraints": [
       "Keep static/dynamic analysis periods within the PRD 90-day limit.",
-      "Record the exact selected range in detail_json for date-dependent cases."
+      "Record the exact selected range in detail_json for date-dependent cases.",
+      "Use run-package/testcase instructions for environment-specific data availability."
     ]
   },
   "paramsSchema": {
@@ -53,8 +33,19 @@
         "enum": [
           "observeInitialCreateState",
           "selectConditionType",
+          "observeConditionCategoryOptions",
+          "observeFilterTypeOptions",
+          "selectFilterTypeAndObserveAnalysisPeriod",
           "openDatePanel",
+          "applyDatePreset",
+          "verifyDateRangeLimit",
           "addTagValue",
+          "addTagValuesToLimit",
+          "observeBoundOperatorOptions",
+          "submitInvalidTagName",
+          "submitInvalidSubTagName",
+          "submitInvalidConditionValue",
+          "submitLongNoteValidation",
           "submitIncompleteAndObserveToast"
         ]
       },
@@ -81,6 +72,15 @@
       },
       "analysisPeriodLabel": {
         "type": "string"
+      },
+      "presetLabel": {
+        "type": "string"
+      },
+      "inputValue": {
+        "type": "string"
+      },
+      "noteValue": {
+        "type": "string"
       }
     },
     "additionalProperties": true
@@ -101,6 +101,64 @@
       "requiredEvidence": [
         "navigation.state",
         "tagForm.typeVisibility.state",
+        "interactionLog"
+      ]
+    },
+    "observeConditionCategoryOptions": {
+      "declarativePlan": [
+        {
+          "op": "click",
+          "target": "conditionTag.categorySelect"
+        },
+        {
+          "op": "read",
+          "target": "conditionTag.categorySelect",
+          "saveAs": "conditionTag.categorySelect.state"
+        }
+      ],
+      "requiredEvidence": [
+        "conditionTag.categorySelect.state",
+        "interactionLog"
+      ]
+    },
+    "observeFilterTypeOptions": {
+      "declarativePlan": [
+        {
+          "op": "click",
+          "target": "conditionTag.filterTypeSelect"
+        },
+        {
+          "op": "read",
+          "target": "conditionTag.filterTypeSelect",
+          "saveAs": "conditionTag.filterTypeSelect.state"
+        }
+      ],
+      "requiredEvidence": [
+        "conditionTag.filterTypeSelect.state",
+        "interactionLog"
+      ]
+    },
+    "selectFilterTypeAndObserveAnalysisPeriod": {
+      "declarativePlan": [
+        {
+          "op": "select",
+          "target": "conditionTag.filterTypeSelect",
+          "valueFrom": "params.timeType"
+        },
+        {
+          "op": "read",
+          "target": "conditionTag.filterTypeSelect",
+          "saveAs": "conditionTag.filterTypeSelect.state"
+        },
+        {
+          "op": "read",
+          "target": "dateRange.panel",
+          "saveAs": "dateRange.panel.state"
+        }
+      ],
+      "requiredEvidence": [
+        "conditionTag.filterTypeSelect.state",
+        "dateRange.panel.state",
         "interactionLog"
       ]
     },
@@ -132,6 +190,55 @@
         "interactionLog"
       ]
     },
+    "applyDatePreset": {
+      "declarativePlan": [
+        {
+          "op": "runFlow",
+          "flow": "openDatePanel"
+        },
+        {
+          "op": "click",
+          "target": "dateRange.quickPreset",
+          "valueFrom": "params.presetLabel"
+        },
+        {
+          "op": "confirm",
+          "target": "dateRange.panel"
+        },
+        {
+          "op": "read",
+          "target": "dateRange.panel",
+          "saveAs": "dateRange.panel.state"
+        }
+      ],
+      "requiredEvidence": [
+        "dateRange.panel.state",
+        "interactionLog"
+      ]
+    },
+    "verifyDateRangeLimit": {
+      "declarativePlan": [
+        {
+          "op": "runFlow",
+          "flow": "openDatePanel"
+        },
+        {
+          "op": "type",
+          "target": "dateRange.customRange",
+          "valueFrom": "params.analysisPeriodLabel"
+        },
+        {
+          "op": "read",
+          "target": "toast.message",
+          "saveAs": "toast.message.state"
+        }
+      ],
+      "requiredEvidence": [
+        "dateRange.panel.state",
+        "toast.message.state",
+        "interactionLog"
+      ]
+    },
     "addTagValue": {
       "declarativePlan": [
         {
@@ -146,6 +253,128 @@
       ],
       "requiredEvidence": [
         "conditionTag.valueEditor.state",
+        "interactionLog"
+      ]
+    },
+    "addTagValuesToLimit": {
+      "declarativePlan": [
+        {
+          "op": "repeat",
+          "target": "conditionTag.valueEditor.addButton",
+          "count": 10
+        },
+        {
+          "op": "read",
+          "target": "conditionTag.valueEditor",
+          "saveAs": "conditionTag.valueEditor.state"
+        }
+      ],
+      "requiredEvidence": [
+        "conditionTag.valueEditor.state",
+        "interactionLog"
+      ]
+    },
+    "observeBoundOperatorOptions": {
+      "declarativePlan": [
+        {
+          "op": "click",
+          "target": "conditionTag.boundOperator"
+        },
+        {
+          "op": "read",
+          "target": "conditionTag.boundOperator",
+          "saveAs": "conditionTag.boundOperator.state"
+        }
+      ],
+      "requiredEvidence": [
+        "conditionTag.valueEditor.state",
+        "conditionTag.boundOperator.state",
+        "interactionLog"
+      ]
+    },
+    "submitInvalidTagName": {
+      "declarativePlan": [
+        {
+          "op": "type",
+          "target": "tagForm.tagName",
+          "valueFrom": "params.inputValue"
+        },
+        {
+          "op": "click",
+          "target": "tagForm.submitButton"
+        },
+        {
+          "op": "read",
+          "target": "toast.message",
+          "saveAs": "tagForm.validation.state"
+        }
+      ],
+      "requiredEvidence": [
+        "tagForm.validation.state",
+        "interactionLog"
+      ]
+    },
+    "submitInvalidSubTagName": {
+      "declarativePlan": [
+        {
+          "op": "type",
+          "target": "conditionTag.subTagName",
+          "valueFrom": "params.inputValue"
+        },
+        {
+          "op": "click",
+          "target": "tagForm.submitButton"
+        },
+        {
+          "op": "read",
+          "target": "toast.message",
+          "saveAs": "tagForm.validation.state"
+        }
+      ],
+      "requiredEvidence": [
+        "conditionTag.valueEditor.state",
+        "tagForm.validation.state",
+        "interactionLog"
+      ]
+    },
+    "submitInvalidConditionValue": {
+      "declarativePlan": [
+        {
+          "op": "type",
+          "target": "conditionTag.boundInput",
+          "valueFrom": "params.inputValue"
+        },
+        {
+          "op": "click",
+          "target": "tagForm.submitButton"
+        },
+        {
+          "op": "read",
+          "target": "toast.message",
+          "saveAs": "tagForm.validation.state"
+        }
+      ],
+      "requiredEvidence": [
+        "conditionTag.valueEditor.state",
+        "tagForm.validation.state",
+        "interactionLog"
+      ]
+    },
+    "submitLongNoteValidation": {
+      "declarativePlan": [
+        {
+          "op": "type",
+          "target": "tagForm.note",
+          "valueFrom": "params.noteValue"
+        },
+        {
+          "op": "read",
+          "target": "tagForm.note",
+          "saveAs": "tagForm.validation.state"
+        }
+      ],
+      "requiredEvidence": [
+        "tagForm.validation.state",
         "interactionLog"
       ]
     },
@@ -171,7 +400,11 @@
   "blockerCodes": [
     "TAG_CREATE_UNREACHABLE",
     "TAG_TYPE_DROPDOWN_MISSING",
+    "CONDITION_CATEGORY_OPTIONS_UNVERIFIED",
+    "CONDITION_FILTER_TYPE_OPTIONS_UNVERIFIED",
     "DATE_PANEL_UNREACHABLE",
-    "CONDITION_VALUE_EDITOR_MISSING"
+    "CONDITION_VALUE_EDITOR_MISSING",
+    "CONDITION_BOUND_OPERATOR_OPTIONS_UNVERIFIED",
+    "TAG_FORM_VALIDATION_UNVERIFIED"
   ]
 }

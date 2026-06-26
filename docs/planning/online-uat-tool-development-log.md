@@ -50,6 +50,16 @@ Domain-pack data added:
 - Added `fixtureRef.state` to TAG evidence schema so fixture-dependent judgments can be distinguished from product behavior.
 - `verify:domain-pack` now validates `fixtures/requirements.json` structure.
 
+Additional TAG_TOOL domain-pack supplementation:
+
+- `tagList` action contract now covers pagination observation, row-name link navigation, row-action menu selection by tag type/status/filter type, and route verification for row actions. This is domain contract coverage for list/read/navigation cases, not a product assertion by itself.
+- `manualUpload` action contract now covers native file accept observation, no-file submit validation, duplicate/nonexistent/over-limit/invalid-type CSV validation, multi-file selection, and selected-file chip removal. Helper planning maps testcase wording to fixture kinds and returns `fixtureRef.state` plus `manualUpload.fileInput.state`.
+- `createConditionTag` action contract now covers condition category options, filter type options, analysis period/date preset behavior, 90-day date-range limit observation, tag-value limit/bound operator checks, and invalid tag/sub-tag/value/note validation flows. The hard-coded dev data windows were removed; environment-specific data availability belongs in run package/testcase fixtures.
+- TAG evidence schema now includes list pagination/row-link, form validation, condition category/filter/bound operator, and manual upload file-input evidence objects, with conditional rules that prevent navigation/upload-validation cases from being judged without the needed state.
+- TAG UI object vocabulary now names the list pagination, row name link, row action items, condition category/filter/bound controls, date presets/custom range, manual upload file input/add button/file chip/remove button, tag info table/chart/download, and variable history objects.
+- `verify:domain-pack` now validates every domain action contract for basic schema, declared flow enum, flow-to-sharedFlow alignment, and nonempty declarative plans/evidence. This catches structural drift such as a shared flow being accidentally placed inside `paramsSchema`.
+- `verify:tag-tool-runtime` now includes routing smoke for upload validation flows and fixture resolution, including no-file submit and selected-file chip paths.
+
 Regression checks:
 
 - `npm run verify:result-evidence-upload-containment`

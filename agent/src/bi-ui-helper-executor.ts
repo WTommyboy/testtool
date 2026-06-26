@@ -13685,18 +13685,93 @@ const resolveTagToolFixturePath = (options: CliOptions): string => {
 const uploadManualCsv = async (options: CliOptions, page: Page, startedAt: string): Promise<HelperReport> => {
   const navigation = await navigateTagToolPage(options, page, "create");
   const interactionLog: Array<Record<string, unknown>> = [await clickTagType(page, "人工標籤")];
+  const flow = firstStringParam(options.params, ["flow"]) ?? "uploadAddCsv";
   const fixturePath = resolveTagToolFixturePath(options);
   const fileInput = page.locator("input[type='file']").first();
   const fileInputCount = await page.locator("input[type='file']").count().catch(() => 0);
   if (fileInputCount < 1) throw new HelperBlockedError("MANUAL_UPLOAD_FILE_INPUT_MISSING");
+  const fileInputState = await fileInput.evaluate((input) => ({
+    accept: input instanceof HTMLInputElement ? input.accept : input.getAttribute("accept"),
+    multiple: input instanceof HTMLInputElement ? input.multiple : input.hasAttribute("multiple"),
+    visible: true,
+    disabled: input instanceof HTMLInputElement ? input.disabled : input.getAttribute("aria-disabled") === "true",
+    asserted: true
+  })).catch((error) => ({
+    accept: null,
+    multiple: null,
+    visible: false,
+    disabled: null,
+    asserted: false,
+    error: error instanceof Error ? error.message : String(error)
+  }));
+  if (flow === "observeFileAccept") {
+    const formState = await readTagCreateFormState(page);
+    const commonState = await readTagToolCommonState(page);
+    return tagToolReport(options, page, startedAt, "tag-manual-upload-evidence", {
+      schemaVersion: "tag-tool-manual-upload-evidence-v1",
+      generatedAt: new Date().toISOString(),
+      navigation,
+      interactionLog,
+      commonState,
+      "tagForm.typeVisibility.state": formState,
+      "manualUpload.file.state": formState.manualUpload,
+      "manualUpload.fileInput.state": fileInputState,
+      "manualUpload.validation.state": {
+        triggeredByVisibleUi: false,
+        visibleText: null,
+        asserted: true
+      }
+    });
+  }
+  if (flow === "submitWithoutFile") {
+    const submit = page.getByRole("button", { name: /儲存|確定新增|新增|保存/ }).last();
+    await helperStep("tagTool.manualUpload.submitWithoutFile", "locator_action", async () => submit.click({ timeout: 5000 }), {});
+    await page.waitForTimeout(800);
+    interactionLog.push({ action: "submitWithoutFile" });
+    const formState = await readTagCreateFormState(page);
+    const commonState = await readTagToolCommonState(page);
+    const bodyText = await page.locator("body").innerText({ timeout: 5000 }).catch(() => "");
+    return tagToolReport(options, page, startedAt, "tag-manual-upload-evidence", {
+      schemaVersion: "tag-tool-manual-upload-evidence-v1",
+      generatedAt: new Date().toISOString(),
+      navigation,
+      interactionLog,
+      commonState,
+      "tagForm.typeVisibility.state": formState,
+      "manualUpload.file.state": formState.manualUpload,
+      "manualUpload.fileInput.state": fileInputState,
+      "manualUpload.validation.state": {
+        triggeredByVisibleUi: true,
+        visibleText: bodyText.match(/(?:請|需|必填|上傳|檔案|錯誤|失敗)[^\n]{0,160}/)?.[0] ?? null,
+        bodyTextAfterSubmitExcerpt: bodyText.slice(0, 1800),
+        asserted: true
+      }
+    });
+  }
+  const uploadPaths = flow === "uploadMultipleFiles" || flow === "removeSelectedFile"
+    ? [
+      fixturePath,
+      resolveTagToolFixturePath({ ...options, params: { ...options.params, fixtureKind: "invalidAddCsv" } })
+    ]
+    : fixturePath;
   await helperStep(
     "tagTool.manualUpload.setInputFiles",
     "locator_action",
-    async () => fileInput.setInputFiles(fixturePath, { timeout: 8000 }),
-    { fixturePath }
+    async () => fileInput.setInputFiles(uploadPaths, { timeout: 8000 }),
+    { fixturePath, uploadPaths }
   );
   await page.waitForTimeout(1200);
-  interactionLog.push({ action: "uploadFile", fixturePath, fileName: path.basename(fixturePath) });
+  interactionLog.push({ action: "uploadFile", fixturePath, uploadPaths, fileName: path.basename(fixturePath) });
+  if (flow === "removeSelectedFile") {
+    const removeButton = page.locator("button,[role='button']").filter({ hasText: /移除|刪除|取消|x|×/i }).first();
+    if (await removeButton.count().catch(() => 0)) {
+      await helperStep("tagTool.manualUpload.removeSelectedFile", "locator_action", async () => removeButton.click({ timeout: 5000 }), {});
+      await page.waitForTimeout(500);
+      interactionLog.push({ action: "removeSelectedFile" });
+    } else {
+      interactionLog.push({ action: "removeSelectedFile", actualOutcome: "remove control not found" });
+    }
+  }
   const formState = await readTagCreateFormState(page);
   const commonState = await readTagToolCommonState(page);
   const afterText = await page.locator("body").innerText({ timeout: 5000 }).catch(() => "");
@@ -13726,6 +13801,7 @@ const uploadManualCsv = async (options: CliOptions, page: Page, startedAt: strin
     commonState,
     "tagForm.typeVisibility.state": formState,
     "manualUpload.file.state": formState.manualUpload,
+    "manualUpload.fileInput.state": fileInputState,
     "manualUpload.validation.state": validationState
   });
 };

@@ -1058,8 +1058,22 @@ const inferTagToolParams = (currentCase: CaseManifestCase | null, helperHints: H
   const flow = stringParam(params, ["flow"]) ??
     (/標籤變數設定|N\/Z\/Y\/X\/A\/B|核心天數門檻|生命週期天數|設置紀錄|變數/.test(text)
       ? "observeDefaults"
+      : /未上傳|沒有上傳|without\s+file/i.test(text)
+        ? "submitWithoutFile"
+      : /accept|原生對話框|檔案選擇限|限\s*csv|只能.*csv/i.test(text)
+        ? "observeFileAccept"
+      : /多檔|多個檔案|已選檔案|刪除.*檔案|移除.*檔案|新增檔案按鈕/i.test(text)
+        ? "uploadMultipleFiles"
+      : /同\s*ID.*多標籤|多標籤值|duplicate|conflict/i.test(text)
+        ? "uploadDuplicateConflictCsv"
+      : /不存在.*帳號|帳號\s*ID\s*不存在|not\s*exist/i.test(text)
+        ? "uploadNonexistentAccountCsv"
+      : /10000|10,000|超過.*筆|over.?limit/i.test(text)
+        ? "uploadOverLimitCsv"
+      : /\.txt|非\s*csv|類型錯誤|invalid\s*type/i.test(text)
+        ? "uploadInvalidTypeFile"
       : /人工標籤|手動標籤|CSV|上傳|upload/.test(text)
-        ? "observeAddGuidance"
+        ? (/invalid|錯誤|格式錯|缺少欄位|欄位錯|userobjectid/i.test(text) ? "uploadInvalidCsv" : "observeAddGuidance")
         : !negativeDangerInstruction && /刪除/.test(text)
           ? "openDeleteAndCancel"
           : !negativeDangerInstruction && /終止/.test(text)
@@ -1068,8 +1082,12 @@ const inferTagToolParams = (currentCase: CaseManifestCase | null, helperHints: H
               ? "observeInitialCreateState"
               : "observeColumns");
   const fixtureKind = stringParam(params, ["fixtureKind", "fixture"]) ??
-    (/invalid|錯誤|格式錯|缺少欄位|欄位錯|userobjectid/i.test(text) ? "invalidAddCsv" :
-      /edit|編輯|操作\s*add|操作\s*update|操作\s*delete/i.test(text) ? "validEditCsv" : "validAddCsv");
+    (/同\s*ID.*多標籤|多標籤值|duplicate|conflict/i.test(text) ? "duplicateConflictCsv" :
+      /不存在.*帳號|帳號\s*ID\s*不存在|not\s*exist/i.test(text) ? "nonexistentAccountCsv" :
+        /10000|10,000|超過.*筆|over.?limit/i.test(text) ? "overLimitCsv" :
+          /\.txt|非\s*csv|類型錯誤|invalid\s*type/i.test(text) ? "textFile" :
+            /invalid|錯誤|格式錯|缺少欄位|欄位錯|userobjectid/i.test(text) ? "invalidAddCsv" :
+              /edit|編輯|操作\s*add|操作\s*update|操作\s*delete/i.test(text) ? "validEditCsv" : "validAddCsv");
   return {
     ...params,
     flow,
@@ -1094,7 +1112,7 @@ const tagToolRequiredEvidence = (template: string): string[] => {
     case "tagTool.observeVariableSettings":
       return ["navigation.state", "tagVariables.form.state", "tagVariables.history.state", "dom.state", "screenshot"];
     case "tagTool.uploadManualCsv":
-      return ["navigation.state", "tagForm.typeVisibility.state", "manualUpload.file.state", "manualUpload.validation.state", "interactionLog", "screenshot"];
+      return ["navigation.state", "tagForm.typeVisibility.state", "fixtureRef.state", "manualUpload.file.state", "manualUpload.fileInput.state", "manualUpload.validation.state", "interactionLog", "screenshot"];
     case "tagTool.openDangerousModalAndCancel":
       return ["dangerousModal.state", "tagList.table.state", "interactionLog", "screenshot"];
     case "tagTool.createConditionTag":

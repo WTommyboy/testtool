@@ -49,6 +49,17 @@
       ],
       "purpose": "Player tag list table composition and empty/list state."
     },
+    "tagList.pagination.state": {
+      "type": "object",
+      "requiredFields": [
+        "totalRowsText",
+        "currentPage",
+        "pageSize",
+        "pageSizeOptions",
+        "asserted"
+      ],
+      "purpose": "Player tag list pagination and page-size control state."
+    },
     "tagList.row.state": {
       "type": "object",
       "requiredFields": [
@@ -58,6 +69,17 @@
         "asserted"
       ],
       "purpose": "Player tag list row content, badges, schedule status, and visible cell values."
+    },
+    "tagList.rowLink.state": {
+      "type": "object",
+      "requiredFields": [
+        "tagName",
+        "tagType",
+        "linkEnabled",
+        "href",
+        "asserted"
+      ],
+      "purpose": "Whether a tag name is clickable and what route it leads to."
     },
     "tagList.rowActionMenu.state": {
       "type": "object",
@@ -80,6 +102,47 @@
         "asserted"
       ],
       "purpose": "Manual tag hides condition/time/analysis fields; condition tag shows them."
+    },
+    "tagForm.validation.state": {
+      "type": "object",
+      "requiredFields": [
+        "triggeredByVisibleUi",
+        "field",
+        "visibleText",
+        "requestSuppressed",
+        "asserted"
+      ],
+      "purpose": "Create/edit form validation state for name, note, sub-tag name, and numeric bounds."
+    },
+    "conditionTag.categorySelect.state": {
+      "type": "object",
+      "requiredFields": [
+        "selectedLabel",
+        "visibleOptions",
+        "asserted"
+      ],
+      "purpose": "Condition category dropdown options and selected value."
+    },
+    "conditionTag.filterTypeSelect.state": {
+      "type": "object",
+      "requiredFields": [
+        "selectedLabel",
+        "visibleOptions",
+        "analysisPeriodVisible",
+        "asserted"
+      ],
+      "purpose": "Filter/time type dropdown options and its effect on analysis-period controls."
+    },
+    "conditionTag.boundOperator.state": {
+      "type": "object",
+      "requiredFields": [
+        "lowerOperatorOptions",
+        "upperOperatorOptions",
+        "selectedLowerOperator",
+        "selectedUpperOperator",
+        "asserted"
+      ],
+      "purpose": "Lower/upper bound operator options in the sub-tag grade editor."
     },
     "conditionTag.valueEditor.state": {
       "type": "object",
@@ -114,6 +177,16 @@
         "asserted"
       ],
       "purpose": "Manual tag CSV upload guidance and file-chip state."
+    },
+    "manualUpload.fileInput.state": {
+      "type": "object",
+      "requiredFields": [
+        "accept",
+        "multiple",
+        "visible",
+        "asserted"
+      ],
+      "purpose": "Native file input attributes for manual tag upload, including CSV accept restrictions."
     },
     "fixtureRef.state": {
       "type": "object",
@@ -321,6 +394,40 @@
         "fixtureRef.state",
         "manualUpload.file.state",
         "manualUpload.validation.state"
+      ]
+    },
+    {
+      "id": "tag-list-row-navigation-requires-link-state",
+      "when": {
+        "actionIn": [
+          "clickTagName",
+          "clickRowActionAndVerifyRoute"
+        ]
+      },
+      "requires": [
+        "tagList.row.state",
+        "navigation.state",
+        "interactionLog"
+      ],
+      "requiresAny": [
+        "tagList.rowLink.state",
+        "tagList.rowActionMenu.state"
+      ]
+    },
+    {
+      "id": "condition-create-validation-requires-form-state",
+      "when": {
+        "actionIn": [
+          "submitInvalidTagName",
+          "submitInvalidSubTagName",
+          "submitInvalidConditionValue",
+          "submitLongNoteValidation",
+          "submitIncompleteAndObserveToast"
+        ]
+      },
+      "requires": [
+        "tagForm.validation.state",
+        "interactionLog"
       ]
     },
     {
