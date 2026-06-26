@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { parseToolRequests } from "../src/agent-protocol/tool-bridge";
-import { scanToolBridgePolicyViolationsForTest } from "../agent/src/task-runner";
+import { removeStaleCaseOutputForTest, scanToolBridgePolicyViolationsForTest } from "../agent/src/task-runner";
 
 type Fixture = {
   name: string;
@@ -323,6 +323,18 @@ try {
     autoResponseViolations,
     [],
     "auto-approved Tool Bridge response diagnostics should satisfy task-runner policy scan"
+  );
+
+  removeStaleCaseOutputForTest(runDir);
+  assert.equal(
+    fs.existsSync(path.join(runDir, "output", "tool-responses-auto.json")),
+    false,
+    "stale auto Tool Bridge responses must be removed before advancing to the next case"
+  );
+  const afterAdvanceCleanupViolations = scanToolBridgePolicyViolationsForTest(runDir, "已取得授權並處理儲存 dialog。");
+  assert.ok(
+    afterAdvanceCleanupViolations.some((item) => item.code === "NATIVE_DIALOG_WITHOUT_TOOL_BRIDGE_RESPONSE"),
+    "after case-advance cleanup, stale auto responses must not satisfy a later case policy scan"
   );
 } finally {
   fs.rmSync(tempRoot, { recursive: true, force: true });

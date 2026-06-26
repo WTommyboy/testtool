@@ -1174,11 +1174,27 @@ const removeStaleCaseOutput = (runDir: string): void => {
     "result-xlsx-repair.json",
     "tool-requests.json",
     "tool-requests-resume.json",
+    "tool-bridge-policy-violations.json",
+    "tool-bridge-policy-violations-resume.json",
+    "batch-case-policy-violations.json",
+    "batch-case-policy-violations-resume.json",
     "helper-browser-session-containment-result.json",
     "runtime-containment-result.json"
   ];
   for (const fileName of staleFiles) {
     fs.rmSync(path.join(outputDir, fileName), { force: true });
+  }
+  if (!fs.existsSync(outputDir)) return;
+  const stalePatterns = [
+    /^tool-requests-auto(?:-\d+)?\.json$/,
+    /^tool-responses-auto.*\.json$/,
+    /^tool-bridge-policy-violations-auto(?:-\d+)?\.json$/,
+    /^batch-case-policy-violations-auto(?:-\d+)?\.json$/
+  ];
+  for (const fileName of fs.readdirSync(outputDir)) {
+    if (stalePatterns.some((pattern) => pattern.test(fileName))) {
+      fs.rmSync(path.join(outputDir, fileName), { force: true });
+    }
   }
 };
 
@@ -3059,6 +3075,7 @@ const scanToolBridgePolicyViolations = (runDir: string, assistantText = ""): Too
 };
 
 export const hasToolBridgeResponseForTest = hasToolBridgeResponse;
+export const removeStaleCaseOutputForTest = removeStaleCaseOutput;
 export const scanToolBridgePolicyViolationsForTest = scanToolBridgePolicyViolations;
 
 const enforceBatchCasePolicy = (
