@@ -56,15 +56,19 @@ const readJsonIfExists = <T>(filePath: string): T | null => {
 };
 
 const consistencyGateHasErrors = (runDir: string): boolean => {
-  const parsed = readJsonIfExists<{ status?: unknown; issues?: unknown }>(
-    path.join(runDir, "input", "document-consistency.json")
-  );
-  if (!parsed) return false;
-  if (String(parsed.status ?? "").toLowerCase() === "error") return true;
-  const issues = Array.isArray(parsed.issues) ? parsed.issues : [];
-  return issues.some((issue) => {
-    if (!issue || typeof issue !== "object" || Array.isArray(issue)) return false;
-    return String((issue as { severity?: unknown }).severity ?? "").toLowerCase() === "error";
+  const consistencyPaths = [
+    path.join(runDir, "input", "document-consistency.json"),
+    path.join(runDir, "input", "test-package-consistency.json")
+  ];
+  return consistencyPaths.some((consistencyPath) => {
+    const parsed = readJsonIfExists<{ status?: unknown; issues?: unknown }>(consistencyPath);
+    if (!parsed) return false;
+    if (String(parsed.status ?? "").toLowerCase() === "error") return true;
+    const issues = Array.isArray(parsed.issues) ? parsed.issues : [];
+    return issues.some((issue) => {
+      if (!issue || typeof issue !== "object" || Array.isArray(issue)) return false;
+      return String((issue as { severity?: unknown }).severity ?? "").toLowerCase() === "error";
+    });
   });
 };
 
@@ -155,6 +159,69 @@ const helperSummaryHasCurrentRunEvidence = (
   return executedCount > 0 && (status === "ok" || status === "partial");
 };
 
+const normalizeCaseNo = (value: string | null | undefined): string => (value ?? "").trim().toUpperCase();
+
+const readOutputJsonEvidenceFiles = (runDir: string, prefixes: string[]): Array<{ path: string; value: unknown; text: string }> => {
+  const outputDir = path.join(runDir, "output");
+  if (!fs.existsSync(outputDir)) return [];
+  return fs.readdirSync(outputDir)
+    .filter((name) => name.endsWith(".json") && prefixes.some((prefix) => name.startsWith(prefix)))
+    .flatMap((name) => {
+      const filePath = path.join(outputDir, name);
+      const value = readJsonIfExists<unknown>(filePath);
+      if (value === null) return [];
+      return [{ path: filePath, value, text: JSON.stringify(value) }];
+    });
+};
+
+const collectCurrentRunToolBridgeEvidence = (
+  runDir: string,
+  caseNo: string | null
+): { hasEvidence: boolean; paths: string[] } => {
+  const normalizedCase = normalizeCaseNo(caseNo);
+  const files = readOutputJsonEvidenceFiles(runDir, ["tool-requests", "tool-responses"]);
+  const matching = files.filter((file) => {
+    if (!normalizedCase) return true;
+    return file.text.toUpperCase().includes(normalizedCase);
+  });
+  return {
+    hasEvidence: matching.length > 0,
+    paths: matching.map((file) => file.path)
+  };
+};
+
+const resultHasCurrentRunCodexEvidence = (
+  result: RuntimeResultLike,
+  caseNo: string | null
+): { hasEvidence: boolean; summary: Record<string, unknown> } => {
+  const normalizedCase = normalizeCaseNo(caseNo);
+  const assistantText = result.assistantText ?? "";
+  const stderr = result.stderr ?? "";
+  const rawStdout = result.rawStdout ?? "";
+  const eventText = JSON.stringify(result.events ?? []);
+  const text = `${assistantText}\n${stderr}\n${rawStdout}\n${eventText}`;
+  const mentionsCase = !normalizedCase || text.toUpperCase().includes(normalizedCase);
+  const mcpToolNames = (result.events ?? []).flatMap((event) => {
+    const item = event.item;
+    if (!item || typeof item !== "object" || Array.isArray(item)) return [];
+    const itemType = String((item as { type?: unknown }).type ?? "");
+    if (itemType !== "mcp_tool_call") return [];
+    const name = (item as { name?: unknown; tool_name?: unknown }).name ?? (item as { tool_name?: unknown }).tool_name;
+    return typeof name === "string" && name.trim() ? [name.trim()] : [];
+  });
+  const hasBrowserEvidence = mcpToolNames.length > 0;
+  return {
+    hasEvidence: mentionsCase && hasBrowserEvidence,
+    summary: {
+      mentionsCase,
+      mcpToolCallCount: mcpToolNames.length,
+      mcpToolNames: mcpToolNames.slice(0, 20),
+      assistantTextExcerpt: assistantText.slice(0, 600),
+      stderrExcerpt: stderr.slice(0, 600)
+    }
+  };
+};
+
 const compactCodexFailure = (result: RuntimeResultLike): Record<string, unknown> => ({
   exitCode: result.exitCode,
   signal: result.signal,
@@ -232,7 +299,10 @@ export const writeCodexRuntimeContainmentResultIfNeeded = async (input: {
 
   const helperPreRunSummaryPath = path.join(input.runDir, "output", "helper-pre-run-summary.json");
   const helperPreRunSummary = readJsonIfExists<Record<string, unknown>>(helperPreRunSummaryPath);
-  if (!helperSummaryHasCurrentRunEvidence(helperPreRunSummary, input.currentCaseNo)) {
+  const helperEvidenceAvailable = helperSummaryHasCurrentRunEvidence(helperPreRunSummary, input.currentCaseNo);
+  const toolBridgeEvidence = collectCurrentRunToolBridgeEvidence(input.runDir, input.currentCaseNo);
+  const codexEvidence = resultHasCurrentRunCodexEvidence(input.result, input.currentCaseNo);
+  if (!helperEvidenceAvailable && !toolBridgeEvidence.hasEvidence && !codexEvidence.hasEvidence) {
     return writeReport({
       schemaVersion: "codex-runtime-containment-result-v1",
       generatedAt,
@@ -290,7 +360,12 @@ export const writeCodexRuntimeContainmentResultIfNeeded = async (input: {
       runId: input.runId,
       caseNo: sourceCase.caseNo,
       helperPreRunStatus: helperPreRunSummary?.status ?? null,
-      helperExecutedCount: helperPreRunSummary?.executedCount ?? null
+      helperExecutedCount: helperPreRunSummary?.executedCount ?? null,
+      runtimeEvidenceSources: {
+        helperPreRun: helperEvidenceAvailable,
+        toolBridge: toolBridgeEvidence.hasEvidence,
+        codexRuntime: codexEvidence.hasEvidence
+      }
     },
     預期行為: expectedBehavior,
     實際行為: actualBehavior,
@@ -298,6 +373,8 @@ export const writeCodexRuntimeContainmentResultIfNeeded = async (input: {
     currentRunEvidence: {
       helperPreRunSummary: helperPreRunSummaryPath,
       helperReports: helperReportsFromSummary(helperPreRunSummary),
+      toolBridgeEvidenceFiles: toolBridgeEvidence.paths,
+      codexRuntimeEvidence: codexEvidence.summary,
       helperArtifactDir: input.currentCaseNo ? path.join(input.runDir, "output", "helper-artifacts", input.currentCaseNo) : null,
       codexResult: path.join(input.runDir, "output", "codex-result.json")
     },

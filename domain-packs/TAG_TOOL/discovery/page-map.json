@@ -1,7 +1,7 @@
 {
   "schemaVersion": "domain-ui-discovery-page-map-v0.1",
   "domain": "TAG_TOOL",
-  "status": "live_verified_partial_2026-06-22",
+  "status": "live_verified_partial_2026-06-23",
   "pages": [
     {
       "id": "tagPlayerList",
@@ -10,8 +10,10 @@
         "breadcrumb contains 標籤 > 玩家標籤管理",
         "page title 玩家標籤管理",
         "toolbar buttons 刪除 and 新增",
-        "empty state text 尚無標籤資料 when no user-created tags exist",
-        "table headers include 標籤名稱, 標籤類型, 條件類型, 時間類型, 排程狀態, 資料最後更新時間, 備註 when rows exist"
+        "current dev may show an empty state 尚無標籤資料 or populated rows",
+        "2026-06-23 dev showed 共 28 筆資料 with pagination pages 1 and 2",
+        "table headers include 標籤名稱, 標籤類型, 條件類別, 篩選類型, 排程狀態, 資料最後更新時間, 備註, 操作 when rows exist",
+        "row action trigger has accessible label 更多操作 and visible text •••"
       ]
     },
     {
@@ -21,16 +23,21 @@
         "page title 新增標籤",
         "condition tag is selected by default in current dev UI",
         "fields 標籤名稱, 條件類別, 篩選類型, 分析時段",
+        "condition category options 消費級距 R, 累積登入天數, 累積未登入天數, 累積遊戲時間",
+        "filter type options 動態時間區間, 靜態時間區間, 依報表區間設置, 首次後持續累計",
+        "manual tag mode hides condition/time/analysis/sub-tag grade fields",
         "buttons 取消 and 儲存"
       ]
     },
     {
       "id": "conditionTagSettingsReadonly",
-      "routePattern": "/bi-dev/zh-TW/tag/player/:tagId/setting?gameId=:gameId",
+      "routePattern": "/bi-dev/zh-TW/tag/player/:tagId/settings?gameId=:gameId",
       "expectedSignals": [
         "page title 查看設置",
         "read-only condition fields",
-        "bottom button 返回"
+        "button 返回",
+        "fields include 標籤名稱, 條件類別, 篩選類型, 分析時段, 排程狀態, 資料最後更新時間, 備註",
+        "section 子標籤級距 lists values and bounds"
       ]
     },
     {
@@ -44,11 +51,13 @@
     },
     {
       "id": "tagInfo",
-      "routePattern": "/bi-dev/zh-TW/tag/player/:tagId/info?gameId=:gameId",
+      "routePattern": "/bi-dev/zh-TW/tag/player/:tagId?gameId=:gameId",
       "expectedSignals": [
         "page title contains 標籤資訊",
         "section 標籤基本設置",
-        "section 最新標籤值資訊"
+        "section 最新標籤值資訊",
+        "condition tag info title group 標籤資訊與每日資訊",
+        "manual tag info title group 標籤資訊與名單列表"
       ]
     },
     {

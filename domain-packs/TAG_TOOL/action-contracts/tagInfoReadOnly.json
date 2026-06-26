@@ -1,0 +1,218 @@
+{
+  "schemaVersion": "domain-action-contract-v0.1",
+  "domain": "TAG_TOOL",
+  "action": "tagInfoReadOnly",
+  "status": "draft_contract_live_augmented_2026-06-23",
+  "purpose": "Read-only tag information, condition settings, and manual edit form observation flows. These contracts separate condition-tag and manual-tag UI assumptions without mutating tag data.",
+  "capabilities": [
+    "tag.info.basicSettings",
+    "tag.info.latestValueSummary",
+    "tag.info.valueFilter",
+    "tag.condition.settingsReadonly",
+    "tag.manual.memberTable",
+    "tag.manual.editFormObserve"
+  ],
+  "paramsSchema": {
+    "type": "object",
+    "required": [
+      "flow"
+    ],
+    "properties": {
+      "flow": {
+        "type": "string",
+        "enum": [
+          "openConditionSettingsReadonly",
+          "observeConditionTagInfo",
+          "openConditionValueFilter",
+          "observeManualTagInfo",
+          "openManualValueFilter",
+          "observeManualEditForm"
+        ]
+      },
+      "tagName": {
+        "type": "string"
+      },
+      "tagType": {
+        "type": "string",
+        "enum": [
+          "條件標籤",
+          "人工標籤"
+        ]
+      }
+    },
+    "additionalProperties": true
+  },
+  "routeHints": {
+    "conditionSettingsReadonly": "/bi-dev/zh-TW/tag/player/:tagId/settings?gameId=:gameId",
+    "tagInfo": "/bi-dev/zh-TW/tag/player/:tagId?gameId=:gameId",
+    "manualEdit": "/bi-dev/zh-TW/tag/player/:tagId/edit?gameId=:gameId"
+  },
+  "sharedFlows": {
+    "openConditionSettingsReadonly": {
+      "declarativePlan": [
+        {
+          "op": "findRow",
+          "target": "tagList.table",
+          "labelFrom": "params.tagName"
+        },
+        {
+          "op": "click",
+          "target": "tagList.rowActions"
+        },
+        {
+          "op": "click",
+          "target": "tagList.rowActionItem.viewSettings"
+        },
+        {
+          "op": "read",
+          "target": "conditionTag.settingsReadonly",
+          "saveAs": "conditionTag.settingsReadonly.state"
+        }
+      ],
+      "requiredEvidence": [
+        "navigation.state",
+        "conditionTag.settingsReadonly.state",
+        "interactionLog"
+      ]
+    },
+    "observeConditionTagInfo": {
+      "declarativePlan": [
+        {
+          "op": "findRow",
+          "target": "tagList.table",
+          "labelFrom": "params.tagName"
+        },
+        {
+          "op": "click",
+          "target": "tagList.rowActions"
+        },
+        {
+          "op": "click",
+          "target": "tagList.rowActionItem.tagInfo"
+        },
+        {
+          "op": "read",
+          "target": "tagInfo.basicSettings",
+          "saveAs": "tagInfo.basicSettings.state"
+        },
+        {
+          "op": "read",
+          "target": "tagInfo.latestValueSummary",
+          "saveAs": "tagInfo.latestValueSummary.state"
+        }
+      ],
+      "requiredEvidence": [
+        "navigation.state",
+        "tagInfo.basicSettings.state",
+        "tagInfo.latestValueSummary.state",
+        "interactionLog"
+      ]
+    },
+    "openConditionValueFilter": {
+      "declarativePlan": [
+        {
+          "op": "click",
+          "target": "tagInfo.valueFilter"
+        },
+        {
+          "op": "read",
+          "target": "tagInfo.valueFilter",
+          "saveAs": "tagInfo.valueFilter.state"
+        }
+      ],
+      "requiredEvidence": [
+        "tagInfo.valueFilter.state",
+        "interactionLog"
+      ]
+    },
+    "observeManualTagInfo": {
+      "declarativePlan": [
+        {
+          "op": "findRow",
+          "target": "tagList.table",
+          "labelFrom": "params.tagName"
+        },
+        {
+          "op": "click",
+          "target": "tagList.rowActions"
+        },
+        {
+          "op": "click",
+          "target": "tagList.rowActionItem.tagInfo"
+        },
+        {
+          "op": "read",
+          "target": "tagInfo.basicSettings",
+          "saveAs": "tagInfo.basicSettings.state"
+        },
+        {
+          "op": "read",
+          "target": "manualTag.memberTable",
+          "saveAs": "manualTag.memberTable.state"
+        }
+      ],
+      "requiredEvidence": [
+        "navigation.state",
+        "tagInfo.basicSettings.state",
+        "manualTag.memberTable.state",
+        "interactionLog"
+      ]
+    },
+    "openManualValueFilter": {
+      "declarativePlan": [
+        {
+          "op": "click",
+          "target": "tagInfo.valueFilter"
+        },
+        {
+          "op": "read",
+          "target": "tagInfo.valueFilter",
+          "saveAs": "tagInfo.valueFilter.state"
+        }
+      ],
+      "requiredEvidence": [
+        "tagInfo.valueFilter.state",
+        "interactionLog"
+      ]
+    },
+    "observeManualEditForm": {
+      "declarativePlan": [
+        {
+          "op": "findRow",
+          "target": "tagList.table",
+          "labelFrom": "params.tagName"
+        },
+        {
+          "op": "click",
+          "target": "tagList.rowActions"
+        },
+        {
+          "op": "click",
+          "target": "tagList.rowActionItem.edit"
+        },
+        {
+          "op": "read",
+          "target": "manualTag.editForm",
+          "saveAs": "manualTag.editForm.state"
+        }
+      ],
+      "requiredEvidence": [
+        "navigation.state",
+        "manualTag.editForm.state",
+        "interactionLog"
+      ]
+    }
+  },
+  "safetyPolicy": [
+    "All flows in this file are read-only or navigation-only.",
+    "Do not click 儲存 from manualTag.editForm in this contract.",
+    "Do not confirm delete, terminate, copy, or save actions from this contract."
+  ],
+  "blockerCodes": [
+    "TAG_INFO_ROUTE_UNREACHABLE",
+    "TAG_TYPE_MENU_VARIANT_MISMATCH",
+    "TAG_VALUE_FILTER_MISSING",
+    "MANUAL_MEMBER_TABLE_MISSING",
+    "MANUAL_EDIT_FORM_MISSING"
+  ]
+}

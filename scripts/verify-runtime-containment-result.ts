@@ -67,6 +67,38 @@ const writeCommonRunFiles = async (runDir: string): Promise<void> => {
   }, null, 2));
 };
 
+const writeAutoToolBridgeOnlyEvidence = (runDir: string): void => {
+  fs.writeFileSync(path.join(runDir, "output", "helper-pre-run-summary.json"), JSON.stringify({
+    schemaVersion: "helper-pre-run-v1",
+    caseId: "BIUI_COLLAGE_R001-B-12",
+    status: "skipped",
+    skippedReason: "CAPABILITY_GATE_SKIPPED_HELPER:CAPABILITY_GATE_degraded",
+    actionCount: 0,
+    executedCount: 0,
+    durationMs: 0,
+    actions: []
+  }, null, 2));
+  fs.writeFileSync(path.join(runDir, "output", "tool-responses-auto-1.json"), JSON.stringify({
+    policy: "mac_agent_non_sso_login_auto_approval_v1",
+    generatedAt: new Date().toISOString(),
+    responses: [
+      {
+        requestId: `${path.basename(runDir)}-BIUI_COLLAGE_R001-B-12-open-create`,
+        request: {
+          type: "irreversible_operation",
+          request_id: `${path.basename(runDir)}-BIUI_COLLAGE_R001-B-12-open-create`,
+          case: "BIUI_COLLAGE_R001-B-12",
+          action: "open create page",
+          reason: "fixture reproduces an over-broad Tool Bridge request before auto-resume",
+          proposed_action: "approve opening the create page"
+        },
+        raw: "{}",
+        note: "Auto-approved by Mac Agent policy mac_agent_non_sso_login_auto_approval_v1."
+      }
+    ]
+  }, null, 2));
+};
+
 const main = async (): Promise<void> => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "uat-runtime-containment-"));
   const cleanupRoots = [tempRoot];
@@ -101,6 +133,38 @@ const main = async (): Promise<void> => {
       requireSingleCase: true
     });
     assert.equal(gate.status, "ok", JSON.stringify(gate.issues));
+
+    const autoResumeRoot = fs.mkdtempSync(path.join(os.tmpdir(), "uat-runtime-containment-auto-resume-"));
+    cleanupRoots.push(autoResumeRoot);
+    await writeCommonRunFiles(autoResumeRoot);
+    writeAutoToolBridgeOnlyEvidence(autoResumeRoot);
+    const autoResumeReport = await writeCodexRuntimeContainmentResultIfNeeded({
+      runId: path.basename(autoResumeRoot),
+      roundId: "BIUI_COLLAGE_R001",
+      runDir: autoResumeRoot,
+      xlsxPath: path.join(autoResumeRoot, "input", "testcase.xlsx"),
+      currentCaseNo: "BIUI_COLLAGE_R001-B-12",
+      result: {
+        exitCode: 1,
+        signal: null,
+        stderr: "Error: thread/resume: thread/resume failed: no rollout found for thread id thread-fixture",
+        assistantText: ""
+      },
+      failCategory: "CODEX_RUNTIME_RESULT_WRITE_FAILED"
+    });
+    assert.equal(autoResumeReport.status, "written", JSON.stringify(autoResumeReport));
+    assert.ok(fs.existsSync(path.join(autoResumeRoot, "output", "result.xlsx")));
+    const autoParsed = await parseResultXlsx(path.join(autoResumeRoot, "output", "result.xlsx"));
+    assert.equal(autoParsed.cases[0]?.status, "BLOCKED");
+    assert.equal(autoParsed.cases[0]?.verdictReason, "CODEX_RUNTIME_RESULT_WRITE_FAILED");
+    const autoGate = evaluateResultEvidenceGate({
+      parsed: autoParsed,
+      resultSource: "codex_generated",
+      currentCaseNo: "BIUI_COLLAGE_R001-B-12",
+      expectedCaseNos: ["BIUI_COLLAGE_R001-B-12"],
+      requireSingleCase: true
+    });
+    assert.equal(autoGate.status, "ok", JSON.stringify(autoGate.issues));
 
     const usageLimitRoot = fs.mkdtempSync(path.join(os.tmpdir(), "uat-runtime-containment-usage-limit-"));
     cleanupRoots.push(usageLimitRoot);

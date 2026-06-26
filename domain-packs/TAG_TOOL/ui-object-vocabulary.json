@@ -1,12 +1,13 @@
 {
   "schemaVersion": "domain-ui-object-vocabulary-v0.1",
   "domain": "TAG_TOOL",
-  "status": "draft_contract",
+  "status": "draft_contract_live_augmented_2026-06-23",
   "purpose": "Domain-owned UI object ids for Galaxy Next player tag tool. These ids are targets for platform actions such as click, type, select, uploadFile, assertVisible, assertDisabled, assertNoRequest, download, and cancelModal.",
   "references": {
     "platformActionVocabulary": "contracts/platform-action-vocabulary.v1.json",
     "uiContract": "ui-contract.json",
     "componentInventory": "discovery/component-inventory.json",
+    "liveInventory20260623": "discovery/live-inventory-2026-06-23-dev-ui.md",
     "evidenceSchema": "evidence-schema.json"
   },
   "policy": [
@@ -96,13 +97,17 @@
         "headers",
         "rowCount",
         "emptyStateText",
-        "visibleRows"
+        "visibleRows",
+        "paginationText",
+        "pageSize"
       ],
       "evidenceObjects": [
         "tagList.table.state"
       ],
       "locatorHints": [
-        "table under 玩家標籤管理 with tag metadata headers"
+        "table under 玩家標籤管理 with tag metadata headers",
+        "current dev headers include 標籤名稱, 標籤類型, 條件類別, 篩選類型, 排程狀態, 資料最後更新時間, 備註, 操作",
+        "current dev may be populated; 2026-06-23 capture showed 共 28 筆資料"
       ],
       "hazards": [
         "System built-in tags should not appear in this user-created tag list."
@@ -127,16 +132,108 @@
       "stateAttributes": [
         "visibleMenuItems",
         "tagType",
-        "scheduleStatus"
+        "scheduleStatus",
+        "rowName"
       ],
       "evidenceObjects": [
         "tagList.rowActionMenu.state"
       ],
       "locatorHints": [
-        "row-level ⋯ menu in the target tag row"
+        "row-level ⋯ menu in the target tag row",
+        "trigger has accessible label 更多操作 and visible text •••",
+        "condition tag menu items: 查看設置, 標籤資訊, 終止, 刪除, 複製",
+        "manual tag menu items: 編輯, 標籤資訊, 刪除, 複製"
       ],
       "hazards": [
         "Menu item set changes by tag type and schedule status."
+      ]
+    },
+    {
+      "id": "tagList.rowActionItem.viewSettings",
+      "page": "tagPlayerList",
+      "component": "tagList.rowActions",
+      "objectType": "menuItem",
+      "aliases": [
+        "查看設置",
+        "view settings"
+      ],
+      "supportedActions": [
+        "click",
+        "assertVisible"
+      ],
+      "stateAttributes": [
+        "visible",
+        "innerText",
+        "enabled"
+      ],
+      "evidenceObjects": [
+        "tagList.rowActionMenu.state",
+        "interactionLog"
+      ],
+      "locatorHints": [
+        "menu item 查看設置 inside condition tag row 更多操作 menu"
+      ],
+      "hazards": [
+        "Only condition tag menus showed 查看設置 in the 2026-06-23 capture."
+      ]
+    },
+    {
+      "id": "tagList.rowActionItem.tagInfo",
+      "page": "tagPlayerList",
+      "component": "tagList.rowActions",
+      "objectType": "menuItem",
+      "aliases": [
+        "標籤資訊",
+        "tag info"
+      ],
+      "supportedActions": [
+        "click",
+        "assertVisible"
+      ],
+      "stateAttributes": [
+        "visible",
+        "innerText",
+        "enabled"
+      ],
+      "evidenceObjects": [
+        "tagList.rowActionMenu.state",
+        "interactionLog"
+      ],
+      "locatorHints": [
+        "menu item 標籤資訊 inside condition or manual tag row 更多操作 menu"
+      ],
+      "hazards": [
+        "Condition and manual tag info pages share route shape but expose different content sections."
+      ]
+    },
+    {
+      "id": "tagList.rowActionItem.edit",
+      "page": "tagPlayerList",
+      "component": "tagList.rowActions",
+      "objectType": "menuItem",
+      "aliases": [
+        "編輯",
+        "edit"
+      ],
+      "supportedActions": [
+        "click",
+        "assertVisible"
+      ],
+      "stateAttributes": [
+        "visible",
+        "innerText",
+        "enabled"
+      ],
+      "evidenceObjects": [
+        "tagList.rowActionMenu.state",
+        "interactionLog"
+      ],
+      "locatorHints": [
+        "menu item 編輯 inside manual tag row 更多操作 menu"
+      ],
+      "hazards": [
+        "Only manual tag menus showed 編輯 in the 2026-06-23 capture.",
+        "Clicking 編輯 opens a mutable form; read form state only unless the testcase explicitly asks to edit."
       ]
     },
     {
@@ -173,7 +270,7 @@
       "id": "tagForm.tagType",
       "page": "tagCreate",
       "component": "tagForm.basicFields",
-      "objectType": "select",
+      "objectType": "radioGroup",
       "aliases": [
         "標籤類型",
         "條件標籤",
@@ -188,16 +285,132 @@
       ],
       "stateAttributes": [
         "selectedLabel",
-        "dependentFieldsVisible"
+        "dependentFieldsVisible",
+        "conditionFieldsHiddenWhenManualSelected"
       ],
       "evidenceObjects": [
         "tagForm.typeVisibility.state"
       ],
       "locatorHints": [
-        "dropdown associated with label 標籤類型"
+        "radio labels 條件標籤 and 人工標籤 under label 標籤類型"
       ],
       "hazards": [
         "Selecting 人工標籤 must hide condition/time/analysis fields instead of showing disabled placeholders."
+      ]
+    },
+    {
+      "id": "conditionTag.categorySelect",
+      "page": "tagCreate",
+      "component": "conditionTag.categorySelect",
+      "objectType": "dropdown",
+      "aliases": [
+        "條件類別",
+        "條件類型",
+        "消費級距 R",
+        "累積登入天數",
+        "累積未登入天數",
+        "累積遊戲時間",
+        "condition category"
+      ],
+      "supportedActions": [
+        "click",
+        "select",
+        "assertVisible",
+        "assertText"
+      ],
+      "stateAttributes": [
+        "selectedLabel",
+        "visibleOptions"
+      ],
+      "evidenceObjects": [
+        "conditionTag.categorySelect.state",
+        "interactionLog"
+      ],
+      "locatorHints": [
+        "dropdown associated with label 條件類別 on 新增標籤 condition form",
+        "live options: 消費級距 R, 累積登入天數, 累積未登入天數, 累積遊戲時間"
+      ],
+      "hazards": [
+        "PRD and older drafts may call this 條件類型; live UI uses 條件類別."
+      ]
+    },
+    {
+      "id": "conditionTag.filterTypeSelect",
+      "page": "tagCreate",
+      "component": "conditionTag.filterTypeSelect",
+      "objectType": "dropdown",
+      "aliases": [
+        "篩選類型",
+        "時間類型",
+        "動態時間區間",
+        "靜態時間區間",
+        "依報表區間設置",
+        "首次後持續累計",
+        "filter type"
+      ],
+      "supportedActions": [
+        "click",
+        "select",
+        "assertVisible",
+        "assertText"
+      ],
+      "stateAttributes": [
+        "selectedLabel",
+        "visibleOptions",
+        "analysisPeriodVisibility"
+      ],
+      "evidenceObjects": [
+        "conditionTag.filterTypeSelect.state",
+        "dateRange.panel.state",
+        "interactionLog"
+      ],
+      "locatorHints": [
+        "dropdown associated with label 篩選類型 on 新增標籤 condition form",
+        "live options: 動態時間區間, 靜態時間區間, 依報表區間設置, 首次後持續累計"
+      ],
+      "hazards": [
+        "PRD and older drafts may call this 時間類型; live UI uses 篩選類型.",
+        "Filter type changes which date/analysis controls should be visible."
+      ]
+    },
+    {
+      "id": "conditionTag.boundOperator",
+      "page": "tagCreate",
+      "component": "conditionTag.valueEditor",
+      "objectType": "dropdown",
+      "aliases": [
+        "下限運算子",
+        "上限運算子",
+        "無",
+        "≥",
+        ">",
+        "=",
+        "≤",
+        "<",
+        "bound operator"
+      ],
+      "supportedActions": [
+        "click",
+        "select",
+        "assertVisible",
+        "assertText"
+      ],
+      "stateAttributes": [
+        "selectedLabel",
+        "lowerOperatorOptions",
+        "upperOperatorOptions"
+      ],
+      "evidenceObjects": [
+        "conditionTag.valueEditor.state",
+        "interactionLog"
+      ],
+      "locatorHints": [
+        "inline dropdowns in 子標籤級距 row near labels 下限 and 上限",
+        "lower bound options: 無, ≥, >, =",
+        "upper bound options: 無, ≤, <"
+      ],
+      "hazards": [
+        "Upper and lower operator option sets differ; do not assume they are symmetric."
       ]
     },
     {
@@ -210,6 +423,7 @@
         "子標籤級距",
         "+ 添加",
         "新增級距",
+        "新增標籤",
         "子標籤",
         "tag value editor"
       ],
@@ -225,14 +439,19 @@
         "tagValueCount",
         "conditionRowCount",
         "addButtonEnabled",
-        "editorPlaceholder"
+        "editorPlaceholder",
+        "lowerBoundOperator",
+        "upperBoundOperator",
+        "validationText"
       ],
       "evidenceObjects": [
         "conditionTag.valueEditor.state"
       ],
       "locatorHints": [
         "PRD section named 標籤值設置 with + 添加 button and right-side editor",
-        "current dev section named 子標籤級距 with 新增級距 button and inline lower/upper inputs"
+        "current dev section named 子標籤級距 with inline lower/upper inputs",
+        "2026-06-23 dev capture observed add button text 新增標籤",
+        "empty first row validation text 第 1 個子標籤請輸入子標籤名稱"
       ],
       "hazards": [
         "PRD requires initial state to be empty; current dev UI pre-populates one grade row.",
@@ -301,17 +520,252 @@
         "mode",
         "selectedLabel",
         "quickOptions",
-        "limitText"
+        "limitText",
+        "dynamicDayInputs",
+        "calendarMonthLabels"
       ],
       "evidenceObjects": [
         "dateRange.panel.state"
       ],
       "locatorHints": [
-        "analysis period field opens date panel with 日期範圍 title"
+        "analysis period field opens date panel with 日期範圍 title",
+        "quick options include 昨日, 今日, 上週, 本週, 上月, 本月, 過去 7 天, 最近 7 天, 過去 30 天, 最近 30 天",
+        "footer buttons are 取消 and 確定"
       ],
       "hazards": [
         "Dynamic and static modes share similar UI but different input semantics.",
-        "Date range cannot exceed 90 days."
+        "Date range cannot exceed 90 days.",
+        "2026-06-23 capture observed Escape did not close this panel; click panel 取消 to close safely."
+      ]
+    },
+    {
+      "id": "tagInfo.basicSettings",
+      "page": "tagInfo",
+      "component": "tagInfo.basicSettings",
+      "objectType": "summary",
+      "aliases": [
+        "標籤基本設置",
+        "標籤資訊與每日資訊",
+        "標籤資訊與名單列表",
+        "查看設置",
+        "編輯設置",
+        "tag info basic settings"
+      ],
+      "supportedActions": [
+        "read",
+        "click",
+        "assertVisible",
+        "assertText"
+      ],
+      "stateAttributes": [
+        "tagName",
+        "tagType",
+        "conditionType",
+        "timeType",
+        "analysisPeriod",
+        "note",
+        "detailLinkLabel"
+      ],
+      "evidenceObjects": [
+        "tagInfo.basicSettings.state",
+        "navigation.state"
+      ],
+      "locatorHints": [
+        "section named 標籤基本設置 on route /bi-dev/zh-TW/tag/player/:tagId",
+        "condition tag page title group contains 標籤資訊與每日資訊 and button 查看設置",
+        "manual tag page title group contains 標籤資訊與名單列表 and button 編輯設置"
+      ],
+      "hazards": [
+        "Condition and manual tags share the same route pattern but expose different secondary actions."
+      ]
+    },
+    {
+      "id": "conditionTag.settingsReadonly",
+      "page": "conditionTagSettingsReadonly",
+      "component": "tagInfo.basicSettings",
+      "objectType": "summary",
+      "aliases": [
+        "查看設置",
+        "子標籤級距",
+        "排程狀態",
+        "資料最後更新時間",
+        "condition tag read-only settings"
+      ],
+      "supportedActions": [
+        "read",
+        "assertVisible",
+        "assertText"
+      ],
+      "stateAttributes": [
+        "tagName",
+        "conditionCategory",
+        "gameTimeUnit",
+        "filterType",
+        "analysisPeriod",
+        "scheduleStatus",
+        "lastUpdatedAt",
+        "subTagGrades"
+      ],
+      "evidenceObjects": [
+        "conditionTag.settingsReadonly.state"
+      ],
+      "locatorHints": [
+        "route /bi-dev/zh-TW/tag/player/:tagId/settings",
+        "page title 查看設置",
+        "read-only fields include 標籤名稱, 條件類別, 篩選類型, 分析時段, 排程狀態, 資料最後更新時間, 備註",
+        "section 子標籤級距 lists values and bounds"
+      ],
+      "hazards": [
+        "This page is read-only; do not infer create/edit field locators from it."
+      ]
+    },
+    {
+      "id": "tagInfo.latestValueSummary",
+      "page": "tagInfo",
+      "component": "tagInfo.latestValueSummary",
+      "objectType": "summary",
+      "aliases": [
+        "最新標籤值資訊",
+        "總被標籤人數",
+        "總授權帳號人數",
+        "數據更新時間",
+        "latest tag value info"
+      ],
+      "supportedActions": [
+        "read",
+        "assertVisible",
+        "assertText"
+      ],
+      "stateAttributes": [
+        "totalCount",
+        "tagValues",
+        "dataUpdatedAt"
+      ],
+      "evidenceObjects": [
+        "tagInfo.latestValueSummary.state"
+      ],
+      "locatorHints": [
+        "section named 最新標籤值資訊 on tag information page",
+        "condition tags may show 總被標籤人數",
+        "manual tags may show 總授權帳號人數"
+      ],
+      "hazards": [
+        "Metric label differs by tag type; do not use one label for both manual and condition tags."
+      ]
+    },
+    {
+      "id": "tagInfo.valueFilter",
+      "page": "tagInfo",
+      "component": "tagInfo.valueFilter",
+      "objectType": "dropdown",
+      "aliases": [
+        "標籤值",
+        "標籤值 (N/N)",
+        "全選",
+        "tag value filter"
+      ],
+      "supportedActions": [
+        "click",
+        "select",
+        "assertVisible",
+        "assertText"
+      ],
+      "stateAttributes": [
+        "buttonLabel",
+        "selectedCount",
+        "totalCount",
+        "checkboxes",
+        "allSelected"
+      ],
+      "evidenceObjects": [
+        "tagInfo.valueFilter.state",
+        "interactionLog"
+      ],
+      "locatorHints": [
+        "button label pattern 標籤值 (N/N) on tag information page",
+        "dropdown contains 全選 checkbox and one checkbox per tag value"
+      ],
+      "hazards": [
+        "Selecting values changes visible chart/table scope; capture selected checkbox state before judging results."
+      ]
+    },
+    {
+      "id": "manualTag.memberTable",
+      "page": "tagInfo",
+      "component": "manualTag.memberTable",
+      "objectType": "table",
+      "aliases": [
+        "名單列表",
+        "銀河帳號ID",
+        "被貼標/異動時間",
+        "manual tag member table"
+      ],
+      "supportedActions": [
+        "read",
+        "assertVisible",
+        "assertText",
+        "paginate",
+        "selectPageSize"
+      ],
+      "stateAttributes": [
+        "headers",
+        "visibleRows",
+        "totalRowsText",
+        "pageSizeOptions",
+        "currentPage"
+      ],
+      "evidenceObjects": [
+        "manualTag.memberTable.state"
+      ],
+      "locatorHints": [
+        "manual tag information page table under 標籤資訊與名單列表",
+        "headers #, 標籤值, 銀河帳號ID, 被貼標/異動時間(GMT+08:00)",
+        "page-size options 20筆/頁, 50筆/頁, 100筆/頁"
+      ],
+      "hazards": [
+        "This table is specific to manual tag information pages; condition tag pages instead show trend/daily areas."
+      ]
+    },
+    {
+      "id": "manualTag.editForm",
+      "page": "manualTagEdit",
+      "component": "manualTag.editForm",
+      "objectType": "form",
+      "aliases": [
+        "編輯標籤",
+        "編輯設置",
+        "清除輸入",
+        "manual tag edit form"
+      ],
+      "supportedActions": [
+        "read",
+        "type",
+        "click",
+        "uploadFile",
+        "assertVisible",
+        "assertValue"
+      ],
+      "stateAttributes": [
+        "tagNameValue",
+        "noteValue",
+        "uploadGuidanceText",
+        "hasEditOnlyGuidance",
+        "buttons"
+      ],
+      "evidenceObjects": [
+        "manualTag.editForm.state",
+        "manualUpload.file.state",
+        "manualUpload.validation.state"
+      ],
+      "locatorHints": [
+        "route /bi-dev/zh-TW/tag/player/:tagId/edit",
+        "page title 編輯標籤",
+        "fields 標籤名稱, 備註, 上傳文件",
+        "edit-only guidance contains 於編輯標籤時，僅需上傳異動(新增/更新/刪除)的名單"
+      ],
+      "hazards": [
+        "Saving edit form mutates tag data and requires testcase intent plus approval when using shared dev data.",
+        "File upload should use controlled fixtures and verify upload-time vs submit-time validation separately."
       ]
     },
     {

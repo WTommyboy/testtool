@@ -2,7 +2,7 @@
   "schemaVersion": "domain-action-contract-v0.1",
   "domain": "TAG_TOOL",
   "action": "tagList",
-  "status": "draft_contract",
+  "status": "draft_contract_live_augmented_2026-06-23",
   "purpose": "Shared player tag list observations and row action menu checks.",
   "capabilities": [
     "tag.list.columns",
@@ -10,6 +10,35 @@
     "tag.list.rowActionsByTypeAndSchedule",
     "tag.list.deleteCancel"
   ],
+  "observedLiveState": {
+    "source": "discovery/live-inventory-2026-06-23-dev-ui.md",
+    "listPopulation": "2026-06-23 dev capture showed 共 28 筆資料 across pages 1 and 2.",
+    "headers": [
+      "標籤名稱",
+      "標籤類型",
+      "條件類別",
+      "篩選類型",
+      "排程狀態",
+      "資料最後更新時間",
+      "備註",
+      "操作"
+    ],
+    "rowActionMenuVariants": {
+      "條件標籤": [
+        "查看設置",
+        "標籤資訊",
+        "終止",
+        "刪除",
+        "複製"
+      ],
+      "人工標籤": [
+        "編輯",
+        "標籤資訊",
+        "刪除",
+        "複製"
+      ]
+    }
+  },
   "paramsSchema": {
     "type": "object",
     "required": [
@@ -21,6 +50,7 @@
         "enum": [
           "observeColumns",
           "observeEmptyState",
+          "observePagination",
           "openRowActions",
           "openDeleteAndCancel"
         ]
@@ -40,9 +70,27 @@
         "enum": [
           "進行中",
           "已結束",
-          "-"
+          "-",
+          "—"
         ]
       }
+    },
+    "observePagination": {
+      "declarativePlan": [
+        {
+          "op": "ensurePage",
+          "target": "tagPlayerList"
+        },
+        {
+          "op": "read",
+          "target": "tagList.table",
+          "saveAs": "tagList.table.state"
+        }
+      ],
+      "requiredEvidence": [
+        "navigation.state",
+        "tagList.table.state"
+      ]
     },
     "additionalProperties": true
   },

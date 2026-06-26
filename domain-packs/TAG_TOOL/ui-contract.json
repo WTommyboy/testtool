@@ -1,7 +1,7 @@
 {
   "schemaVersion": "domain-ui-contract-v0.1",
   "domain": "TAG_TOOL",
-  "status": "draft_contract",
+  "status": "draft_contract_live_augmented_2026-06-23",
   "purpose": "Reviewed page, component, action, evidence, and safety boundaries for Galaxy Next player tag tool UAT.",
   "pages": [
     {
@@ -34,13 +34,11 @@
     {
       "id": "conditionTagSettingsReadonly",
       "routePatterns": [
-        "/bi-dev/:locale/tag/player/:tagId/setting?gameId=:gameId",
-        "/bi-rc/:locale/tag/player/:tagId/setting?gameId=:gameId"
+        "/bi-dev/:locale/tag/player/:tagId/settings?gameId=:gameId",
+        "/bi-rc/:locale/tag/player/:tagId/settings?gameId=:gameId"
       ],
       "components": [
-        "tagForm.basicFields",
-        "conditionTag.valueEditor",
-        "readonlyForm.state"
+        "conditionTag.settingsReadonly"
       ]
     },
     {
@@ -50,22 +48,21 @@
         "/bi-rc/:locale/tag/player/:tagId/edit?gameId=:gameId"
       ],
       "components": [
-        "tagForm.basicFields",
-        "manualTag.uploadPanel",
+        "manualTag.editForm",
         "toast.message"
       ]
     },
     {
       "id": "tagInfo",
       "routePatterns": [
-        "/bi-dev/:locale/tag/player/:tagId/info?gameId=:gameId",
-        "/bi-rc/:locale/tag/player/:tagId/info?gameId=:gameId"
+        "/bi-dev/:locale/tag/player/:tagId?gameId=:gameId",
+        "/bi-rc/:locale/tag/player/:tagId?gameId=:gameId"
       ],
       "components": [
         "tagInfo.basicSettings",
-        "tagInfo.summary",
-        "tagInfo.dailyChart",
-        "tagInfo.memberTable"
+        "tagInfo.latestValueSummary",
+        "tagInfo.valueFilter",
+        "manualTag.memberTable"
       ]
     },
     {
@@ -94,8 +91,9 @@
       "id": "tagList.table",
       "type": "table",
       "locatorStrategies": [
-        "table with headers 標籤名稱, 標籤類型, 條件類型, 時間類型, 排程狀態, 資料最後更新時間, 備註",
-        "empty state text 無標籤資料 when no rows exist"
+        "table with headers 標籤名稱, 標籤類型, 條件類別, 篩選類型, 排程狀態, 資料最後更新時間, 備註, 操作",
+        "empty state text 尚無標籤資料 when no rows exist",
+        "2026-06-23 dev capture showed populated state 共 28 筆資料"
       ]
     },
     {
@@ -103,7 +101,9 @@
       "type": "menu",
       "locatorStrategies": [
         "row action trigger shown as ⋯ or more button in each tag row",
-        "menu items vary by tag type and schedule state"
+        "trigger accessible label 更多操作",
+        "condition menu items 查看設置, 標籤資訊, 終止, 刪除, 複製",
+        "manual menu items 編輯, 標籤資訊, 刪除, 複製"
       ]
     },
     {
@@ -119,7 +119,9 @@
       "type": "dualPaneEditor",
       "locatorStrategies": [
         "section title 子標籤級距",
-        "button 新增級距 and inline lower/upper bound editor"
+        "2026-06-23 dev capture button 新增標籤 and inline lower/upper bound editor",
+        "lower operators 無, ≥, >, =",
+        "upper operators 無, ≤, <"
       ]
     },
     {
@@ -128,7 +130,8 @@
       "locatorStrategies": [
         "section title 上傳文件",
         "text mentions csv and file limits",
-        "button or dropzone for 新增檔案"
+        "button 選擇檔案",
+        "tooltip mentions 標籤值名稱, 銀河帳號ID ( userobjectid ), 操作"
       ]
     },
     {
@@ -137,7 +140,65 @@
       "locatorStrategies": [
         "panel title 日期範圍",
         "quick options 昨日, 今日, 上週, 本週, 上月, 本月, 過去7天, 最近7天, 過去30天, 最近30天",
-        "limit text 日期範圍不可超過90天"
+        "dynamic day inputs",
+        "buttons 取消 and 確定"
+      ]
+    },
+    {
+      "id": "conditionTag.settingsReadonly",
+      "type": "summary",
+      "locatorStrategies": [
+        "route /bi-dev/:locale/tag/player/:tagId/settings?gameId=:gameId",
+        "page title 查看設置",
+        "section 子標籤級距",
+        "read-only fields include 標籤名稱, 條件類別, 篩選類型, 分析時段, 排程狀態, 資料最後更新時間, 備註"
+      ]
+    },
+    {
+      "id": "tagInfo.basicSettings",
+      "type": "summary",
+      "locatorStrategies": [
+        "route /bi-dev/:locale/tag/player/:tagId?gameId=:gameId",
+        "section 標籤基本設置",
+        "condition title group 標籤資訊與每日資訊",
+        "manual title group 標籤資訊與名單列表"
+      ]
+    },
+    {
+      "id": "tagInfo.latestValueSummary",
+      "type": "summary",
+      "locatorStrategies": [
+        "section 最新標籤值資訊",
+        "condition metric 總被標籤人數",
+        "manual metric 總授權帳號人數",
+        "field 數據更新時間"
+      ]
+    },
+    {
+      "id": "tagInfo.valueFilter",
+      "type": "dropdown",
+      "locatorStrategies": [
+        "button label pattern 標籤值 (N/N)",
+        "dropdown contains 全選 checkbox and one checkbox per tag value"
+      ]
+    },
+    {
+      "id": "manualTag.memberTable",
+      "type": "table",
+      "locatorStrategies": [
+        "manual tag info page 標籤資訊與名單列表",
+        "headers #, 標籤值, 銀河帳號ID, 被貼標/異動時間(GMT+08:00)",
+        "page-size options 20筆/頁, 50筆/頁, 100筆/頁"
+      ]
+    },
+    {
+      "id": "manualTag.editForm",
+      "type": "form",
+      "locatorStrategies": [
+        "route /bi-dev/:locale/tag/player/:tagId/edit?gameId=:gameId",
+        "page title 編輯標籤",
+        "fields 標籤名稱, 備註, 上傳文件",
+        "edit-only guidance 於編輯標籤時，僅需上傳異動(新增/更新/刪除)的名單"
       ]
     },
     {
@@ -191,6 +252,18 @@
         "tag.manual.addCsv",
         "tag.manual.editCsv",
         "tag.manual.validation"
+      ]
+    },
+    {
+      "id": "tag.infoReadOnly",
+      "contractFile": "action-contracts/tagInfoReadOnly.json",
+      "capabilities": [
+        "tag.info.basicSettings",
+        "tag.info.latestValueSummary",
+        "tag.info.valueFilter",
+        "tag.condition.settingsReadonly",
+        "tag.manual.memberTable",
+        "tag.manual.editFormObserve"
       ]
     },
     {

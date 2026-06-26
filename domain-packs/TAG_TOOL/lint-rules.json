@@ -1,7 +1,7 @@
 {
   "schemaVersion": "domain-lint-rules-v0.1",
   "domain": "TAG_TOOL",
-  "status": "draft_contract",
+  "status": "draft_contract_live_augmented_2026-06-23",
   "rules": [
     {
       "id": "tag-tool-domain-required",
@@ -79,6 +79,55 @@
         }
       ],
       "message": "Condition tags are view-only after creation; testcase should use 查看設置 instead of edit."
+    },
+    {
+      "id": "tag-info-route-pattern-current-dev",
+      "severity": "warning",
+      "forbid": [
+        {
+          "whenAnyTextContains": [
+            "標籤資訊",
+            "tag info"
+          ],
+          "textContains": "/tag/player/:tagId/info"
+        }
+      ],
+      "message": "Current dev tag info route is /tag/player/:tagId?gameId=:gameId, not /tag/player/:tagId/info."
+    },
+    {
+      "id": "manual-condition-row-actions-not-interchangeable",
+      "severity": "warning",
+      "forbid": [
+        {
+          "whenAnyTextContains": [
+            "人工標籤",
+            "查看設置"
+          ],
+          "textContains": "人工標籤 查看設置"
+        },
+        {
+          "whenAnyTextContains": [
+            "條件標籤",
+            "編輯"
+          ],
+          "textContains": "條件標籤 編輯"
+        }
+      ],
+      "message": "Manual and condition tag row action menus differ: condition has 查看設置/終止, manual has 編輯."
+    },
+    {
+      "id": "tag-list-not-assume-empty-current-dev",
+      "severity": "warning",
+      "forbid": [
+        {
+          "whenAnyTextContains": [
+            "玩家標籤管理",
+            "尚無標籤資料"
+          ],
+          "textContains": "前置假設列表為空"
+        }
+      ],
+      "message": "2026-06-23 dev capture showed a populated tag list with 28 rows; empty-state cases must explicitly create or confirm an empty environment."
     }
   ]
 }

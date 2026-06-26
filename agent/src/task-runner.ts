@@ -503,6 +503,7 @@ const writeRunBrief = (
     "- A capability-gate unsupported status is an online tool capability blocker. Do not fallback to slow manual exploration for filter/group/detail/metric unsupported cases in trusted Agent mode.",
     "- Old workbook rows, existing reports, and previous run artifacts are stale unless the testcase explicitly says to reuse them.",
     "- If SSO, native alert/confirm, irreversible operation, or ambiguity blocks progress, stop and emit a Tool Bridge request.",
+    "- Do not classify ordinary UI navigation as irreversible. Opening create/edit/detail/settings pages, opening dropdowns/menus/popovers, changing page size, or clicking a read-only row link is not an irreversible_operation by itself; if browser safety blocks such an action, write TOOL_EXECUTION_UNAVAILABLE or EVIDENCE_INSUFFICIENT with current-run preflight evidence instead of requesting irreversible approval.",
     config.auto_approve_tool_requests
       ? "- Mac Agent will auto-deliver approved=true for non-SSO/login authorization Tool Bridge requests, then resume this thread. SSO/login/auth blockers and package-gate ambiguity decisions still wait for PM."
       : "- Tool Bridge requests wait for PM response before resume.",
@@ -2162,6 +2163,7 @@ const buildPrompt = (
     "- If you cannot execute the real UAT because browser automation/tool access is unavailable and helper evidence is missing or incomplete, still create `output/result.xlsx` for the current case as BLOCKED with fail_category=TOOL_EXECUTION_UNAVAILABLE or EVIDENCE_INSUFFICIENT. Reserve Agent fallback for process crashes, cancellation, or cases where you cannot write a workbook at all.",
     "- Do not use Tool Bridge for missing testcase files; report the missing files and exit cleanly.",
     "- For user approval or SSO/manual blockers, emit only supported actionable Tool Bridge types: irreversible_operation, ambiguity_decision, playwright_recovery.",
+    "- Do not emit irreversible_operation for ordinary navigation or read-only UI opening actions: create/edit/detail/settings route entry, dropdown/menu/popover expansion, pagination/page-size changes, and row-name/link navigation are not irreversible by themselves. If the browser layer blocks one of these, write a current-case BLOCKED result with browserMcp.preflight/browser_tabs evidence instead of pausing for approval.",
     "- Every actionable Tool Bridge block must include request_id and use this envelope: [TOOL_REQUEST]{...}[/TOOL_REQUEST].",
     "- Irreversible schema: [TOOL_REQUEST]{\"type\":\"irreversible_operation\",\"request_id\":\"<run-id>-<case-no>-<slug>\",\"case\":\"<case-no>\",\"action\":\"<short action>\",\"reason\":\"<why approval is required>\",\"proposed_action\":\"<exact PM-approved action>\"}[/TOOL_REQUEST]",
     "- Ambiguity schema: [TOOL_REQUEST]{\"type\":\"ambiguity_decision\",\"request_id\":\"<run-id>-<case-no>-<slug>\",\"case\":\"<case-no>\",\"context\":\"<what is ambiguous>\",\"options\":[\"<option A>\",\"<option B>\"],\"recommendation\":\"<recommended option>\"}[/TOOL_REQUEST]",

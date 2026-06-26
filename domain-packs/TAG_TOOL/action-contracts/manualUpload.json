@@ -2,7 +2,7 @@
   "schemaVersion": "domain-action-contract-v0.1",
   "domain": "TAG_TOOL",
   "action": "manualUpload",
-  "status": "draft_contract",
+  "status": "draft_contract_live_augmented_2026-06-23",
   "purpose": "Manual tag add/edit CSV upload setup and validation evidence.",
   "capabilities": [
     "tag.manual.addCsvFormat",
@@ -10,6 +10,20 @@
     "tag.manual.fileLimit",
     "tag.manual.validationToast"
   ],
+  "observedLiveGuidance": {
+    "source": "discovery/live-inventory-2026-06-23-dev-ui.md",
+    "createMode": [
+      "請上傳欲設置的標籤值與名單檔案，請參閱 檔案範例檔.csv。僅可上傳 csv 檔",
+      "每個檔案限 10,000 筆資料，每次設置至多 5 個檔案。",
+      "tooltip columns: 標籤值名稱, 銀河帳號ID ( userobjectid ), 操作",
+      "tooltip says create flow operation can only be add"
+    ],
+    "editMode": [
+      "edit page includes the create guidance",
+      "edit-only text: 於編輯標籤時，僅需上傳異動(新增/更新/刪除)的名單",
+      "tooltip says edit flow can use add, update, delete"
+    ]
+  },
   "paramsSchema": {
     "type": "object",
     "required": [
@@ -61,6 +75,33 @@
       "requiredEvidence": [
         "tagForm.typeVisibility.state",
         "manualUpload.file.state"
+      ]
+    },
+    "observeEditGuidance": {
+      "declarativePlan": [
+        {
+          "op": "findRow",
+          "target": "tagList.table",
+          "labelFrom": "params.tagName"
+        },
+        {
+          "op": "click",
+          "target": "tagList.rowActions"
+        },
+        {
+          "op": "click",
+          "target": "tagList.rowActionItem.edit"
+        },
+        {
+          "op": "read",
+          "target": "manualTag.editForm",
+          "saveAs": "manualTag.editForm.state"
+        }
+      ],
+      "requiredEvidence": [
+        "navigation.state",
+        "manualTag.editForm.state",
+        "interactionLog"
       ]
     },
     "uploadAddCsv": {

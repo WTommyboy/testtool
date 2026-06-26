@@ -1,7 +1,7 @@
 {
   "schemaVersion": "domain-evidence-schema-v0.1",
   "domain": "TAG_TOOL",
-  "status": "draft_contract",
+  "status": "draft_contract_live_augmented_2026-06-23",
   "policy": [
     "Evidence must be current-run and case-scoped.",
     "Helper status is never PASS or FAIL by itself.",
@@ -136,6 +136,20 @@
       ],
       "purpose": "Condition tag settings are view-only after creation."
     },
+    "conditionTag.settingsReadonly.state": {
+      "type": "object",
+      "requiredFields": [
+        "tagName",
+        "conditionCategory",
+        "filterType",
+        "analysisPeriod",
+        "scheduleStatus",
+        "lastUpdatedAt",
+        "subTagGrades",
+        "asserted"
+      ],
+      "purpose": "Condition tag read-only settings page, including basic fields and sub-tag grade bounds."
+    },
     "dangerousModal.state": {
       "type": "object",
       "requiredFields": [
@@ -175,6 +189,63 @@
         "asserted"
       ],
       "purpose": "Setting history table and timestamp format."
+    },
+    "tagInfo.basicSettings.state": {
+      "type": "object",
+      "requiredFields": [
+        "tagName",
+        "tagType",
+        "visibleSections",
+        "detailLinkLabel",
+        "asserted"
+      ],
+      "purpose": "Tag information page basic settings. Condition and manual tags share the route pattern but expose different title groups and secondary actions."
+    },
+    "tagInfo.latestValueSummary.state": {
+      "type": "object",
+      "requiredFields": [
+        "totalMetricLabel",
+        "totalMetricValue",
+        "tagValues",
+        "dataUpdatedAt",
+        "asserted"
+      ],
+      "purpose": "Latest tag value summary on condition or manual tag information pages."
+    },
+    "tagInfo.valueFilter.state": {
+      "type": "object",
+      "requiredFields": [
+        "buttonLabel",
+        "selectedCount",
+        "totalCount",
+        "checkboxes",
+        "asserted"
+      ],
+      "purpose": "Tag value dropdown state, including 全選 and per-value checkbox selections."
+    },
+    "manualTag.memberTable.state": {
+      "type": "object",
+      "requiredFields": [
+        "headers",
+        "rowCount",
+        "visibleRows",
+        "pagination",
+        "pageSizeOptions",
+        "asserted"
+      ],
+      "purpose": "Manual tag member list table on 標籤資訊與名單列表 pages."
+    },
+    "manualTag.editForm.state": {
+      "type": "object",
+      "requiredFields": [
+        "tagNameValue",
+        "noteValue",
+        "uploadGuidanceText",
+        "hasEditOnlyGuidance",
+        "buttons",
+        "asserted"
+      ],
+      "purpose": "Manual tag edit form observation without submitting changes."
     },
     "tagInfo.memberTable.state": {
       "type": "object",
@@ -244,6 +315,30 @@
       "requires": [
         "dateRange.panel.state",
         "interactionLog"
+      ]
+    },
+    {
+      "id": "tag-info-readonly-flows-require-tag-info-state",
+      "when": {
+        "actionIn": [
+          "openConditionSettingsReadonly",
+          "observeConditionTagInfo",
+          "openConditionValueFilter",
+          "observeManualTagInfo",
+          "openManualValueFilter",
+          "observeManualEditForm"
+        ]
+      },
+      "requires": [
+        "navigation.state",
+        "interactionLog"
+      ],
+      "requiresAny": [
+        "conditionTag.settingsReadonly.state",
+        "tagInfo.basicSettings.state",
+        "tagInfo.valueFilter.state",
+        "manualTag.memberTable.state",
+        "manualTag.editForm.state"
       ]
     }
   ]

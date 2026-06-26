@@ -31,6 +31,10 @@
 
 - Live preflight: completed on 2026-06-22 in in-app browser after Tommy completed SSO.
 - Known UI drift from PRD: see `domain-packs/TAG_TOOL/discovery/live-inventory-2026-06-22.md`.
+- Live UI inventory refresh: completed on 2026-06-23 with Playwright against dev URL. See `domain-packs/TAG_TOOL/discovery/live-inventory-2026-06-23-dev-ui.md`.
+- 2026-06-23 domain pack updates: refreshed `discovery/page-map.json`, `discovery/component-inventory.json`, `ui-object-vocabulary.json`, `action-contracts/tagList.json`, `action-contracts/manualUpload.json`, and added `action-contracts/tagInfoReadOnly.json`.
+- 2026-06-23 live dev state note: player tag list was populated with 28 rows; tests must not assume the previous empty-list state.
+- 2026-06-23 live dev route note: tag info uses `/bi-dev/zh-TW/tag/player/:tagId?gameId=:gameId`; condition settings uses `/bi-dev/zh-TW/tag/player/:tagId/settings?gameId=:gameId`.
 
 ### Existing Test Assets
 

@@ -18,6 +18,8 @@ M1 目前支援的 actionable types：
 
 其他 diagnostic requests 可以記錄，但除非 backend 明確視為 actionable，否則不應阻塞流程。
 
+普通 UI 導航不是不可逆動作。打開新增/編輯/詳情/查看設置頁、展開下拉/選單/popover、切換分頁或每頁筆數、點只讀 row link，本身不應 emit `irreversible_operation`。若 browser safety layer 擋住這類動作，應用 current-run preflight / browser_tabs / DOM evidence 寫單題 `BLOCKED`（例如 `TOOL_EXECUTION_UNAVAILABLE` 或 `EVIDENCE_INSUFFICIENT`），不要要求不可逆授權。
+
 ## 必要 Envelope
 
 Codex 必須用以下 envelope emit actionable request：

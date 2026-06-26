@@ -1,7 +1,7 @@
 {
   "schemaVersion": "domain-ui-discovery-component-inventory-v0.1",
   "domain": "TAG_TOOL",
-  "status": "live_verified_partial_2026-06-22",
+  "status": "live_verified_partial_2026-06-23",
   "components": [
     {
       "id": "tagList.toolbar",
@@ -20,8 +20,13 @@
       "candidateSignals": [
         "header 標籤名稱",
         "header 標籤類型",
+        "header 條件類別",
+        "header 篩選類型",
         "header 排程狀態",
-        "row action trigger ⋯"
+        "header 資料最後更新時間",
+        "header 備註",
+        "row action trigger 更多操作 / •••",
+        "pagination 共 28 筆資料 in 2026-06-23 dev capture"
       ]
     },
     {
@@ -29,10 +34,9 @@
       "page": "tagPlayerList",
       "type": "menu",
       "candidateSignals": [
-        "items 查看設置, 詳細資料 or 標籤資訊",
-        "condition active item 終止",
-        "manual item 編輯",
-        "items 刪除 and 複製"
+        "condition menu items 查看設置, 標籤資訊, 終止, 刪除, 複製",
+        "manual menu items 編輯, 標籤資訊, 刪除, 複製",
+        "row action trigger accessible label 更多操作"
       ]
     },
     {
@@ -41,8 +45,26 @@
       "type": "form",
       "candidateSignals": [
         "field 標籤名稱",
-        "dropdown 標籤類型",
+        "radio options 條件標籤 and 人工標籤",
         "dependent fields 條件類別, 篩選類型, 分析時段"
+      ]
+    },
+    {
+      "id": "conditionTag.categorySelect",
+      "page": "tagCreate",
+      "type": "dropdown",
+      "candidateSignals": [
+        "label 條件類別",
+        "options 消費級距 R, 累積登入天數, 累積未登入天數, 累積遊戲時間"
+      ]
+    },
+    {
+      "id": "conditionTag.filterTypeSelect",
+      "page": "tagCreate",
+      "type": "dropdown",
+      "candidateSignals": [
+        "label 篩選類型",
+        "options 動態時間區間, 靜態時間區間, 依報表區間設置, 首次後持續累計"
       ]
     },
     {
@@ -51,8 +73,10 @@
       "type": "dualPaneEditor",
       "candidateSignals": [
         "label 子標籤級距",
-        "button 新增級距",
-        "inline fields 子標籤名稱, 下限, 上限"
+        "button 新增標籤 in 2026-06-23 dev capture",
+        "inline fields 子標籤名稱, 下限, 上限",
+        "lower bound operators 無, ≥, >, =",
+        "upper bound operators 無, ≤, <"
       ]
     },
     {
@@ -75,7 +99,64 @@
         "title 日期範圍",
         "quick preset labels",
         "cancel and confirm buttons",
-        "90 day limit text"
+        "dynamic day inputs",
+        "Escape may not close panel; panel 取消 closes it"
+      ]
+    },
+    {
+      "id": "tagInfo.basicSettings",
+      "page": "tagInfo",
+      "type": "summary",
+      "candidateSignals": [
+        "section 標籤基本設置",
+        "condition info title group 標籤資訊與每日資訊",
+        "manual info title group 標籤資訊與名單列表",
+        "button 查看設置 for condition tags",
+        "button 編輯設置 for manual tags"
+      ]
+    },
+    {
+      "id": "tagInfo.latestValueSummary",
+      "page": "tagInfo",
+      "type": "summary",
+      "candidateSignals": [
+        "section 最新標籤值資訊",
+        "condition metric 總被標籤人數",
+        "manual metric 總授權帳號人數",
+        "field 數據更新時間"
+      ]
+    },
+    {
+      "id": "tagInfo.valueFilter",
+      "page": "tagInfo",
+      "type": "dropdown",
+      "candidateSignals": [
+        "button label pattern 標籤值 (N/N)",
+        "checkbox 全選",
+        "one checkbox per tag value"
+      ]
+    },
+    {
+      "id": "manualTag.memberTable",
+      "page": "tagInfo",
+      "type": "table",
+      "candidateSignals": [
+        "manual info title group 標籤資訊與名單列表",
+        "headers #, 標籤值, 銀河帳號ID, 被貼標/異動時間(GMT+08:00)",
+        "pagination 上一頁, 下一頁",
+        "page-size options 20筆/頁, 50筆/頁, 100筆/頁"
+      ]
+    },
+    {
+      "id": "manualTag.editForm",
+      "page": "manualTagEdit",
+      "type": "form",
+      "candidateSignals": [
+        "page title 編輯標籤",
+        "fields 標籤名稱, 備註, 上傳文件",
+        "清除輸入 buttons for prefilled text inputs",
+        "edit-only upload guidance 於編輯標籤時，僅需上傳異動(新增/更新/刪除)的名單",
+        "buttons 取消 and 儲存"
       ]
     },
     {
