@@ -73,7 +73,7 @@ export const defaultAgentConfig = (
       process.env.UAT_AGENT_CODEX_REASONING_EFFORT === "high" ||
       process.env.UAT_AGENT_CODEX_REASONING_EFFORT === "xhigh"
       ? process.env.UAT_AGENT_CODEX_REASONING_EFFORT
-      : "low",
+      : "medium",
     codex_ignore_user_config: envBoolean("UAT_AGENT_CODEX_IGNORE_USER_CONFIG", true),
     codex_service_tier: envServiceTier(process.env.UAT_AGENT_CODEX_SERVICE_TIER),
     auto_approve_tool_requests: process.env.UAT_AGENT_AUTO_APPROVE_TOOL_REQUESTS !== "false",

@@ -194,16 +194,17 @@ try {
 
   const summary = JSON.parse(fs.readFileSync(jsonPath, "utf8")) as Record<string, any>;
   assert.equal(summary.schemaVersion, "codex-input-summary-v1");
-  assert.equal(summary.fullRulePolicy.defaultMode, "summary_first");
+  assert.equal(summary.fullRulePolicy.defaultMode, "evidence_first");
   assert.equal(summary.currentCase.caseNo, currentCase.caseNo);
   assert.equal(summary.helperPreRun.exists, true);
   assert.equal(summary.helperPreRun.durationMs, 1234);
   assert.equal(summary.helperPreRun.actions[0].template, "collage.preview");
   assert.equal(summary.helperPreRun.actions[0].durationMs, 1200);
-  assert.match(summary.ruleShortlist.note, /escalation pointers/);
+  assert.match(summary.ruleShortlist.note, /current-case evidence/);
 
   const markdown = fs.readFileSync(markdownPath, "utf8");
-  assert.match(markdown, /Summary-first dispatch artifact/);
+  assert.match(markdown, /Dispatch artifact/);
+  assert.doesNotMatch(markdown, /Summary-first dispatch artifact/);
   assert.match(markdown, /Full Rule Escalation Triggers/);
   assert.match(markdown, /collage\.preview: ok; durationMs=1200/);
   assert.match(markdown, /must_read_keys_as_escalation_pointers/);
@@ -211,6 +212,8 @@ try {
   const source = fs.readFileSync(path.join(root, "agent", "src", "task-runner.ts"), "utf8");
   assert.equal(source.includes("This is intentionally slower"), false, "old slow-path prompt instruction should be removed");
   assert.equal(source.includes("Always read the generated `AGENTS.md`"), false, "old always-read prompt instruction should be removed");
+  assert.equal(source.includes("straightforward PASS judgment should not reread"), false, "old token-saving PASS shortcut should be removed");
+  assert.equal(source.includes("summary-first reading"), false, "old summary-first runtime instruction should be removed");
 
   console.log(JSON.stringify({
     ok: true,

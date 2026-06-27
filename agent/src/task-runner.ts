@@ -292,13 +292,13 @@ export const prepareCodexContext = (config: AgentConfig, runDir: string): void =
     "This file is generated for a single Mac Agent run.",
     "",
     "Platform entrypoint:",
-    "- Start by reading `input/codex-input-summary.md` when present, then `input/run-brief.md`.",
-    "- The Codex input summary and run brief are compact dispatch packets generated from Layer 1 + the current run inputs.",
-    "- Full platform and BI rule files remain binding escalation references; load the exact source text when the summary says escalation is required, when evidence conflicts, or when writing FAIL/BLOCKED/PARTIAL.",
-    "- Use `input/rule-index.json` to decide which Layer 1 / BI rule files are needed for the current case instead of rereading all rulebooks by default.",
+    "- Start by reading `input/codex-input-summary.md` when present, then `input/run-brief.md`; these are orientation aids, not sufficient evidence or policy by themselves.",
+    "- The Codex input summary and run brief are dispatch packets generated from Layer 1 + the current run inputs; always confirm judgment against current-case pack, helper/capability evidence, and applicable domain contracts.",
+    "- Full platform and BI rule files remain binding escalation references; load exact source text when evidence conflicts, when the domain/testcase boundary is unclear, or when writing FAIL/BLOCKED/PARTIAL.",
+    "- Use `input/rule-index.json` to locate the exact Layer 1 / BI rule files required for the current case.",
     "- Perform `input/preflight-auth-check.md` before deep domain loading or testcase actions.",
     "- Read `input/document-consistency.json` before any browser action; status=error requires Tool Bridge ambiguity handling.",
-    "- Use `input/current-case-pack.md` as the compact current-case card; it is not result evidence.",
+    "- Use `input/current-case-pack.md` and `.json` as the current-case card; it is required context, not result evidence.",
     "- Read `input/capability-gate.md` before testcase UI execution; unsupported cases must be marked BLOCKED/UNSUPPORTED_ONLINE_CAPABILITY instead of silently falling back to unsupported helper/manual paths.",
     "- When using helper artifacts, follow `agent-skills/uat-tool/rules/helper-protocol.md`; helper status is never testcase PASS/FAIL.",
     "- Use `input/reference-index.json` for exact paths before broad searches.",
@@ -330,7 +330,7 @@ export const prepareCodexContext = (config: AgentConfig, runDir: string): void =
     ""
   ].join("\n");
   fs.writeFileSync(path.join(runDir, "AGENTS.md"), generatedAgents);
-  copied["AGENTS.md"] = "generated compact run workspace instructions";
+  copied["AGENTS.md"] = "generated run workspace instructions";
 
   const rulesDir = path.join(workspaceRoot, "BI_TEST_RULES");
   if (fs.existsSync(rulesDir)) {
@@ -404,7 +404,7 @@ const writeRunBrief = (
   const content = [
     "# UAT Agent Run Brief",
     "",
-    "This compact brief is the fast-path entrypoint for the current run. Use full Layer 1 or BI reference files only when exact policy text is needed.",
+    "This brief is the entrypoint for the current run. Use it to find the required current-case files, helper evidence, and domain contracts; do not treat it as a replacement for those sources.",
     "",
     "## Run",
     `- run_id: ${runId}`,
@@ -477,15 +477,15 @@ const writeRunBrief = (
       : "- manifest_warnings: none",
     "",
     "## Fast Path",
-    "1. Read `input/codex-input-summary.md` first when present; it is the compact current-case reading plan and escalation map.",
+    "1. Read `input/codex-input-summary.md` first when present; it is a current-case reading plan and escalation map, not a substitute for current-case evidence.",
     "2. Read `input/test-package-consistency.json` for whole-package context, then read `input/document-consistency.json` as the authoritative current-case browser gate. If document-consistency status=error, do not touch the browser; emit Tool Bridge ambiguity_decision.",
     "3. Read `input/preflight-auth-check.md`. Perform browser preflight only when the current case still needs Codex-owned browser actions; successful current-run helper browser evidence for this same case satisfies auth/reachability for judgment.",
-    "4. Read `input/current-case-pack.md`, `input/current-case-pack.json`, and `input/run-state.json` before loading full testcase/supporting docs. Treat current-case rule keys as an escalation shortlist; do not reread full Layer 1/BI rulebooks for straightforward PASS judgment when compact guidance and current-run evidence are complete.",
+    "4. Read `input/current-case-pack.md`, `input/current-case-pack.json`, and `input/run-state.json` before judging. Treat current-case rule keys as required routing hints; for TAG_TOOL, CSV/download, fixture, spec/testcase mismatch, or any non-PASS path, also open the matching domain/action/evidence contract files listed in this brief.",
     "5. Read `input/capability-gate.md` before testcase UI execution. If support_status=unsupported, do not run trusted browser testcase steps; write BLOCKED/UNSUPPORTED_ONLINE_CAPABILITY with the gate reason. If support_status=degraded and both helper evidence and browser automation are unavailable, or the UI path is not reachable, write BLOCKED/TOOL_EXECUTION_UNAVAILABLE with the gate/helper-skipped evidence instead of leaving output/result.xlsx absent.",
     "6. Read `input/helper-execution-plan.md` when present. Helper actions may operate UI and collect evidence, but cannot judge PASS/FAIL or write result.xlsx.",
     "7. If `output/helper-pre-run-summary.json` exists, inspect helper reports before repeating UI actions. Reuse successful current-run helper evidence when sufficient; repeat only incomplete steps.",
     "8. Read `input/reference-index.json` for exact paths and `input/supporting-docs-manifest.json` profiles for optional support-file headers/headings; avoid broad filesystem search.",
-    "9. Read `input/rule-index.json` only as needed to resolve the exact rule file for an escalation trigger. Escalate to full rule text for FAIL/BLOCKED/PARTIAL, metadata/dropdown comparison, destructive/native dialog/Tool Bridge, unsupported/degraded capability, helper evidence contradiction, product bug/bug-row, formula direct-fill/tool limitation, or CSV/download mismatch/not-reached judgment.",
+    "9. Read `input/rule-index.json` to resolve exact rule files. Open full rule text for FAIL/BLOCKED/PARTIAL, TAG_TOOL domain judgment, fixture/testcase/spec gap, metadata/dropdown comparison, destructive/native dialog/Tool Bridge, unsupported/degraded capability, helper evidence contradiction, product bug/bug-row, formula direct-fill/tool limitation, or CSV/download mismatch/not-reached judgment.",
     biMetadataCsv
       ? "10. If the current BI case needs metadata counts, use the copied canonical reference `rules/BI_DATA/metadata.csv`; include the original metadata filename only as traceability and do not search the workspace for another metadata source first."
       : "10. If the current BI case needs metadata counts and no baseline/reference CSV is downloaded, use uploaded supporting docs before doing broad filesystem searches.",
@@ -897,8 +897,8 @@ export const writeCodexInputSummary = (
         : null
     },
     fullRulePolicy: {
-      defaultMode: "summary_first",
-      note: "Full AGENTS/platform/BI rulebooks remain binding references, but straightforward PASS judgment should not reread every full rulebook when compact guidance and current-run evidence are complete.",
+      defaultMode: "evidence_first",
+      note: "Full AGENTS/platform/BI rulebooks remain binding references. Use summary files only to locate current-case evidence and applicable rule/domain sources; TAG_TOOL and non-PASS judgments must open the relevant full sources.",
       escalationTriggers
     },
     fastReadOrder,
@@ -934,7 +934,7 @@ export const writeCodexInputSummary = (
       mustReadRuleKeys,
       recommendedRuleKeys,
       ruleIndexPath: guides.ruleIndexPath,
-      note: "Use these as exact escalation pointers, not as a default instruction to load every full source for every case."
+      note: "Use these to locate the exact rules required for this case. Summary files orient the run, but judgment must be grounded in current-case evidence and applicable domain/rule sources."
     }
   };
   writeJson(jsonPath, summary);
@@ -954,7 +954,7 @@ export const writeCodexInputSummary = (
   const markdown = [
     "# Codex Input Summary",
     "",
-    "Summary-first dispatch artifact for this UAT case. Full platform and BI rulebooks remain binding escalation references; load exact full text only when an escalation trigger applies or compact evidence is insufficient.",
+    "Dispatch artifact for this UAT case. Use it to find current-case files and evidence quickly; do not use it as a substitute for helper artifacts, domain contracts, or full rule text when judgment boundaries are unclear.",
     "",
     "## Run",
     `- run_id: ${runId}`,
@@ -1973,8 +1973,8 @@ const buildPrompt = (
     `- Read allowed carryover and isolation policy: ${guides.runStatePath}`,
     `- Use exact file paths from: ${guides.referenceIndexPath}`,
     `- Use lightweight optional-file profiles from: ${guides.supportingDocsManifestPath}`,
-    `- Use the rule index to avoid loading unnecessary rules: ${guides.ruleIndexPath}`,
-    `- Use evidence templates only as needed: ${guides.evidenceTemplates.indexPath}`,
+    `- Use the rule index to locate applicable rules: ${guides.ruleIndexPath}`,
+    `- Use evidence templates for the current case result shape: ${guides.evidenceTemplates.indexPath}`,
     `- For BI UI recipes, use: ${guides.biUiHelperGuidancePath}`,
     domainLocatorRegistry
       ? `- For BI locator hints, use: ${domainLocatorRegistry}`
@@ -2024,9 +2024,9 @@ const buildPrompt = (
     `- For network request observation, use: ${guides.networkObservationGuidancePath}`,
     `- Result workbook template reference: ${guides.resultTemplatePath}`,
     `- Full Layer 1 platform skill is available if needed: ${platformSkillPath}`,
-    "- Summary-first reading policy: use `input/codex-input-summary.md/json` plus current-case-pack, capability gate, helper summaries, and result contract for straightforward current-run PASS judgment when evidence is complete and non-contradictory.",
-    "- Full rule escalation policy: generated `AGENTS.md`, `agent-skills/uat-tool/SKILL.md`, `agent-skills/uat-tool/rules/domain-routing.md`, `rules/PROJECT_AGENTS_FULL.md`, and `rules/BI_TEST_RULES/*.md` remain binding references. Load exact full text when writing FAIL/BLOCKED/PARTIAL, comparing metadata/dropdowns, handling Tool Bridge/destructive/native dialogs, judging unsupported/degraded capability, resolving helper evidence contradiction, opening product bug/Bug rows, judging formula direct-fill/tool limitation, or handling CSV/download mismatch/not-reached.",
-    "- Use `input/current-case-pack.json.mustReadRuleKeys` and `input/rule-index.json` as escalation pointers, not as a default command to load every full rule file for every case.",
+    "- Evidence-first reading policy: use `input/codex-input-summary.md/json` only to locate files. Before writing PASS/FAIL/BLOCKED/PARTIAL, inspect current-case-pack, capability gate, helper summaries/reports, result contract, and the applicable domain/action/evidence contract files.",
+    "- Full rule loading policy: generated `AGENTS.md`, `agent-skills/uat-tool/SKILL.md`, `agent-skills/uat-tool/rules/domain-routing.md`, `rules/PROJECT_AGENTS_FULL.md`, and `rules/BI_TEST_RULES/*.md` remain binding references. Load exact full text when writing FAIL/BLOCKED/PARTIAL, judging TAG_TOOL domain behavior, fixture/testcase/spec gaps, comparing metadata/dropdowns, handling Tool Bridge/destructive/native dialogs, judging unsupported/degraded capability, resolving helper evidence contradiction, opening product bug/Bug rows, judging formula direct-fill/tool limitation, or handling CSV/download mismatch/not-reached.",
+    "- Use `input/current-case-pack.json.mustReadRuleKeys` and `input/rule-index.json` to identify which full rules apply. Do not skip domain/action/evidence contract files for TAG_TOOL or non-PASS judgments to save tokens.",
     "- Treat `rules/PROJECT_AGENTS_FULL.md` and all `rules/BI_TEST_RULES/*.md` files as binding BI domain references when escalation is required. For metadata comparison, the canonical copied CSV is `rules/BI_DATA/metadata.csv` when present; confirm it via `input/reference-index.json` key `bi_metadata_csv` or the testcase source filename such as `metadata＿1.2.5 - 工作表1.csv`.",
     "- Respect startup/case instructions about pause points and next-case dispatch. If the packet says Agent mode runs only the current case, do not assume a multi-case batch.",
     "- If `input/document-consistency.json` has status=error, do not touch the browser. Emit a Tool Bridge ambiguity_decision with the conflict and wait.",
@@ -2465,8 +2465,8 @@ const buildAutoToolResponsePrompt = (
     "",
     "Tommy configured the Mac Agent to auto-approve Tool Bridge authorization requests except SSO/login/auth blockers and package-gate ambiguity decisions.",
     "This is a current-run Tool Bridge response. Continue the paused UAT task from the prior point.",
-    `Read the refreshed compact Codex input summary first when present: ${helperContinuation ? path.join(helperContinuation.runDir, "input", "codex-input-summary.md") : "input/codex-input-summary.md in the current run workspace"}`,
-    "Use summary-first reading on auto-resume too: inspect helper continuation evidence and escalate to full rules only for FAIL/BLOCKED/PARTIAL, metadata/dropdown, Tool Bridge/destructive/native dialog, unsupported/degraded capability, product bug, formula tool limitation, or CSV/download mismatch/not-reached judgment.",
+    `Read the refreshed Codex input summary first when present: ${helperContinuation ? path.join(helperContinuation.runDir, "input", "codex-input-summary.md") : "input/codex-input-summary.md in the current run workspace"}`,
+    "On auto-resume, re-read the current-case pack, helper continuation evidence, capability gate, and applicable domain/action/evidence contract before writing a result. Open full rules for TAG_TOOL, non-PASS, fixture/spec gap, metadata/dropdown, Tool Bridge/destructive/native dialog, unsupported/degraded capability, product bug, formula tool limitation, or CSV/download mismatch/not-reached judgment.",
     "Helper executor is Agent-owned. Do not run `bi-ui-helper-executor` through Codex shell command_execution.",
     "If the next blocker is SSO/login/auth, emit a playwright_recovery Tool Bridge request and stop for PM handling.",
     ""
