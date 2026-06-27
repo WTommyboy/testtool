@@ -374,7 +374,9 @@ const normalizePlayerTagTemplate = (
     case "playerTag.createManualTag":
       return "tagTool.createManualTag";
     case "playerTag.editManualTag":
-      return "tagTool.uploadManualCsv";
+      return /(?:^|[^A-Za-z])upload(?:[^A-Za-z]|$)|CSV\s*fixture|CSV.{0,16}上傳|上傳.{0,16}CSV|操作\s*(?:add|update|delete)/i.test(text)
+        ? "tagTool.uploadManualCsv"
+        : "tagTool.observeManualEditForm";
     case "playerTag.saveTagVariables": {
       const shouldModify =
         booleanishParam(params, ["modifyValues", "save", "doSave"]) ||
@@ -385,7 +387,7 @@ const normalizePlayerTagTemplate = (
     case "playerTag.terminateTag":
       return "tagTool.openDangerousModalAndCancel";
     case "playerTag.copyTag":
-      return "tagTool.observeList";
+      return "tagTool.openRowActionAndObserve";
     default:
       return null;
   }
@@ -397,7 +399,7 @@ const inferTagToolTemplate = (currentCase: CaseManifestCase | null, helperHints:
   if (normalizedPlayerTag) return normalizedPlayerTag;
   if (explicit && /^tagTool\./i.test(explicit)) return explicit;
   const text = detectCaseFeatures(currentCase, helperHints).text;
-  const negativeDangerInstruction = /(?:不得|不可|不點擊|不要|不需|不進行|不執行|不觸發|without\s+clicking)[\s\S]{0,50}(?:刪除|終止|更多操作|確認窗|防呆窗)/i.test(text);
+  const negativeDangerInstruction = /(?:不得|不點擊|不要|不需|不進行|不執行|不觸發|without\s+clicking)[\s\S]{0,50}(?:刪除|終止|更多操作|確認窗|防呆窗)|不可(?:點擊|進行|執行|觸發|確認|刪除|終止)[\s\S]{0,50}(?:刪除|終止|更多操作|確認窗|防呆窗)/i.test(text);
   const settingsRouteCase =
     /tag\/settings|標籤變數設定.{0,24}(?:頁|入口|路由|breadcrumb|active|目前值|stepper|設置紀錄|N\/Z\/Y\/X\/A\/B|核心天數門檻|生命週期天數)|(?:點擊|開啟|進入|讀取|儲存|修改|更新).{0,24}標籤變數設定/i.test(text) ||
     /^BIUI_TAG_R001-K-/i.test(currentCase?.caseNo ?? "");
@@ -406,10 +408,28 @@ const inferTagToolTemplate = (currentCase: CaseManifestCase | null, helperHints:
     !/新增標籤頁|新增條件|新增人工|上傳|CSV|檔案|確認窗|防呆窗|confirm|modal|(?:點擊|開啟|觸發).{0,24}(?:刪除|終止)/i.test(text);
   const dangerModalCase =
     !negativeDangerInstruction &&
-    /(?:點擊|開啟|觸發|取消|確認).{0,32}(?:刪除|終止|更多操作|確認窗|防呆窗)|(?:刪除|終止).{0,32}(?:確認窗|防呆窗|取消|confirm|modal)|confirm|modal/i.test(text);
+    /(?:點擊|點|開啟|觸發|取消|確認).{0,32}(?:刪除|終止|確認窗|防呆窗)|(?:刪除|終止).{0,32}(?:確認窗|防呆窗|取消|confirm|modal)|confirm|modal/i.test(text);
+  const rowActionNavigationCase =
+    /(?:更多操作|⋯|row).{0,80}(?:查看設置|標籤資訊|編輯|複製)|(?:查看設置|標籤資訊|編輯設置|編輯|複製).{0,60}(?:路由|導向|進入|點擊|開啟|新增頁|查看設置頁|標籤資訊頁|編輯頁|名稱欄)/i.test(text);
+  const multiRowActionNavigationCase =
+    /查看設置[\s\S]{0,120}標籤資訊[\s\S]{0,120}複製|複製[\s\S]{0,120}標籤資訊[\s\S]{0,120}查看設置|(?:row|更多操作|⋯)[\s\S]{0,160}(?:查看設置[\s\S]{0,80}標籤資訊|標籤資訊[\s\S]{0,80}複製)/i.test(text);
+  const conditionInfoCase =
+    /標籤資訊與每日資訊|條件標籤資訊頁|條件標籤.{0,32}(?:標籤資訊|每日資訊|折線圖|每日數據|顯示數值|標籤值\s*[（(]?N|下載按鈕)|H群組|^BIUI_TAG_R001-H-/i.test(text) ||
+    /^BIUI_TAG_R001-I-/i.test(currentCase?.caseNo ?? "");
+  const manualInfoCase =
+    /標籤資訊與名單列表|人工標籤資訊頁|人工標籤.{0,32}(?:標籤資訊|名單列表|編輯設置|標籤值\s*[（(]?N)|J群組|^BIUI_TAG_R001-J-/i.test(text);
+  const manualEditCase =
+    /編輯標籤頁|編輯頁|編輯設置|人工標籤.{0,32}(?:編輯|update|delete|add)|^BIUI_TAG_R001-G-/i.test(text);
   if (settingsRouteCase) {
     return "tagTool.observeVariableSettings";
   }
+  if (dangerModalCase) return "tagTool.openDangerousModalAndCancel";
+  if (multiRowActionNavigationCase) return "tagTool.openRowActionAndObserve";
+  if (conditionInfoCase || manualInfoCase) return "tagTool.observeTagInfo";
+  if (manualEditCase) {
+    return /(?:^|[^A-Za-z])upload(?:[^A-Za-z]|$)|CSV\s*fixture|CSV.{0,16}上傳|上傳.{0,16}CSV|操作\s*(?:add|update|delete)/i.test(text) ? "tagTool.uploadManualCsv" : "tagTool.observeManualEditForm";
+  }
+  if (rowActionNavigationCase) return "tagTool.openRowActionAndObserve";
   if (listReadOnlyCase) return "tagTool.observeList";
   if (/新增條件標籤|新增條件|條件標籤|新增標籤頁初始|未選標籤類型/.test(text)) {
     return "tagTool.observeCreateForm";
@@ -418,7 +438,6 @@ const inferTagToolTemplate = (currentCase: CaseManifestCase | null, helperHints:
     if (/上傳|upload|fixture|檔案|CSV\s*格式|欄位/.test(text)) return "tagTool.uploadManualCsv";
     return "tagTool.selectManualTypeAndObserve";
   }
-  if (dangerModalCase) return "tagTool.openDangerousModalAndCancel";
   if (/玩家標籤管理主頁|標籤管理主頁|列表|清單|空狀態|table|列表欄位|玩家標籤管理[\s\S]{0,120}欄位/.test(text) && !/新增標籤頁|新增條件|新增人工|上傳|CSV/.test(text)) {
     return "tagTool.observeList";
   }

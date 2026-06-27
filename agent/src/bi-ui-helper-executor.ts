@@ -2,7 +2,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { chromium, type Browser, type Dialog, type Download, type Page, type Request, type Response } from "playwright";
+import { chromium, type Browser, type Dialog, type Download, type Locator, type Page, type Request, type Response } from "playwright";
 import { closeChromeDebugSession, diagnoseChromeDebugSession, ensureChromeDebugSession, readBrowserSessionLease, type BrowserSessionLease } from "./browser-session";
 import { readConfig } from "./config";
 import { parseCsv, summarizeCsvAgainstPreview } from "./csv-preview-comparison";
@@ -13529,6 +13529,262 @@ const readTagVariableSettingsState = async (page: Page): Promise<Record<string, 
     };
   });
 
+type TagToolRowCriteria = {
+  tagName: string | null;
+  tagType: string | null;
+  scheduleStatus: string | null;
+};
+
+const tagToolRowCriteriaFromOptions = (options: CliOptions, overrides: Partial<TagToolRowCriteria> = {}): TagToolRowCriteria => ({
+  tagName: overrides.tagName ?? firstStringParam(options.params, ["tagName", "resourceName", "name"]),
+  tagType: overrides.tagType ?? firstStringParam(options.params, ["tagType", "type"]),
+  scheduleStatus: overrides.scheduleStatus ?? firstStringParam(options.params, ["scheduleStatus", "status"])
+});
+
+const normalizeTagTypePattern = (tagType: string | null): RegExp => {
+  if (/人工|manual/i.test(tagType ?? "")) return /人工標籤/;
+  if (/條件|condition/i.test(tagType ?? "")) return /條件標籤/;
+  return /人工標籤|條件標籤/;
+};
+
+const findTagToolRow = async (page: Page, criteria: TagToolRowCriteria): Promise<{ row: Locator; rowText: string; criteria: TagToolRowCriteria }> => {
+  const rowScope = page.locator("tbody tr,[role='row']");
+  const candidates: Locator[] = [];
+  if (criteria.tagName) {
+    candidates.push(rowScope.filter({ hasText: criteria.tagName }).first());
+    candidates.push(page.locator("tr,[role='row'],[class*='row'],[class*='Row']").filter({ hasText: criteria.tagName }).first());
+  }
+  const tagTypePattern = normalizeTagTypePattern(criteria.tagType);
+  if (criteria.scheduleStatus) {
+    candidates.push(rowScope.filter({ hasText: tagTypePattern }).filter({ hasText: criteria.scheduleStatus }).first());
+  }
+  candidates.push(rowScope.filter({ hasText: tagTypePattern }).first());
+  candidates.push(rowScope.filter({ hasText: /人工標籤|條件標籤|進行中|已結束/ }).first());
+
+  const errors: string[] = [];
+  for (const candidate of candidates) {
+    try {
+      if ((await candidate.count().catch(() => 0)) < 1) continue;
+      const rowText = await candidate.innerText({ timeout: 2500 }).catch(() => "");
+      if (!rowText.trim() || /標籤名稱\s+標籤類型/.test(rowText)) continue;
+      return { row: candidate, rowText, criteria };
+    } catch (error) {
+      errors.push(error instanceof Error ? error.message.slice(0, 180) : String(error).slice(0, 180));
+    }
+  }
+
+  const listState = await readTagListState(page).catch((error) => ({ readError: error instanceof Error ? error.message : String(error) }));
+  throw new HelperBlockedError(
+    `TAG_ROW_NOT_FOUND:tagName=${criteria.tagName ?? "first-visible"};tagType=${criteria.tagType ?? "any"};schedule=${criteria.scheduleStatus ?? "any"};rows=${JSON.stringify(listState).slice(0, 1000)};errors=${errors.join(" | ")}`
+  );
+};
+
+const readVisibleTagMenuState = async (page: Page): Promise<Record<string, unknown>> =>
+  page.evaluate(() => {
+    const normalize = (value: string | null | undefined): string => (value ?? "").replace(/\s+/g, " ").trim();
+    const isVisible = (element: Element | null): boolean => {
+      if (!element) return false;
+      const rect = element.getBoundingClientRect();
+      const style = window.getComputedStyle(element);
+      return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden" && style.opacity !== "0";
+    };
+    const items = Array.from(document.querySelectorAll("[role='menuitem'],[role='option'],.dropdown-menu li,.ant-dropdown-menu-item,.MuiMenuItem-root,li,button,a"))
+      .filter(isVisible)
+      .map((element, index) => ({
+        index,
+        tagName: element.tagName.toLowerCase(),
+        role: element.getAttribute("role"),
+        text: normalize((element as HTMLElement).innerText || element.textContent || element.getAttribute("aria-label") || element.getAttribute("title")),
+        ariaLabel: element.getAttribute("aria-label"),
+        title: element.getAttribute("title")
+      }))
+      .filter((item) => item.text || item.ariaLabel || item.title)
+      .slice(0, 80);
+    return { visibleItemCount: items.length, items };
+  });
+
+const clickTagToolRowAction = async (
+  page: Page,
+  row: Locator,
+  actionText: string,
+  rowText: string
+): Promise<Record<string, unknown>> => {
+  const directAction = row
+    .locator("button,a,[role='button']")
+    .filter({ hasText: new RegExp(`^\\s*${escapeRegex(actionText)}\\s*$`) })
+    .first();
+  if ((await directAction.count().catch(() => 0)) > 0 && await directAction.isVisible().catch(() => false)) {
+    await helperStep("tagTool.row.clickDirectAction", "locator_action", async () => directAction.click({ timeout: 5000 }), { actionText });
+    await page.waitForTimeout(700);
+    return { action: "clickDirectAction", actionText, rowText: rowText.slice(0, 500) };
+  }
+
+  const moreCandidates = [
+    row.getByRole("button", { name: /更多操作|更多|操作|more|⋯|…/i }).first(),
+    row.locator("button[aria-label*='更多'],button[title*='更多'],button[aria-label*='操作'],button[title*='操作'],button[aria-label*='more'],button[title*='more']").first(),
+    row.locator("button,a,[role='button']").filter({ hasText: /更多|操作|⋯|…|more/i }).first()
+  ];
+  const errors: string[] = [];
+  for (const more of moreCandidates) {
+    try {
+      if ((await more.count().catch(() => 0)) < 1 || !(await more.isVisible().catch(() => false))) continue;
+      await helperStep("tagTool.row.openActionMenu", "locator_action", async () => more.click({ timeout: 5000 }), { actionText });
+      await page.waitForTimeout(600);
+      const menuBeforeClick = await readVisibleTagMenuState(page);
+      const menuAction = page
+        .locator("[role='menuitem'],[role='option'],li,button,a,div")
+        .filter({ hasText: new RegExp(`^\\s*${escapeRegex(actionText)}\\s*$`) })
+        .first();
+      await helperStep("tagTool.row.clickMenuAction", "locator_action", async () => menuAction.click({ timeout: 5000 }), { actionText });
+      await page.waitForTimeout(900);
+      return { action: "clickMenuAction", actionText, rowText: rowText.slice(0, 500), menuBeforeClick };
+    } catch (error) {
+      errors.push(error instanceof Error ? error.message.slice(0, 220) : String(error).slice(0, 220));
+      await page.keyboard.press("Escape").catch(() => undefined);
+      await page.waitForTimeout(200).catch(() => undefined);
+    }
+  }
+
+  const menuState = await readVisibleTagMenuState(page).catch((error) => ({ readError: error instanceof Error ? error.message : String(error) }));
+  throw new HelperBlockedError(`TAG_ROW_ACTION_NOT_REACHABLE:action=${actionText};rowText=${rowText.slice(0, 500)};menu=${JSON.stringify(menuState).slice(0, 800)};errors=${errors.join(" | ")}`);
+};
+
+const openTagToolRowAction = async (
+  page: Page,
+  options: CliOptions,
+  actionText: string,
+  overrides: Partial<TagToolRowCriteria> = {}
+): Promise<Record<string, unknown>> => {
+  const match = await findTagToolRow(page, tagToolRowCriteriaFromOptions(options, overrides));
+  const clickState = await clickTagToolRowAction(page, match.row, actionText, match.rowText);
+  return { ...clickState, matchCriteria: match.criteria };
+};
+
+const readTagInfoState = async (page: Page): Promise<Record<string, unknown>> =>
+  page.evaluate(() => {
+    const normalize = (value: string | null | undefined): string => (value ?? "").replace(/\s+/g, " ").trim();
+    const isVisible = (element: Element | null): boolean => {
+      if (!element) return false;
+      const rect = element.getBoundingClientRect();
+      const style = window.getComputedStyle(element);
+      return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden" && style.opacity !== "0";
+    };
+    const bodyText = document.body?.innerText ?? "";
+    const buttons = Array.from(document.querySelectorAll("button,a,[role='button']"))
+      .filter(isVisible)
+      .map((element, index) => ({
+        index,
+        text: normalize((element as HTMLElement).innerText || element.textContent || element.getAttribute("aria-label") || element.getAttribute("title")),
+        ariaLabel: element.getAttribute("aria-label"),
+        title: element.getAttribute("title"),
+        disabled: element instanceof HTMLButtonElement ? element.disabled : element.getAttribute("aria-disabled") === "true"
+      }))
+      .filter((button) => button.text || button.ariaLabel || button.title)
+      .slice(0, 120);
+    const inputs = Array.from(document.querySelectorAll("input,textarea,select"))
+      .filter((element) => element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement || element instanceof HTMLSelectElement)
+      .map((element, index) => {
+        const input = element as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement;
+        const isFile = input instanceof HTMLInputElement && input.type === "file";
+        return {
+          index,
+          tagName: input.tagName.toLowerCase(),
+          type: input instanceof HTMLInputElement ? input.type : input instanceof HTMLSelectElement ? "select" : "textarea",
+          value: isFile ? "" : input.value,
+          placeholder: input instanceof HTMLInputElement || input instanceof HTMLTextAreaElement ? input.placeholder : "",
+          disabled: input.disabled,
+          readonly: input instanceof HTMLInputElement || input instanceof HTMLTextAreaElement ? input.readOnly : false,
+          accept: isFile ? input.accept : null,
+          multiple: isFile ? input.multiple : null,
+          visible: isVisible(input)
+        };
+      })
+      .slice(0, 100);
+    const tableHeaders = Array.from(document.querySelectorAll("table th,[role='columnheader']"))
+      .filter(isVisible)
+      .map((element) => normalize((element as HTMLElement).innerText || element.textContent))
+      .filter(Boolean);
+    const rows = Array.from(document.querySelectorAll("tbody tr,[role='row']"))
+      .filter(isVisible)
+      .map((row, index) => ({
+        index,
+        text: normalize((row as HTMLElement).innerText || row.textContent).slice(0, 500)
+      }))
+      .filter((row) => row.text)
+      .slice(0, 30);
+    const pageKind = /標籤資訊與每日資訊/.test(bodyText)
+      ? "conditionInfo"
+      : /標籤資訊與名單列表/.test(bodyText)
+        ? "manualInfo"
+        : /查看設置/.test(bodyText)
+          ? "conditionSettingsReadonly"
+          : /編輯標籤|編輯設置|於編輯標籤時/.test(bodyText)
+            ? "manualEdit"
+            : /新增標籤/.test(bodyText)
+              ? "createOrCopy"
+              : "unknown";
+    const fileInputs = inputs.filter((input) => input.type === "file");
+    return {
+      url: location.href,
+      pageKind,
+      titleVisible: /標籤資訊與每日資訊|標籤資訊與名單列表|查看設置|編輯標籤|新增標籤/.test(bodyText),
+      headings: Array.from(document.querySelectorAll("h1,h2,h3,[class*='title'],[class*='Title']"))
+        .filter(isVisible)
+        .map((element) => normalize((element as HTMLElement).innerText || element.textContent))
+        .filter(Boolean)
+        .slice(0, 40),
+      buttons,
+      inputs,
+      fileInputs,
+      tableHeaders,
+      rows,
+      emptyStates: [...bodyText.matchAll(/(?:無資料|暫無資料|尚無資料|沒有資料|無名單|尚未上傳)[^\n]{0,80}/g)].map((match) => normalize(match[0])).slice(0, 10),
+      bodyTextExcerpt: bodyText.slice(0, 5000),
+      conditionInfo: {
+        hasTrendTitle: /每日資訊|折線圖|趨勢/.test(bodyText),
+        hasShowValueControl: /顯示數值|標籤值\s*[（(]?\d+\/\d+/.test(bodyText),
+        hasDownloadControl: buttons.some((button) => /下載|download/i.test(button.text || button.ariaLabel || button.title || ""))
+      },
+      manualInfo: {
+        hasMemberListTitle: /名單列表/.test(bodyText),
+        hasEditSettingsButton: buttons.some((button) => /編輯設置|編輯設定|編輯/.test(button.text || button.ariaLabel || button.title || ""))
+      },
+      manualEdit: {
+        editGuidanceVisible: /於編輯標籤時|新增\/更新\/刪除|新增、更新、刪除|操作/.test(bodyText),
+        saveButtonVisible: buttons.some((button) => /儲存|保存/.test(button.text || button.ariaLabel || button.title || "")),
+        fileInputCount: fileInputs.length
+      }
+    };
+  });
+
+const clickTagInfoControlIfNeeded = async (page: Page, flow: string, interactionLog: Array<Record<string, unknown>>): Promise<void> => {
+  const controlPattern = /openManualValueFilter|openConditionValueFilter/.test(flow)
+    ? /標籤值/
+    : /openConditionDatePanel/.test(flow)
+      ? /日期|時間區間|動態時間|靜態時間|過去|最近|本月|上月/
+      : /observeManualEditForm/.test(flow)
+        ? /編輯設置|編輯設定|編輯/
+        : null;
+  if (!controlPattern) return;
+  const candidates = [
+    page.getByRole("button", { name: controlPattern }).first(),
+    page.locator("button,a,[role='button']").filter({ hasText: controlPattern }).first()
+  ];
+  const errors: string[] = [];
+  for (const candidate of candidates) {
+    try {
+      if ((await candidate.count().catch(() => 0)) < 1 || !(await candidate.isVisible().catch(() => false))) continue;
+      await helperStep("tagTool.info.clickControl", "locator_action", async () => candidate.click({ timeout: 5000 }), { flow, controlPattern: String(controlPattern) });
+      await page.waitForTimeout(700);
+      interactionLog.push({ action: "clickInfoControl", flow, controlPattern: String(controlPattern) });
+      return;
+    } catch (error) {
+      errors.push(error instanceof Error ? error.message.slice(0, 220) : String(error).slice(0, 220));
+    }
+  }
+  interactionLog.push({ action: "clickInfoControl", flow, actualOutcome: "control not found or not clickable", errors });
+};
+
 const writeTagToolEvidence = (options: CliOptions, name: string, evidence: Record<string, unknown>): string => {
   const filePath = tagToolEvidencePath(options, name);
   ensureDir(path.dirname(filePath));
@@ -13639,6 +13895,133 @@ const observeTagVariableSettings = async (options: CliOptions, page: Page, start
   });
 };
 
+const openRowActionAndObserve = async (options: CliOptions, page: Page, startedAt: string): Promise<HelperReport> => {
+  const flow = firstStringParam(options.params, ["flow"]) ?? "clickRowActionAndObserve";
+  const requestedItems = stringArrayParam(options.params, "rowActionItems");
+  const fallbackItem = firstStringParam(options.params, ["rowActionItem", "actionText"]) ??
+    (/人工|manual/i.test(firstStringParam(options.params, ["tagType", "type"]) ?? "") ? "標籤資訊" : "查看設置");
+  const actionItems = flow === "verifyRowActionRoutes"
+    ? (requestedItems.length > 0 ? requestedItems : ["查看設置", "標籤資訊", "複製"])
+    : [fallbackItem];
+  const interactionLog: Array<Record<string, unknown>> = [];
+  const routeResults: Array<Record<string, unknown>> = [];
+  let firstNavigation: Record<string, unknown> | null = null;
+
+  for (const actionText of actionItems) {
+    const navigation = await navigateTagToolPage(options, page, "list");
+    if (!firstNavigation) firstNavigation = navigation;
+    const tagTypeOverride = actionText === "編輯"
+      ? "人工標籤"
+      : actionText === "查看設置"
+        ? "條件標籤"
+        : firstStringParam(options.params, ["tagType", "type"]);
+    const clickState = await openTagToolRowAction(page, options, actionText, { tagType: tagTypeOverride });
+    interactionLog.push(clickState);
+    const commonState = await readTagToolCommonState(page).catch((error) => ({ readError: error instanceof Error ? error.message : String(error) }));
+    const infoState = await readTagInfoState(page).catch((error) => ({ readError: error instanceof Error ? error.message : String(error) }));
+    routeResults.push({
+      actionText,
+      afterUrl: page.url(),
+      pageKind: "pageKind" in infoState && typeof infoState.pageKind === "string" ? infoState.pageKind : null,
+      commonState,
+      infoState
+    });
+  }
+
+  return tagToolReport(options, page, startedAt, "tag-row-action-evidence", {
+    schemaVersion: "tag-tool-row-action-evidence-v1",
+    generatedAt: new Date().toISOString(),
+    navigation: firstNavigation ?? { target: "list", actualUrl: page.url() },
+    flow,
+    interactionLog,
+    "tagRowAction.route.state": {
+      requestedActions: actionItems,
+      routeResults,
+      asserted: true
+    },
+    "tagList.row.state": routeResults.map((result) => ({
+      actionText: result.actionText,
+      rowText: (interactionLog.find((item) => item.actionText === result.actionText)?.rowText as string | undefined) ?? null
+    })),
+    "tagList.rowActionMenu.state": interactionLog.map((item) => ({
+      actionText: item.actionText,
+      menuBeforeClick: item.menuBeforeClick ?? null
+    }))
+  });
+};
+
+const observeTagInfo = async (options: CliOptions, page: Page, startedAt: string): Promise<HelperReport> => {
+  const flow = firstStringParam(options.params, ["flow"]) ?? "observeConditionTagInfo";
+  const isManual = /Manual|manual|人工/.test(flow) || /人工|manual/i.test(firstStringParam(options.params, ["tagType", "type"]) ?? "");
+  const navigation = await navigateTagToolPage(options, page, "list");
+  const interactionLog: Array<Record<string, unknown>> = [];
+  const actionText = /Settings|settings|查看設置/.test(flow) ? "查看設置" : "標籤資訊";
+  interactionLog.push(await openTagToolRowAction(page, options, actionText, { tagType: isManual ? "人工標籤" : "條件標籤" }));
+  await clickTagInfoControlIfNeeded(page, flow, interactionLog);
+  const infoState = await readTagInfoState(page);
+  const commonState = await readTagToolCommonState(page);
+  return tagToolReport(options, page, startedAt, "tag-info-evidence", {
+    schemaVersion: "tag-tool-info-evidence-v1",
+    generatedAt: new Date().toISOString(),
+    navigation,
+    flow,
+    interactionLog,
+    commonState,
+    "tagInfo.basicSettings.state": {
+      pageKind: infoState.pageKind,
+      titleVisible: infoState.titleVisible,
+      headings: infoState.headings,
+      bodyTextExcerpt: infoState.bodyTextExcerpt
+    },
+    "tagInfo.latestValueSummary.state": {
+      conditionInfo: infoState.conditionInfo,
+      emptyStates: infoState.emptyStates,
+      tableHeaders: infoState.tableHeaders,
+      rows: infoState.rows
+    },
+    "manualTag.memberTable.state": {
+      manualInfo: infoState.manualInfo,
+      tableHeaders: infoState.tableHeaders,
+      rows: infoState.rows
+    },
+    "tagInfo.controls.state": {
+      buttons: infoState.buttons,
+      inputs: infoState.inputs,
+      fileInputs: infoState.fileInputs,
+      manualEdit: infoState.manualEdit
+    }
+  });
+};
+
+const observeManualEditForm = async (options: CliOptions, page: Page, startedAt: string): Promise<HelperReport> => {
+  const navigation = await navigateTagToolPage(options, page, "list");
+  const interactionLog: Array<Record<string, unknown>> = [
+    await openTagToolRowAction(page, options, "編輯", { tagType: "人工標籤" })
+  ];
+  const editState = await readTagInfoState(page);
+  const commonState = await readTagToolCommonState(page);
+  return tagToolReport(options, page, startedAt, "tag-manual-edit-evidence", {
+    schemaVersion: "tag-tool-manual-edit-evidence-v1",
+    generatedAt: new Date().toISOString(),
+    navigation,
+    interactionLog,
+    commonState,
+    "manualTag.editForm.state": {
+      pageKind: editState.pageKind,
+      titleVisible: editState.titleVisible,
+      headings: editState.headings,
+      inputs: editState.inputs,
+      buttons: editState.buttons,
+      bodyTextExcerpt: editState.bodyTextExcerpt,
+      manualEdit: editState.manualEdit
+    },
+    "manualUpload.fileInput.state": {
+      fileInputs: editState.fileInputs,
+      fileInputCount: Array.isArray(editState.fileInputs) ? editState.fileInputs.length : null
+    }
+  });
+};
+
 const resolveTagToolFixturePath = (options: CliOptions): string => {
   const explicit = firstStringParam(options.params, ["fixturePath", "csvPath", "filePath"]);
   const candidates: string[] = [];
@@ -13651,6 +14034,7 @@ const resolveTagToolFixturePath = (options: CliOptions): string => {
     validAddCsv: "manual-tag-add-valid.csv",
     invalidAddCsv: "manual-tag-add-invalid-header.csv",
     validEditCsv: "manual-tag-edit-valid.csv",
+    invalidEditCsv: "manual-tag-edit-invalid-operation.csv",
     duplicateConflictCsv: "manual-tag-add-duplicate-conflict.csv",
     nonexistentAccountCsv: "manual-tag-add-nonexistent-account.csv",
     textFile: "manual-tag-add-invalid-type.txt",
@@ -13673,47 +14057,68 @@ const resolveTagToolFixturePath = (options: CliOptions): string => {
         ? "標籤值名稱,帳號ID\nUAT_MISSING,999999999999\n"
         : fixtureKind === "textFile"
           ? "標籤值名稱,帳號ID\nUAT_TXT,100001\n"
-          : fixtureKind === "invalidAddCsv"
-            ? "標籤值名稱,userobjectid\n高價值,100001\n"
-            : fixtureKind === "validEditCsv"
-              ? "標籤值名稱,帳號ID,操作\n高價值,100001,add\n"
+            : fixtureKind === "invalidAddCsv"
+              ? "標籤值名稱,userobjectid\n高價值,100001\n"
+              : fixtureKind === "invalidEditCsv"
+                ? "標籤值名稱,帳號ID,操作\n高價值,100001,merge\n"
+              : fixtureKind === "validEditCsv"
+                ? "標籤值名稱,帳號ID,操作\n高價值,100001,add\n"
               : "標籤值名稱,帳號ID\n高價值,100001\n";
   fs.writeFileSync(generatedPath, content);
   return generatedPath;
 };
 
 const uploadManualCsv = async (options: CliOptions, page: Page, startedAt: string): Promise<HelperReport> => {
-  const navigation = await navigateTagToolPage(options, page, "create");
-  const interactionLog: Array<Record<string, unknown>> = [await clickTagType(page, "人工標籤")];
   const flow = firstStringParam(options.params, ["flow"]) ?? "uploadAddCsv";
+  const mode = firstStringParam(options.params, ["mode"]);
+  const fixtureKind = firstStringParam(options.params, ["fixtureKind", "fixture"]) ?? "validAddCsv";
+  const editMode = /^edit$/i.test(mode ?? "") || /Edit/i.test(flow) || fixtureKind === "validEditCsv";
+  const navigation = editMode
+    ? await navigateTagToolPage(options, page, "list")
+    : await navigateTagToolPage(options, page, "create");
+  const interactionLog: Array<Record<string, unknown>> = editMode
+    ? [await openTagToolRowAction(page, options, "編輯", { tagType: "人工標籤" })]
+    : [await clickTagType(page, "人工標籤")];
   const fixturePath = resolveTagToolFixturePath(options);
   const fileInput = page.locator("input[type='file']").first();
   const fileInputCount = await page.locator("input[type='file']").count().catch(() => 0);
-  if (fileInputCount < 1) throw new HelperBlockedError("MANUAL_UPLOAD_FILE_INPUT_MISSING");
-  const fileInputState = await fileInput.evaluate((input) => ({
-    accept: input instanceof HTMLInputElement ? input.accept : input.getAttribute("accept"),
-    multiple: input instanceof HTMLInputElement ? input.multiple : input.hasAttribute("multiple"),
-    visible: true,
-    disabled: input instanceof HTMLInputElement ? input.disabled : input.getAttribute("aria-disabled") === "true",
-    asserted: true
-  })).catch((error) => ({
+  if (fileInputCount < 1 && flow !== "observeEditGuidance") throw new HelperBlockedError(`MANUAL_UPLOAD_FILE_INPUT_MISSING:mode=${editMode ? "edit" : "add"}`);
+  const fileInputState = fileInputCount > 0
+    ? await fileInput.evaluate((input) => ({
+      accept: input instanceof HTMLInputElement ? input.accept : input.getAttribute("accept"),
+      multiple: input instanceof HTMLInputElement ? input.multiple : input.hasAttribute("multiple"),
+      visible: true,
+      disabled: input instanceof HTMLInputElement ? input.disabled : input.getAttribute("aria-disabled") === "true",
+      asserted: true
+    })).catch((error) => ({
+      accept: null,
+      multiple: null,
+      visible: false,
+      disabled: null,
+      asserted: false,
+      error: error instanceof Error ? error.message : String(error)
+    }))
+    : ({
     accept: null,
     multiple: null,
     visible: false,
     disabled: null,
-    asserted: false,
-    error: error instanceof Error ? error.message : String(error)
-  }));
-  if (flow === "observeFileAccept") {
+    asserted: flow === "observeEditGuidance",
+    error: "file input not found"
+  });
+  if (flow === "observeFileAccept" || flow === "observeEditGuidance") {
     const formState = await readTagCreateFormState(page);
+    const infoState = editMode ? await readTagInfoState(page).catch((error) => ({ readError: error instanceof Error ? error.message : String(error) })) : null;
     const commonState = await readTagToolCommonState(page);
     return tagToolReport(options, page, startedAt, "tag-manual-upload-evidence", {
       schemaVersion: "tag-tool-manual-upload-evidence-v1",
       generatedAt: new Date().toISOString(),
       navigation,
       interactionLog,
+      mode: editMode ? "edit" : "add",
       commonState,
       "tagForm.typeVisibility.state": formState,
+      ...(infoState ? { "manualTag.editForm.state": infoState } : {}),
       "manualUpload.file.state": formState.manualUpload,
       "manualUpload.fileInput.state": fileInputState,
       "manualUpload.validation.state": {
@@ -13736,6 +14141,7 @@ const uploadManualCsv = async (options: CliOptions, page: Page, startedAt: strin
       generatedAt: new Date().toISOString(),
       navigation,
       interactionLog,
+      mode: editMode ? "edit" : "add",
       commonState,
       "tagForm.typeVisibility.state": formState,
       "manualUpload.file.state": formState.manualUpload,
@@ -13784,14 +14190,15 @@ const uploadManualCsv = async (options: CliOptions, page: Page, startedAt: strin
     generatedAt: new Date().toISOString(),
     navigation,
     interactionLog,
+    mode: editMode ? "edit" : "add",
     fixture: {
-      fixtureKind: firstStringParam(options.params, ["fixtureKind", "fixture"]) ?? "validAddCsv",
+      fixtureKind,
       path: fixturePath,
       fileName: path.basename(fixturePath),
       contentPreview: fs.readFileSync(fixturePath, "utf8").slice(0, 500)
     },
     "fixtureRef.state": {
-      fixtureId: firstStringParam(options.params, ["fixtureKind", "fixture"]) ?? "validAddCsv",
+      fixtureId: fixtureKind,
       layer: "domain_file_fixture",
       status: "used",
       usedForCase: options.caseId,
@@ -13833,38 +14240,43 @@ const readVisibleTagDangerModalState = async (page: Page): Promise<Record<string
 
 const openDangerousModalAndCancel = async (options: CliOptions, page: Page, startedAt: string): Promise<HelperReport> => {
   const navigation = await navigateTagToolPage(options, page, "list");
-  const actionText = /terminate/i.test(String(options.params.flow ?? "")) || /終止/.test(String(options.params.flow ?? ""))
+  const flow = firstStringParam(options.params, ["flow"]) ?? "";
+  const actionText = /terminate/i.test(flow) || /終止/.test(flow)
     ? "終止"
     : "刪除";
-  const tagName = firstStringParam(options.params, ["tagName", "resourceName"]);
-  const row = tagName
-    ? page.locator("tr,[role='row'],[class*=row],[class*=Row]").filter({ hasText: tagName }).first()
-    : page.locator("tbody tr,[role='row']").filter({ hasText: /條件標籤|人工標籤|進行中|已結束/ }).first();
-  const rowCount = await row.count().catch(() => 0);
-  if (rowCount < 1) throw new HelperBlockedError(`TAG_ROW_NOT_FOUND_FOR_DANGEROUS_MODAL:tagName=${tagName ?? "first-visible"}`);
+  const actionScope = firstStringParam(options.params, ["dangerActionScope", "actionScope"]);
   const interactionLog: Array<Record<string, unknown>> = [];
-  const rowText = await row.innerText({ timeout: 3000 }).catch(() => "");
-  const directAction = row.locator("button,a,[role='button']").filter({ hasText: new RegExp(actionText) }).first();
-  if (await directAction.count().catch(() => 0)) {
-    await helperStep("tagTool.danger.clickDirectAction", "locator_action", async () => directAction.click({ timeout: 5000 }), { actionText });
-  } else {
-    const more = row.locator("button,a,[role='button']").filter({ hasText: /更多|操作|⋯|…|more/i }).first();
-    if (await more.count().catch(() => 0)) {
-      await helperStep("tagTool.danger.openMoreMenu", "locator_action", async () => more.click({ timeout: 5000 }), { actionText });
-      await page.waitForTimeout(500);
-      await helperStep(
-        "tagTool.danger.clickMenuAction",
-        "locator_action",
-        async () => page.locator("button,a,[role='menuitem'],[role='option'],li,div").filter({ hasText: new RegExp(actionText) }).first().click({ timeout: 5000 }),
-        { actionText }
-      );
-    } else {
-      throw new HelperBlockedError(`TAG_ROW_ACTION_MENU_MISSING:action=${actionText};rowText=${rowText.slice(0, 500)}`);
+  if (actionText === "刪除" && actionScope === "toolbarSelection") {
+    const match = await findTagToolRow(page, tagToolRowCriteriaFromOptions(options));
+    const checkbox = match.row.locator("input[type='checkbox'],[role='checkbox']").first();
+    if ((await checkbox.count().catch(() => 0)) < 1) {
+      throw new HelperBlockedError(`TAG_ROW_CHECKBOX_MISSING_FOR_TOOLBAR_DELETE:rowText=${match.rowText.slice(0, 500)}`);
     }
+    await helperStep("tagTool.danger.selectRowForToolbarDelete", "locator_action", async () => {
+      if (await checkbox.evaluate((element) => element instanceof HTMLInputElement).catch(() => false)) {
+        await checkbox.check({ timeout: 5000 });
+      } else {
+        await checkbox.click({ timeout: 5000 });
+      }
+    }, { actionText });
+    await page.waitForTimeout(500);
+    interactionLog.push({ action: "selectRowForToolbarDelete", rowText: match.rowText.slice(0, 500) });
+    const toolbarDelete = page.getByRole("button", { name: /刪除/ }).first();
+    const toolbarDeleteFallback = page.locator("button,[role='button']").filter({ hasText: /^刪除$/ }).first();
+    const deleteButton = (await toolbarDelete.count().catch(() => 0)) > 0 ? toolbarDelete : toolbarDeleteFallback;
+    await helperStep("tagTool.danger.clickToolbarDelete", "locator_action", async () => deleteButton.click({ timeout: 5000 }), { actionText });
+    await page.waitForTimeout(700);
+    interactionLog.push({ action: "clickToolbarDelete" });
+  } else {
+    const rowAction = await openTagToolRowAction(page, options, actionText, {
+      tagType: actionText === "終止" ? "條件標籤" : firstStringParam(options.params, ["tagType", "type"]),
+      scheduleStatus: actionText === "終止" ? "進行中" : firstStringParam(options.params, ["scheduleStatus", "status"])
+    });
+    interactionLog.push(rowAction);
   }
   await page.waitForTimeout(700);
   const modalBeforeCancel = await readVisibleTagDangerModalState(page);
-  interactionLog.push({ action: `open${actionText}Modal`, rowText: rowText.slice(0, 500), modalBeforeCancel });
+  interactionLog.push({ action: `open${actionText}Modal`, modalBeforeCancel });
   const cancel = page.locator("[role='dialog'] button,.modal button,.ant-modal button,.MuiDialog-root button,.swal2-popup button,button")
     .filter({ hasText: /取消|返回|關閉|否/i })
     .first();
@@ -14155,6 +14567,15 @@ const run = async (): Promise<void> => {
         break;
       case "tagTool.observeVariableSettings":
         report = await observeTagVariableSettings(options, page, startedAt);
+        break;
+      case "tagTool.openRowActionAndObserve":
+        report = await openRowActionAndObserve(options, page, startedAt);
+        break;
+      case "tagTool.observeTagInfo":
+        report = await observeTagInfo(options, page, startedAt);
+        break;
+      case "tagTool.observeManualEditForm":
+        report = await observeManualEditForm(options, page, startedAt);
         break;
       case "tagTool.uploadManualCsv":
         report = await uploadManualCsv(options, page, startedAt);

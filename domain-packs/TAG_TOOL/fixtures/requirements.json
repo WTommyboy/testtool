@@ -185,6 +185,18 @@
       ]
     },
     {
+      "id": "invalidEditCsv",
+      "path": "fixtures/smoke/manual-tag-edit-invalid-operation.csv",
+      "mode": "manualEdit",
+      "status": "available",
+      "headers": [
+        "標籤值名稱",
+        "帳號ID",
+        "操作"
+      ],
+      "expectedFailure": "operation column is not add/update/delete"
+    },
+    {
       "id": "duplicateConflictCsv",
       "path": "fixtures/smoke/manual-tag-add-duplicate-conflict.csv",
       "mode": "manualAdd",

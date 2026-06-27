@@ -164,6 +164,91 @@ assertUploadRoute(
   "validAddCsv"
 );
 
+const rowActionPlan = assertTagCase({
+  ...baseCase,
+  caseNo: "BIUI_TAG_R001-C-05",
+  groupName: "C: 玩家標籤列表 row 操作",
+  caseTitle: "更多操作可導向 查看設置 標籤資訊 複製",
+  stepsSummary: "1. 開啟玩家標籤管理主頁\n2. 對條件標籤 row 開啟更多操作\n3. 依序點擊查看設置、標籤資訊、複製，觀察是否導向查看設置頁、標籤資訊頁、新增頁且名稱欄預填",
+  validationMethod: "Evidence: tagRowAction.route.state"
+}, "tagTool.openRowActionAndObserve");
+assert.equal(rowActionPlan.actions[0]?.params.flow, "verifyRowActionRoutes", "row action flow");
+assert.deepEqual(rowActionPlan.actions[0]?.params.rowActionItems, ["查看設置", "標籤資訊", "複製"], "row action items");
+
+const editUploadPlan = assertTagCase({
+  ...baseCase,
+  caseNo: "BIUI_TAG_R001-G-03",
+  groupName: "G: 人工標籤編輯頁",
+  caseTitle: "編輯標籤頁可上傳異動 CSV",
+  stepsSummary: "1. 從人工標籤 row 點擊編輯\n2. 在編輯標籤頁上傳包含 操作 add/update/delete 欄位的 CSV 檔案\n3. 讀取 validation 訊息",
+  validationMethod: "Evidence: manualUpload.file.state"
+}, "tagTool.uploadManualCsv");
+assert.equal(editUploadPlan.actions[0]?.params.flow, "uploadEditCsv", "edit upload flow");
+assert.equal(editUploadPlan.actions[0]?.params.fixtureKind, "validEditCsv", "edit upload fixture");
+assert.equal(editUploadPlan.actions[0]?.params.mode, "edit", "edit upload mode");
+
+const invalidEditUploadPlan = assertTagCase({
+  ...baseCase,
+  caseNo: "BIUI_TAG_R001-G-05",
+  groupName: "G: 人工標籤編輯頁",
+  caseTitle: "編輯時上傳檢查 — 操作欄非 add/update/delete 阻擋",
+  stepsSummary: "1. 進入編輯頁\n2. 上傳該 CSV\n3. 驗證操作欄非 add/update/delete 時即時阻擋",
+  validationMethod: "Evidence: manualUpload.file.state, manualUpload.validation.state"
+}, "tagTool.uploadManualCsv");
+assert.equal(invalidEditUploadPlan.actions[0]?.params.flow, "uploadEditCsv", "invalid edit upload flow");
+assert.equal(invalidEditUploadPlan.actions[0]?.params.fixtureKind, "invalidEditCsv", "invalid edit upload fixture");
+assert.equal(invalidEditUploadPlan.actions[0]?.params.mode, "edit", "invalid edit upload mode");
+
+assertTagCase({
+  ...baseCase,
+  caseNo: "TT-VERIFY-G-OBS",
+  groupName: "G: 人工標籤編輯頁",
+  caseTitle: "編輯標籤頁顯示僅需上傳異動名單提示",
+  stepsSummary: "1. 從人工標籤 row 點擊編輯\n2. 觀察編輯標籤頁提示文字與檔案 input，不進行儲存",
+  validationMethod: "Evidence: manualTag.editForm.state, manualUpload.fileInput.state"
+}, "tagTool.observeManualEditForm");
+
+const conditionInfoPlan = assertTagCase({
+  ...baseCase,
+  caseNo: "BIUI_TAG_R001-H-03",
+  groupName: "H: 條件標籤資訊頁",
+  caseTitle: "條件標籤資訊與每日資訊可開啟標籤值下拉",
+  stepsSummary: "1. 從條件標籤 row 點擊標籤資訊\n2. 在標籤資訊與每日資訊頁點擊 標籤值(N/N) 下拉\n3. 讀取顯示數值控制與列表",
+  validationMethod: "Evidence: tagInfo.controls.state"
+}, "tagTool.observeTagInfo");
+assert.equal(conditionInfoPlan.actions[0]?.params.flow, "openConditionValueFilter", "condition info flow");
+
+const manualInfoPlan = assertTagCase({
+  ...baseCase,
+  caseNo: "BIUI_TAG_R001-J-02",
+  groupName: "J: 人工標籤資訊頁",
+  caseTitle: "人工標籤資訊與名單列表顯示基本欄位",
+  stepsSummary: "1. 從人工標籤 row 點擊標籤資訊\n2. 觀察標籤資訊與名單列表、編輯設置按鈕與名單 table",
+  validationMethod: "Evidence: manualTag.memberTable.state"
+}, "tagTool.observeTagInfo");
+assert.equal(manualInfoPlan.actions[0]?.params.flow, "observeManualTagInfo", "manual info flow");
+
+const toolbarDeleteModalPlan = assertTagCase({
+  ...baseCase,
+  caseNo: "BIUI_TAG_R001-L-01",
+  groupName: "L: 刪除/終止 modal",
+  caseTitle: "刪除 modal — 標題/內文/取消/刪除 按鈕樣式",
+  stepsSummary: "1. 在主頁勾選 1 個測試標籤\n2. 點右上「刪除」icon\n3. 讀取 modal 後點取消",
+  validationMethod: "Evidence: dangerousModal.state"
+}, "tagTool.openDangerousModalAndCancel");
+assert.equal(toolbarDeleteModalPlan.actions[0]?.params.flow, "openDeleteAndCancel", "toolbar delete flow");
+assert.equal(toolbarDeleteModalPlan.actions[0]?.params.dangerActionScope, "toolbarSelection", "toolbar delete scope");
+
+const terminateModalPlan = assertTagCase({
+  ...baseCase,
+  caseNo: "BIUI_TAG_R001-L-04",
+  groupName: "L: 刪除/終止 modal",
+  caseTitle: "終止流程 — 從「⋯」進終止 modal + 取消",
+  stepsSummary: "1. 主頁點該 row「⋯ > 終止」\n2. 讀取 modal 標題、內文、按鈕\n3. 點取消",
+  validationMethod: "Evidence: dangerousModal.state"
+}, "tagTool.openDangerousModalAndCancel");
+assert.equal(terminateModalPlan.actions[0]?.params.flow, "openTerminateAndCancel", "terminate flow");
+
 assertTagCase({
   ...baseCase,
   caseNo: "TT-VERIFY-D-01",
@@ -217,6 +302,7 @@ for (const contract of [
   "action-contracts/tagList.json",
   "action-contracts/createConditionTag.json",
   "action-contracts/manualUpload.json",
+  "action-contracts/tagInfoReadOnly.json",
   "action-contracts/tagVariableSettings.json",
   "action-contracts/dangerousActions.json"
 ] as const) {

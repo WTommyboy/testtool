@@ -1041,7 +1041,9 @@ const normalizePlayerTagTemplate = (
     case "playerTag.createManualTag":
       return "tagTool.createManualTag";
     case "playerTag.editManualTag":
-      return "tagTool.uploadManualCsv";
+      return /(?:^|[^A-Za-z])upload(?:[^A-Za-z]|$)|CSV\s*fixture|CSV.{0,16}上傳|上傳.{0,16}CSV|操作\s*(?:add|update|delete)/i.test(text)
+        ? "tagTool.uploadManualCsv"
+        : "tagTool.observeManualEditForm";
     case "playerTag.saveTagVariables": {
       const shouldModify =
         booleanishParam(params, ["modifyValues", "save", "doSave"]) ||
@@ -1052,7 +1054,7 @@ const normalizePlayerTagTemplate = (
     case "playerTag.terminateTag":
       return "tagTool.openDangerousModalAndCancel";
     case "playerTag.copyTag":
-      return "tagTool.observeList";
+      return "tagTool.openRowActionAndObserve";
     default:
       return null;
   }
@@ -1064,7 +1066,7 @@ const inferTagToolTemplate = (currentCase: CaseManifestCase | null, helperHints:
   if (normalizedPlayerTag) return normalizedPlayerTag;
   if (explicit && /^tagTool\./i.test(explicit)) return explicit;
   const text = textBlob(currentCase);
-  const negativeDangerInstruction = /(?:不得|不可|不點擊|不要|不需|不進行|不執行|不觸發|without\s+clicking)[\s\S]{0,50}(?:刪除|終止|更多操作|確認窗|防呆窗)/i.test(text);
+  const negativeDangerInstruction = /(?:不得|不點擊|不要|不需|不進行|不執行|不觸發|without\s+clicking)[\s\S]{0,50}(?:刪除|終止|更多操作|確認窗|防呆窗)|不可(?:點擊|進行|執行|觸發|確認|刪除|終止)[\s\S]{0,50}(?:刪除|終止|更多操作|確認窗|防呆窗)/i.test(text);
   const settingsRouteCase =
     /tag\/settings|標籤變數設定.{0,24}(?:頁|入口|路由|breadcrumb|active|目前值|stepper|設置紀錄|N\/Z\/Y\/X\/A\/B|核心天數門檻|生命週期天數)|(?:點擊|開啟|進入|讀取|儲存|修改|更新).{0,24}標籤變數設定/i.test(text) ||
     /^BIUI_TAG_R001-K-/i.test(currentCase?.caseNo ?? "");
@@ -1073,10 +1075,28 @@ const inferTagToolTemplate = (currentCase: CaseManifestCase | null, helperHints:
     !/新增標籤頁|新增條件|新增人工|上傳|CSV|檔案|確認窗|防呆窗|confirm|modal|(?:點擊|開啟|觸發).{0,24}(?:刪除|終止)/i.test(text);
   const dangerModalCase =
     !negativeDangerInstruction &&
-    /(?:點擊|開啟|觸發|取消|確認).{0,32}(?:刪除|終止|更多操作|確認窗|防呆窗)|(?:刪除|終止).{0,32}(?:確認窗|防呆窗|取消|confirm|modal)|confirm|modal/i.test(text);
+    /(?:點擊|點|開啟|觸發|取消|確認).{0,32}(?:刪除|終止|確認窗|防呆窗)|(?:刪除|終止).{0,32}(?:確認窗|防呆窗|取消|confirm|modal)|confirm|modal/i.test(text);
+  const rowActionNavigationCase =
+    /(?:更多操作|⋯|row).{0,80}(?:查看設置|標籤資訊|編輯|複製)|(?:查看設置|標籤資訊|編輯設置|編輯|複製).{0,60}(?:路由|導向|進入|點擊|開啟|新增頁|查看設置頁|標籤資訊頁|編輯頁|名稱欄)/i.test(text);
+  const multiRowActionNavigationCase =
+    /查看設置[\s\S]{0,120}標籤資訊[\s\S]{0,120}複製|複製[\s\S]{0,120}標籤資訊[\s\S]{0,120}查看設置|(?:row|更多操作|⋯)[\s\S]{0,160}(?:查看設置[\s\S]{0,80}標籤資訊|標籤資訊[\s\S]{0,80}複製)/i.test(text);
+  const conditionInfoCase =
+    /標籤資訊與每日資訊|條件標籤資訊頁|條件標籤.{0,32}(?:標籤資訊|每日資訊|折線圖|每日數據|顯示數值|標籤值\s*[（(]?N|下載按鈕)|H群組|^BIUI_TAG_R001-H-/i.test(text) ||
+    /^BIUI_TAG_R001-I-/i.test(currentCase?.caseNo ?? "");
+  const manualInfoCase =
+    /標籤資訊與名單列表|人工標籤資訊頁|人工標籤.{0,32}(?:標籤資訊|名單列表|編輯設置|標籤值\s*[（(]?N)|J群組|^BIUI_TAG_R001-J-/i.test(text);
+  const manualEditCase =
+    /編輯標籤頁|編輯頁|編輯設置|人工標籤.{0,32}(?:編輯|update|delete|add)|^BIUI_TAG_R001-G-/i.test(text);
   if (settingsRouteCase) {
     return "tagTool.observeVariableSettings";
   }
+  if (dangerModalCase) return "tagTool.openDangerousModalAndCancel";
+  if (multiRowActionNavigationCase) return "tagTool.openRowActionAndObserve";
+  if (conditionInfoCase || manualInfoCase) return "tagTool.observeTagInfo";
+  if (manualEditCase) {
+    return /(?:^|[^A-Za-z])upload(?:[^A-Za-z]|$)|CSV\s*fixture|CSV.{0,16}上傳|上傳.{0,16}CSV|操作\s*(?:add|update|delete)/i.test(text) ? "tagTool.uploadManualCsv" : "tagTool.observeManualEditForm";
+  }
+  if (rowActionNavigationCase) return "tagTool.openRowActionAndObserve";
   if (listReadOnlyCase) return "tagTool.observeList";
   if (/新增條件標籤|新增條件|條件標籤|新增標籤頁初始|未選標籤類型/.test(text)) {
     return "tagTool.observeCreateForm";
@@ -1085,7 +1105,6 @@ const inferTagToolTemplate = (currentCase: CaseManifestCase | null, helperHints:
     if (/上傳|upload|fixture|檔案|CSV\s*格式|欄位/.test(text)) return "tagTool.uploadManualCsv";
     return "tagTool.selectManualTypeAndObserve";
   }
-  if (dangerModalCase) return "tagTool.openDangerousModalAndCancel";
   if (/玩家標籤管理主頁|標籤管理主頁|列表|清單|空狀態|table|列表欄位|玩家標籤管理[\s\S]{0,120}欄位/.test(text) && !/新增標籤頁|新增條件|新增人工|上傳|CSV/.test(text)) {
     return "tagTool.observeList";
   }
@@ -1098,47 +1117,89 @@ const inferTagToolTemplate = (currentCase: CaseManifestCase | null, helperHints:
 const inferTagToolParams = (currentCase: CaseManifestCase | null, helperHints: HelperHints | null): Record<string, unknown> => {
   const text = textBlob(currentCase);
   const params = paramsObject(helperHints);
-  const negativeDangerInstruction = /(?:不得|不可|不點擊|不要|不需|不進行|不執行|不觸發|without\s+clicking)[\s\S]{0,50}(?:刪除|終止|更多操作|確認窗|防呆窗)/i.test(text);
+  const negativeDangerInstruction = /(?:不得|不點擊|不要|不需|不進行|不執行|不觸發|without\s+clicking)[\s\S]{0,50}(?:刪除|終止|更多操作|確認窗|防呆窗)|不可(?:點擊|進行|執行|觸發|確認|刪除|終止)[\s\S]{0,50}(?:刪除|終止|更多操作|確認窗|防呆窗)/i.test(text);
+  const caseNo = currentCase?.caseNo ?? "";
+  const flowText = [
+    caseNo,
+    currentCase?.caseTitle,
+    currentCase?.stepsSummary,
+    currentCase?.expected,
+    currentCase?.validationMethod
+  ]
+    .filter(Boolean)
+    .join("\n")
+    .replace(/本題不測項目[\s\S]*/g, "");
+  const tagType = stringParam(params, ["tagType"]) ??
+    (/人工標籤|標籤資訊與名單列表|編輯標籤|編輯設置|^BIUI_TAG_R001-(?:G|J)-/i.test(text) || /^BIUI_TAG_R001-(?:G|J)-/i.test(caseNo)
+      ? "人工標籤"
+      : "條件標籤");
+  const rowActionItems = [
+    /查看設置/.test(text) ? "查看設置" : null,
+    /標籤資訊/.test(text) ? "標籤資訊" : null,
+    /編輯設置|編輯頁|人工標籤.{0,32}編輯/.test(text) ? "編輯" : null,
+    /複製/.test(text) ? "複製" : null
+  ].filter((item): item is string => Boolean(item));
+  const multiRowActionText =
+    /查看設置[\s\S]{0,120}標籤資訊[\s\S]{0,120}複製|複製[\s\S]{0,120}標籤資訊[\s\S]{0,120}查看設置|(?:row|更多操作|⋯)[\s\S]{0,160}(?:查看設置[\s\S]{0,80}標籤資訊|標籤資訊[\s\S]{0,80}複製)/i.test(text);
   const flow = stringParam(params, ["flow"]) ??
-    (/標籤變數設定|N\/Z\/Y\/X\/A\/B|核心天數門檻|生命週期天數|設置紀錄|變數/.test(text)
+    (/標籤變數設定|N\/Z\/Y\/X\/A\/B|核心天數門檻|生命週期天數|設置紀錄|變數/.test(flowText)
       ? "observeDefaults"
-      : /未上傳|沒有上傳|without\s+file/i.test(text)
+      : rowActionItems.length > 1 && /查看設置[\s\S]{0,120}標籤資訊[\s\S]{0,120}複製|複製[\s\S]{0,120}標籤資訊[\s\S]{0,120}查看設置|(?:row|更多操作|⋯)[\s\S]{0,160}(?:查看設置[\s\S]{0,80}標籤資訊|標籤資訊[\s\S]{0,80}複製)/i.test(flowText)
+        ? "verifyRowActionRoutes"
+      : /標籤資訊與名單列表|人工標籤資訊頁|^BIUI_TAG_R001-J-/i.test(flowText)
+        ? (/標籤值.{0,24}(?:下拉|取消勾|顯示數值)|顯示數值|取消勾/i.test(flowText) ? "openManualValueFilter" : /(?:點擊|開啟|進入).{0,24}(?:編輯設置|編輯設定|編輯頁)|(?:編輯設置|編輯設定|編輯頁).{0,24}(?:點擊|開啟|進入)|^BIUI_TAG_R001-J-04/i.test(flowText) ? "observeManualEditForm" : "observeManualTagInfo")
+      : /標籤資訊與每日資訊|條件標籤資訊頁|^BIUI_TAG_R001-H-|^BIUI_TAG_R001-I-/i.test(flowText)
+        ? (/日期區間|日期工具|date/i.test(flowText) ? "openConditionDatePanel" : /標籤值.{0,24}(?:下拉|取消勾|顯示數值)|顯示數值|取消勾|toggle/i.test(flowText) ? "openConditionValueFilter" : /下載/i.test(flowText) ? "observeConditionDownloadControl" : /^BIUI_TAG_R001-I-/i.test(caseNo) ? "observeConditionMemberDrill" : "observeConditionTagInfo")
+      : /編輯標籤頁|編輯頁|編輯設置|^BIUI_TAG_R001-G-/i.test(flowText)
+        ? (/(?:^|[^A-Za-z])upload(?:[^A-Za-z]|$)|CSV\s*fixture|CSV.{0,16}上傳|上傳.{0,16}CSV|操作\s*(?:add|update|delete)/i.test(flowText) ? "uploadEditCsv" : "observeEditGuidance")
+      : rowActionItems.length > 0 && /(?:更多操作|⋯|row|路由|導向|進入|名稱欄|新增頁|查看設置頁|標籤資訊頁|編輯頁)/i.test(flowText)
+        ? (rowActionItems.length > 1 ? "verifyRowActionRoutes" : "clickRowActionAndObserve")
+      : /未上傳|沒有上傳|without\s+file/i.test(flowText)
         ? "submitWithoutFile"
-      : /accept|原生對話框|檔案選擇限|限\s*csv|只能.*csv/i.test(text)
+      : /accept|原生對話框|檔案選擇限|限\s*csv|只能.*csv/i.test(flowText)
         ? "observeFileAccept"
-      : /多檔|多個檔案|已選檔案|刪除.*檔案|移除.*檔案|新增檔案按鈕/i.test(text)
+      : /多檔|多個檔案|已選檔案|刪除.*檔案|移除.*檔案|新增檔案按鈕/i.test(flowText)
         ? "uploadMultipleFiles"
-      : /同\s*ID.*多標籤|多標籤值|duplicate|conflict/i.test(text)
+      : /同\s*ID.*多標籤|多標籤值|duplicate|conflict/i.test(flowText)
         ? "uploadDuplicateConflictCsv"
-      : /不存在.*帳號|帳號\s*ID\s*不存在|not\s*exist/i.test(text)
+      : /不存在.*帳號|帳號\s*ID\s*不存在|not\s*exist/i.test(flowText)
         ? "uploadNonexistentAccountCsv"
-      : /10000|10,000|超過.*筆|over.?limit/i.test(text)
+      : /10000|10,000|超過.*筆|over.?limit/i.test(flowText)
         ? "uploadOverLimitCsv"
-      : /\.txt|非\s*csv|類型錯誤|invalid\s*type/i.test(text)
+      : /\.txt|非\s*csv|類型錯誤|invalid\s*type/i.test(flowText)
         ? "uploadInvalidTypeFile"
-      : /人工標籤|手動標籤|CSV|上傳|upload/.test(text)
-        ? (/invalid|錯誤|格式錯|缺少欄位|欄位錯|userobjectid/i.test(text) ? "uploadInvalidCsv" : "observeAddGuidance")
-        : !negativeDangerInstruction && /刪除/.test(text)
-          ? "openDeleteAndCancel"
-          : !negativeDangerInstruction && /終止/.test(text)
-            ? "openTerminateAndCancel"
-            : /新增標籤|新增條件|條件類型|時間類型|分析時段|子標籤|級距|標籤值/.test(text)
+      : /人工標籤|手動標籤|CSV|上傳|upload/.test(flowText)
+        ? (/invalid|錯誤|格式錯|缺少欄位|欄位錯|userobjectid/i.test(flowText) ? "uploadInvalidCsv" : "observeAddGuidance")
+        : !negativeDangerInstruction && /終止/.test(flowText)
+          ? "openTerminateAndCancel"
+          : !negativeDangerInstruction && /刪除/.test(flowText)
+            ? "openDeleteAndCancel"
+            : /新增標籤|新增條件|條件類型|時間類型|分析時段|子標籤|級距|標籤值/.test(flowText)
               ? "observeInitialCreateState"
               : "observeColumns");
   const fixtureKind = stringParam(params, ["fixtureKind", "fixture"]) ??
-    (/同\s*ID.*多標籤|多標籤值|duplicate|conflict/i.test(text) ? "duplicateConflictCsv" :
-      /不存在.*帳號|帳號\s*ID\s*不存在|not\s*exist/i.test(text) ? "nonexistentAccountCsv" :
-        /10000|10,000|超過.*筆|over.?limit/i.test(text) ? "overLimitCsv" :
-          /\.txt|非\s*csv|類型錯誤|invalid\s*type/i.test(text) ? "textFile" :
-            /invalid|錯誤|格式錯|缺少欄位|欄位錯|userobjectid/i.test(text) ? "invalidAddCsv" :
-              /edit|編輯|操作\s*add|操作\s*update|操作\s*delete/i.test(text) ? "validEditCsv" : "validAddCsv");
+    (/同\s*ID.*多標籤|多標籤值|duplicate|conflict/i.test(flowText) ? "duplicateConflictCsv" :
+      /不存在.*帳號|帳號\s*ID\s*不存在|not\s*exist/i.test(flowText) ? "nonexistentAccountCsv" :
+        /10000|10,000|超過.*筆|over.?limit/i.test(flowText) ? "overLimitCsv" :
+          /\.txt|非\s*csv|類型錯誤|invalid\s*type/i.test(flowText) ? "textFile" :
+            /invalid|錯誤|格式錯|缺少欄位|欄位錯|userobjectid|操作欄非/i.test(flowText) ? "invalidEditCsv" :
+              /edit|編輯|操作\s*add|操作\s*update|操作\s*delete/i.test(flowText) ? "validEditCsv" : "validAddCsv");
   return {
     ...params,
     flow,
     fixtureKind,
+    tagType,
+    rowActionItem: stringParam(params, ["rowActionItem", "actionText"]) ?? rowActionItems[0],
+    rowActionItems: rowActionItems.length > 0 ? rowActionItems : undefined,
+    dangerActionScope: !negativeDangerInstruction && /刪除/.test(flowText) && /右上|toolbar|勾選|選取|主頁勾選/i.test(flowText) ? "toolbarSelection" : undefined,
+    mode: /編輯標籤頁|編輯頁|編輯設置|uploadEditCsv|validEditCsv|^BIUI_TAG_R001-G-/i.test(text) ? "edit" : params.mode,
     expectedSource: "PRD",
     pageExpectation: /標籤變數設定/.test(text)
       ? "tagVariableSettings"
+      : /標籤資訊與每日資訊|標籤資訊與名單列表|標籤資訊頁|^BIUI_TAG_R001-(?:H|I|J)-/i.test(text)
+        ? "tagInfo"
+      : /編輯標籤頁|編輯頁|編輯設置|^BIUI_TAG_R001-G-/i.test(text)
+        ? "tagEdit"
       : /新增|人工標籤|條件標籤|CSV|上傳|子標籤|級距|標籤值/.test(text)
         ? "tagCreate"
         : "tagList"
@@ -1155,6 +1216,12 @@ const tagToolRequiredEvidence = (template: string): string[] => {
       return ["navigation.state", "tagForm.typeVisibility.state", "manualUpload.file.state", "dom.state", "screenshot"];
     case "tagTool.observeVariableSettings":
       return ["navigation.state", "tagVariables.form.state", "tagVariables.history.state", "dom.state", "screenshot"];
+    case "tagTool.openRowActionAndObserve":
+      return ["navigation.state", "tagList.row.state", "tagList.rowActionMenu.state", "tagRowAction.route.state", "dom.state", "interactionLog", "screenshot"];
+    case "tagTool.observeTagInfo":
+      return ["navigation.state", "tagInfo.basicSettings.state", "tagInfo.latestValueSummary.state", "manualTag.memberTable.state", "tagInfo.controls.state", "dom.state", "interactionLog", "screenshot"];
+    case "tagTool.observeManualEditForm":
+      return ["navigation.state", "manualTag.editForm.state", "manualUpload.fileInput.state", "dom.state", "interactionLog", "screenshot"];
     case "tagTool.uploadManualCsv":
       return ["navigation.state", "tagForm.typeVisibility.state", "fixtureRef.state", "manualUpload.file.state", "manualUpload.fileInput.state", "manualUpload.validation.state", "interactionLog", "screenshot"];
     case "tagTool.openDangerousModalAndCancel":
@@ -1178,6 +1245,12 @@ const tagToolActionTitle = (template: string): string => {
       return "切換人工標籤並觀察欄位隱藏與上傳區";
     case "tagTool.observeVariableSettings":
       return "觀察標籤變數設定值與設置紀錄";
+    case "tagTool.openRowActionAndObserve":
+      return "開啟標籤 row 操作並觀察導向";
+    case "tagTool.observeTagInfo":
+      return "觀察標籤資訊頁與控制項";
+    case "tagTool.observeManualEditForm":
+      return "觀察人工標籤編輯頁";
     case "tagTool.uploadManualCsv":
       return "上傳人工標籤 CSV fixture 並收集 validation evidence";
     case "tagTool.openDangerousModalAndCancel":
@@ -1225,7 +1298,7 @@ const buildActions = (currentCase: CaseManifestCase | null, helperHints: HelperH
     const highRisk = /createConditionTag|createManualTag|saveVariableSettings/.test(template);
     return [
       action("H1", template, tagToolActionTitle(template), tagParams, {
-        mutatesUi: !/observeList|observeCreateForm|observeVariableSettings/.test(template),
+        mutatesUi: !/observeList|observeCreateForm|observeVariableSettings|observeTagInfo|observeManualEditForm/.test(template),
         requiresToolBridge: highRisk,
         requiredEvidence: tagToolRequiredEvidence(template),
         screenshotPolicy: highRisk ? "required_if_possible" : "major_step",
@@ -1955,11 +2028,14 @@ const buildAvailableTemplates = (currentCase: CaseManifestCase | null, helperHin
       action("T2", "tagTool.observeCreateForm", "觀察新增標籤表單與條件標籤狀態", params, { mutatesUi: false, requiredEvidence: tagToolRequiredEvidence("tagTool.observeCreateForm") }),
       action("T3", "tagTool.selectManualTypeAndObserve", "切換人工標籤並觀察欄位隱藏與上傳區", params, { requiredEvidence: tagToolRequiredEvidence("tagTool.selectManualTypeAndObserve") }),
       action("T4", "tagTool.observeVariableSettings", "觀察標籤變數設定值與設置紀錄", params, { mutatesUi: false, requiredEvidence: tagToolRequiredEvidence("tagTool.observeVariableSettings") }),
-      action("T5", "tagTool.uploadManualCsv", "上傳人工標籤 CSV fixture 並收集 validation evidence", params, { requiredEvidence: tagToolRequiredEvidence("tagTool.uploadManualCsv") }),
-      action("T6", "tagTool.openDangerousModalAndCancel", "開啟高風險操作確認窗並取消", params, { requiredEvidence: tagToolRequiredEvidence("tagTool.openDangerousModalAndCancel") }),
-      action("T7", "tagTool.createConditionTag", "建立暫存條件標籤", params, { requiresToolBridge: true, requiredEvidence: tagToolRequiredEvidence("tagTool.createConditionTag"), screenshotPolicy: "required_if_possible" }),
-      action("T8", "tagTool.createManualTag", "建立暫存人工標籤", params, { requiresToolBridge: true, requiredEvidence: tagToolRequiredEvidence("tagTool.createManualTag"), screenshotPolicy: "required_if_possible" }),
-      action("T9", "tagTool.saveVariableSettings", "儲存標籤變數設定", params, { requiresToolBridge: true, requiredEvidence: tagToolRequiredEvidence("tagTool.saveVariableSettings"), screenshotPolicy: "required_if_possible" })
+      action("T5", "tagTool.openRowActionAndObserve", "開啟標籤 row 操作並觀察導向", params, { requiredEvidence: tagToolRequiredEvidence("tagTool.openRowActionAndObserve") }),
+      action("T6", "tagTool.observeTagInfo", "觀察標籤資訊頁與控制項", params, { mutatesUi: false, requiredEvidence: tagToolRequiredEvidence("tagTool.observeTagInfo") }),
+      action("T7", "tagTool.observeManualEditForm", "觀察人工標籤編輯頁", params, { mutatesUi: false, requiredEvidence: tagToolRequiredEvidence("tagTool.observeManualEditForm") }),
+      action("T8", "tagTool.uploadManualCsv", "上傳人工標籤 CSV fixture 並收集 validation evidence", params, { requiredEvidence: tagToolRequiredEvidence("tagTool.uploadManualCsv") }),
+      action("T9", "tagTool.openDangerousModalAndCancel", "開啟高風險操作確認窗並取消", params, { requiredEvidence: tagToolRequiredEvidence("tagTool.openDangerousModalAndCancel") }),
+      action("T10", "tagTool.createConditionTag", "建立暫存條件標籤", params, { requiresToolBridge: true, requiredEvidence: tagToolRequiredEvidence("tagTool.createConditionTag"), screenshotPolicy: "required_if_possible" }),
+      action("T11", "tagTool.createManualTag", "建立暫存人工標籤", params, { requiresToolBridge: true, requiredEvidence: tagToolRequiredEvidence("tagTool.createManualTag"), screenshotPolicy: "required_if_possible" }),
+      action("T12", "tagTool.saveVariableSettings", "儲存標籤變數設定", params, { requiresToolBridge: true, requiredEvidence: tagToolRequiredEvidence("tagTool.saveVariableSettings"), screenshotPolicy: "required_if_possible" })
     ];
   }
   const params = inferCollageParams(currentCase, helperHints);
