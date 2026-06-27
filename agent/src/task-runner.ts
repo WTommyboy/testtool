@@ -3500,7 +3500,7 @@ const uploadRunArtifacts = async (options: UploadArtifactsOptions): Promise<Uplo
           "run.stdout",
           {
             run_id: runId,
-            text: "uat-agent repaired single-case result.xlsx legacy schema by inserting 群組ID before upload."
+            text: "uat-agent repaired single-case result.xlsx contract shape before upload."
           },
           false
         );

@@ -30,11 +30,16 @@ const baseCase: CaseManifestCase = {
   currentCaseFile: null
 };
 
-const helperHints = (caseId: string, operationTemplate: string): HelperHints => ({
+const helperHints = (
+  caseId: string,
+  operationTemplate: string,
+  automationLevel = "helper",
+  params: Record<string, unknown> = {}
+): HelperHints => ({
   caseId,
-  automationLevel: "helper",
+  automationLevel,
   operationTemplate,
-  params: {},
+  params,
   requiredEvidence: ["dom.state"],
   forbiddenAutomation: ["direct_bi_api", "internal_js_setter", "multi_case_batch"],
   aiDecisionRequired: true,
@@ -61,6 +66,13 @@ const assertTagCase = (testCase: CaseManifestCase, expectedTemplate: string, hin
 };
 
 assertTagCase(baseCase, "tagTool.observeList");
+
+assertTagCase({
+  ...baseCase,
+  caseNo: "TT-VERIFY-A-00-MANUAL-AI",
+  caseTitle: "manual_ai 玩家標籤管理列表仍可執行安全 helper pre-run",
+  stepsSummary: "1. 開啟玩家標籤管理主頁\n2. 讀取列表欄位與資料列，不進行新增、刪除或終止"
+}, "tagTool.observeList", helperHints("TT-VERIFY-A-00-MANUAL-AI", "manual_ai", "manual_ai"));
 
 assertTagCase({
   ...baseCase,
@@ -160,6 +172,37 @@ assertTagCase({
   stepsSummary: "1. 開啟標籤變數設定頁\n2. 讀取 N/Z/Y/X/A/B\n3. 讀取設置紀錄時間格式",
   validationMethod: "Evidence: tagVariables.form.state, tagVariables.history.state"
 }, "tagTool.observeVariableSettings");
+
+const playerTagCreatePlan = assertTagCase({
+  ...baseCase,
+  caseNo: "TT-VERIFY-D-02",
+  groupName: "D: 新增條件標籤",
+  caseTitle: "playerTag 建立條件標籤 hint 正規化為 approval-gated helper",
+  riskLevel: "🟡 建立",
+  stepsSummary: "使用 playerTag.createConditionalTag 建立暫存條件標籤",
+  validationMethod: "Evidence: toolBridge.response"
+}, "tagTool.createConditionTag", helperHints("TT-VERIFY-D-02", "playerTag.createConditionalTag"));
+assert.equal(playerTagCreatePlan.actions[0]?.requiresToolBridge, true, "playerTag create must require Tool Bridge approval");
+
+assertTagCase({
+  ...baseCase,
+  caseNo: "TT-VERIFY-D-03",
+  groupName: "D: 標籤變數設定",
+  caseTitle: "playerTag saveTagVariables modifyValues=false 僅觀察標籤變數設定",
+  stepsSummary: "讀取標籤變數設定與設置紀錄，不修改值",
+  validationMethod: "Evidence: tagVariables.form.state, tagVariables.history.state"
+}, "tagTool.observeVariableSettings", helperHints("TT-VERIFY-D-03", "playerTag.saveTagVariables", "helper", { modifyValues: false }));
+
+const playerTagSavePlan = assertTagCase({
+  ...baseCase,
+  caseNo: "TT-VERIFY-D-04",
+  groupName: "D: 標籤變數設定",
+  caseTitle: "playerTag saveTagVariables modifyValues=true 正規化為 approval-gated save helper",
+  riskLevel: "🟠 修改",
+  stepsSummary: "修改標籤變數設定並儲存",
+  validationMethod: "Evidence: toolBridge.response"
+}, "tagTool.saveVariableSettings", helperHints("TT-VERIFY-D-04", "playerTag.saveTagVariables", "helper", { modifyValues: true }));
+assert.equal(playerTagSavePlan.actions[0]?.requiresToolBridge, true, "playerTag save must require Tool Bridge approval");
 
 assertTagCase({
   ...baseCase,

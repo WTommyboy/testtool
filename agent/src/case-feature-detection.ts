@@ -71,6 +71,7 @@ const detectMode = (text: string, operationTemplate: string | null): CaseFeature
   const source = `${operationTemplate ?? ""}\n${text}`;
   if (
     /^tagTool\./i.test(operationTemplate ?? "") ||
+    /^playerTag\./i.test(operationTemplate ?? "") ||
     /TAG_TOOL|玩家標籤管理|標籤變數設定|人工標籤|條件標籤|子標籤級距|標籤值設置|tag\/player|tag\/settings/i.test(source)
   ) {
     return "tagTool";

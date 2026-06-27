@@ -140,6 +140,37 @@ const repairDetailJsonPathCells = (
   return updated;
 };
 
+const repairBugSheetHeaders = (
+  workbook: ExcelJS.Workbook,
+  report: ResultWorkbookRepairReport
+): boolean => {
+  const adapter = loadResultParserAdapter();
+  let sheet = workbook.getWorksheet(adapter.sheets.bugs);
+  let createdSheet = false;
+  if (!sheet) {
+    sheet = workbook.addWorksheet(adapter.sheets.bugs);
+    createdSheet = true;
+  }
+
+  const headers = rowValues(sheet.getRow(1));
+  if (headers.length > 0) return false;
+
+  const headerRow = sheet.getRow(1);
+  adapter.headers.bugs.forEach((header, index) => {
+    headerRow.getCell(index + 1).value = header;
+  });
+  headerRow.font = { bold: true };
+  headerRow.commit();
+
+  report.repairs.push({
+    action: createdSheet ? "create_missing_bug_sheet_with_headers" : "insert_empty_bug_sheet_headers",
+    sheetName: adapter.sheets.bugs,
+    header: adapter.headers.bugs.join(","),
+    rowCount: 0
+  });
+  return true;
+};
+
 const inferGroupId = (sourceCase: AgentResultSourceCase | null, groupName: string, caseNo: string): string | null => {
   const explicit = sourceCase?.groupId?.trim();
   if (explicit) return explicit;
@@ -174,6 +205,7 @@ export const repairSingleCaseResultWorkbook = async (input: RepairInput): Promis
   }
 
   let workbookUpdated = repairDetailJsonPathCells(workbook, input, report);
+  workbookUpdated = repairBugSheetHeaders(workbook, report) || workbookUpdated;
   const expectedHeaders = adapter.headers.cases;
   const groupIdHeader = expectedHeaders[0] ?? "群組ID";
   const legacyHeaders = expectedHeaders.filter((header) => normalize(header) !== normalize(groupIdHeader));

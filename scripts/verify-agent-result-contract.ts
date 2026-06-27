@@ -102,6 +102,35 @@ const writePassWorkbook = async (filePath: string, caseNo: string): Promise<void
   await workbook.xlsx.writeFile(filePath);
 };
 
+const writePassWorkbookWithEmptyBugHeader = async (filePath: string, caseNo: string): Promise<void> => {
+  const workbook = new ExcelJS.Workbook();
+  const index = workbook.addWorksheet("索引");
+  index.getCell("A1").value = "schema_version";
+  index.getCell("B1").value = "fixture-result-v1";
+
+  const cases = workbook.addWorksheet("測試案例");
+  cases.addRow(["群組ID", "群組", "編號", "測試項目", "測試類型", "執行方式", "結果", "失敗分類", "詳細紀錄JSON"]);
+  cases.addRow([
+    "K",
+    "K: 標籤變數設定",
+    caseNo,
+    "empty bug header fixture",
+    "功能流程",
+    "agent",
+    "PASS",
+    "",
+    JSON.stringify({
+      測試目的: "fixture",
+      設定條件: "fixture",
+      預期行為: "expected",
+      實際行為: "actual"
+    })
+  ]);
+
+  workbook.addWorksheet("Bug");
+  await workbook.xlsx.writeFile(filePath);
+};
+
 const writeLegacySingleCaseWithoutGroupId = async (filePath: string): Promise<void> => {
   const workbook = new ExcelJS.Workbook();
   const index = workbook.addWorksheet("索引");
@@ -278,6 +307,29 @@ const main = async (): Promise<void> => {
     assert.equal(repairedReport.status, "ok", JSON.stringify(repairedReport.issues));
     const repairedParsed = await parseResultXlsx(legacySingleCase);
     assert.equal(repairedParsed.cases[0]?.groupId, "A");
+
+    const emptyBugHeaderWorkbook = path.join(tempRoot, "result-contract-empty-bug-header.xlsx");
+    await writePassWorkbookWithEmptyBugHeader(emptyBugHeaderWorkbook, "TOOL-K-04");
+    const emptyBugHeaderBefore = await validateResultWorkbookContract(emptyBugHeaderWorkbook);
+    assert.equal(emptyBugHeaderBefore.status, "error");
+    assert.ok(emptyBugHeaderBefore.issues.some((item) => item.code === "RESULT_XLSX_HEADER_MISSING" && item.context?.sheetName === "Bug"));
+    const emptyBugHeaderRepair = await repairSingleCaseResultWorkbook({
+      filePath: emptyBugHeaderWorkbook,
+      currentCase: {
+        groupId: "K",
+        groupName: "K: 標籤變數設定",
+        caseNo: "TOOL-K-04",
+        caseTitle: "標籤變數設定設置紀錄",
+        testType: "功能流程",
+        executionMethod: "agent"
+      },
+      expectedCaseNos: ["TOOL-K-04"],
+      runDir: tempRoot
+    });
+    assert.equal(emptyBugHeaderRepair.status, "updated", JSON.stringify(emptyBugHeaderRepair));
+    assert.ok(emptyBugHeaderRepair.repairs.some((item) => item.action === "insert_empty_bug_sheet_headers"));
+    const emptyBugHeaderAfter = await validateResultWorkbookContract(emptyBugHeaderWorkbook);
+    assert.equal(emptyBugHeaderAfter.status, "ok", JSON.stringify(emptyBugHeaderAfter.issues));
 
     const detailJsonPath = path.join(tempRoot, "output", "detail.json");
     fs.mkdirSync(path.dirname(detailJsonPath), { recursive: true });
@@ -700,6 +752,7 @@ const main = async (): Promise<void> => {
         "legacy Bug header 來源 Case is rejected by agent self-check",
         "FAIL detail_json missing required fields is rejected before upload",
         "single-case legacy result workbook missing 群組ID is repaired before self-check",
+        "single-case result workbook empty Bug sheet headers are repaired before self-check",
         "run-local detail_json path cells are expanded before self-check",
         "detail_json paths outside the current run directory are not expanded",
         "testcase-style Codex output is normalized to one current-case result-contract row before self-check",

@@ -1026,14 +1026,58 @@ const isBackToProjectListFlow = (currentCase: CaseManifestCase | null, helperHin
 const isTagToolCase = (currentCase: CaseManifestCase | null, helperHints: HelperHints | null): boolean =>
   detectCaseFeatures(currentCase, helperHints).mode === "tagTool";
 
+const normalizePlayerTagTemplate = (
+  currentCase: CaseManifestCase | null,
+  helperHints: HelperHints | null
+): string | null => {
+  const explicit = helperHints?.operationTemplate?.trim();
+  if (!explicit || !/^playerTag\./i.test(explicit)) return null;
+
+  const params = paramsObject(helperHints);
+  const text = textBlob(currentCase);
+  switch (explicit) {
+    case "playerTag.createConditionalTag":
+      return "tagTool.createConditionTag";
+    case "playerTag.createManualTag":
+      return "tagTool.createManualTag";
+    case "playerTag.editManualTag":
+      return "tagTool.uploadManualCsv";
+    case "playerTag.saveTagVariables": {
+      const shouldModify =
+        booleanishParam(params, ["modifyValues", "save", "doSave"]) ||
+        (/儲存|修改|更新|save/i.test(text) && !/不修改|不儲存|僅觀察|只讀|讀取|observe/i.test(text));
+      return shouldModify ? "tagTool.saveVariableSettings" : "tagTool.observeVariableSettings";
+    }
+    case "playerTag.deleteTag":
+    case "playerTag.terminateTag":
+      return "tagTool.openDangerousModalAndCancel";
+    case "playerTag.copyTag":
+      return "tagTool.observeList";
+    default:
+      return null;
+  }
+};
+
 const inferTagToolTemplate = (currentCase: CaseManifestCase | null, helperHints: HelperHints | null): string => {
   const explicit = helperHints?.operationTemplate?.trim();
+  const normalizedPlayerTag = normalizePlayerTagTemplate(currentCase, helperHints);
+  if (normalizedPlayerTag) return normalizedPlayerTag;
   if (explicit && /^tagTool\./i.test(explicit)) return explicit;
   const text = textBlob(currentCase);
-  const negativeDangerInstruction = /(?:不得|不可|不點擊|不要|不需|without\s+clicking)[\s\S]{0,50}(?:刪除|終止|更多操作|確認窗|防呆窗)/i.test(text);
-  if (/標籤變數設定|N\/Z\/Y\/X\/A\/B|核心天數門檻|生命週期天數|設置紀錄|變數/.test(text)) {
+  const negativeDangerInstruction = /(?:不得|不可|不點擊|不要|不需|不進行|不執行|不觸發|without\s+clicking)[\s\S]{0,50}(?:刪除|終止|更多操作|確認窗|防呆窗)/i.test(text);
+  const settingsRouteCase =
+    /tag\/settings|標籤變數設定.{0,24}(?:頁|入口|路由|breadcrumb|active|目前值|stepper|設置紀錄|N\/Z\/Y\/X\/A\/B|核心天數門檻|生命週期天數)|(?:點擊|開啟|進入|讀取|儲存|修改|更新).{0,24}標籤變數設定/i.test(text) ||
+    /^BIUI_TAG_R001-K-/i.test(currentCase?.caseNo ?? "");
+  const listReadOnlyCase =
+    /側欄|入口|breadcrumb|玩家標籤管理主頁|標籤管理主頁|頁面標題|右上\s*icon|列表|清單|table|row|badge|pill|資料最後更新|列表欄位|玩家標籤管理[\s\S]{0,120}欄位/i.test(text) &&
+    !/新增標籤頁|新增條件|新增人工|上傳|CSV|檔案|確認窗|防呆窗|confirm|modal|(?:點擊|開啟|觸發).{0,24}(?:刪除|終止)/i.test(text);
+  const dangerModalCase =
+    !negativeDangerInstruction &&
+    /(?:點擊|開啟|觸發|取消|確認).{0,32}(?:刪除|終止|更多操作|確認窗|防呆窗)|(?:刪除|終止).{0,32}(?:確認窗|防呆窗|取消|confirm|modal)|confirm|modal/i.test(text);
+  if (settingsRouteCase) {
     return "tagTool.observeVariableSettings";
   }
+  if (listReadOnlyCase) return "tagTool.observeList";
   if (/新增條件標籤|新增條件|條件標籤|新增標籤頁初始|未選標籤類型/.test(text)) {
     return "tagTool.observeCreateForm";
   }
@@ -1041,7 +1085,7 @@ const inferTagToolTemplate = (currentCase: CaseManifestCase | null, helperHints:
     if (/上傳|upload|fixture|檔案|CSV\s*格式|欄位/.test(text)) return "tagTool.uploadManualCsv";
     return "tagTool.selectManualTypeAndObserve";
   }
-  if (!negativeDangerInstruction && /刪除|終止|confirm|確認窗|防呆窗|modal/.test(text)) return "tagTool.openDangerousModalAndCancel";
+  if (dangerModalCase) return "tagTool.openDangerousModalAndCancel";
   if (/玩家標籤管理主頁|標籤管理主頁|列表|清單|空狀態|table|列表欄位|玩家標籤管理[\s\S]{0,120}欄位/.test(text) && !/新增標籤頁|新增條件|新增人工|上傳|CSV/.test(text)) {
     return "tagTool.observeList";
   }
@@ -1054,7 +1098,7 @@ const inferTagToolTemplate = (currentCase: CaseManifestCase | null, helperHints:
 const inferTagToolParams = (currentCase: CaseManifestCase | null, helperHints: HelperHints | null): Record<string, unknown> => {
   const text = textBlob(currentCase);
   const params = paramsObject(helperHints);
-  const negativeDangerInstruction = /(?:不得|不可|不點擊|不要|不需|without\s+clicking)[\s\S]{0,50}(?:刪除|終止|更多操作|確認窗|防呆窗)/i.test(text);
+  const negativeDangerInstruction = /(?:不得|不可|不點擊|不要|不需|不進行|不執行|不觸發|without\s+clicking)[\s\S]{0,50}(?:刪除|終止|更多操作|確認窗|防呆窗)/i.test(text);
   const flow = stringParam(params, ["flow"]) ??
     (/標籤變數設定|N\/Z\/Y\/X\/A\/B|核心天數門檻|生命週期天數|設置紀錄|變數/.test(text)
       ? "observeDefaults"
